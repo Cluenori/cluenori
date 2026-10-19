@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+# Generated; regenerate with `bun run generate`, never edit by hand.
+apps/worker/openapi.json linguist-generated
+bun.lock linguist-generated
+flake.lock linguist-generated

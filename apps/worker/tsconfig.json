@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The Workers runtime and `Env`, generated from wrangler.jsonc by `bun run generate`.
+  "include": ["src", "test", "worker-configuration.d.ts"]
+}

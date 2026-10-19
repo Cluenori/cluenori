@@ -1,0 +1,6 @@
+#!/bin/sh
+# Deploys Cluenori to your Cloudflare account.
+# The steps live in apps/cli/src/setup.ts; this script only enters the toolchain.
+set -eu
+cd "$(dirname "$0")"
+exec ./dev sh -c 'bun install --frozen-lockfile && exec bun apps/cli/src/main.ts "$@"' sh setup "$@"

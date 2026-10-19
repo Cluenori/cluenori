@@ -1,0 +1,47 @@
+{
+  "name": "cluenori",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "packages/*",
+      "product/engines/*",
+      "product/modules/*",
+      "apps/*",
+      "sdks/*",
+      "tests/*"
+    ],
+    "catalog": {
+      "@cloudflare/vitest-plugin": "1.4.5",
+      "@effect/platform-bun": "4.0.5",
+      "@effect/platform-node": "4.0.5",
+      "@effect/tsgo": "0.53.5",
+      "@effect/vitest": "4.0.5",
+      "effect": "4.0.5",
+      "oxfmt": "0.73.0",
+      "oxlint": "1.88.0",
+      "oxlint-tsgolint": "7.0.2004",
+      "typescript": "7.0.2",
+      "vitest": "5.0.5",
+      "wrangler": "4.151.2"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "postinstall": "effect-tsgo patch && bun run --cwd apps/worker types",
+    "check": "bun run typecheck && bun run lint && oxfmt --check && bun apps/cli/src/main.ts check",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "oxlint",
+    "test": "TZ=Pacific/Chatham LANG=tr_TR.UTF-8 vitest run",
+    "format": "oxfmt",
+    "generate": "bun apps/cli/src/main.ts generate"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "packageManager": "bun@1.4.2"
+}

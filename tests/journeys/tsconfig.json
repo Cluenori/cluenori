@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // Journeys run inside workerd with the Worker, so they see its runtime and its `Env`.
+  "include": ["test", "vitest.config.ts", "../../apps/worker/worker-configuration.d.ts"]
+}

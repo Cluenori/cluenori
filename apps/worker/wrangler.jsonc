@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cluenori",
+  "main": "src/worker.ts",
+  // Raise deliberately, reading the change log of the compatibility flags it turns on.
+  "compatibility_date": "2026-10-01",
+  // Served at https://cluenori.<your subdomain>.workers.dev until you add a route.
+  "workers_dev": true,
+}

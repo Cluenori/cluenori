@@ -1,0 +1,629 @@
+# Patterns
+
+One problem, one solution. This file lists the established way to solve each recurring problem.
+
+- **Follow an entry.** Before solving a problem listed here, follow its entry and the shape of its
+  example.
+- **Add a missing entry.** If a recurring problem isn't listed, choose a solution deliberately,
+  implement it once, and add an entry in the same change.
+- **Change an entry, don't fork it.** If an entry is wrong for a case, propose changing it, with a
+  migration path for existing code. Never add a second way "just here."
+- **Real code beats snippets.** Where an entry names a canonical example, that file is the
+  specification. Elsewhere the snippet is, until the first real implementation exists; then add its
+  path here and shorten the entry.
+
+Most entries are still snippets, because the code that will be their example isn't written yet;
+entries with real code name its file. The snippets were type-checked and tested against `effect`
+4.0.5 with TypeScript 7.0.2 and `@effect/tsgo`, with the compiler settings of entry 20. Examples use a small feature catalog: a feature has a dotted key such as `editor.export`
+(`concept/Foundation.md`, "Features").
+
+---
+
+## 1. Explicit over implicit
+
+Code says what it does where it does it. A contributor who doesn't know TypeScript's or Effect's
+conventions should be able to read any file and see every dependency, conversion, and default.
+
+- **Named exports only.** No `export default`, except where the platform requires one: the Worker's
+  entry (entry 16). Every import names what it takes.
+- **Imports name their source.** Effect's modules come from the barrel or a subpath:
+  `import { Effect, Schema } from "effect"`, `import { HttpApi } from "effect/http-api"`. Relative
+  imports name the file with its extension: `import { FeatureKey } from "./feature-key.ts"`.
+- **No re-export chains.** A package's `src/index.ts` exports its contract (entry 3); no other file
+  re-exports another file.
+- **Visible registration.** Every layer, route group, module, queue consumer, cron, and Durable
+  Object class is a visible line in the host. Nothing is discovered by scanning, globbing, or
+  decorators.
+- **No escape hatches from the type system.**
+  - No `any`, no `as` casts (except `as const`), no non-null `!`.
+  - `unknown` appears only at a trust boundary, and is decoded with a Schema on the next line
+    (entry 7).
+  - No `@ts-expect-error`, `@ts-ignore`, or lint-disable comments (entry 20).
+- **One step per statement.** A statement yields, calls, writes, or decides; not several at once.
+  - A `yield*` is its statement's whole right-hand side: `const x = yield* a`, `yield* a`, or
+    `return yield* a`. Never inside an argument, a condition, a template, or another expression:
+    yield into a constant, then use it. A pipe on the yielded effect is still one step:
+    `yield* a.pipe(Effect.orDie)`.
+  - Conditions only read values computed before them.
+  - Name conditions that don't read as a sentence on their own:
+    `const keyTaken = existing._tag === "Some"`. Conditions like `found._tag === "None"` stay inline.
+- **Constants over `let`.** Use `const`. A `let` needs a reason a reader can see, such as a loop
+  accumulator in a hot path.
+- **No classes of our own,** except the class forms Effect defines: `Context.Service`,
+  `Schema.Class`, `Schema.TaggedError`, and `Schema.Opaque`. No inheritance, no `this` outside them.
+- **Never rely on `toString()`** or template interpolation of a value that isn't a string or a
+  number. Convert with a named function: `DateTime.formatIso(createdAt)`.
+
+## 2. Same behavior on every machine
+
+Developers and agents work under different locales and time zones, and Workers run in UTC. The code
+must build, test, and run identically everywhere.
+
+- **Machine-readable text is locale-free.** JSON, logs, storage, cache keys, URLs, and anything code
+  parses back use ISO 8601 for time and JSON numbers for numbers. Schemas encode and decode them;
+  never format or parse them by hand.
+- **Human-readable text takes an explicit locale and time zone.** Emails, push messages, and pages
+  format with `Intl` given the recipient's locale (a BCP 47 tag such as `de-DE`) and IANA time zone
+  (such as `Europe/Warsaw`), both stored with the person. Never call `toLocaleString`,
+  `toLocaleDateString`, or `localeCompare` without a locale.
+- **Comparisons are explicit.** Sorting human text uses `Intl.Collator` with the recipient's locale;
+  sorting machine text uses plain code-point order.
+- **Files.** UTF-8 without a byte order mark, LF line endings (`.gitattributes`), and lowercase
+  kebab-case file names, so casing never differs between macOS and Linux.
+- **Tests outside workerd run with `TZ=Pacific/Chatham` and `LANG=tr_TR.UTF-8`,** a time zone with a
+  45-minute offset and a locale with comma decimals and a dotless `ı`, so code that depends on the
+  machine fails on every machine.
+- **Toolchain.** `./dev` provides the pinned Bun and Node, so a host install never leaks in.
+
+## 3. Packages
+
+Every package has the same shape, so people and agents know where to look before they open it.
+
+```
+packages/feature-keys/
+  package.json      { "name": "@bagatka/feature-keys", "private": true, "type": "module",
+                      "exports": { ".": "./src/index.ts" }, "scripts": { "typecheck": "tsc" },
+                      "dependencies": { "effect": "catalog:" } }
+  tsconfig.json     { "extends": "../../tsconfig.base.json", "include": ["src", "test"] }
+  vitest.config.ts  when it has tests
+  README.md         the map, from docs/templates/package-readme.md
+  src/index.ts      the contract: the only file other packages may import
+  src/*.ts          everything else, private
+  test/*.test.ts
+```
+
+Canonical example: `packages/workspace-rules`.
+
+- **One entry.** `exports` names only `src/index.ts`. Nothing else is reachable from outside; a deep
+  import doesn't resolve. The one possible exception, an `./api` entry for API definitions, is open
+  decision 5 in `ARCHITECTURE.md`.
+- **`src/index.ts` is the contract, and only the contract.** It exports the package's services,
+  their layers, the Schemas of their inputs and outputs, their errors, and, for engines and
+  modules, their part of the API definition (entry 15). It holds no logic of its own.
+- **Every export has a doc comment.** One or two sentences a caller needs: what it is, what it
+  guarantees, what it costs. For services, each method's effects, idempotency, and limits (`AGENTS.md`,
+  "Contracts are the design").
+- **Dependencies are declared.** Every import from another package is a `dependencies` entry with
+  `"catalog:"` (external) or `"workspace:*"` (ours). Bun's isolated installs make an undeclared import
+  fail.
+- **Size is a signal.** If `src/index.ts` no longer fits on a screen, the package holds more than one
+  concept, or product logic sits in what should be a capability (`ARCHITECTURE.md`, "Layers").
+
+## 4. Services and layers
+
+A service is a contract that callers reach through Effect's context; its layer is how it is built.
+
+```ts
+import { Context, Crypto, DateTime, Effect, Layer, Schema } from "effect"
+import { SqlClient, SqlSchema } from "effect/sql"
+
+/** The features of one project, by key. */
+export class FeatureCatalog extends Context.Service<FeatureCatalog, {
+  /** Adds a feature. Fails with `FeatureKeyTaken` when the key exists. Writes one row. */
+  readonly add: (input: AddFeature) => Effect.Effect<Feature, FeatureKeyTaken>
+  /** Finds a feature by its key. */
+  readonly find: (key: FeatureKey) => Effect.Effect<Feature, FeatureNotFound>
+}>()("@cluenori/features/feature-catalog/FeatureCatalog") {
+  static readonly layer = Layer.effect(
+    FeatureCatalog,
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      const crypto = yield* Crypto.Crypto
+
+      const findByKey = SqlSchema.findOneOption({
+        Request: FeatureKey,
+        Result: Feature,
+        execute: (key) => sql`SELECT id, key, name, created_at AS "createdAt" FROM features WHERE key = ${key}`,
+      })
+
+      const add = Effect.fn("FeatureCatalog.add")(function* (input: AddFeature) {
+        const existing = yield* findByKey(input.key).pipe(Effect.orDie)
+        if (existing._tag === "Some") {
+          return yield* new FeatureKeyTaken({ key: input.key })
+        }
+        const uuid = yield* crypto.randomUUIDv7().pipe(Effect.orDie)
+        const id = FeatureId.make(uuid)
+        const createdAt = yield* DateTime.now
+        const feature = new Feature({ id, key: input.key, name: input.name, createdAt })
+        yield* sql`INSERT INTO features ${sql.insert({ id, key: input.key, name: input.name, created_at: DateTime.formatIso(createdAt) })}`.pipe(Effect.orDie)
+        return feature
+      })
+
+      const find = Effect.fn("FeatureCatalog.find")(function* (key: FeatureKey) {
+        const found = yield* findByKey(key).pipe(Effect.orDie)
+        if (found._tag === "None") {
+          return yield* new FeatureNotFound({ key })
+        }
+        return found.value
+      })
+
+      return FeatureCatalog.of({ add, find })
+    }),
+  )
+}
+```
+
+- **When a service earns its place.** It is the contract of a package (an engine, a module, a
+  capability); or several real implementations exist or are committed to, such as one per payments
+  provider, all passing one conformance suite; or it is a resource tests must replace, such as a
+  vendor's HTTP client. Never one service per function, and never "for future swapping."
+- **The shape is the contract.** Methods are `readonly` properties typed in the class's type
+  argument, with documented inputs, outputs, and errors.
+- **Requirements never leak.** Every method's requirements are `never`. What the implementation
+  needs (`SqlClient`, `Crypto`, other services) is yielded once, when the layer is built, and
+  captured. `@effect/tsgo` reports a leak (`leakingRequirements`).
+- **Keys are unique and deterministic:** `"<package name>/<file>/<Class>"`, where the file is the
+  path inside `src/` without its extension: `"@cluenori/features/feature-catalog/FeatureCatalog"`.
+  The compiler checks it (`deterministicKeys`).
+- **The layer is a static property named `layer`,** built with `Layer.effect` (or `Layer.succeed`
+  for a value with no dependencies). A second implementation is another static, named for what it
+  is: `layerMemory`, `layerTest`. The layer's own requirements are what the host provides.
+- **Every method is an `Effect.fn` named `"<Service>.<method>"`,** so every call is a span with a
+  stable name. Exported functions that return an Effect use `Effect.fn` the same way.
+- **No state outside the layer.** A service holds what its layer built; mutable state lives in a
+  `Ref` or a store owned by the service, never in module-level variables.
+- **Only hosts and tests provide layers.** `Effect.provide` appears in `apps/` and `test/`, never
+  inside a package (`strictEffectProvide`).
+
+## 5. Writing Effect code
+
+- **Generators for workflows, pipes for transformations.** A sequence of steps is an
+  `Effect.gen` (or the generator of an `Effect.fn`). A transformation of one effect (`Effect.map`,
+  `Effect.orDie`, `Effect.catchTag`, `Effect.withSpan`) is a `.pipe(...)` on it.
+
+  ```ts
+  export const nameOf = Effect.fn("nameOf")(function* (key: FeatureKey) {
+    const catalog = yield* FeatureCatalog
+    const feature = yield* catalog.find(key).pipe(
+      Effect.map((found) => found.name),
+      Effect.catchTag("FeatureNotFound", () => Effect.succeed("(unknown)")),
+    )
+    yield* Effect.logInfo("looked up feature").pipe(Effect.annotateLogs({ feature: key }))
+    return feature
+  })
+  ```
+
+- **No Promises in our code.** No `async`, `await`, `new Promise`, or `.then`. Wrap a
+  platform Promise once, where it enters, with `Effect.tryPromise` and a typed error. `@effect/tsgo`
+  makes `async` and `new Promise` errors.
+- **No running inside effects.** `Effect.runPromise` and its siblings appear only where the platform
+  calls us (entry 16), never inside an effect.
+- **No `try`/`catch` or `throw`.** Expected failures are errors in the error channel (entry 9);
+  bugs are defects.
+- **No nested generators.** A step that needs its own generator is a named `Effect.fn`.
+- **Concurrency is stated.** `Effect.forEach(items, f, { concurrency: n })` with a bound that comes
+  from the platform's limits, never unbounded over input size.
+- **Platform globals are banned:** `Date` (use `Clock` and `DateTime`), `Math.random` (`Random`),
+  `crypto.randomUUID` (`Crypto`), `fetch` (`HttpClient`), `console` (`Effect.log*`), `setTimeout` and
+  `setInterval` (`Effect.sleep`, `Schedule`), `process.env` (entry 11), and `JSON.parse` and
+  `JSON.stringify` (Schema). `@effect/tsgo` reports each one.
+
+## 6. Closed sets
+
+- **A literal union when the cases are labels:** `Schema.Literals(["idea", "planned", "building",
+  "beta", "live", "deprecated", "removed"])` for a feature's stage. Stored and serialized as the
+  strings themselves.
+- **A tagged union when the cases carry different data:** `Schema.Union([...])` of
+  `Schema.TaggedStruct("...", { ... })` members, or the `Option` and `Result` types Effect provides.
+- **No TypeScript `enum`** (erasable syntax only, entry 20).
+- **Switch exhaustively, without a default.** `switch (value._tag)` names every case, so a new case
+  fails the build wherever it is ignored. For `Option`, `Result`, and `Exit`, test `_tag` the same way
+  or use the module's `match`.
+
+## 7. Value types and validation
+
+Parse, don't validate. Raw input becomes a typed value once, where it crosses a trust boundary.
+After that, the type guarantees validity.
+
+```ts
+/** A feature's dotted key, such as `editor.export`. */
+export const FeatureKey = Schema.String.check(
+  Schema.isMaxLength(100),
+  Schema.isPattern(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/),
+).pipe(Schema.brand("FeatureKey"))
+export type FeatureKey = typeof FeatureKey.Type
+
+/** What people call a feature: 1 to 100 characters. */
+export const FeatureName = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100))
+
+export const AddFeature = Schema.Struct({ key: FeatureKey, name: FeatureName })
+export type AddFeature = typeof AddFeature.Type
+```
+
+```ts
+// At a trust boundary: the input is unknown, so decode it.
+export const parseAddFeature = (body: unknown) => Schema.decodeUnknownEffect(AddFeature)(body)
+```
+
+- **Contracts take parsed values.** A service method takes `FeatureKey`, never a `string` that might
+  be one. Decoding happens where data enters: the public API and MCP (their Schemas decode for us,
+  entry 15), a queue message, a webhook, a stored row, configuration. So a service's error channel
+  never contains `SchemaError`.
+- **When a value gets a type.** When it has a rule: format, length, range, or normalization. Values
+  without rules stay primitives.
+- **Brands make values distinct.** Every value type and every ID is branded, so a `FeatureKey` can't
+  be passed where a `ProjectKey` is expected.
+- **Limits are written once,** in the Schema, and reused wherever the value is stored or shown.
+- **`decodeEffect` for typed input, `decodeUnknownEffect` for `unknown`,** and the Effect-returning
+  forms inside effects, never `decodeSync`.
+- **Never silently truncate or "fix" input.** Reject it with the Schema's message. If shortening is a
+  product rule, make it a named function.
+- **Stored values decode through the same Schema,** so invalid data fails loudly when it is read.
+
+## 8. Records and IDs
+
+```ts
+/** A feature's ID: a UUIDv7, so IDs sort by creation. */
+export const FeatureId = Schema.String.pipe(Schema.brand("FeatureId"))
+export type FeatureId = typeof FeatureId.Type
+
+export class Feature extends Schema.Class<Feature>("Feature")({
+  id: FeatureId,
+  key: FeatureKey,
+  name: FeatureName,
+  createdAt: Schema.DateTimeUtcFromString,
+}) {}
+```
+
+- **Records are `Schema.Class`es** of immutable fields. They cross boundaries as they are: the same
+  class is the service's output, the API's response, and the row's decoded shape.
+- **IDs are branded strings holding a UUIDv7,** created with `Crypto`'s `randomUUIDv7()` and
+  `<Id>.make(...)`. UUIDv7 is time-ordered, so it indexes well and pages without an extra column.
+  The envelope's `id` follows the same rule.
+- **IDs are rebuilt only at the edges:** decoded from a route, a message, or a row.
+- **Other packages' IDs are stored as plain values,** never as foreign keys (`ARCHITECTURE.md`,
+  "Data").
+- **Records hold data, not behavior.** A rule about a record lives in a function of the package
+  that owns it, which takes the record and returns a new one or an error.
+
+## 9. Errors
+
+```ts
+export class FeatureNotFound extends Schema.TaggedError<FeatureNotFound>()("FeatureNotFound", {
+  key: FeatureKey,
+}) {}
+
+export class FeatureKeyTaken extends Schema.TaggedError<FeatureKeyTaken>()("FeatureKeyTaken", {
+  key: FeatureKey,
+}) {}
+```
+
+- **Expected failures are tagged errors** in the error channel, declared with `Schema.TaggedError`
+  in the contract that fails with them, and yielded where they happen: `return yield* new
+  FeatureNotFound({ key })`.
+- **Names say what happened:** `<Noun><State>`, such as `FeatureNotFound`, `FeatureKeyTaken`,
+  `VersionBlocked`.
+- **The tag is the stable code.** Clients and agents branch on `_tag`; renaming one is a contract
+  change. Fields carry the facts a caller needs to act, never secrets or personal data.
+- **A contract lists only errors its caller can act on.** Infrastructure failures (`SqlError`, a
+  `PlatformError`) become defects with `Effect.orDie` where they happen, unless the caller can do
+  something about them. The host logs a defect once, with its trace.
+- **Handle by tag:** `Effect.catchTag`, `Effect.catchTags`. Never catch everything to return a
+  default; that hides failures (`AGENTS.md`, "Failure honesty").
+- **No native errors.** Never `throw`, `new Error`, or a class extending `Error`
+  (`extendsNativeError`).
+- **On HTTP,** each error declares its status in the API definition (entry 15):
+
+  | Failure | HTTP |
+  |---|---|
+  | Input that fails its Schema | 400, with the Schema's issues, produced by the API |
+  | Not signed in, unknown key | 401 |
+  | Not allowed | 403 |
+  | Not found | 404 |
+  | Conflict with current state | 409 |
+  | Defect | 500, no internal details, trace ID included |
+
+- **Don't reveal existence.** When the actor shouldn't learn whether something exists, fail with the
+  not-found error, not a forbidden one.
+- **Known gaps.** Every case the code doesn't handle, too rare to earn handling or not built yet, is
+  marked once, where it would be handled: `// Not handled: <case>; <what happens today or what
+  handling it would take>.` A rare case dies with `Effect.die` and a message saying what is off, and
+  reaches the host's handler like any bug. The change that handles one removes its comment.
+
+## 10. Time
+
+- **One clock.** Read time with `DateTime.now` or `Clock.currentTimeMillis`. `Date.now()` and
+  `new Date()` are errors (`globalDate`).
+- **Instants are `DateTime.Utc` in code** and ISO 8601 UTC strings on the wire and in storage
+  (`Schema.DateTimeUtcFromString`). Durations are `Duration`. Calendar dates are `YYYY-MM-DD`
+  strings with their own Schema.
+- **A person's time zone is data:** an IANA ID stored with them, applied with `DateTime` zone
+  functions only when formatting for that person.
+- **Tests control time** with `TestClock` from `effect/testing`.
+
+## 11. Configuration and bindings
+
+Owners declare what they need; hosts decide where it comes from.
+
+```ts
+/** What the APNs sender needs: values, never where they come from. */
+export interface ApnsSettings {
+  readonly teamId: string
+  readonly keyId: string
+  readonly privateKey: Redacted.Redacted<string>
+}
+```
+
+```ts
+// In the host: the only code that reads configuration, one visible line per owner.
+export const apnsSettings = Config.all({
+  teamId: Config.String("APNS_TEAM_ID"),
+  keyId: Config.String("APNS_KEY_ID"),
+  privateKey: Config.Redacted("APNS_PRIVATE_KEY"),
+})
+```
+
+- **Hosts read configuration; packages receive values.** A package's layer takes its settings as an
+  argument (`Apns.layer(settings)`). Packages never read `Config`, environment variables, or the
+  Worker's `env`, so they move to another product or to npm unchanged, and tests simply construct
+  the settings.
+- **The Worker's `env` belongs to `apps/worker`.** Its variables reach `Config` through
+  `ConfigProvider.fromUnknown(env)`, and its bindings (D1, R2, queues, Durable Object namespaces) are
+  passed to the layers that use them. Types for `env` are generated by `wrangler types` from
+  `wrangler.jsonc`, never written by hand.
+- **Secrets are `Redacted`** from the moment they are read, so they never print in logs or errors.
+  They live in Wrangler secrets and in `.dev.vars` locally, never in committed files.
+- **Invalid configuration fails at startup,** with the variable's name.
+- **Prefer a sensible default to a setting.** Add a setting only for a value that differs between
+  deployments.
+
+## 12. Logging and tracing
+
+- **Log with `Effect.log*`,** with annotations instead of interpolation:
+  `Effect.logInfo("looked up feature").pipe(Effect.annotateLogs({ feature: key }))`.
+- **One vocabulary of fields.** Log annotations and span attributes use the scope keys' names from
+  the envelope (`project`, `component`, `release`, `feature`, `person`, `trace`, ...), so Cluenori's
+  own telemetry filters the way it filters everyone else's.
+- **What never goes in logs:** personal data, secrets, tokens, or text people wrote. Log IDs.
+- **Levels.** Info for routine events, warning for something an operator should look at, error for
+  a failure someone must fix. Expected errors aren't logged as errors; defects are logged once, by
+  the host.
+- **Spans come from `Effect.fn` names** (entry 4). Add `Effect.withSpan` only around work that isn't
+  already a named function, such as one item of a batch.
+- **Export** is configured once, in the host, with `effect/observability`.
+
+## 13. Persistence
+
+- **SQL through `effect/sql`.** Queries are tagged templates, `sql\`... ${value}\``, so every value
+  is a parameter. Never build SQL from strings.
+- **Rows decode through Schemas** with `SqlSchema.findOneOption`, `findAll`, and their siblings, so a
+  stored value that breaks its rule fails loudly.
+- **Each package owns its tables** and their migrations, and touches no one else's
+  (`ARCHITECTURE.md`, "Data").
+- **Columns are snake_case;** queries alias them to the record's field names.
+- **One commit per action,** with its activity (entry 14).
+- **Where the tables live** (D1 or a Durable Object's SQLite, per project) is open decision 1 in
+  `ARCHITECTURE.md`; the code above works with either driver.
+
+## 14. Writes, activity, and reactions
+
+Every write to a record emits activity: a typed fact, never edited, that timelines, Today,
+workflows, webhooks, agents, and the audit log read (`concept/Foundation.md`, "Data shapes").
+
+- **One write path.** Records change only through the function Foundation provides, which commits
+  the change and its activity together. A write that skips it is a bug. Its canonical example comes
+  with Foundation.
+- **Activity is named `<record>.<past tense>`:** `feature.added`, `release.published`,
+  `feedback.status_changed`. Its payload is a Schema in the emitting package's contract.
+- **Changes are additive.** A new field is optional; a breaking change is a new activity name, and
+  the old one keeps being emitted until nothing reacts to it.
+- **Reactions are idempotent.** Delivery through Queues is at least once and may be out of order, so
+  a reaction checks before it acts, on a key with a unique index.
+- **Activity is an announcement, not a request.** To get an answer, call a service.
+
+## 15. The public API and MCP
+
+One API for people and agents (`ARCHITECTURE.md`, "Principles"): its definition is the contract.
+
+```ts
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api"
+
+export class FeaturesGroup extends HttpApiGroup.make("features").add(
+  HttpApiEndpoint.get("find", "/features/:key", {
+    params: { key: FeatureKey },
+    success: Feature,
+    error: FeatureNotFound.pipe(HttpApiSchema.status(404)),
+  }),
+  HttpApiEndpoint.post("add", "/features", {
+    payload: AddFeature,
+    success: Feature,
+    error: FeatureKeyTaken.pipe(HttpApiSchema.status(409)),
+  }),
+) {}
+
+export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
+```
+
+- **Definitions are Schemas.** Params, payloads, successes, and errors reuse the contract's own
+  Schemas, so decoding at the edge produces the parsed values services take (entry 7).
+- **Every public route is a tool.** The same queries and actions become MCP tools, so their names and
+  doc comments are written for people and models: what it does, when to use it, what its errors
+  mean. Prefer batch operations and filterable queries to one-at-a-time calls.
+- **Handlers translate only.** Build the actor, call the service, return its result. No rules and no
+  SQL.
+- **Clients derive from the definition.** The dashboard and the CLI build typed clients from
+  `CluenoriApi`; nobody writes request types by hand.
+- **The OpenAPI document is generated and committed,** and a check fails when it is stale, so every
+  API change shows in review. The Swift and Kotlin SDKs use it.
+- **Routes** are plural kebab-case resources with IDs as segments. A state change that isn't a plain
+  update is a sub-resource: `POST /releases/:id/rollback`.
+- **Canonical examples:** the definition, `apps/worker/src/cluenori-api.ts`; handlers,
+  `apps/worker/src/system-handlers.ts`. The MCP server's comes with the first module.
+
+## 16. The Worker entry
+
+- **One entry file,** `apps/worker/src/worker.ts`, with the default export and the Durable Object
+  and Workflow classes the platform requires.
+- **The runtime is built once per isolate** from the app's layers, and reused for every request,
+  queue batch, and scheduled event.
+- **Promises live only here.** Each entry point turns the platform's call into an Effect on its first
+  line and runs it with the shared runtime.
+- **Per-request platform values** (the request, its `ExecutionContext`) are passed into the effect,
+  never stored in module-level variables.
+- **Shared work survives requests.** The app runs on Effect's sync scheduler, because Workers can
+  discard timers a request owns.
+- Canonical example: `apps/worker/src/worker.ts`.
+
+## 17. Background work
+
+- **Ownership.** Queue consumers, cron triggers, Durable Object alarms, and Workflows are owned by
+  one engine or module, and registered on a visible line in `apps/worker`.
+- **Idempotent.** Every handler may run again for the same input, because the platform retries.
+- **Bounded.** Each run processes a limited batch, within the platform's CPU and subrequest limits,
+  and leaves the rest for the next run.
+- **One failure never stops the rest.** A batch handles each item's failure, acknowledges what
+  succeeded, and retries the rest with the platform's backoff.
+- **Each item is its own span;** looking for work is not.
+- **Actor.** Background work uses a named system actor.
+- **`waitUntil`** is only for work whose loss is harmless (`AGENTS.md`, "State and resources").
+
+## 18. External APIs
+
+- **A vendor's API gets one client package,** `@bagatka/<vendor>`, built on `effect/http`'s
+  `HttpClient`, with Schemas for what we read. Prefer a vendor's official SDK only when it runs in
+  workerd and saves real work.
+- **Vendors stay inside the package that uses them.** Their types never appear in a product
+  contract; the client maps them to our own.
+- **Inbound webhooks** verify their signature with the client, then call the owning engine or module
+  with a system actor.
+- **Tests fake vendors at `HttpClient`,** with recorded responses, never by mocking our own services.
+
+## 19. Testing
+
+Test what people and agents rely on, through the surface they use: the public API.
+
+```ts
+import { assert, describe, it } from "@effect/vitest"
+import { Effect, Schema } from "effect"
+
+describe("FeatureKey", () => {
+  it.effect("rejects a key with spaces", () =>
+    Effect.gen(function* () {
+      const decoded = yield* Schema.decodeEffect(FeatureKey)("editor export").pipe(Effect.result)
+      assert.strictEqual(decoded._tag, "Failure")
+    }))
+})
+```
+
+- **One framework.** Vitest 5 with `@effect/vitest` (`it.effect`, `layer`). Tests that need the
+  Worker run inside workerd through `@cloudflare/vitest-plugin`, with local D1, R2, Durable Objects,
+  and Queues. `bun test` isn't used.
+- **Journeys** (`tests/journeys`). A journey is one test of a real flow through the public API, as
+  named steps that check what matters along the way: what is tested is what people and agents can
+  do. Every feature extends the journey it belongs to, or starts one: its normal path, its
+  consequential failure, and who may use it.
+- **Isolation without resets.** Each journey works in projects of its own, so journeys run in
+  parallel without cleanup.
+- **Conformance suites** for contracts with several implementations, such as payments providers and
+  channels.
+- **Package tests** for dense logic with many edge cases, through the package's contract: parsing,
+  money, bucketing, catalog rules.
+- **Fakes only for paid or external services,** at `HttpClient` (entry 18). Everything we run
+  ourselves, including the database and queues, is real.
+- **Capabilities test against Effect's in-memory platform.** A capability that reads files or time
+  is tested with `FileSystem.layerNoop` or `TestClock`, not a Node layer, so Node's types never
+  enter its program.
+- **Tests outside workerd** run under `TZ=Pacific/Chatham` and `LANG=tr_TR.UTF-8`, which
+  `bun run test` sets (entry 2).
+- **Canonical examples:** a journey, `tests/journeys/test/deployment-journey.test.ts`; package
+  tests, `packages/workspace-rules/test/check-workspace.test.ts`.
+- **Time** is controlled with `TestClock`; durations come from settings, which tests make short.
+- **Names state behavior:** `"rejects a key with spaces"`.
+- **Never mock** our own services or the database.
+
+## 20. Build and checks
+
+The configuration files are the specification; this entry says what each one owns.
+
+| File | Owns |
+|---|---|
+| `package.json` (root) | Workspaces, scripts, and the catalog: the one exact version of every dependency |
+| `tsconfig.base.json` | Compiler settings and Effect diagnostics every package extends |
+| `.oxlintrc.json` | Lint rules, each one turned off with its reason |
+| `.oxfmtrc.json` | Formatting |
+| `bunfig.toml` | Isolated installs, and exact versions from `bun add` |
+| `vitest.config.ts` (root) | Which packages' tests `bun run test` runs |
+| `apps/cli/src/dependency-rules.ts` | The dependency rules the architecture check enforces |
+| `flake.nix`, `flake.lock` | Bun, Node, Git |
+| `apps/worker/wrangler.jsonc` | The Worker's bindings, routes, and compatibility date |
+
+- **Compiler settings.** `strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`,
+  `noImplicitOverride`, `noPropertyAccessFromIndexSignature`, `noUnusedLocals`,
+  `verbatimModuleSyntax`, `isolatedModules`, `erasableSyntaxOnly`, `module: preserve`,
+  `moduleResolution: bundler`, and `types: []`, so each package names the ambient types it may use.
+  Capabilities name none.
+- **Every Effect diagnostic that is on fails the build,** suggestions included, through
+  `@effect/tsgo`'s plugin settings. Two are off, with their reasons in the file:
+  `schemaClassMissingBrand` (records compare by shape on purpose; IDs and value types carry brands)
+  and `newSchemaClass` (records and errors are made with `new`). `unstableApiUsage` stays on: each
+  unstable module we use is allowed by name in `allowedUnstableApis`. `strictEffectProvide` is off
+  only where layers are provided: `test/` and the hosts' entries.
+- **Generated files.** `apps/worker/openapi.json` is generated by `bun run generate` and committed;
+  `bun run check` fails when it is stale. `apps/worker/worker-configuration.d.ts` is generated by
+  `wrangler types` on install and on every type check, and isn't committed.
+- **Rules are turned off only in their config file,** with a one-line reason, scoped to the paths
+  that need it. Never with a comment in code.
+- **New dependencies need clear net value.** Add them to the catalog, and call them out in the
+  change summary.
+- **Repeated mistakes become rules.** When a mistake repeats, turn on a diagnostic, add a lint rule,
+  or extend the architecture check, rather than adding another paragraph here.
+
+## 21. Files and naming
+
+- **One concept per file,** named in lowercase kebab-case after what it exports: `FeatureKey` lives
+  in `feature-key.ts`, `FeatureCatalog` in `feature-catalog.ts`.
+- **Names:** values and functions `camelCase`; types, Schemas, services, and errors `PascalCase`; a
+  Schema and its type share one name (`FeatureKey`).
+- **Package names** are the folder's name under the scope: `packages/web-push` is `@bagatka/web-push`,
+  `product/engines/audiences` is `@cluenori/audiences`.
+- **Tests** sit in the package's `test/`, named after the file or journey they cover:
+  `feature-key.test.ts`, `release-journey.test.ts`.
+- **Product words keep their product meaning** (`GLOSSARY.md`): in code, a UI building block is a
+  view, never a "component"; a file is a file, never a "module".
+
+## 22. Recipes
+
+These become `cluenori add` commands once there are a few examples to generate from.
+
+### Add a capability
+
+0. Check first: does an existing package own this? Does Effect already provide it?
+1. Create `packages/<name>/` with the standard shape (entry 3) and its README from the template,
+   then run `bun install` to link it into the workspace.
+2. Write the contract in `src/index.ts` and a caller example in the README before the
+   implementation.
+3. Test it through its contract.
+4. Add it to the parts table in `ARCHITECTURE.md`.
+5. `bun run check` and `bun run test` pass.
+
+### Add an engine or a module
+
+0. Check first: should an existing engine or module own this? Is its phase in `concept/Modules.md`
+   due?
+1. Create `product/engines/<name>/` or `product/modules/<name>/` with the standard shape and its
+   README, then run `bun install` to link it into the workspace.
+2. Write its contract: records, activity, queries, actions, and their errors.
+3. Register it in `apps/worker` on one visible line.
+4. Extend the journey it belongs to.
+5. Add it to the module map in `ARCHITECTURE.md` and its terms to `GLOSSARY.md`.
+6. `bun run check` and `bun run test` pass.

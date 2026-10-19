@@ -1,0 +1,16 @@
+{
+  "name": "@cluenori/journeys",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@cluenori/worker": "workspace:*",
+    "@effect/vitest": "catalog:",
+    "effect": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}
