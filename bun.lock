@@ -31,6 +31,16 @@
         "wrangler": "catalog:",
       },
     },
+    "packages/web-crypto": {
+      "name": "@bagatka/web-crypto",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/workspace-rules": {
       "name": "@bagatka/workspace-rules",
       "dependencies": {
@@ -39,6 +49,20 @@
       "devDependencies": {
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
+      },
+    },
+    "product/foundation": {
+      "name": "@cluenori/foundation",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
       },
     },
     "tests/journeys": {
@@ -57,6 +81,7 @@
     "@cloudflare/vitest-plugin": "1.4.5",
     "@effect/platform-bun": "4.0.5",
     "@effect/platform-node": "4.0.5",
+    "@effect/sql-sqlite-do": "4.0.5",
     "@effect/tsgo": "0.53.5",
     "@effect/vitest": "4.0.5",
     "effect": "4.0.5",
@@ -68,6 +93,8 @@
     "wrangler": "4.151.2",
   },
   "packages": {
+    "@bagatka/web-crypto": ["@bagatka/web-crypto@workspace:packages/web-crypto"],
+
     "@bagatka/workspace-rules": ["@bagatka/workspace-rules@workspace:packages/workspace-rules"],
 
     "@cloudflare/kv-asset-handler": ["@cloudflare/kv-asset-handler@0.5.0", "", {}, "sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg=="],
@@ -88,6 +115,8 @@
 
     "@cluenori/cli": ["@cluenori/cli@workspace:apps/cli"],
 
+    "@cluenori/foundation": ["@cluenori/foundation@workspace:product/foundation"],
+
     "@cluenori/journeys": ["@cluenori/journeys@workspace:tests/journeys"],
 
     "@cluenori/worker": ["@cluenori/worker@workspace:apps/worker"],
@@ -97,6 +126,8 @@
     "@effect/platform-bun": ["@effect/platform-bun@4.0.5", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.5" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-tB/GapZ/bVoCbwRgnojGP4TwopvkMoFoSCipXT1sf0guvG/2oRVhWzJW/1vkrYFEdLM7XyRnVVLrSJyqdok7DA=="],
 
     "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.5", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.0" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-a8rCdEkfZBGe9C6bsIjxVZuRp73svIyK5IHwHdDAVsvZXjrbkxusfI+rZ8WlX31RP1mKizwI/E72GQTNfdMWHw=="],
+
+    "@effect/sql-sqlite-do": ["@effect/sql-sqlite-do@4.0.5", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-TGlU65ZJJMa81I7EoicQXxhRsJDxDPz6A/PNOPzMYRgmCdLs6EsTTXIkKZ+8apb7pl2o0OKVcrT6i6mGlluyLg=="],
 
     "@effect/tsgo": ["@effect/tsgo@0.53.5", "", { "optionalDependencies": { "@effect/tsgo-darwin-arm64": "0.53.5", "@effect/tsgo-darwin-x64": "0.53.5", "@effect/tsgo-linux-arm": "0.53.5", "@effect/tsgo-linux-arm64": "0.53.5", "@effect/tsgo-linux-x64": "0.53.5", "@effect/tsgo-win32-arm64": "0.53.5", "@effect/tsgo-win32-x64": "0.53.5" }, "bin": { "effect-tsgo": "dist/effect-tsgo.cjs" } }, "sha512-+6xctg9Afq/C2wlmMvd9eIFaNVvNd3WkXzO3XwcA57rvL3jwydOwvN/ULbUo4fsL4Z7Oh6pZzkg1RJu98eOG5g=="],
 

@@ -46,10 +46,13 @@
           "effect/http",
           "effect/http-api",
           "effect/process",
+          "effect/sql",
+          "effect/Crypto",
           "effect/FileSystem",
           "effect/Path",
           "effect/PlatformError",
           "@effect/platform-bun",
+          "@effect/sql-sqlite-do",
           "@effect/vitest"
         ],
         // `import { Effect, Schema } from "effect"`, never "effect/Effect".

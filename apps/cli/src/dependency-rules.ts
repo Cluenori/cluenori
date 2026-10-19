@@ -2,6 +2,10 @@ import type { PackageRule } from "@bagatka/workspace-rules"
 
 const forTests = ["@effect/vitest", "vitest"]
 
+// Product packages run inside a project's Durable Object, so their tests do too: in workerd, on the
+// Durable Object's SQLite.
+const forTestsInDurableObjects = ["@cloudflare/vitest-plugin", "@effect/sql-sqlite-do", "wrangler", ...forTests]
+
 /**
  * Which packages may depend on which: the table in ARCHITECTURE.md, "Dependency rules", as data.
  * A change here is an architecture change, and updates that table in the same change.
@@ -21,7 +25,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     contract: true,
     mayUse: ["packages/*"],
     mayInstall: ["effect"],
-    mayInstallForDevelopment: forTests,
+    mayInstallForDevelopment: forTestsInDurableObjects,
   },
   {
     folders: "product/engines/*",
@@ -29,7 +33,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     contract: true,
     mayUse: ["packages/*", "product/foundation", "product/engines/*"],
     mayInstall: ["effect"],
-    mayInstallForDevelopment: forTests,
+    mayInstallForDevelopment: forTestsInDurableObjects,
   },
   {
     folders: "product/modules/*",
@@ -37,7 +41,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     contract: true,
     mayUse: ["packages/*", "product/foundation", "product/engines/*"],
     mayInstall: ["effect"],
-    mayInstallForDevelopment: forTests,
+    mayInstallForDevelopment: forTestsInDurableObjects,
   },
   {
     folders: "apps/worker",

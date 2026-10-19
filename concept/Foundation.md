@@ -72,32 +72,7 @@ Each write to a record emits activity. Activity feeds the customer timeline, Tod
 
 The data classes of the Vision map to these shapes. Business facts are records or exact counts: payments, ledger lines with their currency and exchange rate, and core value events, which Durable Objects count exactly. Operational measurements are counters. Diagnostic evidence is sampled signals. A change is activity.
 
-Signals and activity use one envelope:
-
-```ts
-type Envelope = {
-  id: string                      // unique; removes duplicates at ingest and in queries
-  ts: string                      // when it happened, ISO 8601
-  kind: string                    // 'event', 'request', 'span', 'log', 'error', 'activity', 'cost',
-                                  // 'money', or a module kind such as 'uptime.check'
-  name: string                    // 'export.completed', 'release.published'
-  workspace: string
-  project?: string                // empty only for workspace records
-  component?: string              // where it ran: 'notes-api'
-  origin?: string                 // the app and release that started it: 'notes-ios@2.4.0'
-  environment?: string
-  release?: string
-  feature?: string                // the owner: 'editor.export'
-  callerFeature?: string          // the screen that started it, from baggage
-  person?: string                 // pseudonymous ID; the mapping lives in the project's database
-  installation?: string
-  account?: string
-  session?: string
-  trace?: string
-  source: string                  // 'sdk-ios', 'otel', 'stripe', 'module:releases'
-  attrs: Record<string, unknown>  // the payload, without secrets
-}
-```
+Signals and activity use one envelope: an ID, a time, a kind (`event`, `request`, `span`, `log`, `error`, `activity`, `cost`, `money`, or a module kind such as `uptime.check`), a name, the scope keys that are known, the source, and the payload. An activity entry also carries its actor. The envelope is defined in code, in `product/foundation/src/envelope.ts`, which owns its exact fields and rules.
 
 ## Shared engines
 

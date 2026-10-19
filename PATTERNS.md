@@ -114,13 +114,20 @@ Canonical example: `packages/workspace-rules`.
 A service is a contract that callers reach through Effect's context; its layer is how it is built.
 
 ```ts
+import { ActivityLog, FeatureKey, Source } from "@cluenori/foundation"
+import type { Actor } from "@cluenori/foundation"
 import { Context, Crypto, DateTime, Effect, Layer, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 
+/** A feature was added to the project's catalog. */
+export const FeatureAdded = Schema.TaggedStruct("feature.added", { feature: FeatureKey, name: FeatureName })
+
+const source = Source.make("module:features")
+
 /** The features of one project, by key. */
 export class FeatureCatalog extends Context.Service<FeatureCatalog, {
-  /** Adds a feature. Fails with `FeatureKeyTaken` when the key exists. Writes one row. */
-  readonly add: (input: AddFeature) => Effect.Effect<Feature, FeatureKeyTaken>
+  /** Adds a feature, with `feature.added`. Fails with `FeatureKeyTaken` when the key exists. */
+  readonly add: (actor: Actor, input: AddFeature) => Effect.Effect<Feature, FeatureKeyTaken>
   /** Finds a feature by its key. */
   readonly find: (key: FeatureKey) => Effect.Effect<Feature, FeatureNotFound>
 }>()("@cluenori/features/feature-catalog/FeatureCatalog") {
@@ -129,6 +136,7 @@ export class FeatureCatalog extends Context.Service<FeatureCatalog, {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
       const crypto = yield* Crypto.Crypto
+      const log = yield* ActivityLog
 
       const findByKey = SqlSchema.findOneOption({
         Request: FeatureKey,
@@ -136,7 +144,8 @@ export class FeatureCatalog extends Context.Service<FeatureCatalog, {
         execute: (key) => sql`SELECT id, key, name, created_at AS "createdAt" FROM features WHERE key = ${key}`,
       })
 
-      const add = Effect.fn("FeatureCatalog.add")(function* (input: AddFeature) {
+      // The write `add` commits: it checks the key and inserts in the same transaction.
+      const insert = Effect.fn("FeatureCatalog.insert")(function* (input: AddFeature) {
         const existing = yield* findByKey(input.key).pipe(Effect.orDie)
         if (existing._tag === "Some") {
           return yield* new FeatureKeyTaken({ key: input.key })
@@ -147,6 +156,17 @@ export class FeatureCatalog extends Context.Service<FeatureCatalog, {
         const feature = new Feature({ id, key: input.key, name: input.name, createdAt })
         yield* sql`INSERT INTO features ${sql.insert({ id, key: input.key, name: input.name, created_at: DateTime.formatIso(createdAt) })}`.pipe(Effect.orDie)
         return feature
+      })
+
+      const add = Effect.fn("FeatureCatalog.add")(function* (actor: Actor, input: AddFeature) {
+        return yield* log.commit({
+          source,
+          actor,
+          write: insert(input),
+          activity: (feature) => [
+            { payload: FeatureAdded.make({ feature: feature.key, name: feature.name }), feature: feature.key },
+          ],
+        })
       })
 
       const find = Effect.fn("FeatureCatalog.find")(function* (key: FeatureKey) {
@@ -184,6 +204,11 @@ export class FeatureCatalog extends Context.Service<FeatureCatalog, {
   `Ref` or a store owned by the service, never in module-level variables.
 - **Only hosts and tests provide layers.** `Effect.provide` appears in `apps/` and `test/`, never
   inside a package (`strictEffectProvide`).
+- **Effect's platform services in workerd.** Effect has no platform package for Workers. `Crypto`
+  comes from `@bagatka/web-crypto`, which the host provides with `webCryptoLayer(crypto)`; `Clock`
+  and `Random` are Effect's defaults.
+- Canonical example: `product/foundation/src/activity-log.ts`, a service whose layer takes its
+  settings and does its setup (migrations) once, when it is built.
 
 ## 5. Writing Effect code
 
@@ -235,14 +260,10 @@ export class FeatureCatalog extends Context.Service<FeatureCatalog, {
 Parse, don't validate. Raw input becomes a typed value once, where it crosses a trust boundary.
 After that, the type guarantees validity.
 
-```ts
-/** A feature's dotted key, such as `editor.export`. */
-export const FeatureKey = Schema.String.check(
-  Schema.isMaxLength(100),
-  Schema.isPattern(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/),
-).pipe(Schema.brand("FeatureKey"))
-export type FeatureKey = typeof FeatureKey.Type
+Canonical examples: `product/foundation/src/feature-key.ts` and the other keys in
+`product/foundation/src/`. The snippets below build on `FeatureKey` from there.
 
+```ts
 /** What people call a feature: 1 to 100 characters. */
 export const FeatureName = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100))
 
@@ -264,6 +285,9 @@ export const parseAddFeature = (body: unknown) => Schema.decodeUnknownEffect(Add
 - **Brands make values distinct.** Every value type and every ID is branded, so a `FeatureKey` can't
   be passed where a `ProjectKey` is expected.
 - **Limits are written once,** in the Schema, and reused wherever the value is stored or shown.
+- **A refusal says the rule.** Every `isPattern` names its rule for a person in `expected`, such as
+  "lowercase letters, digits and single hyphens, starting with a letter, such as notes-ios", because
+  the Schema's message is what an API caller or an agent reads.
 - **`decodeEffect` for typed input, `decodeUnknownEffect` for `unknown`,** and the Effect-returning
   forms inside effects, never `decodeSync`.
 - **Never silently truncate or "fix" input.** Reject it with the Schema's message. If shortening is a
@@ -273,8 +297,8 @@ export const parseAddFeature = (body: unknown) => Schema.decodeUnknownEffect(Add
 ## 8. Records and IDs
 
 ```ts
-/** A feature's ID: a UUIDv7, so IDs sort by creation. */
-export const FeatureId = Schema.String.pipe(Schema.brand("FeatureId"))
+/** A feature's ID. `Uuidv7` is the rule in product/foundation/src/ids.ts. */
+export const FeatureId = Uuidv7.pipe(Schema.brand("FeatureId"))
 export type FeatureId = typeof FeatureId.Type
 
 export class Feature extends Schema.Class<Feature>("Feature")({
@@ -287,9 +311,10 @@ export class Feature extends Schema.Class<Feature>("Feature")({
 
 - **Records are `Schema.Class`es** of immutable fields. They cross boundaries as they are: the same
   class is the service's output, the API's response, and the row's decoded shape.
-- **IDs are branded strings holding a UUIDv7,** created with `Crypto`'s `randomUUIDv7()` and
-  `<Id>.make(...)`. UUIDv7 is time-ordered, so it indexes well and pages without an extra column.
-  The envelope's `id` follows the same rule.
+- **IDs are branded strings holding a lowercase UUIDv7,** created with `Crypto`'s `randomUUIDv7()`
+  and `<Id>.make(...)`. UUIDv7 is time-ordered, so it indexes well and pages without an extra
+  column, and lowercase compares as text. The envelope's `id` follows the same rule. Canonical
+  example: `product/foundation/src/ids.ts`.
 - **IDs are rebuilt only at the edges:** decoded from a route, a message, or a row.
 - **Other packages' IDs are stored as plain values,** never as foreign keys (`ARCHITECTURE.md`,
   "Data").
@@ -415,21 +440,27 @@ export const apnsSettings = Config.all({
 - **Where the tables live:** each project's in the SQLite database of its own Durable Object, and
   the workspace's in one more (`ARCHITECTURE.md`, "Runtime on Cloudflare"). Code that uses them
   runs inside that object, with `SqlClient` built from the object's storage, so
-  `sql.withTransaction` commits a write and its activity together. The canonical example comes with
-  Foundation.
+  `sql.withTransaction` commits a write and its activity together. Canonical examples:
+  `product/foundation/src/activity-log.ts`, and `product/foundation/test/in-object.ts`, which builds
+  it on an object's storage.
 - **Migrations run inside each object,** with Effect's migrator, before it serves its first request
   after a deploy. A project is never served by code newer than its tables.
+- **Each package's migrations are its own:** an `effect/sql` `Migrator` with a table of its own,
+  `<package>_migrations`, so numbers never collide in a project's one database. They run when the
+  package's layer is built. Canonical example: `product/foundation/src/foundation-migrations.ts`.
 
 ## 14. Writes, activity, and reactions
 
 Every write to a record emits activity: a typed fact, never edited, that timelines, Today,
 workflows, webhooks, agents, and the audit log read (`concept/Foundation.md`, "Data shapes").
 
-- **One write path.** Records change only through the function Foundation provides, which commits
-  the change and its activity together. A write that skips it is a bug. Its canonical example comes
-  with Foundation.
+- **One write path.** Records change only through `ActivityLog.commit` from `@cluenori/foundation`,
+  which commits the write and its activity together. A write that skips it is a bug.
+  `product/foundation/README.md` shows a caller.
 - **Activity is named `<record>.<past tense>`:** `feature.added`, `release.published`,
-  `feedback.status_changed`. Its payload is a Schema in the emitting package's contract.
+  `feedback.status_changed`. Its payload is a `Schema.TaggedStruct` whose tag is that name,
+  exported from the emitting package's contract. Its fields are JSON values, with times as ISO 8601
+  text, because activity is stored and delivered as it is.
 - **Changes are additive.** A new field is optional; a breaking change is a new activity name, and
   the old one keeps being emitted until nothing reacts to it.
 - **Reactions are idempotent.** Delivery through Queues is at least once and may be out of order, so
@@ -543,6 +574,8 @@ describe("FeatureKey", () => {
   channels.
 - **Package tests** for dense logic with many edge cases, through the package's contract: parsing,
   money, bucketing, catalog rules.
+- **Product packages test inside a Durable Object,** in workerd with `@cloudflare/vitest-plugin`
+  and the object's real SQLite, each test in an object of its own.
 - **Fakes only for paid or external services,** at `HttpClient` (entry 18). Everything we run
   ourselves, including the database and queues, is real.
 - **Capabilities test against Effect's in-memory platform.** A capability that reads files or time
@@ -551,7 +584,8 @@ describe("FeatureKey", () => {
 - **Tests outside workerd** run under `TZ=Pacific/Chatham` and `LANG=tr_TR.UTF-8`, which
   `bun run test` sets (entry 2).
 - **Canonical examples:** a journey, `tests/journeys/test/deployment-journey.test.ts`; package
-  tests, `packages/workspace-rules/test/check-workspace.test.ts`.
+  tests, `packages/workspace-rules/test/check-workspace.test.ts`; tests inside a Durable Object,
+  `product/foundation/test/activity-log.test.ts`.
 - **Time** is controlled with `TestClock`; durations come from settings, which tests make short.
 - **Names state behavior:** `"rejects a key with spaces"`.
 - **Never mock** our own services or the database.

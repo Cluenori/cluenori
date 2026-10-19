@@ -120,6 +120,7 @@ packages/
     src/                       everything else, private
     test/
   workspace-rules/             @bagatka/workspace-rules: checks packages' names, entries, and dependencies
+  web-crypto/                  @bagatka/web-crypto: Effect's Crypto service on the Web Crypto API
 product/
   foundation/                  @cluenori/foundation
   engines/<engine>/            @cluenori/<engine>
@@ -147,10 +148,10 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 | Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: serves the API's health check and its OpenAPI document |
 | CLI | `apps/cli` | `cluenori`: run, setup, update, and the repository's check and generate; later `project create` and `add module` | Built |
 | Dashboard | `apps/dashboard` | The web app over the public API | Planned; its UI stack is decided with its first page |
-| Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Planned; the first product package. Creating it adds `product/foundation` to the root workspaces, which Bun refuses to list while the folder doesn't exist |
+| Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, and `ActivityLog`, which commits a write with its activity. Delivery to Queues comes with the first reaction, the module contract with the first module |
 | Engines | `product/engines/<engine>` | Actions and policy first, then each engine with the first module that needs it (`concept/Foundation.md`, "Shared engines") | Planned |
 | Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Planned |
-| Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | `workspace-rules` built, for the architecture check |
+| Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | Built: `workspace-rules`, for the architecture check; `web-crypto`, for `Crypto` in workerd |
 | Web SDK | `sdks/web` | Init, identify, consent, track, feature, flags, and the client kit views, for browsers and JavaScript backends | Planned |
 | Journeys | `tests/journeys` | The Worker in workerd, through its public API | Built: the deployment journey |
 
@@ -165,7 +166,7 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 | `apps/worker` | everything above, `@effect/sql-*` drivers, Cloudflare packages | — |
 | `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; `@bagatka/*`, `effect`; the CLI also `@effect/platform-bun` | engine and module implementations |
 | `@cluenori/sdk` | `@bagatka/*`, `effect`, the API definition of what it calls | server packages |
-| Package tests | the package they test, `@effect/vitest`, Vitest | other packages' private files |
+| Package tests | the package they test, `@effect/vitest`, Vitest; product packages also `@cloudflare/vitest-plugin`, Wrangler, and `@effect/sql-sqlite-do`, to run inside a Durable Object | other packages' private files |
 | `tests/journeys` | `apps/worker`, `effect`, `@cloudflare/vitest-plugin`, Wrangler, Vitest | the Worker's private files |
 
 - A module reaches another module only through activity and its declared actions, never by
@@ -237,8 +238,9 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 - **React:** consequences elsewhere happen through activity, delivered by Queues to the engines and
   modules that react to it.
 
-Every action carries an actor: a person, an agent run, or a named system process. When acting for a
-person or an agent run, pass that actor along; reactions and jobs use a named system actor.
+Every action carries an actor: a member of the workspace, a person (an end user), an agent run, or a
+named system process. When acting for one of them, pass that actor along; reactions and jobs use a
+named system actor.
 
 ## Trust boundaries
 
@@ -346,7 +348,16 @@ Each needs evidence or a product choice before the code that depends on it.
    Effect's own guide to `HttpApi` keeps definitions apart from server code, ideally in a package of
    their own. Today `CluenoriApi` lives in `apps/worker`, whose contract is only that definition.
    Decide with the first module, by checking what reaches the dashboard's bundle.
-5. **Publishing.** The build for published packages (TypeScript's own emit or a bundler), the
+5. **How signals are read on a developer's machine.** A spike (October 2026, Wrangler 4.151.2)
+   found that locally, Analytics Engine's `writeDataPoint` and Pipelines' `send` accept anything and
+   keep nothing, and nothing local answers Analytics Engine SQL or reads the lake; R2 works. So
+   `./run` and the tests can't show a chart from these stores. The options: a local store behind the
+   same contract (such as SQLite in a Durable Object), with one conformance suite; or lake files
+   written to R2. Also, Wrangler fetches a Pipelines stream's schema with the developer's stored
+   login whenever it generates types, so a Pipelines binding makes `./run` and `bun install` call
+   Cloudflare unless Wrangler's config is isolated (`XDG_CONFIG_HOME`). Decide with the first
+   signal, together with decision 3.
+6. **Publishing.** The build for published packages (TypeScript's own emit or a bundler), the
    versioning tool, and the npm scope and license of `@bagatka/*` (assumed MIT, like the SDKs).
 
 ## Module map

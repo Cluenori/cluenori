@@ -1,0 +1,7 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  // The tests run inside workerd, so they see its runtime and their own `Env`, which `wrangler types`
+  // generates from test/wrangler.jsonc on every type check, and the test plugin's `cloudflare:test`.
+  "compilerOptions": { "types": ["@cloudflare/vitest-plugin/types"] },
+  "include": [".", "../src", "../vitest.config.ts"]
+}

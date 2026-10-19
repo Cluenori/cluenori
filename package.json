@@ -4,6 +4,7 @@
   "workspaces": {
     "packages": [
       "packages/*",
+      "product/foundation",
       "product/engines/*",
       "product/modules/*",
       "apps/*",
@@ -14,6 +15,7 @@
       "@cloudflare/vitest-plugin": "1.4.5",
       "@effect/platform-bun": "4.0.5",
       "@effect/platform-node": "4.0.5",
+      "@effect/sql-sqlite-do": "4.0.5",
       "@effect/tsgo": "0.53.5",
       "@effect/vitest": "4.0.5",
       "effect": "4.0.5",

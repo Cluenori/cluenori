@@ -496,10 +496,11 @@ generated from it is what the Swift and Kotlin SDKs use.
 Local rules refine this document. Where they conflict, follow the local rule and mention the
 conflict.
 
-- **Status:** the scaffold is built: the toolchain, the workspace, every check, the Worker serving
-  the public API (its health check so far), the CLI behind `./run`, `./setup`, and `./update`, and
-  the first journey. No engine or module exists yet. `concept/` holds the product,
-  `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
+- **Status:** built so far: the toolchain, the workspace, every check, the Worker serving the
+  public API (its health check so far), the CLI behind `./run`, `./setup`, and `./update`, the first
+  journey, and Foundation (`product/foundation`): the scope keys, the envelope, actors, and the
+  activity log every write goes through. No engine or module exists yet. `concept/` holds the
+  product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository
   programs, Vitest 5 with `@effect/vitest` and `@cloudflare/vitest-plugin`, Oxlint and Oxfmt, Nix.

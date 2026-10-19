@@ -10,6 +10,22 @@ Product terms (project, component, origin, environment, release, feature, person
 account, session, trace, request, idea, signals, records, activity, engines, and the module catalog)
 are defined in `concept/Foundation.md` and `concept/Modules.md`. When code implements one, its row moves here.
 
+## Terms Foundation implements
+
+Each is a Schema or service in `@cluenori/foundation`, whose doc comment holds its exact rule.
+
+| Term | Meaning | In code | Don't call it |
+|---|---|---|---|
+| Scope key | A permanent key that places a record: workspace, project, component, environment (`notes-ios`) | `WorkspaceKey`, `ProjectKey`, `ComponentKey`, `EnvironmentKey` | slug, handle, ID |
+| Feature key | A capability of a project, dotted: `editor.export` | `FeatureKey` | feature ID, tag |
+| Release version | The version that names a release within its component: `2.4.0+312` | `ReleaseVersion` | build (it includes one), tag |
+| Origin | The component and release that started a request, from baggage | `originComponent`, `originRelease` on the envelope | caller, client |
+| Envelope | The one shape of every signal and activity entry | `Envelope` | event (that is one kind), message, record |
+| Kind | What an envelope holds: `event`, `request`, `log`, ..., or a module's, `uptime.check` | `EnvelopeKind` | type, category |
+| Source | Where data comes from: `sdk-ios`, `otel`, `module:releases` | `Source` | origin (that is the app that started a request) |
+| Activity entry | One fact about a change to a record, named `<record>.<past tense>` | an `Envelope` of kind `activity`; its payload a `Schema.TaggedStruct` | event, audit row, log |
+| Activity log | The activity of one database, and the only way to change its records | `ActivityLog`, its `commit` | event store, outbox, journal |
+
 ## Words that already mean a product concept
 
 Several everyday programming words name a product concept in Cluenori. In code and conversation they
@@ -52,5 +68,5 @@ keep the product meaning only.
 | Reaction | An engine's or module's handler for activity, idempotent | the reacting package | consumer, subscriber, listener, handler |
 | Journey | One test of a real flow through the public API, as named steps | `tests/journeys` | end-to-end test, scenario, integration test |
 | Settings | The values a package needs, passed to its layer by the host | next to the layer | options, config |
-| Actor | Who performs an action: a person, an agent run, or a named system process | Foundation | user, caller, principal |
+| Actor | Who performs an action: a member of the workspace, a person (an end user), an agent run, or a named system process | `Actor` in Foundation | user, caller, principal |
 | Spike | A short, throwaway experiment that settles one assumption before code depends on it | a scratch directory or an unmerged branch | prototype, POC |
