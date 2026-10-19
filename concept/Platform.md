@@ -61,9 +61,11 @@ GDPR applies because of where the users are, not where the server is. A founder 
 | Logs and errors | Cluenori removes emails, tokens and card numbers before storage. |
 | Session trail | Screens and taps. Never typed text. |
 | Messages | Promotional push and marketing email only after an opt-in, by purpose and channel. Each marketing email has one-click unsubscribe, honored within 48 hours. |
-| Retention | Raw events 12 months, logs 30 days |
-| Data requests | Export or delete all data of one customer from the customer page. Each module exports and deletes its own data for that person. |
+| Retention | Product events 5 years. Requests and logs 14 days. The traces of failed, slow and sampled requests, and error and warning logs, 90 days (Modules, "Data sources"). |
+| Export and deletion | Export or delete all data of one customer from the customer page. Each module exports and deletes its own data for that person. |
 | Data inventory | Cluenori lists what each component collects. It drafts the privacy policy and the store privacy answers from this list. |
+
+Product events are kept for 5 years, because product questions span years. They are still pseudonymous personal data: deleting a person removes the link to them at once (Foundation). A founder whose stated purpose needs less time keeps them for less.
 
 A consent call sets the analytics mode and the message purposes: `consent({ analytics: 'none' | 'cookieless' | 'full', productNews, promotions })`. "Cookieless" means counts without cookies. These counts are pseudonymous, not anonymous: daily hashes and install IDs can still be personal data under GDPR.
 
@@ -72,8 +74,7 @@ A consent call sets the analytics mode and the message purposes: `consent({ anal
 | Store | Contents | EU control |
 | --- | --- | --- |
 | R2 | Raw data, uploads | [EU jurisdiction buckets](https://developers.cloudflare.com/r2/reference/data-location/) keep the data in the EU |
-| D1 | Summaries, issues, feedback | [`--jurisdiction=eu`](https://developers.cloudflare.com/d1/configuration/data-location/) when you make the database |
-| Durable Objects | Users, funnels, live feed | [EU jurisdiction](https://developers.cloudflare.com/durable-objects/reference/data-location/) keeps them in the EU |
+| Durable Objects | The database of each project and of the workspace (people, issues, feedback, summaries), and exact counts | [EU jurisdiction](https://developers.cloudflare.com/durable-objects/reference/data-location/) keeps them in the EU |
 | Analytics Engine | Counters | No location control. It gets only aggregates without personal data: no user IDs, emails or IP addresses. |
 | Pipelines, Data Catalog | Writes to the raw data | Support for EU buckets is not documented. Examine this before you offer an EU hosted region. |
 

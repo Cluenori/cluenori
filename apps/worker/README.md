@@ -20,8 +20,8 @@ yield* client.health()
 - **The entry the platform runs,** `src/worker.ts`: every route group and layer on a visible line,
   built once per isolate (PATTERNS.md, "The Worker entry").
 - **The public API definition,** `src/cluenori-api.ts`, and the endpoints about the deployment itself
-  (`GET /api/health`). Where engines' and modules' definitions will live is open decision 5 in
-  ARCHITECTURE.md.
+  (`GET /api/health`). Where engines' and modules' definitions will live is an open decision
+  in ARCHITECTURE.md: "How clients import the API definition".
 - **`wrangler.jsonc`:** the Worker's name, compatibility date, and, later, its bindings.
 - **`openapi.json`:** generated from the definition by `bun run generate`; `bun run check` fails when
   it is stale.

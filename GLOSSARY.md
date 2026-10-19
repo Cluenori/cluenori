@@ -7,8 +7,8 @@ One name per concept, used the same way in code, APIs, storage, UI, and conversa
 - Add terms in the same change that introduces them.
 
 Product terms (project, component, origin, environment, release, feature, person, installation,
-account, session, trace, signals, records, activity, engines, and the module catalog) are defined in
-`concept/Foundation.md` and `concept/Modules.md`. When code implements one, its row moves here.
+account, session, trace, request, idea, signals, records, activity, engines, and the module catalog)
+are defined in `concept/Foundation.md` and `concept/Modules.md`. When code implements one, its row moves here.
 
 ## Words that already mean a product concept
 
@@ -27,6 +27,7 @@ keep the product meaning only.
 | Query | A named read a module declares, served as an API route and an MCP tool | a SQL statement |
 | Action | A change with an actor, class, target, before and after, reason, result, and undo | a function, a handler |
 | Policy | What an actor may do, for each project and class of action | a rule, a setting |
+| Request | One unit of work in a service: an HTTP request, a queue message or a scheduled job, kept as one row | an idea, for what users ask for on the ideas board; an approval, for what an agent asks you to allow |
 
 ## Architecture terms
 

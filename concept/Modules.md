@@ -14,15 +14,13 @@ The sidebar shows each module by name, as in PostHog. Above the sidebar are a wo
 |  | Decisions | Track questions, actions and outcomes | Open decisions, review dates, outcomes | v1 |
 | Product | Analytics | See how people use your apps | Value events, funnels, retention, paths, acquisition, web traffic | v1 |
 | Product | Features | See one feature across all modules | Catalog, scorecard, feature pages | v1 |
-| Product | Feedback | Collect bugs, ideas and questions from users | Inbox, requests board, votes, replies | v2 |
+| Product | Feedback | Collect bugs, ideas and questions from users | Inbox, ideas board, votes, replies | v2 |
 | Product | Reviews | Read and answer store reviews | App Store and Google Play reviews, replies | v2 |
 | Product | Experiments | Find the variant that gives more revenue and retention | Experiments, holdouts, results | v3 |
 | Product | Surveys | Ask users questions | Surveys, NPS, cancellation reasons | v3 |
 | Engineering | Errors | Find crashes and exceptions | Error groups, readable stack traces, affected customers | v1 |
-| Engineering | Logs | Read what your apps log | Search, live tail, patterns | v1 |
-| Engineering | Traces | See one request from start to end | Waterfall, search | v1 |
-| Engineering | Performance | Make sure that each route, screen and query meets its target | Routes, database queries, external calls, screens | v1 |
-| Engineering | Metrics | Monitor runtimes, queues and your own counters | CPU, memory, queue depth, custom counters | v2 |
+| Engineering | Logs | See what your apps report as wrong | Errors and warnings with how often each occurs, search, the logs of one request | v1 |
+| Engineering | Performance | See the load, and make sure that each route, screen and query meets its target | Requests over time, routes, database queries, external calls, screens, the trace of one request | v1 |
 | Engineering | Uptime | Make sure that apps are available and jobs run | Monitors, cron check-ins, certificates | v2 |
 | Engineering | Issues | Track bugs and tasks | List, statuses, links | v2 |
 | Delivery | Releases | See what you shipped, who updated, and what changed | Releases, store rollout, impact | v1 |
@@ -40,7 +38,7 @@ The sidebar shows each module by name, as in PostHog. Above the sidebar are a wo
 | Automation | Agent runs | See what agents investigated, changed and spent | Runs, actions, outcomes, cost | v2 |
 | Automation | Policies | Set what agents can do | Authority by action class, budgets, release policy | v2 |
 | Automation | Workflows | Run operations step by step | Release announcements, notify voters, incident steps | v2 |
-| Public | Pages | Give each project its public pages | Changelog, requests board, status, privacy, terms, support, download link | v2 |
+| Public | Pages | Give each project its public pages | Changelog, ideas board, status, privacy, terms, support, download link | v2 |
 
 Settings are at the bottom of the sidebar: projects and components, blueprints, the feature catalog, members, integrations, SDK keys, data and privacy, and the usage of Cluenori itself.
 
@@ -48,14 +46,14 @@ The four work areas sit at the top. A module stays hidden until its phase ships,
 
 ### How modules link
 
-Each object has its own page and a permanent URL. Objects are projects, components, flags, releases, errors, customers, features, issues, incidents, decisions, agent runs, requests, feedback items, changelog entries, campaigns, journeys and version policies. In other modules, an object shows as a chip.
+Each object has its own page and a permanent URL. Objects are projects, components, flags, releases, errors, customers, features, issues, incidents, decisions, agent runs, ideas, feedback items, changelog entries, campaigns, journeys and version policies. In other modules, an object shows as a chip.
 
 1. **Chip:** shows the icon and the name of the object, for example a flag in a release.
 2. **Hover:** shows a small card with the status and the important numbers.
 3. **Click:** opens a side panel with the important data and actions, for example "turn on the flag". You stay on the same page.
 4. **Open:** goes to the full page of the object. ⌘-click opens it in a new tab.
 
-Each object page has a Related section, in groups by module. For example, a release shows the flags that it changed, new errors, closed issues, shipped requests and its changelog post. The page of that flag shows the releases that contained it and the customers who saw it. All links go in two directions. Each point on a chart opens the customers behind it. The MCP tools use the same links.
+Each object page has a Related section, in groups by module. For example, a release shows the flags that it changed, new errors, closed issues, shipped ideas and its changelog post. The page of that flag shows the releases that contained it and the customers who saw it. All links go in two directions. Each point on a chart opens the customers behind it. The MCP tools use the same links.
 
 ## Today: the attention queue
 
@@ -69,7 +67,7 @@ Today uses a fixed set of detectors, not a query builder. Each item shows the ev
 | The usage of a customer decreased a lot | Weekly usage of the customer | Open the customer page. Send an email. |
 | You can recover failed payments | Failed charges for each customer | Try the payment again. Send a reminder. |
 | A customer or plan costs more than it pays | Cost and revenue | Set a usage limit. Examine the price. |
-| Customers who pay a lot ask for a feature | Votes, weighted by what voters pay | Mark the request as planned. Tell the voters. |
+| Customers who pay a lot ask for a feature | Votes, weighted by what voters pay | Mark the idea as planned. Tell the voters. |
 | A paying customer reported a bug | The feedback item, plan, MRR and session trail | Reply. Make an issue. |
 | Activation decreased after a release | Activation before and after the release | Compare the releases. Turn off the flag. |
 | Reviews of a release are worse than before | Stars and topics of reviews by version, with the sample size | Reply to the reviews. Open an issue. |
@@ -106,7 +104,7 @@ The scorecard has one row for each feature, and agents read the same rows throug
 | Health | The error rate and latency of the routes and screens of the feature |
 | Cost | The AI, infrastructure and third-party costs of the feature, with precision labels |
 | Associated revenue | The MRR of customers who use the feature. You cannot add it up across features. |
-| Demand | Open requests and votes, weighted by what voters pay |
+| Demand | Open ideas and votes, weighted by what voters pay |
 | Last change | The last release or configuration change that affected the feature |
 
 A row can show "insufficient evidence". A retention difference is a correlation, not a cause.
@@ -118,26 +116,30 @@ A feature page shows one feature across all modules. A switch at the top selects
 - **Usage:** the funnel from availability to repeat use, and adoption among eligible users.
 - **Engineering:** the endpoints, screens, queries and jobs of the feature, with p95 and error rate. Its error groups, logs and slowest traces.
 - **Delivery:** its flags and their exposure, the releases that changed it, and its changelog entries.
-- **Voice:** its requests, votes, bug reports and store reviews.
+- **Voice:** its ideas, votes, bug reports and store reviews.
 - **Money:** its cost and associated revenue, with precision labels.
 - **Decisions:** open and past decision records about the feature.
 
 The feature catalog lists each feature with its key, stage and tagging rules. For each component, it shows the share of data that has no feature.
 
-## Performance, traces, logs and metrics
+## Performance, errors and logs
 
-Four engineering modules answer four different questions. Each module links to the other three.
+Three engineering modules answer three questions. Each module links to the other two. They read three kinds of data: product events (what people did), requests (what your services did) and errors (what broke).
 
 | Module | Question | Views |
 | --- | --- | --- |
-| Performance | Is each endpoint, screen and query fast? | Endpoints, database queries, external calls, screens and web vitals |
-| Traces | What occurred in one request? | A waterfall of the steps with their logs and errors. Search by endpoint, customer, status or duration. |
-| Logs | What did the app write to the log? | Search, live tail, patterns, level filters |
-| Metrics | What is the condition of the runtimes, queues and custom counters? | Charts of CPU, memory, garbage collection, queue depth, cache hits and custom counters |
+| Performance | How much load is there, and is each endpoint, screen and query fast? | Requests over time; endpoints, database queries, external calls, screens and web vitals; the trace of one request |
+| Errors | What broke, and whom did it affect? | Error groups, readable stack traces, affected customers |
+| Logs | What did the apps report as wrong? | Errors and warnings with how often each occurs, search, and the logs of one request |
+
+There is no separate page to search traces. The trace of a request opens from an error, from a slow point on a chart, or from a customer timeline. It is a waterfall of the steps, with their queries, external calls, logs and error. This is the evidence that an agent gets to find a root cause.
+
+Metrics (CPU, memory, queue depth and custom counters) comes later, when a need shows. Hosts such as Cloudflare report their own runtime metrics, and a custom counter is a product event or a field of a request. Live tail and log patterns also come later.
 
 ### Performance in detail
 
-- **Endpoints:** one row for each route with calls, p50, p95, p99, error rate and total time (calls × average). Sort by total time to find the endpoint that uses the most time in total, not only the slowest endpoint.
+- **Load:** requests per minute over time, for the project, one component or one route.
+- **Endpoints:** one row for each route with calls, average, p50, p80, p95, p99, error rate and total time (calls × average). Sort by total time to find the endpoint that uses the most time in total, not only the slowest endpoint.
 - **Database queries:** queries in groups by shape, without values. Each group shows calls, total time, p95, rows returned and the endpoints that use it. A warning shows N+1 patterns: one request that repeats the same query many times.
 - **External calls:** third-party APIs, for example Stripe, OpenAI or email providers, with latency and error rate. This shows which provider has the outage.
 - **Screens:** screen load time and app start time on mobile, and Core Web Vitals on the web.
@@ -146,9 +148,19 @@ Each row shows the change from the previous release, the result against its rout
 
 ### Data sources
 
-Backends send standard OpenTelemetry data. Web frameworks, HTTP clients and database drivers send spans without more code, for example ASP.NET Core and Entity Framework Core in .NET. The mobile and web SDKs add screens and web vitals. Metrics accepts all OpenTelemetry metrics.
+Backends send standard OpenTelemetry traces and logs. Web frameworks, HTTP clients and database drivers send them without more code, for example ASP.NET Core and Entity Framework Core in .NET. The mobile and web SDKs add screens and web vitals. Cluenori does not accept OpenTelemetry metrics yet.
 
-Cluenori keeps request counts, error counts and latency distributions for each normalized route, environment and release. When Analytics Engine samples at high volume, charts show the sample size. Cluenori keeps the traces of errors and slow requests by a tail decision, after the request completes, and a small sample of the other requests. Thus each "slowest traces" link opens retained examples.
+A request is one unit of work in a service: an HTTP request, a queue message or a scheduled job. When its trace arrives, Cluenori turns it into one row: route, status, duration, database time, query count, slowest query, external calls, error, person, feature and release. The charts come from these rows: request counts, error counts and latency distributions for each normalized route, environment and release. When Analytics Engine samples at high volume, charts show the sample size.
+
+Cluenori keeps the full traces of failed and slow requests by a tail decision, after the request completes, and a small sample of the other requests. Thus each "slowest traces" link opens retained examples.
+
+| Data | Kept for |
+| --- | --- |
+| Product events | 5 years |
+| Requests (one row each) and all logs | 14 days |
+| The full trace of each failed, slow or sampled request, and each error and warning log | 90 days |
+| Counters | 3 months in Analytics Engine, then as nightly summaries |
+| Error groups and other records | Until you delete them |
 
 ### Errors and crashes
 
@@ -162,7 +174,7 @@ Each release has a page that connects the code to the customers: what you shippe
 
 Cluenori makes a release from a git tag, a store build or a deploy. The release page shows:
 
-- **Shipped items:** the merged PRs and commits since the last release, in groups by feature (from PR labels or file paths), and the issues and feedback requests that the release closes.
+- **Shipped items:** the merged PRs and commits since the last release, in groups by feature (from PR labels or file paths), and the issues and ideas that the release closes.
 - **Rollout:** platforms, the progress of the App Store phased release and the Google Play staged rollout, version adoption, and the flags that you turned on with the release.
 - **Impact, compared with the previous release:** crash-free sessions, new error groups, latency, the activation and retention of users on this version, and store rating.
 - **Notes:** an internal summary for you and a note for your customers.
@@ -203,7 +215,7 @@ Cluenori counts the views of each entry, and the use of the feature after a view
 3. AI writes draft notes in simple words from the PR titles and descriptions. Edit the draft.
 4. Add visuals: screenshots, short videos, GIFs, or before-and-after images.
 5. Publish. Cluenori updates the public changelog page, the "What's new" sheet in your apps, the email digest, an optional push notification, and the release text for the stores.
-6. Cluenori tells each user who voted for a shipped request, and moves the request to Shipped.
+6. Cluenori tells each user who voted for a shipped idea, and moves the idea to Shipped.
 
 ### Flags, remote config and experiments
 
@@ -213,17 +225,17 @@ Cluenori counts the views of each entry, and the use of the feature after a view
 
 ### Issues
 
-Cluenori has a small issue tracker: a title, a status, and links to customers, errors and releases. You make an issue from an error group, an incident, a feedback request or a store review, or manually. Each issue shows the affected customers and the MRR at risk. It links to the PR that fixes it and the release that ships it. GitHub sync can come later.
+Cluenori has a small issue tracker: a title, a status, and links to customers, errors and releases. You make an issue from an error group, an incident, an idea or a store review, or manually. Each issue shows the affected customers and the MRR at risk. It links to the PR that fixes it and the release that ships it. GitHub sync can come later.
 
 ## Feedback and reviews
 
 Users report a bug, suggest an idea or ask a question from the app, the website or by email. The SDK form attaches context automatically: the component, version, device, session trail, recent errors, and a screenshot with marks if the user adds one. It never attaches text that the user typed on other screens.
 
 - **Inbox:** new items for each project, with the plan and MRR of the author.
-- **Triage:** link an item to a feature, merge duplicates (an agent proposes merges), make an issue, or make a public request.
-- **Requests board:** public ideas with votes and a status: under review, planned, in progress or shipped. It shows in the app and on the public page.
+- **Triage:** link an item to a feature, merge duplicates (an agent proposes merges), make an issue, or make a public idea.
+- **Ideas board:** public ideas with votes and a status: under review, planned, in progress or shipped. It shows in the app and on the public page.
 - **Reply:** answer the author in the app inbox or by email. The thread stays on the customer page.
-- **Close the loop:** when a release ships a request, Cluenori moves it to Shipped and tells each voter.
+- **Close the loop:** when a release ships an idea, Cluenori moves it to Shipped and tells each voter.
 - **Store reviews:** App Store and Google Play reviews arrive in the same inbox, by component and version. I reply from Cluenori. The Google Play API returns only recent reviews, so Cluenori collects them each day.
 
 Feedback text is untrusted. Agents read it as evidence, never as instructions.
@@ -240,7 +252,7 @@ Engage reaches people in one project or across projects. Campaigns, journeys, fl
 | Version | iOS users on a version below 2.4 |
 | Plan and money | Trial ends in 3 days; a failed payment |
 | Behavior | No core value event in 7 days; used Export more than 5 times |
-| Feature and flag | Saw the new editor; voted for a request |
+| Feature and flag | Saw the new editor; voted for an idea |
 | Place and language | Country, language, time zone |
 | Consent | Opted in to product news by email |
 
@@ -254,7 +266,7 @@ A campaign is one send, now or at a set time, on one or more channels. Examples:
 
 A journey enrolls each person once, with a goal, a holdout group, and rules for exit and re-entry. Its steps are a trigger, waits, conditions and sends. Examples: a welcome series, a trial-ending reminder, a failed-payment reminder, a win-back email after 30 days without use, and What's new after an update. The holdout group gets nothing, so I see the real effect. Journeys are step lists in a form or in code, not a drag-and-drop canvas.
 
-Journeys run on the Workflows engine, but their enrollment state lives in D1. Workflows keeps finished instances for only 30 days and limits how fast new instances start. Thus a large enrollment goes through a queue.
+Journeys run on the Workflows engine, but their enrollment state lives in the database of the project. Workflows keeps finished instances for only 30 days and limits how fast new instances start. Thus a large enrollment goes through a queue.
 
 ### Channels
 
@@ -290,7 +302,7 @@ Workflows run operations step by step, with one run for each event on a record. 
 | Trigger | Steps |
 | --- | --- |
 | A release reaches all iOS users | Publish the changelog entry, send What's new to opted-in users, review adoption after 7 days |
-| A request moves to Shipped | Tell the voters in the app and by email |
+| An idea moves to Shipped | Tell the voters in the app and by email |
 | Complaints for a campaign pass 0.1% | Pause the campaign and tell me |
 | An error group crosses its threshold | Open an incident, start an Amp investigation within the policy |
 | A project sends no data for 7 days | Ask me to check the instrumentation |
@@ -339,7 +351,7 @@ Inventory lists what I own and pay for, by project, with its expiry date and ren
 Each project gets public pages on its own domain or a subdomain, with its brand:
 
 - a changelog, with RSS and an email subscription,
-- a requests board with votes,
+- an ideas board with votes,
 - a status page, from Uptime and incidents,
 - a privacy policy and terms,
 - a support and contact form, which makes feedback items,

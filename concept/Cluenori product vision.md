@@ -90,7 +90,7 @@ Cluenori is organized around my recurring routines. The phone app is for the bri
 | Portfolio review | Each week | Where does my next hour and euro go? | Web |
 | Ship and announce | When a release reaches its users | What must users know, and who must update? | Web |
 | Decision review | On the review date | Did the action work? | Phone or web |
-| Feedback triage | Each week | Which bugs and requests matter most? | Phone or web |
+| Feedback triage | Each week | Which bugs and ideas matter most? | Phone or web |
 
 The portfolio has one row for each project:
 
@@ -253,7 +253,7 @@ Agents already help me create each project, so project creation is where observa
 - safe defaults for flags and remote config,
 - the client kit: update gate, kill switches, What's new, feedback form and consent,
 - default messages: welcome, trial ending, What's new and failed payment,
-- public pages: changelog, requests board, status, privacy, terms and support,
+- public pages: changelog, ideas board, status, privacy, terms and support,
 - a sending domain, and a subdomain for marketing mail,
 - a declared automation policy and release policy.
 

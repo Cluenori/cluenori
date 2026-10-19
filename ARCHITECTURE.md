@@ -177,24 +177,31 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 
 ## Runtime on Cloudflare
 
-- **One Worker, one deployment.** A modular monolith: every engine and module runs in the same
-  Worker, composed in-process. Its entry points are the ones the platform defines: `fetch` (the
+- **One Worker, one deployment.** A modular monolith: every engine and module is part of the same
+  Worker and deploys with it, composed in-process; work on a project's records runs inside that
+  project's Durable Object (below). Its entry points are the ones the platform defines: `fetch` (the
   API, MCP, ingest, the manifest, the dashboard's files), `queue`, `scheduled`, and the exported
   Durable Object and Workflow classes.
 - **The runtime is built once per isolate.** The Worker builds its layers once and reuses them for
   every request; it never builds them per request. Promises appear only where the platform calls
   us, and become Effects on the first line.
-- **Where each shape lives** (from `concept/Foundation.md`):
+- **Each project is a Durable Object.** Its records live in the SQLite database of its own Durable
+  Object, and the engine and module code that reads and writes them runs inside that object, so a
+  write and its activity commit in one transaction. The Worker routes each query and action to the
+  object by project key. The workspace has one object of its own. A question across projects reads
+  summaries that activity keeps current in the workspace, never every project live.
+- **Where each shape lives** (from `concept/Foundation.md`; how long each is kept is in
+  `concept/Modules.md`, "Data sources"):
 
   | Shape | Store | Owner |
   |---|---|---|
-  | Records | SQL: D1 or Durable Object SQLite (open decision 1) | The engine or module that owns the table |
-  | Activity | Committed with its record, then delivered through Queues | Foundation |
-  | Signals: counters | Analytics Engine, no person IDs | Ingest writes, the Query engine reads |
-  | Signals: lake | Pipelines into R2 as Iceberg | Ingest writes, the Query engine reads |
+  | Records | SQLite in a Durable Object: one per project, one for the workspace | The engine or module that owns the table |
+  | Activity | Committed with its record, delivered through Queues, archived to R2 | Foundation |
+  | Signals: counters | Analytics Engine, no person IDs, added up for each batch at ingest | Ingest writes, the Query engine reads |
+  | Signals: lake | Basin Pipelines into R2 as Iceberg: product events, requests, kept traces, logs | Ingest writes, the Query engine reads |
   | Exact counts, duplicate window | Durable Objects | Ingest |
   | Durable steps | Cloudflare Workflows | The workflows engine |
-  | Media and uploads | R2 | Content |
+  | Media, uploads, symbol files | R2 | Content; symbol files, Errors |
 
 - **Background work has an owner.** Every queue consumer, cron trigger, alarm, and workflow is owned
   by one engine or module and listed on a visible line in `apps/worker`. Every handler is
@@ -209,13 +216,16 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 - No package reads another package's tables. There are no cross-package joins, foreign keys, or
   transactions. Packages store other packages' IDs as plain values and learn about changes through
   activity.
-- A write and its activity commit together, in one transaction or atomic batch. Activity is
-  delivered after the commit, at least once.
+- A write and its activity commit together, in one transaction in the project's object. An alarm
+  in that object delivers activity to Queues after the commit, at least once.
 - Personal data follows `concept/Foundation.md` and `concept/Platform.md`: no person IDs in
   Analytics Engine, a pseudonymous ID in the lake with the mapping in SQL, and every module can
   export and delete one person's data.
 - The jurisdiction (global or EU) is chosen once, at setup, because a store's jurisdiction can't
-  change after it is made.
+  change after it is made. Local runs use none: workerd doesn't implement jurisdictions.
+- Backends send OpenTelemetry traces and logs, not metrics (yet). Ingest turns each request's trace
+  into one row, counts it, and keeps the full trace only for failed, slow, and sampled requests
+  (`concept/Modules.md`, "Performance, errors and logs").
 
 ## Communication
 
@@ -248,17 +258,17 @@ From `concept/`; each gets its pattern when it is built.
   TypeScript, and everything else come from `bun.lock`, so every machine uses the same versions.
 - **Four entry points, one command each:**
   - `./dev` opens the pinned shell.
-  - `./run` runs Cluenori on this computer, with local D1, R2, Durable Objects, and Queues.
+  - `./run` runs Cluenori on this computer, with local Durable Objects, R2, and Queues.
   - `./setup` deploys it to your Cloudflare account: signs in with Wrangler and deploys. With the
     first store and the SDK it also asks once for global or EU data, creates what Wrangler can't
     create on deploy, and prints the SDK keys.
   - `./update` pulls the new version (fast-forward only: a clone with commits of its own is left for
-    its owner to merge), installs it, and deploys. With the first tables it also runs the
-    migrations.
+    its owner to merge), installs it, and deploys. With the first tables it also wakes every
+    project's object, so each one migrates and a failed migration shows during the update.
 - **Scripts are trampolines.** Each is a few lines of POSIX shell that checks for Nix and runs a
   program in `apps/cli`. Logic lives in TypeScript, where it is typed and tested, not in shell.
-- **Deploying needs few manual resources.** Wrangler 4 creates D1, R2, and KV resources on deploy
-  when their bindings have no ID. Setup creates the rest, and anything with a jurisdiction.
+- **Deploying needs few manual resources.** Durable Objects need no creating, and Wrangler 4
+  creates R2 and KV resources on deploy when their bindings have no ID. Setup creates the rest, and anything with a jurisdiction.
 
 ## Enforcement
 
@@ -294,6 +304,16 @@ These are choices, not omissions. Change them only through `PATTERNS.md`, with a
 - **One `HttpApi` definition is the API.** The Worker serves it, MCP tools and TypeScript clients
   derive from it, and the generated OpenAPI document is committed so that every API change shows in
   review.
+- **Records live in SQLite Durable Objects, one per project.** A spike (October 2026) compared them
+  with one D1 database per project. D1 bindings are fixed in the Worker's configuration, so a
+  database made for a new project needs a redeploy; Effect's D1 driver has no transactions, only
+  batches of statements fixed in advance, and Effect's migrator can't run on it. A Durable Object
+  is made by name on first use, commits with transactions, migrates itself with Effect's migrator,
+  and takes the EU jurisdiction for each object. Both cap a database at 10 GB with one writer, which
+  suits records: about 1 to 2 GB a year for a busy project, since signals live elsewhere. The
+  costs: each project answers from one location (the SDK uses its last manifest, so app starts
+  don't wait), questions across projects read summaries, and D1's console and export give way to
+  Cloudflare's Data Studio and each module's export.
 - **SQL directly, through `effect/sql`.** Parameterized tagged templates and Schema-decoded rows; no
   ORM and no query builder.
 - **No mediator and no event bus.** Callers call services; activity on Queues is the only
@@ -312,29 +332,21 @@ These are choices, not omissions. Change them only through `PATTERNS.md`, with a
 
 Each needs evidence or a product choice before the code that depends on it.
 
-1. **Per-project storage.** `concept/Foundation.md` puts each project in its own D1 database, for
-   size and its single writer. D1 bindings are declared in the Worker's configuration, so as far as
-   we know a database created per project at runtime can't be reached without a redeploy, and D1
-   commits atomically only per batch. A Durable Object per project, with SQLite storage, is
-   addressed by name at runtime and has transactions. Both have Effect drivers (`@effect/sql-d1`,
-   `@effect/sql-sqlite-do`), so module SQL is the same either way. Decide with a spike before the
-   first module: creation, migrations, cross-project portfolio queries, backups, and EU
-   jurisdiction.
-2. **The dashboard's UI stack.** Decided with its first page. `effect/reactivity` can derive its data
+1. **The dashboard's UI stack.** Decided with its first page. `effect/reactivity` can derive its data
    layer from the same `HttpApi` definition.
-3. **Where the Swift and Kotlin SDKs live.** Swift Package Manager expects a package at a
+2. **Where the Swift and Kotlin SDKs live.** Swift Package Manager expects a package at a
    repository's root, which argues for their own repositories.
-4. **Who owns ingest.** `concept/` lists twelve engines, and none of them writes signals: catalog
+3. **Who owns ingest.** `concept/` lists twelve engines, and none of them writes signals: catalog
    rules, the duplicate window, counters, and the lake. Ingest is either its own engine or the
    write side of the Query engine. Decide with the first signal.
-5. **How clients import the API definition.** The dashboard, the CLI, and the SDK need the
+4. **How clients import the API definition.** The dashboard, the CLI, and the SDK need the
    `HttpApi` definition, but not the server code that sits beside it in an engine's or module's
    `src/index.ts`. Either each such package gets a second entry, `./api`, with only its definition
    (the one exception to "one entry"), or one `@cluenori/api` package holds every definition.
    Effect's own guide to `HttpApi` keeps definitions apart from server code, ideally in a package of
    their own. Today `CluenoriApi` lives in `apps/worker`, whose contract is only that definition.
    Decide with the first module, by checking what reaches the dashboard's bundle.
-6. **Publishing.** The build for published packages (TypeScript's own emit or a bundler), the
+5. **Publishing.** The build for published packages (TypeScript's own emit or a bundler), the
    versioning tool, and the npm scope and license of `@bagatka/*` (assumed MIT, like the SDKs).
 
 ## Module map

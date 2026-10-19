@@ -35,7 +35,7 @@ Shared domains, shared costs, blueprints, policies and cross-project audiences a
 
 A feature belongs to the project, not to one component. Export exists in the iOS app, the web app and the API, so it is one feature. The feature page shows Export in all components, or only in the iOS app. In every other module, the feature is one more filter in the filter bar.
 
-Each feature has a dotted key, a name and a stage: idea, planned, building, beta, live, deprecated or removed. Feedback requests, changelog entries, flags and decisions link to the same key.
+Each feature has a dotted key, a name and a stage: idea, planned, building, beta, live, deprecated or removed. Ideas, changelog entries, flags and decisions link to the same key.
 
 &#91;embedded content: feature key · from one tap to every record\]
 
@@ -64,9 +64,9 @@ All data has one of three shapes. Each shape has its own store and rules.
 
 | Shape | What it is | Volume | Store | Examples |
 | --- | --- | --- | --- | --- |
-| Signals | Measurements and telemetry. Append only. | High | Lake (R2, Iceberg), counters (Analytics Engine), exact counts for each person (Durable Objects) | Product events, spans, logs, metrics, errors, web vitals |
-| Records | Objects with state that one module owns | Low | D1 | Releases, deployments, provider resources, flags, version policies, campaigns, feedback, issues, decisions, consent records, ledger lines, distribution attempts |
-| Activity | Typed facts about each change. Never edited. | Low to medium | D1, then archived to R2 | release.published, flag.changed, payment.succeeded, feedback.submitted, agent\_run.finished |
+| Signals | Measurements and telemetry. Append only. | High | Lake (R2, Iceberg), counters (Analytics Engine), exact counts for each person (Durable Objects) | Product events, requests and their traces, logs, errors, web vitals |
+| Records | Objects with state that one module owns | Low | The database of the project or the workspace | Releases, deployments, provider resources, flags, version policies, campaigns, feedback, issues, decisions, consent records, ledger lines, distribution attempts |
+| Activity | Typed facts about each change. Never edited. | Low to medium | With its record, then archived to R2 | release.published, flag.changed, payment.succeeded, feedback.submitted, agent\_run.finished |
 
 Each write to a record emits activity. Activity feeds the customer timeline, Today, workflows, webhooks, agents and the audit log. Thus a new module appears in all of these places when it emits activity.
 
@@ -78,7 +78,7 @@ Signals and activity use one envelope:
 type Envelope = {
   id: string                      // unique; removes duplicates at ingest and in queries
   ts: string                      // when it happened, ISO 8601
-  kind: string                    // 'event', 'span', 'log', 'metric', 'error', 'activity', 'cost',
+  kind: string                    // 'event', 'request', 'span', 'log', 'error', 'activity', 'cost',
                                   // 'money', or a module kind such as 'uptime.check'
   name: string                    // 'export.completed', 'release.published'
   workspace: string
@@ -89,7 +89,7 @@ type Envelope = {
   release?: string
   feature?: string                // the owner: 'editor.export'
   callerFeature?: string          // the screen that started it, from baggage
-  person?: string                 // pseudonymous ID; the mapping lives in D1
+  person?: string                 // pseudonymous ID; the mapping lives in the project's database
   installation?: string
   account?: string
   session?: string
@@ -109,14 +109,14 @@ Twelve engines do the work that many modules need. A module uses an engine; it n
 | Manifest | One cached response that the SDK reads at start and on resume: version policy, flags, config, messages to show, unread changelog entries, survey and feedback settings | Update gate, flags, announcements, What's new, surveys |
 | Channels | One adapter for each way to reach a person: APNs, FCM, Web Push, email providers, the in-app inbox, webhooks. APNs and FCM take one device for each request, so large sends fan out through Queues. | Campaigns, journeys, workflows |
 | Content | Templates, languages, the brand of each project (name, icon, colors, sending domain), and media in R2 | Email, push, changelog, public pages, update screen |
-| Workflows | Durable steps: trigger, wait, condition, send, change a record, call a URL, ask for approval, start an agent. Runs for each person (journeys) or one time (operations). Journey enrollment lives in D1, because finished instances are kept for 30 days. | Journeys, release announcements, notify voters, incident response |
+| Workflows | Durable steps: trigger, wait, condition, send, change a record, call a URL, ask for approval, start an agent. Runs for each person (journeys) or one time (operations). Journey enrollment lives in the database of the project, because finished instances are kept for 30 days. | Journeys, release announcements, notify voters, incident response |
 | Experiments | Stable assignment by hash, holdout groups, exposure records, goal metrics | Flags, campaigns, journeys, paywalls |
-| Ledger | Money in and out as lines with a source, a precision label and attribution to project, component, feature and person. Stored exactly in D1, with the currency and the exchange rate of the day. | Revenue, spend, portfolio, cost per customer and feature |
+| Ledger | Money in and out as lines with a source, a precision label and attribution to project, component, feature and person. Stored exactly in the database of the project, with the currency and the exchange rate of the day. | Revenue, spend, portfolio, cost per customer and feature |
 | Actions and policy | Each change is an action with an actor, a class, a target, the values before and after, a reason, a result and an undo. Policy decides what needs approval. | All modules, agents, workflows, the audit log |
 | Connectors | Sign-in, history import, webhooks and mapping for each outside system | GitHub, stores, Stripe, RevenueCat, Cloudflare, Amp, email providers |
 | Query | Counters, nightly summaries and drill-down to the lake. The dashboard and MCP use the same queries. | Every chart, agents |
 | Search | One index across people, records and activity | ⌘K, MCP |
-| My notifications | Alerts, approval requests and the daily brief, with quiet hours | Today, incidents, policies |
+| My notifications | Alerts, approvals and the daily brief, with quiet hours | Today, incidents, policies |
 
 Cloudflare supplies most of the runtime. [Workflows](https://developers.cloudflare.com/workflows/reference/limits) runs durable steps with sleeps of up to 365 days. Queues carry activity to the engines that react to it.
 
@@ -132,11 +132,11 @@ The SDK gives each app the parts that I now build by hand in each project. Each 
 | Announcement | A banner or a modal | Manifest, audiences, content |
 | What's new | A sheet after an update, and a changelog list with an unread badge | Manifest, content |
 | Feedback | A form for a bug, an idea or a question, with context attached | Channels, search |
-| Requests board | Ideas with votes and status | Audiences, content |
+| Ideas board | Ideas with votes and status | Audiences, content |
 | Survey | One or two questions after a trigger | Workflows, audiences |
 | Inbox | In-app messages and replies to feedback | Channels |
 | Consent | Choices for analytics and for promotional messages | Audiences |
-| Push registration | The permission request at a chosen moment, then the device token | Channels, consent |
+| Push registration | The permission prompt at a chosen moment, then the device token | Channels, consent |
 
 Rules for shipped builds:
 
@@ -157,7 +157,7 @@ export default defineModule({
   id: 'feedback',
   scope: 'project',                                         // or 'workspace'
   nav: { area: 'Product', label: 'Feedback' },
-  records: { item: FeedbackItem, vote: Vote },              // D1 tables
+  records: { item: FeedbackItem, vote: Vote },              // tables in the project's database
   migrations: './migrations',
   activity: ['feedback.submitted', 'feedback.status_changed', 'feedback.merged'],
   filters: 'standard',                                      // the shared filter bar
@@ -166,10 +166,10 @@ export default defineModule({
     changeStatus: { class: 'write', input: StatusInput, run, undo },
     reply:        { class: 'message', input: ReplyInput, run },
   },
-  audiences: { votedFor: VotedFor },                        // "people who voted for request X"
+  audiences: { votedFor: VotedFor },                        // "people who voted for idea X"
   workflow:  { triggers: ['feedback.status_changed'], steps: { notifyVoters } },
   manifest:  feedbackSettings,                              // what the SDK receives
-  panels:    { person: Timeline, feature: Demand, release: ShippedRequests },
+  panels:    { person: Timeline, feature: Demand, release: ShippedIdeas },
   today:     [PayingCustomerReportedBug],                   // detectors for the attention queue
   notifications: ['feedback.from_paying_customer'],         // alerts that I can turn on
   connectors: [appStoreReviews, playReviews],
@@ -209,7 +209,7 @@ A blueprint is the factory contract as code. It holds the setup that I now repea
 | Delivery | A kill switch for each component, a version policy and a release policy |
 | Client kit | Update gate, What's new, feedback form, consent |
 | Messages | Welcome email, trial-ending reminder, What's new push, failed-payment email |
-| Public pages | Changelog, requests board, status, privacy, terms, support |
+| Public pages | Changelog, ideas board, status, privacy, terms, support |
 | Quality | Critical journeys, route targets, uptime checks |
 | Automation | The automation policy for agents |
 | Brand | Name, icon, colors, a sending domain, and a subdomain for marketing mail |
@@ -228,16 +228,16 @@ These choices are expensive to change after data and shipped builds exist. Versi
 | Person, installation and consent | Consent cannot be collected for the past. A wrong merge of two people is hard to undo. | Identities, installations, a merge log, and consent records with purpose, channel, wording version, source and time |
 | First touch | Install referrers and campaign tags cannot be collected later. | Play Install Referrer, the Apple AdServices token, and UTM tags or the referrer on the web |
 | Duplicates | Analytics Engine and the lake do not remove duplicates, so SDK retries count twice. | Event IDs. A short window in a Durable Object removes duplicates before the counters; queries remove the rest. |
-| Personal data in stores that cannot delete | Analytics Engine rows cannot be deleted, and Iceberg files need a rewrite. | No person IDs in Analytics Engine. The lake keeps a pseudonymous ID, and the mapping lives in D1. A delete removes the mapping at once and the rows at the next rewrite. |
-| Retention of counters | Analytics Engine keeps data for 3 months. | Nightly summaries in D1 from the first day |
-| D1 layout | Each D1 database has a size limit and one writer. | One database for each project, and one for the workspace |
+| Personal data in stores that cannot delete | Analytics Engine rows cannot be deleted, and Iceberg files need a rewrite. | No person IDs in Analytics Engine. The lake keeps a pseudonymous ID, and the mapping lives in the database of the project. A delete removes the mapping at once and the rows at the next rewrite. |
+| Retention of counters | Analytics Engine keeps data for 3 months. | Nightly summaries in the database of each project from the first day |
+| Database layout | Each database has a size limit (10 GB) and one writer. | One SQLite database for each project, and one for the workspace, each in its own Durable Object |
 | Activity on every write | Timelines, workflows and agents need history from the first day. | All module writes go through one function that emits activity. |
 | Actions with audit and policy | Agents need a complete and enforced history before they act. | The dashboard, API, CLI and MCP use one action layer. |
 | The module contract | Modules built without it will not fit later. | The first modules use the contract strictly, with no shortcuts. |
 | The ledger | Mixed numbers and currencies lead to wrong decisions. | Each amount has a source, a precision label, an attribution, a currency and the exchange rate of the day. |
 | A sending domain for each project | Email reputation builds slowly. | The blueprint sets a domain, and a subdomain for marketing mail. |
 
-## From request to primitives
+## From a goal to primitives
 
 Each thing that I do by hand today is a short chain of the same primitives.
 
