@@ -60,6 +60,16 @@
         "vitest": "catalog:",
       },
     },
+    "packages/scrub": {
+      "name": "@bagatka/scrub",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/web-crypto": {
       "name": "@bagatka/web-crypto",
       "dependencies": {
@@ -100,6 +110,7 @@
       "dependencies": {
         "@bagatka/otlp": "workspace:*",
         "@bagatka/quantile-sketch": "workspace:*",
+        "@bagatka/scrub": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "effect": "catalog:",
@@ -160,6 +171,8 @@
     "@bagatka/otlp": ["@bagatka/otlp@workspace:packages/otlp"],
 
     "@bagatka/quantile-sketch": ["@bagatka/quantile-sketch@workspace:packages/quantile-sketch"],
+
+    "@bagatka/scrub": ["@bagatka/scrub@workspace:packages/scrub"],
 
     "@bagatka/web-crypto": ["@bagatka/web-crypto@workspace:packages/web-crypto"],
 

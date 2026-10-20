@@ -24,10 +24,3 @@ export type RequestCounts = typeof RequestCounts.Type
 /** The SHA-256 of an export's body, as hex: an exporter's retry has the same one. */
 export const BatchDigest = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)).pipe(Schema.brand("BatchDigest"))
 export type BatchDigest = typeof BatchDigest.Type
-
-/** The requests of one export, added up: what ingest sends a project's object. */
-export const RequestBatch = Schema.Struct({
-  digest: BatchDigest,
-  counts: Schema.Array(RequestCounts),
-})
-export type RequestBatch = typeof RequestBatch.Type

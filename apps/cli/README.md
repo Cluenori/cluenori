@@ -13,6 +13,10 @@ asks about their requests, and checks this repository.
 ./cluenori component add <project> <key> --name <name>     prints the component's ingest key, once
 ./cluenori endpoints <project> [--last 1h|6h|24h|7d|14d|30d|90d] [--environment <key>] [--component <key>]
 ./cluenori requests <project> [--last ...] [--step 1m|5m|1h|1d]
+./cluenori errors <project> [--last ...]                  errors grouped by type and stack
+./cluenori error <project> <id> [--last ...]              its stack, latest occurrences, and how to open its request
+./cluenori logs <project> [--level warn|error|fatal] [--search <text>] [--trace <id>] [--error <id>]
+./cluenori trace <project> <trace id> [--at <ISO time>]   a request's spans and every log line, from the archive
 bun run check            … cluenori check     dependency rules, suppression comments, generated files
 bun run generate         cluenori generate    rewrites apps/worker/openapi.json
 ```
@@ -71,6 +75,10 @@ Nothing answers at http://localhost:8787. Start Cluenori on this computer with .
 - **Runs from the repository's root,** as the entry scripts and the root `package.json` scripts do.
 - **Runs in Bun and is never deployed.** Programs it starts run attached to this terminal, in its
   process group, so Wrangler can prompt and Ctrl+C reaches it.
+- **Setup asks once whether the data stays in the EU,** and saves the answer at once, because a
+  bucket's and a Durable Object's jurisdiction can't change. It makes the archive's bucket if it is
+  missing, sets its 90-day expiry (replacing its lifecycle rules, so setup can run again), and
+  deploys with `--env eu` for the EU. `./update` refuses without a saved choice rather than guess.
 - **Setup reads where Wrangler deployed** from its machine-readable output
   (`WRANGLER_OUTPUT_FILE_PATH`), and sets the API token with `wrangler secret bulk` from a file only
   its user can read, deleted after. Running setup on another computer makes a new token, and the

@@ -9,4 +9,16 @@
   // One Durable Object per project, named `<workspace>/<project>`, holding its database.
   "durable_objects": { "bindings": [{ "name": "PROJECT", "class_name": "ProjectObject" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ProjectObject"] }],
+  // Every export, kept 90 days by the bucket's lifecycle rule, which ./setup adds.
+  "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "cluenori-archive" }],
+  "env": {
+    // What ./setup deploys when your data stays in the EU: the same Worker, with its projects' Durable
+    // Objects and its archive there. Environments don't inherit bindings, so they are repeated.
+    "eu": {
+      "name": "cluenori",
+      "durable_objects": { "bindings": [{ "name": "PROJECT", "class_name": "ProjectObject" }] },
+      "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "cluenori-archive", "jurisdiction": "eu" }],
+      "vars": { "CLUENORI_JURISDICTION": "eu" },
+    },
+  },
 }

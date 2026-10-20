@@ -39,6 +39,29 @@ export const attached = Effect.fn("attached")(function* (
   }
 })
 
+/**
+ * Runs a program attached to this terminal, like `attached`, and returns its exit code instead of
+ * failing on one: for questions like "is it there?", where a code other than 0 is an answer.
+ */
+export const attachedExitCode = Effect.fn("attachedExitCode")(function* (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: { readonly cwd?: string },
+) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+  return yield* spawner
+    .exitCode(
+      ChildProcess.make(command, args, {
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+        detached: false,
+      }),
+    )
+    .pipe(Effect.orDie)
+})
+
 /** Runs Wrangler, from the Worker's package, attached to this terminal, with `env` added. */
 export const wrangler = (args: ReadonlyArray<string>, env?: Readonly<Record<string, string>>) =>
   attached("bun", ["run", "wrangler", ...args], { cwd: "apps/worker", ...(env === undefined ? {} : { env }) })

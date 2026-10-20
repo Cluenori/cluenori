@@ -664,9 +664,12 @@ The configuration files are the specification; this entry says what each one own
 - **Product words keep their product meaning** (`GLOSSARY.md`): in code, a UI building block is a
   view, never a "component"; a file is a file, never a "module".
 
-## 22. Credentials
+## 22. Credentials and personal data
 
 - **A credential is `Redacted` from the moment it is read** (entry 11), and never logged.
+- **Telemetry is scrubbed before anything stores it:** every text value goes through
+  `@bagatka/scrub`'s `scrubText`, and a value whose name `isSecretName` is removed whole. The
+  canonical example is `product/engines/signals/src/scrubbed.ts`.
 - **Stores keep a digest, never the credential.** Keys and tokens are compared by their SHA-256
   digests, which also makes the comparison take the same time whatever is presented.
 - **Refusals say nothing about which part was wrong:** an unknown project, component, or secret

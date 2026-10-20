@@ -51,7 +51,17 @@ Point the service's OpenTelemetry exporter at Cluenori, over HTTP with protobuf:
 ./cluenori requests notes --last 24h    # the load over time
 ```
 
-Add `--local` to ask the Cluenori `./run` serves instead of the deployment.
+Send its logs too, to `<your Cluenori>/otlp/v1/logs` with the same header, and investigate:
+
+```sh
+./cluenori errors notes                 # errors grouped by type and stack, most frequent first
+./cluenori error notes <ID>             # its stack, where it happens, and its latest occurrences
+./cluenori trace notes <trace ID>       # that request's spans and every log line, from the archive
+./cluenori logs notes --search timeout  # warnings and errors, searchable
+```
+
+Every export is kept 90 days, with emails, tokens and card numbers removed. Add `--local` to ask
+the Cluenori `./run` serves instead of the deployment.
 
 ## Work on it
 

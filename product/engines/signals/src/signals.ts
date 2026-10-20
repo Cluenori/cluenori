@@ -1,132 +1,65 @@
-import type { QuantileSketch as Sketch } from "@bagatka/quantile-sketch"
-import { mergeSketches, Quantile, QuantileSketch, quantileOf } from "@bagatka/quantile-sketch"
-import { ComponentKey, EnvelopeName, EnvironmentKey, Period } from "@cluenori/foundation"
-import { Context, DateTime, Duration, Effect, Layer, Option, Order, Ref, Schema } from "effect"
+import type { ComponentKey, TraceId } from "@cluenori/foundation"
+import { Period } from "@cluenori/foundation"
+import { Context, DateTime, Duration, Effect, Layer, Option, Ref, Schema } from "effect"
+import type { SqlError } from "effect/sql"
 import { SqlClient, SqlSchema } from "effect/sql"
 
-import { requestRetention } from "./read-requests.ts"
-import type { RequestBatch, RequestCounts } from "./request-counts.ts"
+import type { ArchiveSettings } from "./archive-index.ts"
+import { archiveIndex } from "./archive-index.ts"
+import type { ArchiveUnavailable } from "./archive-store.ts"
+import { ArchiveStore } from "./archive-store.ts"
+import type { ErrorDetail, ErrorGroupNotFound, ErrorQuery, ErrorTable, LogPage, LogQuery } from "./error-groups.ts"
+import type { ExportSignal, LogExport, MetricsExport, TraceExport } from "./exports.ts"
+import type { ErrorGroupId } from "./log-entry.ts"
+import { logStore } from "./log-store.ts"
 import { BatchDigest } from "./request-counts.ts"
-import type { EndpointRow, EndpointTable, RequestQuery, RequestSeries, SeriesStep } from "./request-queries.ts"
+import type { EndpointTable, RequestQuery, RequestSeries, SeriesStep } from "./request-queries.ts"
+import { requestStore } from "./request-store.ts"
 import { migrateSignals } from "./signals-migrations.ts"
-
-/** Where a component's requests are counted once it has 500 endpoints: names past that are counted here. */
-export const otherEndpoints = EnvelopeName.make("(other endpoints)")
-
-/** How long hourly counts are kept: 15 months, so a year compares with the one before. */
-export const hourlyRetention = Duration.days(455)
-
-const maxEndpointsPerComponent = 500
+import type { TraceView } from "./trace-view.ts"
+import { traceViewOf } from "./trace-view.ts"
 
 // An exporter retries a failed export within seconds; an hour of digests catches every retry.
 const batchWindow = Duration.hours(1)
 
-// Old buckets and digests are removed while recording, at most this often.
+// Old data is removed while recording, at most this often.
 const cleanupInterval = Duration.minutes(10)
 
-// Questions about this long or shorter read minutes; longer ones read hours.
-const longestByMinute = Duration.days(2)
+// A trace is looked for this long before and after the time it is asked about, in at most this
+// many archive files, the nearest first.
+const traceWindow = Duration.minutes(2)
+const traceFiles = 60
 
-/** One store of counts: its table, how wide its buckets are, and how long it keeps them. */
-interface Resolution {
-  readonly table: "signals_minute_counts" | "signals_hour_counts"
-  readonly width: number
-  readonly kept: Duration.Duration
-}
-
-const byMinute: Resolution = { table: "signals_minute_counts", width: 60_000, kept: requestRetention }
-const byHour: Resolution = { table: "signals_hour_counts", width: 3_600_000, kept: hourlyRetention }
-
-const stepMillis: Readonly<Record<SeriesStep, number>> = {
-  "1m": 60_000,
-  "5m": 5 * 60_000,
-  "1h": 3_600_000,
-  "1d": 86_400_000,
-}
-
-const floorTo = (millis: number, width: number) => millis - (((millis % width) + width) % width)
-const ceilTo = (millis: number, width: number) => floorTo(millis + width - 1, width)
-
-const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
-
-const CountsRow = Schema.Struct({
-  bucket: Schema.Int,
-  component: ComponentKey,
-  endpoint: EnvelopeName,
-  environment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
-  requests: Count,
-  errors: Count,
-  totalMs: Schema.Finite,
-  durations: Schema.fromJsonString(QuantileSketch),
-})
-type CountsRow = typeof CountsRow.Type
-
-const byRequestsThenName = Order.combineAll<EndpointRow>([
-  Order.mapInput(Order.flip(Order.Number), (row) => row.requests),
-  Order.mapInput(Order.String, (row) => row.component),
-  Order.mapInput(Order.String, (row) => row.environment ?? ""),
-  Order.mapInput(Order.String, (row) => row.endpoint),
-])
-
-// Which store answers a question about `period`: minutes for two days or less, hours beyond.
-const resolutionFor = (period: Period) =>
-  DateTime.toEpochMillis(period.to) - DateTime.toEpochMillis(period.from) <= Duration.toMillis(longestByMinute)
-    ? byMinute
-    : byHour
-
-// The period cut to what `resolution` keeps and to now, in its whole buckets: [from, to) in ms.
-const coveredOf = (period: Period, resolution: Resolution, now: number) => {
-  const keptFrom = ceilTo(now - Duration.toMillis(resolution.kept), resolution.width)
-  const from = Math.max(floorTo(DateTime.toEpochMillis(period.from), resolution.width), keptFrom)
-  const to = ceilTo(Math.min(DateTime.toEpochMillis(period.to), now), resolution.width)
-  return from < to ? Option.some({ from, to }) : Option.none()
-}
-
-const percentile = (durations: Sketch, quantile: number) =>
-  Option.match(quantileOf(durations, Quantile.make(quantile)), {
-    onNone: () => Effect.die("A counted endpoint has no durations"),
-    onSome: (value) => Effect.succeed(value),
-  })
-
-// A batch's counts added up into hours, so each hour, endpoint and environment is one write.
-const hoursOf = (counts: ReadonlyArray<RequestCounts>): ReadonlyArray<RequestCounts> => {
-  const hours = new Map<string, RequestCounts>()
-  for (const entry of counts) {
-    const hour = floorTo(DateTime.toEpochMillis(entry.bucket), byHour.width)
-    // Names and keys hold no control characters, so NUL separates them unambiguously.
-    const key = [hour, entry.endpoint, entry.environment ?? ""].join("\u0000")
-    const earlier = hours.get(key)
-    hours.set(
-      key,
-      earlier === undefined
-        ? { ...entry, bucket: DateTime.makeUnsafe(hour) }
-        : {
-            ...earlier,
-            requests: earlier.requests + entry.requests,
-            errors: earlier.errors + entry.errors,
-            totalMs: earlier.totalMs + entry.totalMs,
-            durations: mergeSketches([earlier.durations, entry.durations]),
-          },
-    )
-  }
-  return [...hours.values()]
-}
+/** Whose signals these are. */
+export type SignalsSettings = ArchiveSettings
 
 /**
- * The requests of one project, counted by endpoint and environment, by the minute for 14 days and
- * by the hour for 15 months, and the questions asked of them. Runs inside the Durable Object that
- * holds the project's database. Each component counts at most 500 endpoints, the rest as
- * `(other endpoints)`.
+ * The signals of one project: its requests, warnings and errors, and every export in the archive,
+ * and the questions asked of them. Runs inside the Durable Object that holds the project's database.
  */
 export class Signals extends Context.Service<
   Signals,
   {
     /**
-     * Adds a batch's requests to the counts of `component`, in one transaction, once: a batch with a
-     * digest recorded in the last hour, an exporter's retry, is skipped and reported as a duplicate.
-     * Writes one row per endpoint, environment and minute in the batch, and one per hour.
+     * Archives a trace export and adds its requests to the counts of `component`, once: an export
+     * whose digest arrived in the last hour, an exporter's retry, is skipped. Fails with
+     * `ArchiveUnavailable` when it can't be archived, having counted nothing, so the exporter
+     * should send it again.
      */
-    readonly record: (component: ComponentKey, batch: RequestBatch) => Effect.Effect<"recorded" | "duplicate">
+    readonly recordTraces: (
+      component: ComponentKey,
+      exported: TraceExport,
+    ) => Effect.Effect<"recorded" | "duplicate", ArchiveUnavailable>
+    /** Archives a log export and keeps its warnings and errors, once, as `recordTraces` does. */
+    readonly recordLogs: (
+      component: ComponentKey,
+      exported: LogExport,
+    ) => Effect.Effect<"recorded" | "duplicate", ArchiveUnavailable>
+    /** Archives a metrics export, once, as `recordTraces` does. */
+    readonly recordMetrics: (
+      component: ComponentKey,
+      exported: MetricsExport,
+    ) => Effect.Effect<"recorded" | "duplicate", ArchiveUnavailable>
     /**
      * Every endpoint's requests in the query's period, most requested first: by the minute for two
      * days or less, by the hour beyond. Reads only.
@@ -138,226 +71,160 @@ export class Signals extends Context.Service<
      * says which step it used. Reads only.
      */
     readonly requestsOverTime: (query: RequestQuery, step: SeriesStep) => Effect.Effect<RequestSeries>
+    /** The errors of the query's period, most frequent first. Reads only. */
+    readonly errors: (query: ErrorQuery) => Effect.Effect<ErrorTable>
+    /** One error and its latest occurrences in the query's period. Reads only. */
+    readonly error: (id: ErrorGroupId, query: ErrorQuery) => Effect.Effect<ErrorDetail, ErrorGroupNotFound>
+    /** A page of warnings and errors, newest first. Reads only. */
+    readonly logs: (query: LogQuery) => Effect.Effect<LogPage>
+    /**
+     * Trace `trace` from the archive: its spans and its logs at every level, from every component,
+     * looked for within two minutes of `around`. Reads up to 60 archive files. Fails with
+     * `ArchiveUnavailable` when the archive can't be read.
+     */
+    readonly trace: (trace: TraceId, around: DateTime.Utc) => Effect.Effect<TraceView, ArchiveUnavailable>
   }
 >()("@cluenori/signals/signals") {
-  /** Builds the engine on the object's database, first creating or updating its tables. */
-  static readonly layer = Layer.effect(
-    Signals,
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient
-      yield* migrateSignals.pipe(Effect.orDie)
-      const lastCleanup = yield* Ref.make(0)
+  /** Builds the engine on the object's database and the archive, first creating or updating its tables. */
+  static readonly layer = (settings: SignalsSettings) =>
+    Layer.effect(
+      Signals,
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        const archive = yield* ArchiveStore
+        yield* migrateSignals.pipe(Effect.orDie)
+        const requests = yield* requestStore
+        const logs = yield* logStore
+        const index = yield* archiveIndex(settings)
+        const lastCleanup = yield* Ref.make(0)
 
-      const encodeSketch = Schema.encodeEffect(Schema.fromJsonString(QuantileSketch))
-
-      const findBatch = SqlSchema.findOneOption({
-        Request: BatchDigest,
-        Result: Schema.Struct({ digest: BatchDigest }),
-        execute: (digest) => sql`SELECT digest FROM signals_batches WHERE digest = ${digest}`,
-      })
-
-      const findEndpoints = SqlSchema.findAll({
-        Request: ComponentKey,
-        Result: Schema.Struct({ id: Schema.Int, name: EnvelopeName }),
-        execute: (component) => sql`SELECT id, name FROM signals_endpoints WHERE component = ${component}`,
-      })
-
-      const findDurations = (resolution: Resolution) =>
-        SqlSchema.findOneOption({
-          Request: Schema.Struct({ bucket: Schema.Int, endpoint: Schema.Int, environment: Schema.String }),
-          Result: Schema.Struct({ durations: Schema.fromJsonString(QuantileSketch) }),
-          execute: (key) =>
-            sql`SELECT durations FROM ${sql(resolution.table)} WHERE bucket = ${key.bucket} AND endpoint = ${key.endpoint} AND environment = ${key.environment}`,
+        const findBatch = SqlSchema.findOneOption({
+          Request: BatchDigest,
+          Result: Schema.Struct({ digest: BatchDigest }),
+          execute: (digest) => sql`SELECT digest FROM signals_batches WHERE digest = ${digest}`,
         })
 
-      const findCounts = (resolution: Resolution) =>
-        SqlSchema.findAll({
-          Request: Schema.Struct({
-            from: Schema.Int,
-            to: Schema.Int,
-            environment: Schema.optionalKey(EnvironmentKey),
-            component: Schema.optionalKey(ComponentKey),
-          }),
-          Result: CountsRow,
-          execute: (request) => sql`
-            SELECT c.bucket, e.component, e.name AS endpoint, c.environment, c.requests, c.errors,
-              c.total_ms AS "totalMs", c.durations
-            FROM ${sql(resolution.table)} c JOIN signals_endpoints e ON e.id = c.endpoint
-            WHERE ${sql.and([
-              sql`c.bucket >= ${request.from}`,
-              sql`c.bucket < ${request.to}`,
-              ...(request.environment === undefined ? [] : [sql`c.environment = ${request.environment}`]),
-              ...(request.component === undefined ? [] : [sql`e.component = ${request.component}`]),
-            ])}`,
+        const cleanUp = Effect.fn("Signals.cleanUp")(function* (now: number) {
+          const last = yield* Ref.get(lastCleanup)
+          if (now - last < Duration.toMillis(cleanupInterval)) {
+            return
+          }
+          yield* requests.cleanUp(now)
+          yield* logs.cleanUp(now)
+          yield* index.cleanUp(now)
+          yield* sql`DELETE FROM signals_batches WHERE received_at < ${now - Duration.toMillis(batchWindow)}`
+          yield* Ref.set(lastCleanup, now)
         })
 
-      // The endpoint's row ID, adding the endpoint when it is new; past the limit, `(other endpoints)`.
-      const endpointIdOf = Effect.fn("Signals.endpointIdOf")(function* (
-        component: ComponentKey,
-        name: EnvelopeName,
-        known: Map<string, number>,
-      ) {
-        const atLimit = known.size >= maxEndpointsPerComponent
-        const counted = atLimit && !known.has(name) ? otherEndpoints : name
-        const existing = known.get(counted)
-        if (existing !== undefined) {
-          return existing
+        type Archived = {
+          readonly digest: BatchDigest
+          readonly archive: Uint8Array
+          readonly from: DateTime.Utc
+          readonly to: DateTime.Utc
         }
-        const [added] = yield* sql<{
-          readonly id: number
-        }>`INSERT INTO signals_endpoints (component, name) VALUES (${component}, ${counted}) RETURNING id`
-        if (added === undefined) {
-          return yield* Effect.die("Adding an endpoint returned no row")
-        }
-        known.set(counted, added.id)
-        return added.id
-      })
 
-      const add = Effect.fn("Signals.add")(function* (resolution: Resolution, endpoint: number, counts: RequestCounts) {
-        const bucket = floorTo(DateTime.toEpochMillis(counts.bucket), resolution.width)
-        const environment = counts.environment ?? ""
-        const stored = yield* findDurations(resolution)({ bucket, endpoint, environment })
-        const durations = Option.match(stored, {
-          onNone: () => counts.durations,
-          onSome: (row) => mergeSketches([row.durations, counts.durations]),
+        // Inside the transaction: checks again for a retry that arrived meanwhile, then writes.
+        const commitExport = Effect.fn("Signals.commitExport")(function* (
+          signal: ExportSignal,
+          component: ComponentKey,
+          exported: Archived,
+          key: string,
+          now: number,
+          write: Effect.Effect<void, SqlError.SqlError | Schema.SchemaError>,
+        ) {
+          const again = yield* findBatch(exported.digest)
+          if (Option.isSome(again)) {
+            return "duplicate" as const
+          }
+          yield* sql`INSERT INTO signals_batches ${sql.insert({ digest: exported.digest, received_at: now })}`
+          yield* write
+          yield* index.add(signal, component, exported, key, now)
+          yield* cleanUp(now)
+          return "recorded" as const
         })
-        const json = yield* encodeSketch(durations)
-        yield* sql`
-          INSERT INTO ${sql(resolution.table)} ${sql.insert({
-            bucket,
-            endpoint,
-            environment,
-            requests: counts.requests,
-            errors: counts.errors,
-            total_ms: counts.totalMs,
-            durations: json,
-          })}
-          ON CONFLICT (bucket, endpoint, environment) DO UPDATE SET
-            requests = requests + excluded.requests,
-            errors = errors + excluded.errors,
-            total_ms = total_ms + excluded.total_ms,
-            durations = excluded.durations`
-      })
 
-      const cleanUp = Effect.fn("Signals.cleanUp")(function* (now: number) {
-        const last = yield* Ref.get(lastCleanup)
-        if (now - last < Duration.toMillis(cleanupInterval)) {
-          return
-        }
-        yield* sql`DELETE FROM signals_minute_counts WHERE bucket < ${now - Duration.toMillis(byMinute.kept)}`
-        yield* sql`DELETE FROM signals_hour_counts WHERE bucket < ${now - Duration.toMillis(byHour.kept)}`
-        yield* sql`DELETE FROM signals_batches WHERE received_at < ${now - Duration.toMillis(batchWindow)}`
-        yield* Ref.set(lastCleanup, now)
-      })
-
-      const recordOnce = Effect.fn("Signals.recordOnce")(function* (component: ComponentKey, batch: RequestBatch) {
-        const current = yield* DateTime.now
-        const now = DateTime.toEpochMillis(current)
-        const seen = yield* findBatch(batch.digest)
-        if (seen._tag === "Some") {
-          return "duplicate" as const
-        }
-        yield* sql`INSERT INTO signals_batches ${sql.insert({ digest: batch.digest, received_at: now })}`
-        const endpoints = yield* findEndpoints(component)
-        const known = new Map(endpoints.map((endpoint) => [endpoint.name, endpoint.id] as const))
-        for (const counts of batch.counts) {
-          const endpoint = yield* endpointIdOf(component, counts.endpoint, known)
-          yield* add(byMinute, endpoint, counts)
-        }
-        for (const counts of hoursOf(batch.counts)) {
-          const endpoint = yield* endpointIdOf(component, counts.endpoint, known)
-          yield* add(byHour, endpoint, counts)
-        }
-        yield* cleanUp(now)
-        return "recorded" as const
-      })
-
-      const record = Effect.fn("Signals.record")(function* (component: ComponentKey, batch: RequestBatch) {
-        return yield* sql.withTransaction(recordOnce(component, batch)).pipe(Effect.orDie)
-      })
-
-      const countsIn = Effect.fn("Signals.countsIn")(function* (query: RequestQuery) {
-        const current = yield* DateTime.now
-        const now = DateTime.toEpochMillis(current)
-        const resolution = resolutionFor(query.period)
-        const covered = coveredOf(query.period, resolution, now)
-        if (covered._tag === "None") {
-          return { covered: Option.none<Period>(), rows: [], now, resolution }
-        }
-        const rows = yield* findCounts(resolution)({
-          from: covered.value.from,
-          to: covered.value.to,
-          ...(query.environment === undefined ? {} : { environment: query.environment }),
-          ...(query.component === undefined ? {} : { component: query.component }),
-        }).pipe(Effect.orDie)
-        const period = new Period({
-          from: DateTime.makeUnsafe(covered.value.from),
-          to: DateTime.makeUnsafe(covered.value.to),
+        // Archives first, outside the transaction, which holds only SQL; then writes everything else
+        // in one transaction.
+        const store = Effect.fn("Signals.store")(function* (
+          signal: ExportSignal,
+          component: ComponentKey,
+          exported: Archived,
+          write: Effect.Effect<void, SqlError.SqlError | Schema.SchemaError>,
+        ) {
+          const seen = yield* findBatch(exported.digest).pipe(Effect.orDie)
+          if (Option.isSome(seen)) {
+            return "duplicate" as const
+          }
+          const current = yield* DateTime.now
+          const now = DateTime.toEpochMillis(current)
+          const key = index.keyOf(signal, component, exported.digest, now)
+          yield* archive.put(key, exported.archive)
+          return yield* sql
+            .withTransaction(commitExport(signal, component, exported, key, now, write))
+            .pipe(Effect.orDie)
         })
-        return { covered: Option.some(period), rows, now, resolution }
-      })
 
-      const rowOf = Effect.fn("Signals.rowOf")(function* (rows: ReadonlyArray<CountsRow>) {
-        const [first] = rows
-        if (first === undefined) {
-          return yield* Effect.die("An endpoint row needs counts")
-        }
-        const requests = rows.reduce((total, counts) => total + counts.requests, 0)
-        const durations = mergeSketches(rows.map((counts) => counts.durations))
-        const p50Ms = yield* percentile(durations, 0.5)
-        const p80Ms = yield* percentile(durations, 0.8)
-        const p95Ms = yield* percentile(durations, 0.95)
-        const p99Ms = yield* percentile(durations, 0.99)
-        const row: EndpointRow = {
-          component: first.component,
-          ...(first.environment === "" ? {} : { environment: first.environment }),
-          endpoint: first.endpoint,
-          requests,
-          errors: rows.reduce((total, counts) => total + counts.errors, 0),
-          averageMs: rows.reduce((total, counts) => total + counts.totalMs, 0) / requests,
-          p50Ms,
-          p80Ms,
-          p95Ms,
-          p99Ms,
-        }
-        return row
-      })
+        const recordTraces = Effect.fn("Signals.recordTraces")(function* (
+          component: ComponentKey,
+          exported: TraceExport,
+        ) {
+          return yield* store("traces", component, exported, requests.add(component, exported.counts))
+        })
 
-      const endpoints = Effect.fn("Signals.endpoints")(function* (query: RequestQuery) {
-        const { covered, rows, now, resolution } = yield* countsIn(query)
-        const byEndpoint = Map.groupBy(rows, (row) => [row.component, row.environment, row.endpoint].join("\u0000"))
-        const endpointRows = yield* Effect.forEach(byEndpoint.values(), rowOf)
-        const newest = rows.reduce((latest, row) => Math.max(latest, row.bucket + resolution.width), 0)
-        const table: EndpointTable = {
-          ...(covered._tag === "Some" ? { covered: covered.value } : {}),
-          rows: endpointRows.toSorted(byRequestsThenName),
-          requests: rows.reduce((total, row) => total + row.requests, 0),
-          errors: rows.reduce((total, row) => total + row.errors, 0),
-          ...(rows.length === 0 ? {} : { dataUntil: DateTime.makeUnsafe(Math.min(newest, now)) }),
-        }
-        return table
-      })
+        const recordLogs = Effect.fn("Signals.recordLogs")(function* (component: ComponentKey, exported: LogExport) {
+          return yield* store("logs", component, exported, logs.add(component, exported.entries, exported.errors))
+        })
 
-      const requestsOverTime = Effect.fn("Signals.requestsOverTime")(function* (query: RequestQuery, step: SeriesStep) {
-        const { covered, rows, resolution } = yield* countsIn(query)
-        const used: SeriesStep = stepMillis[step] < resolution.width ? "1h" : step
-        const byStep = Map.groupBy(rows, (row) => floorTo(row.bucket, stepMillis[used]))
-        const points = Array.from(byStep, ([start, inStep]) => ({
-          start: DateTime.makeUnsafe(start),
-          requests: inStep.reduce((total, row) => total + row.requests, 0),
-          errors: inStep.reduce((total, row) => total + row.errors, 0),
-        }))
-        const series: RequestSeries = {
-          ...(covered._tag === "Some" ? { covered: covered.value } : {}),
-          step: used,
-          points: points.toSorted(
-            (left, right) => DateTime.toEpochMillis(left.start) - DateTime.toEpochMillis(right.start),
-          ),
-        }
-        return series
-      })
+        const recordMetrics = Effect.fn("Signals.recordMetrics")(function* (
+          component: ComponentKey,
+          exported: MetricsExport,
+        ) {
+          return yield* store("metrics", component, exported, Effect.void)
+        })
 
-      return Signals.of({ record, endpoints, requestsOverTime })
-    }),
-  )
+        const nowMillis = DateTime.now.pipe(Effect.map(DateTime.toEpochMillis))
+
+        const errors = Effect.fn("Signals.errors")(function* (query: ErrorQuery) {
+          const now = yield* nowMillis
+          return yield* logs.errors(query, now)
+        })
+
+        const error = Effect.fn("Signals.error")(function* (id: ErrorGroupId, query: ErrorQuery) {
+          const now = yield* nowMillis
+          return yield* logs.error(id, query, now)
+        })
+
+        const searchLogs = Effect.fn("Signals.logs")(function* (query: LogQuery) {
+          const now = yield* nowMillis
+          return yield* logs.logs(query, now)
+        })
+
+        const trace = Effect.fn("Signals.trace")(function* (traceId: TraceId, around: DateTime.Utc) {
+          const middle = DateTime.toEpochMillis(around)
+          const from = middle - Duration.toMillis(traceWindow)
+          const to = middle + Duration.toMillis(traceWindow)
+          const found = yield* index.around(["traces", "logs"], from, to, traceFiles)
+          const read = yield* Effect.forEach(
+            found.files,
+            (file) => archive.get(file.key).pipe(Effect.map(Option.map((bytes) => ({ ...file, bytes })))),
+            { concurrency: 8 },
+          )
+          const files = read.flatMap((file) => (Option.isSome(file) ? [file.value] : []))
+          const searched = new Period({ from: DateTime.makeUnsafe(from), to: DateTime.makeUnsafe(to) })
+          return yield* traceViewOf(traceId, searched, files, found.overlapping - files.length)
+        })
+
+        return Signals.of({
+          recordTraces,
+          recordLogs,
+          recordMetrics,
+          endpoints: requests.endpoints,
+          requestsOverTime: requests.requestsOverTime,
+          errors,
+          error,
+          logs: searchLogs,
+          trace,
+        })
+      }),
+    )
 }

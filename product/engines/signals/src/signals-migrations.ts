@@ -34,5 +34,46 @@ export const migrateSignals = Migrator.make({})({
         received_at INTEGER NOT NULL
       ) WITHOUT ROWID`
     }),
+    // Warnings and errors, each with its entry as JSON and what it is filtered by; the error groups
+    // they belong to; and which archive file holds each export, by the time its records span.
+    "0002_logs_errors_archive": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE signals_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        time INTEGER NOT NULL,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        level TEXT NOT NULL,
+        category TEXT NOT NULL,
+        error TEXT,
+        trace TEXT,
+        text TEXT NOT NULL,
+        entry TEXT NOT NULL
+      )`
+      yield* sql`CREATE INDEX signals_logs_time ON signals_logs (time)`
+      yield* sql`CREATE INDEX signals_logs_trace ON signals_logs (trace) WHERE trace IS NOT NULL`
+      yield* sql`CREATE INDEX signals_logs_error ON signals_logs (error, time) WHERE error IS NOT NULL`
+      yield* sql`CREATE TABLE signals_error_groups (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        culprit TEXT NOT NULL,
+        first_seen INTEGER NOT NULL,
+        last_seen INTEGER NOT NULL,
+        last_component TEXT NOT NULL,
+        last_environment TEXT NOT NULL,
+        last_release TEXT NOT NULL
+      ) WITHOUT ROWID`
+      yield* sql`CREATE TABLE signals_archive (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        signal TEXT NOT NULL,
+        component TEXT NOT NULL,
+        from_time INTEGER NOT NULL,
+        to_time INTEGER NOT NULL,
+        key TEXT NOT NULL UNIQUE,
+        received_at INTEGER NOT NULL
+      )`
+      yield* sql`CREATE INDEX signals_archive_time ON signals_archive (from_time, to_time)`
+    }),
   }),
 })

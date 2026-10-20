@@ -1,20 +1,11 @@
 import { ComponentKey, ProjectKey } from "@cluenori/foundation"
 import { ComponentName, ProjectName } from "@cluenori/projects"
-import { Console, Effect, Redacted, Schema } from "effect"
+import { Console, Effect, Redacted } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 
 import { apiClient, reachFailures, refuse } from "./api-client.ts"
 import { apiTarget } from "./api-settings.ts"
-
-const local = Flag.Boolean("local").pipe(
-  Flag.withDescription("Ask the Cluenori ./run serves on this computer, not the deployment ./setup made."),
-)
-
-// Values from the command line become typed once, here; a refusal says the rule.
-const parsed = <S extends Schema.Top & { readonly DecodingServices: never }>(schema: S, value: string, what: string) =>
-  Schema.decodeEffect(schema)(value).pipe(
-    Effect.catchTag("SchemaError", (error) => refuse(`"${value}" isn't ${what}: ${error.message}`)),
-  )
+import { local, parsed } from "./question.ts"
 
 /** `cluenori project create <key> --name <name>`. */
 export const projectCreate = Command.make(

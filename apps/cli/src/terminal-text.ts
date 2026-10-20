@@ -28,6 +28,12 @@ export const milliseconds = (value: number) => {
 /** `2026-10-19 08:15 UTC`. */
 export const utcMinute = (time: DateTime.Utc) => `${DateTime.formatIso(time).slice(0, 16).replace("T", " ")} UTC`
 
+/** `2026-10-19 08:15:30 UTC`. */
+export const utcSecond = (time: DateTime.Utc) => `${DateTime.formatIso(time).slice(0, 19).replace("T", " ")} UTC`
+
+/** `08:15:30.250`: the time of day in UTC, to the millisecond, for lines of one request. */
+export const utcClock = (time: DateTime.Utc) => DateTime.formatIso(time).slice(11, 23)
+
 /** Rows of text as columns: the first left-aligned, the others right-aligned, two spaces apart. */
 export const columns = (rows: ReadonlyArray<ReadonlyArray<string>>) => {
   const widths = rows.reduce<Array<number>>(

@@ -8,6 +8,7 @@ import { Effect, Exit, Layer, ManagedRuntime, Redacted, Schema } from "effect"
 
 import type { PlainSchema, ProjectCall, ProjectCallName } from "./project-calls.ts"
 import { exitText, inputText, projectCalls } from "./project-calls.ts"
+import { r2ArchiveLayer } from "./r2-archive.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 
 type ProjectServices = Projects | Signals
@@ -61,14 +62,36 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
       }),
     new ProjectNotFound({ project }),
   ),
-  ingestRequests: served(
-    projectCalls.ingestRequests,
-    ({ ingestKey, batch }) =>
+  ingestTraces: served(
+    projectCalls.ingestTraces,
+    ({ ingestKey, export: exported }) =>
       Effect.gen(function* () {
         const projects = yield* Projects
         const signals = yield* Signals
         const component = yield* projects.authenticate(Redacted.make(ingestKey))
-        return yield* signals.record(component, batch)
+        return yield* signals.recordTraces(component, exported)
+      }),
+    new IngestKeyRejected(),
+  ),
+  ingestLogs: served(
+    projectCalls.ingestLogs,
+    ({ ingestKey, export: exported }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const signals = yield* Signals
+        const component = yield* projects.authenticate(Redacted.make(ingestKey))
+        return yield* signals.recordLogs(component, exported)
+      }),
+    new IngestKeyRejected(),
+  ),
+  ingestMetrics: served(
+    projectCalls.ingestMetrics,
+    ({ ingestKey, export: exported }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const signals = yield* Signals
+        const component = yield* projects.authenticate(Redacted.make(ingestKey))
+        return yield* signals.recordMetrics(component, exported)
       }),
     new IngestKeyRejected(),
   ),
@@ -87,6 +110,42 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
       Effect.gen(function* () {
         const signals = yield* Signals
         return yield* signals.requestsOverTime(query, step)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  errors: served(
+    projectCalls.errors,
+    (query) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.errors(query)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  error: served(
+    projectCalls.error,
+    ({ id, query }) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.error(id, query)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  logs: served(
+    projectCalls.logs,
+    (query) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.logs(query)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  trace: served(
+    projectCalls.trace,
+    ({ trace, around }) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.trace(trace, around)
       }),
     new ProjectNotFound({ project }),
   ),
@@ -111,9 +170,10 @@ export class ProjectObject extends DurableObject<Env> {
     this.#storage = ctx.storage
     this.#calls = servedCalls(project)
     this.#runtime = ManagedRuntime.make(
-      Layer.mergeAll(Projects.layer({ project }), Signals.layer).pipe(
+      Layer.mergeAll(Projects.layer({ project }), Signals.layer({ workspace, project })).pipe(
         Layer.provideMerge(ActivityLog.layer({ workspace, project })),
         Layer.provide(webCryptoLayer(crypto)),
+        Layer.provide(r2ArchiveLayer(env.ARCHIVE)),
         Layer.provide(SqliteClient.layer({ storage: ctx.storage })),
         // In the runtime itself, so every call runs on it as the Worker's requests do. A scheduler
         // is a reference, so it doesn't show in the runtime's type.

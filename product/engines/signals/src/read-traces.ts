@@ -1,13 +1,15 @@
 import type { Attributes, Span } from "@bagatka/otlp"
-import { decodeTraces } from "@bagatka/otlp"
+import { decodeTraces, encodeTraces } from "@bagatka/otlp"
 import type { SketchValue } from "@bagatka/quantile-sketch"
 import { SketchValue as SketchValueSchema, sketchOf } from "@bagatka/quantile-sketch"
-import { EnvelopeName, EnvironmentKey } from "@cluenori/foundation"
+import { EnvelopeName, EnvironmentKey, ReleaseVersion } from "@cluenori/foundation"
 import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Hex } from "effect/encoding"
 
-import type { RequestBatch, RequestCounts } from "./request-counts.ts"
+import type { TraceExport } from "./exports.ts"
+import type { RequestCounts } from "./request-counts.ts"
 import { BatchDigest } from "./request-counts.ts"
+import { scrubbedTraces } from "./scrubbed.ts"
 
 /** How long requests are counted for: older ones are refused at ingest and removed after. */
 export const requestRetention = Duration.days(14)
@@ -18,10 +20,22 @@ export const bucketMillis = 60_000
 // A request may start this far in the future, for a sender whose clock runs ahead.
 const clockSkew = Duration.hours(1)
 
-/** The requests of an export, and the request spans it refused, with the first reason. */
-export interface ReadRequests {
-  readonly batch: RequestBatch
-  readonly rejected: { readonly count: number; readonly problem: string } | undefined
+/** Records an export held that Cluenori counted nothing for, and the first reason. */
+export interface Rejected {
+  readonly count: number
+  readonly problem: string
+}
+
+/** A trace export, read, and the request spans it refused. */
+export interface ReadTraces {
+  readonly export: TraceExport
+  readonly rejected: Rejected | undefined
+}
+
+/** The release a resource reports in `service.version`, when it is a release version. */
+export const releaseOf = (resource: Attributes): ReleaseVersion | undefined => {
+  const reported = resource.get("service.version")
+  return Schema.is(ReleaseVersion)(reported) ? reported : undefined
 }
 
 /**
@@ -63,16 +77,17 @@ interface Group {
 }
 
 /**
- * Reads the requests in the body of an OTLP/HTTP protobuf trace export and adds them up by endpoint,
- * environment, and minute. A request is a server or consumer span, named by the span's
- * name (`GET /api/notes/{id}`); it failed when its status is an error. Other spans are skipped.
- * Pure apart from the clock and the digest; runs where the export arrives, so a project's object
- * only adds up totals.
+ * Reads the body of an OTLP/HTTP protobuf trace export: removes credentials and personal data,
+ * writes the file the archive keeps, and adds its requests up by endpoint, environment, and minute.
+ * A request is a server or consumer span, named by the span's name (`GET /api/notes/{id}`); it
+ * failed when its status is an error. Pure apart from the clock and the digest; runs where the
+ * export arrives, so a project's object only stores.
  */
-export const readRequests = Effect.fn("readRequests")(function* (body: Uint8Array) {
+export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   const crypto = yield* Crypto.Crypto
   const now = yield* DateTime.now
-  const resourceSpans = yield* decodeTraces(body)
+  const decoded = yield* decodeTraces(body)
+  const resourceSpans = scrubbedTraces(decoded)
   const digest = yield* crypto.digest("SHA-256", body).pipe(Effect.orDie)
   const nowMillis = DateTime.toEpochMillis(now)
 
@@ -124,8 +139,21 @@ export const readRequests = Effect.fn("readRequests")(function* (body: Uint8Arra
     totalMs: group.totalMs,
     durations: sketchOf(group.durations),
   }))
-  const read: ReadRequests = {
-    batch: { digest: BatchDigest.make(Hex.encode(digest)), counts },
+  const spans = resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
+  const earliest = spans.reduce(
+    (least, span) => Math.min(least, Number(span.startTimeUnixNano / 1_000_000n)),
+    nowMillis,
+  )
+  const latest = spans.reduce((most, span) => Math.max(most, Number(span.endTimeUnixNano / 1_000_000n)), 0)
+  const read: ReadTraces = {
+    export: {
+      digest: BatchDigest.make(Hex.encode(digest)),
+      archive: encodeTraces(resourceSpans),
+      from: DateTime.makeUnsafe(spans.length === 0 ? nowMillis : earliest),
+      to: DateTime.makeUnsafe(spans.length === 0 ? nowMillis : latest),
+      spans: spans.length,
+      counts,
+    },
     rejected: firstProblem === undefined ? undefined : { count: rejectedCount, problem: firstProblem },
   }
   return read

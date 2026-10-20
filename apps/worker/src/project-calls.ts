@@ -1,4 +1,4 @@
-import { Actor } from "@cluenori/foundation"
+import { Actor, TraceId } from "@cluenori/foundation"
 import {
   AddComponent,
   AddedComponentResponse,
@@ -10,13 +10,44 @@ import {
   ProjectName,
   ProjectNotFound,
 } from "@cluenori/projects"
-import { EndpointTable, RequestBatch, RequestQuery, RequestSeries, SeriesStep } from "@cluenori/signals"
+import {
+  ArchiveUnavailable,
+  EndpointTable,
+  ErrorDetail,
+  ErrorGroupId,
+  ErrorGroupNotFound,
+  ErrorQuery,
+  ErrorTable,
+  LogExport,
+  LogPage,
+  LogQuery,
+  MetricsExport,
+  RequestQuery,
+  RequestSeries,
+  SeriesStep,
+  TraceExport,
+  TraceView,
+} from "@cluenori/signals"
 import { Schema } from "effect"
 
 /** A Schema that needs no services to encode or decode, as every call's do. */
 export type PlainSchema = Schema.Top & { readonly DecodingServices: never; readonly EncodingServices: never }
 
-export type ProjectCallName = "createProject" | "addComponent" | "ingestRequests" | "endpoints" | "requestsOverTime"
+export type ProjectCallName =
+  | "createProject"
+  | "addComponent"
+  | "ingestTraces"
+  | "ingestLogs"
+  | "ingestMetrics"
+  | "endpoints"
+  | "requestsOverTime"
+  | "errors"
+  | "error"
+  | "logs"
+  | "trace"
+
+const recorded = Schema.Literals(["recorded", "duplicate"])
+const ingestFailure = Schema.Union([IngestKeyRejected, ArchiveUnavailable])
 
 /** One thing the Worker asks a project's Durable Object: its input, its answer, and how it fails. */
 export interface ProjectCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> {
@@ -47,11 +78,23 @@ export const projectCalls = {
     AddedComponentResponse,
     Schema.Union([ProjectNotFound, ComponentExists]),
   ),
-  ingestRequests: projectCall(
-    "ingestRequests",
-    Schema.Struct({ ingestKey: IngestKey, batch: RequestBatch }),
-    Schema.Literals(["recorded", "duplicate"]),
-    IngestKeyRejected,
+  ingestTraces: projectCall(
+    "ingestTraces",
+    Schema.Struct({ ingestKey: IngestKey, export: TraceExport }),
+    recorded,
+    ingestFailure,
+  ),
+  ingestLogs: projectCall(
+    "ingestLogs",
+    Schema.Struct({ ingestKey: IngestKey, export: LogExport }),
+    recorded,
+    ingestFailure,
+  ),
+  ingestMetrics: projectCall(
+    "ingestMetrics",
+    Schema.Struct({ ingestKey: IngestKey, export: MetricsExport }),
+    recorded,
+    ingestFailure,
   ),
   endpoints: projectCall("endpoints", RequestQuery, EndpointTable, ProjectNotFound),
   requestsOverTime: projectCall(
@@ -59,6 +102,20 @@ export const projectCalls = {
     Schema.Struct({ query: RequestQuery, step: SeriesStep }),
     RequestSeries,
     ProjectNotFound,
+  ),
+  errors: projectCall("errors", ErrorQuery, ErrorTable, ProjectNotFound),
+  error: projectCall(
+    "error",
+    Schema.Struct({ id: ErrorGroupId, query: ErrorQuery }),
+    ErrorDetail,
+    Schema.Union([ProjectNotFound, ErrorGroupNotFound]),
+  ),
+  logs: projectCall("logs", LogQuery, LogPage, ProjectNotFound),
+  trace: projectCall(
+    "trace",
+    Schema.Struct({ trace: TraceId, around: Schema.DateTimeUtcFromString }),
+    TraceView,
+    Schema.Union([ProjectNotFound, ArchiveUnavailable]),
   ),
 }
 

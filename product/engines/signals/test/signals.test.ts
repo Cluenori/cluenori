@@ -5,8 +5,8 @@ import { DateTime, Duration, Effect } from "effect"
 import { Base64 } from "effect/encoding"
 import { TestClock } from "effect/testing"
 
-import type { RequestBatch, RequestCounts } from "../src/index.ts"
-import { BatchDigest, readRequests, Signals } from "../src/index.ts"
+import type { RequestCounts, TraceExport } from "../src/index.ts"
+import { BatchDigest, readTraces, Signals } from "../src/index.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
 import { inProject, WebCrypto } from "./in-object.ts"
 
@@ -23,7 +23,7 @@ const readFixtureAt = (time: number) =>
   Effect.gen(function* () {
     yield* TestClock.setTime(time)
     const body = yield* fixture
-    return yield* readRequests(body)
+    return yield* readTraces(body)
   }).pipe(Effect.provide(WebCrypto))
 
 const counts = (endpoint: string, requests: number, overrides: Partial<RequestCounts> = {}): RequestCounts => ({
@@ -37,15 +37,19 @@ const counts = (endpoint: string, requests: number, overrides: Partial<RequestCo
   ...overrides,
 })
 
-const batchOf = (digit: string, entries: ReadonlyArray<RequestCounts>): RequestBatch => ({
+const batchOf = (digit: string, entries: ReadonlyArray<RequestCounts>): TraceExport => ({
   digest: BatchDigest.make(digit.repeat(64)),
+  archive: new Uint8Array(0),
+  from: DateTime.makeUnsafe(capturedAt),
+  to: DateTime.makeUnsafe(capturedAt),
+  spans: entries.length,
   counts: entries,
 })
 
-describe("readRequests", () => {
+describe("readTraces", () => {
   it.effect("counts a .NET export's server spans by endpoint, and skips its client spans", () =>
     Effect.gen(function* () {
-      const { batch, rejected } = yield* readFixtureAt(now)
+      const { export: batch, rejected } = yield* readFixtureAt(now)
       const byEndpoint = Object.fromEntries(
         batch.counts.map((entry) => [entry.endpoint, [entry.requests, entry.errors]]),
       )
@@ -66,7 +70,7 @@ describe("readRequests", () => {
 
   it.effect("refuses requests older than the 14 days they are kept, saying why", () =>
     Effect.gen(function* () {
-      const { batch, rejected } = yield* readFixtureAt(now + Duration.toMillis(Duration.days(15)))
+      const { export: batch, rejected } = yield* readFixtureAt(now + Duration.toMillis(Duration.days(15)))
 
       assert.isEmpty(batch.counts)
       assert.deepStrictEqual(rejected, {
@@ -80,13 +84,13 @@ describe("readRequests", () => {
 describe("Signals", () => {
   it.effect("answers the endpoint table from a recorded export, with percentiles", () =>
     Effect.gen(function* () {
-      const { batch } = yield* readFixtureAt(now)
+      const { export: batch } = yield* readFixtureAt(now)
       const table = yield* inProject(
         "endpoint-table",
         now,
         Effect.gen(function* () {
           const signals = yield* Signals
-          yield* signals.record(api, batch)
+          yield* signals.recordTraces(api, batch)
           return yield* signals.endpoints({ period: lastHour })
         }),
       )
@@ -112,8 +116,8 @@ describe("Signals", () => {
       Effect.gen(function* () {
         const signals = yield* Signals
         const batch = batchOf("a", [counts("GET /api/notes/{id}", 3)])
-        const first = yield* signals.record(api, batch)
-        const retry = yield* signals.record(api, batch)
+        const first = yield* signals.recordTraces(api, batch)
+        const retry = yield* signals.recordTraces(api, batch)
         const table = yield* signals.endpoints({ period: lastHour })
 
         assert.deepStrictEqual([first, retry], ["recorded", "duplicate"])
@@ -128,8 +132,8 @@ describe("Signals", () => {
       now,
       Effect.gen(function* () {
         const signals = yield* Signals
-        yield* signals.record(api, batchOf("a", [counts("GET /api/notes/{id}", 3)]))
-        yield* signals.record(api, batchOf("b", [counts("GET /api/notes/{id}", 2, { errors: 1 })]))
+        yield* signals.recordTraces(api, batchOf("a", [counts("GET /api/notes/{id}", 3)]))
+        yield* signals.recordTraces(api, batchOf("b", [counts("GET /api/notes/{id}", 2, { errors: 1 })]))
         const table = yield* signals.endpoints({ period: lastHour })
 
         assert.deepInclude(table.rows[0], { requests: 5, errors: 1, averageMs: 10 })
@@ -145,7 +149,7 @@ describe("Signals", () => {
       Effect.gen(function* () {
         const signals = yield* Signals
         const many = Array.from({ length: 503 }, (_, index) => counts(`GET /api/items/${index}`, 1))
-        yield* signals.record(api, batchOf("c", many))
+        yield* signals.recordTraces(api, batchOf("c", many))
         const table = yield* signals.endpoints({ period: lastHour })
         const other = table.rows.find((row) => row.endpoint === "(other endpoints)")
 
@@ -162,11 +166,11 @@ describe("Signals", () => {
       now,
       Effect.gen(function* () {
         const signals = yield* Signals
-        yield* signals.record(
+        yield* signals.recordTraces(
           api,
           batchOf("d", [counts("GET /a", 1), counts("GET /a", 2, { environment: EnvironmentKey.make("staging") })]),
         )
-        yield* signals.record(ComponentKey.make("notes-jobs"), batchOf("e", [counts("GET /a", 4)]))
+        yield* signals.recordTraces(ComponentKey.make("notes-jobs"), batchOf("e", [counts("GET /a", 4)]))
         const staging = yield* signals.endpoints({ period: lastHour, environment: EnvironmentKey.make("staging") })
         const jobs = yield* signals.endpoints({ period: lastHour, component: ComponentKey.make("notes-jobs") })
 
@@ -209,7 +213,7 @@ describe("Signals", () => {
         const old = counts("GET /api/notes/{id}", 4, {
           bucket: DateTime.makeUnsafe(twentyDaysAgo - (twentyDaysAgo % 60_000)),
         })
-        yield* signals.record(api, batchOf("1", [old, counts("GET /api/notes/{id}", 1)]))
+        yield* signals.recordTraces(api, batchOf("1", [old, counts("GET /api/notes/{id}", 1)]))
         const month = new Period({
           from: DateTime.makeUnsafe(now - Duration.toMillis(Duration.days(30))),
           to: DateTime.makeUnsafe(now),
@@ -232,7 +236,7 @@ describe("Signals", () => {
       Effect.gen(function* () {
         const signals = yield* Signals
         const minute = capturedAt - (capturedAt % 60_000)
-        yield* signals.record(
+        yield* signals.recordTraces(
           api,
           batchOf("2", [
             counts("GET /a", 1, { bucket: DateTime.makeUnsafe(minute - 120_000) }),
@@ -262,7 +266,7 @@ describe("Signals", () => {
       now,
       Effect.gen(function* () {
         const signals = yield* Signals
-        yield* signals.record(api, batchOf("3", [counts("GET /a", 2)]))
+        yield* signals.recordTraces(api, batchOf("3", [counts("GET /a", 2)]))
         const week = new Period({
           from: DateTime.makeUnsafe(now - Duration.toMillis(Duration.days(7))),
           to: DateTime.makeUnsafe(now),
@@ -282,7 +286,7 @@ describe("Signals", () => {
       Effect.gen(function* () {
         const signals = yield* Signals
         const earlier = DateTime.makeUnsafe(capturedAt - (capturedAt % 300_000) - 600_000)
-        yield* signals.record(api, batchOf("f", [counts("GET /a", 2), counts("GET /a", 3, { bucket: earlier })]))
+        yield* signals.recordTraces(api, batchOf("f", [counts("GET /a", 2), counts("GET /a", 3, { bucket: earlier })]))
         const fiveMinutes = yield* signals.requestsOverTime({ period: lastHour }, "5m")
         const hours = yield* signals.requestsOverTime({ period: lastHour }, "1h")
 

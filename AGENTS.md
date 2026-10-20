@@ -498,9 +498,11 @@ conflict.
 
 - **Status:** built so far: the toolchain, the workspace, every check, Foundation
   (`product/foundation`: scope keys, the envelope, actors, the activity log), and the first slice on
-  it: services send OpenTelemetry traces with a component's ingest key, the Projects and Signals
-  engines count their requests in each project's Durable Object, and the public API (behind an API
-  token) and `./cluenori` show the endpoint table and requests over time. No module exists yet.
+  it: services send OpenTelemetry traces, logs and metrics with a component's ingest key; every
+  export is archived 90 days, scrubbed, in R2; the Projects and Signals engines count requests and
+  keep warnings, errors and error groups in each project's Durable Object; and the public API
+  (behind an API token) and `./cluenori` show endpoints, requests, errors, logs, and any request's
+  trace. No module exists yet.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository

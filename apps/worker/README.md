@@ -18,8 +18,9 @@ const table = yield* client.signals.endpoints({ params: { project }, query: { fr
 
 Every group but the system's needs the deployment's API token, which a client sends through
 `HttpApiMiddleware.layerClient(MemberAuthorization, ...)`; a missing or wrong token answers 401.
-Services send traces to `POST /otlp/v1/traces` with a component's ingest key:
-`Authorization: Bearer cluenori.<project>.<component>.<secret>`.
+Services send traces, logs and metrics to `POST /otlp/v1/traces`, `/v1/logs` and `/v1/metrics` with
+a component's ingest key: `Authorization: Bearer cluenori.<project>.<component>.<secret>`. An
+export the archive can't take is answered 503, so the exporter sends it again.
 
 ## Owns
 
@@ -29,13 +30,16 @@ Services send traces to `POST /otlp/v1/traces` with a component's ingest key:
   `MemberAuthorization`, and the endpoints about the deployment itself (`GET /api/health`). How
   clients import the definitions is an open decision in ARCHITECTURE.md: "How clients import the
   API definition".
-- **OTLP ingest,** `src/otlp-ingest.ts`: checks the body's form and the key's, reads the requests, and
-  has the project's object count them.
+- **OTLP ingest,** `src/otlp-ingest.ts`: checks each export's form and key, reads it where it arrives,
+  and has the project's object archive and record it.
+- **The archive in R2,** `src/r2-archive.ts`: an `ArchiveStore` on the `ARCHIVE` bucket, its files
+  compressed with gzip.
 - **Each project's Durable Object,** `src/project-object.ts`, named `<workspace>/<project>`: the
   engines' layers built once per object, and one served call per operation (`src/project-calls.ts`).
   An object builds no database before its project is created.
 - **`wrangler.jsonc`:** the Worker's name, compatibility date, and bindings: `PROJECT`, the
-  projects' Durable Objects.
+  projects' Durable Objects, and `ARCHIVE`, the archive's bucket. Its `eu` environment is the same
+  Worker with both in the EU, which `./setup` deploys when the data stays there.
 - **`openapi.json`:** generated from the definition by `bun run generate`; `bun run check` fails when
   it is stale.
 
@@ -57,6 +61,8 @@ Read from `env` with `ConfigProvider.fromUnknown(env)` in `src/worker.ts`:
 - `CLUENORI_API_TOKEN`, a secret: the token the public API requires. `./setup` makes it; `./run`
   makes one in `.dev.vars`. Without it the API refuses every call but the health check.
 - `CLUENORI_OWNER`: the member the token stands for, until members are records.
+- `CLUENORI_JURISDICTION`: `eu` in the `eu` environment, so projects' Durable Objects are made in
+  the EU. Absent otherwise.
 
 A self-hosted deployment has one workspace, `main`.
 

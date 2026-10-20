@@ -11,6 +11,7 @@
   "dependencies": {
     "@bagatka/otlp": "workspace:*",
     "@bagatka/quantile-sketch": "workspace:*",
+    "@bagatka/scrub": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "effect": "catalog:"

@@ -1,6 +1,7 @@
 import { Command } from "effect/cli"
 
 import { check } from "./check.ts"
+import { error, errors, logs, trace } from "./errors-commands.ts"
 import { generate } from "./generate.ts"
 import { component, project } from "./projects-commands.ts"
 import { endpoints, requests } from "./requests-commands.ts"
@@ -16,5 +17,19 @@ export const cluenori = Command.make("cluenori").pipe(
   Command.withDescription(
     "Run Cluenori, deploy it to Cloudflare, ask it about your projects, and check this repository.",
   ),
-  Command.withSubcommands([run, setup, update, project, component, endpoints, requests, check, generate]),
+  Command.withSubcommands([
+    run,
+    setup,
+    update,
+    project,
+    component,
+    endpoints,
+    requests,
+    errors,
+    error,
+    logs,
+    trace,
+    check,
+    generate,
+  ]),
 )

@@ -536,6 +536,966 @@
         },
         "description": "Requests and errors over a period, one point per step that has requests: the load on a project's services. A step without a point had no requests reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used."
       }
+    },
+    "/api/projects/{project}/errors": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.errors",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "covered": {
+                      "$ref": "#/components/schemas/PeriodEncoded"
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "exception",
+                              "log"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "culprit": {
+                            "type": "string"
+                          },
+                          "occurrences": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "firstSeen": {
+                            "type": "string"
+                          },
+                          "lastSeen": {
+                            "type": "string"
+                          },
+                          "lastComponent": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "lastEnvironment": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "lastRelease": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "culprit",
+                          "occurrences",
+                          "firstSeen",
+                          "lastSeen",
+                          "lastComponent"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "occurrences": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "groups",
+                    "occurrences"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "The errors of a period, most frequent first: each error log grouped by its exception's type and stack, or by its logger and message, with when it was first and last seen. Kept 90 days."
+      }
+    },
+    "/api/projects/{project}/errors/{error}": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.error",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "error",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "group": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "exception",
+                            "log"
+                          ]
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "culprit": {
+                          "type": "string"
+                        },
+                        "occurrences": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "firstSeen": {
+                          "type": "string"
+                        },
+                        "lastSeen": {
+                          "type": "string"
+                        },
+                        "lastComponent": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "lastEnvironment": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "lastRelease": {
+                          "type": "string",
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title",
+                        "culprit",
+                        "occurrences",
+                        "firstSeen",
+                        "lastSeen",
+                        "lastComponent"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "latest": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "component": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "time": {
+                            "type": "string"
+                          },
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "trace",
+                              "debug",
+                              "info",
+                              "warn",
+                              "error",
+                              "fatal"
+                            ]
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "template": {
+                            "type": "string"
+                          },
+                          "environment": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "release": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "trace": {
+                            "type": "string"
+                          },
+                          "span": {
+                            "type": "string"
+                          },
+                          "exception": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              },
+                              "stack": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "attributes": {
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "component",
+                          "time",
+                          "level",
+                          "category",
+                          "message",
+                          "attributes"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "group",
+                    "latest"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ErrorGroupNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorGroupNotFoundEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "One error and its latest occurrences in a period, with their messages, stack traces, and trace IDs: where an investigation starts. Each occurrence's trace ID and time open its request with the traces endpoint."
+      }
+    },
+    "/api/projects/{project}/logs": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.logs",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "warn",
+                "error",
+                "fatal"
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": false
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "trace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "covered": {
+                      "$ref": "#/components/schemas/PeriodEncoded"
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "component": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "time": {
+                            "type": "string"
+                          },
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "trace",
+                              "debug",
+                              "info",
+                              "warn",
+                              "error",
+                              "fatal"
+                            ]
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "template": {
+                            "type": "string"
+                          },
+                          "environment": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "release": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "trace": {
+                            "type": "string"
+                          },
+                          "span": {
+                            "type": "string"
+                          },
+                          "exception": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              },
+                              "stack": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "attributes": {
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "component",
+                          "time",
+                          "level",
+                          "category",
+                          "message",
+                          "attributes"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "next": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "lines"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace, or error. Kept 90 days. Records below warning are in the archive, which the traces endpoint reads for one request."
+      }
+    },
+    "/api/projects/{project}/traces/{trace}": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.trace",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "trace",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "around",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trace": {
+                      "type": "string"
+                    },
+                    "searched": {
+                      "$ref": "#/components/schemas/PeriodEncoded"
+                    },
+                    "spans": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "span": {
+                            "type": "string"
+                          },
+                          "parent": {
+                            "type": "string"
+                          },
+                          "depth": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "unspecified",
+                              "internal",
+                              "server",
+                              "client",
+                              "producer",
+                              "consumer"
+                            ]
+                          },
+                          "component": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "start": {
+                            "type": "string"
+                          },
+                          "durationMs": {
+                            "type": "number"
+                          },
+                          "failed": {
+                            "type": "boolean"
+                          },
+                          "statusMessage": {
+                            "type": "string"
+                          },
+                          "attributes": {
+                            "type": "object"
+                          },
+                          "events": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "time": {
+                                  "type": "string"
+                                },
+                                "attributes": {
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "time",
+                                "attributes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "span",
+                          "depth",
+                          "name",
+                          "kind",
+                          "component",
+                          "start",
+                          "durationMs",
+                          "failed",
+                          "attributes",
+                          "events"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "logs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "time": {
+                            "type": "string"
+                          },
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "trace",
+                              "debug",
+                              "info",
+                              "warn",
+                              "error",
+                              "fatal"
+                            ]
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "template": {
+                            "type": "string"
+                          },
+                          "environment": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "release": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "trace": {
+                            "type": "string"
+                          },
+                          "span": {
+                            "type": "string"
+                          },
+                          "exception": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              },
+                              "stack": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "attributes": {
+                            "type": "object"
+                          },
+                          "component": {
+                            "type": "string",
+                            "maxLength": 40
+                          }
+                        },
+                        "required": [
+                          "time",
+                          "category",
+                          "message",
+                          "attributes",
+                          "component"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "files": {
+                      "type": "object",
+                      "properties": {
+                        "read": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "unread": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "read",
+                        "unread"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "trace",
+                    "searched",
+                    "spans",
+                    "logs",
+                    "files"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ArchiveUnavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveUnavailableEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "One request across services, from the archive: its spans as a tree, with their durations and attributes, and its logs at every level. Give the time it happened as `around`; the archive is read within two minutes of it. Kept 90 days."
+      }
     }
   },
   "components": {
@@ -547,6 +1507,25 @@
             "type": "string",
             "enum": [
               "Unauthorized"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "ArchiveUnavailableEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "ArchiveUnavailable"
             ]
           },
           "message": {
@@ -592,6 +1571,25 @@
         "required": [
           "from",
           "to"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorGroupNotFoundEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "ErrorGroupNotFound"
+            ]
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "error"
         ],
         "additionalProperties": false
       },

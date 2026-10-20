@@ -63,8 +63,19 @@ export const ensureLocalApiSettings = Effect.gen(function* () {
     .pipe(Effect.orDie)
 })
 
-/** The deployment `./setup` saved: where it serves, and its API token. */
-export const SavedDeployment = Schema.Struct({ url: Schema.String, token: Schema.String })
+/** Where a deployment keeps its data: anywhere Cloudflare chooses, or in the EU. Fixed at setup. */
+export const Jurisdiction = Schema.Literals(["global", "eu"])
+export type Jurisdiction = typeof Jurisdiction.Type
+
+/**
+ * The deployment `./setup` made from this computer: where it keeps its data, saved as soon as it is
+ * chosen; and, once deployed, where it serves and its API token.
+ */
+export const SavedDeployment = Schema.Struct({
+  jurisdiction: Jurisdiction,
+  url: Schema.optionalKey(Schema.String),
+  token: Schema.optionalKey(Schema.String),
+})
 export type SavedDeployment = typeof SavedDeployment.Type
 
 const SavedDeploymentJson = Schema.fromJsonString(SavedDeployment, { space: 2 })
@@ -108,8 +119,10 @@ export const saveDeployment = Effect.fn("saveDeployment")(function* (deployment:
  */
 export const apiTarget = Effect.fn("apiTarget")(function* (local: boolean) {
   const deployment = yield* savedDeployment
-  if (!local && Option.isSome(deployment)) {
-    const target: ApiTarget = { url: deployment.value.url, token: Redacted.make(deployment.value.token), local: false }
+  const url = Option.flatMap(deployment, (saved) => Option.fromNullishOr(saved.url))
+  const token = Option.flatMap(deployment, (saved) => Option.fromNullishOr(saved.token))
+  if (!local && Option.isSome(url) && Option.isSome(token)) {
+    const target: ApiTarget = { url: url.value, token: Redacted.make(token.value), local: false }
     return target
   }
   yield* ensureLocalApiSettings

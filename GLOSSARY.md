@@ -31,6 +31,9 @@ its exact rule.
 | Endpoint | A request's name in its component, its server span's name: `GET /api/notes/{id}` | `endpoint`, `@cluenori/signals` | route (the template inside it), URL, path |
 | Counts | Requests added up by endpoint and environment, by the minute and by the hour, with a sketch of their durations | `RequestCounts`, `Signals`, `@cluenori/signals` | metrics (a separate signal, later), counters |
 | Covered period | The part of an asked-for period that counts answer for: no earlier than they are kept, no later than now | `covered` | — |
+| Archive | Every export Cluenori received, scrubbed, kept 90 days: the source every view is derived from | `ArchiveStore`, `@cluenori/signals` | lake (the planned SQL over it), backup, logs |
+| Error group | Errors that are the same error: one exception type and stack top, or one logger and message template | `ErrorGroup`, `ErrorGroupId` | issue (a record people track), exception, crash |
+| Culprit | Where an error group happens: the top frame of its stack, or its logger | `culprit` | cause, source |
 
 ## Words that already mean a product concept
 
