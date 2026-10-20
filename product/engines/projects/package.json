@@ -1,0 +1,23 @@
+{
+  "name": "@cluenori/projects",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
+  },
+  "dependencies": {
+    "@cluenori/foundation": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@bagatka/web-crypto": "workspace:*",
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@effect/sql-sqlite-do": "catalog:",
+    "@effect/vitest": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

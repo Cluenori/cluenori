@@ -68,6 +68,8 @@ must build, test, and run identically everywhere.
   `toLocaleDateString`, or `localeCompare` without a locale.
 - **Comparisons are explicit.** Sorting human text uses `Intl.Collator` with the recipient's locale;
   sorting machine text uses plain code-point order.
+- **Terminal output** is read by people and agents alike, so the CLI writes numbers the en-US way and
+  times in UTC, never the machine's: `apps/cli/src/terminal-text.ts`.
 - **Files.** UTF-8 without a byte order mark, LF line endings (`.gitattributes`), and lowercase
   kebab-case file names, so casing never differs between macOS and Linux.
 - **Tests outside workerd run with `TZ=Pacific/Chatham` and `LANG=tr_TR.UTF-8`,** a time zone with a
@@ -347,7 +349,9 @@ export class FeatureKeyTaken extends Schema.TaggedError<FeatureKeyTaken>()("Feat
   default; that hides failures (`AGENTS.md`, "Failure honesty").
 - **No native errors.** Never `throw`, `new Error`, or a class extending `Error`
   (`extendsNativeError`).
-- **On HTTP,** each error declares its status in the API definition (entry 15):
+- **On HTTP,** each error declares its status in the API definition (entry 15), with
+  `HttpApiSchema.status` where an endpoint lists it. A middleware's error, which no endpoint lists,
+  declares it on its class: `{ httpApiStatus: 401 }` (`apps/worker/src/member-authorization.ts`).
 
   | Failure | HTTP |
   |---|---|
@@ -411,6 +415,7 @@ export const apnsSettings = Config.all({
 - **Invalid configuration fails at startup,** with the variable's name.
 - **Prefer a sensible default to a setting.** Add a setting only for a value that differs between
   deployments.
+- Canonical example: `apps/worker/src/worker.ts` reads the API token and its owner with `Config`.
 
 ## 12. Logging and tracing
 
@@ -435,7 +440,9 @@ export const apnsSettings = Config.all({
   stored value that breaks its rule fails loudly.
 - **Each package owns its tables** and their migrations, and touches no one else's
   (`ARCHITECTURE.md`, "Data").
-- **Columns are snake_case;** queries alias them to the record's field names.
+- **Tables are named for their package:** `<package>_<table>`, such as `projects_components`, so
+  packages sharing a project's one database never collide. Columns are snake_case; queries alias
+  them to the record's field names.
 - **One commit per action,** with its activity (entry 14).
 - **Where the tables live:** each project's in the SQLite database of its own Durable Object, and
   the workspace's in one more (`ARCHITECTURE.md`, "Runtime on Cloudflare"). Code that uses them
@@ -444,7 +451,9 @@ export const apnsSettings = Config.all({
   `product/foundation/src/activity-log.ts`, and `product/foundation/test/in-object.ts`, which builds
   it on an object's storage.
 - **Migrations run inside each object,** with Effect's migrator, before it serves its first request
-  after a deploy. A project is never served by code newer than its tables.
+  after a deploy. A project is never served by code newer than its tables. An object builds no
+  database before its project is created, so a request for a project that doesn't exist leaves
+  nothing behind (`apps/worker/src/project-object.ts`).
 - **Each package's migrations are its own:** an `effect/sql` `Migrator` with a table of its own,
   `<package>_migrations`, so numbers never collide in a project's one database. They run when the
   package's layer is built. Canonical example: `product/foundation/src/foundation-migrations.ts`.
@@ -503,8 +512,12 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   API change shows in review. The Swift and Kotlin SDKs use it.
 - **Routes** are plural kebab-case resources with IDs as segments. A state change that isn't a plain
   update is a sub-resource: `POST /releases/:id/rollback`.
-- **Canonical examples:** the definition, `apps/worker/src/cluenori-api.ts`; handlers,
-  `apps/worker/src/system-handlers.ts`. The MCP server's comes with the first module.
+- **Each engine or module defines its group in its contract;** the host adds the group to
+  `CluenoriApi`, with `MemberAuthorization` on every group but the system's. Handlers get the
+  actor from `CurrentActor`.
+- **Canonical examples:** a group, `product/engines/projects/src/projects-api.ts`; the API,
+  `apps/worker/src/cluenori-api.ts`; handlers, `apps/worker/src/projects-handlers.ts`. The MCP
+  server's comes with the first module.
 
 ## 16. The Worker entry
 
@@ -518,7 +531,13 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   never stored in module-level variables.
 - **Shared work survives requests.** The app runs on Effect's sync scheduler, because Workers can
   discard timers a request owns.
-- Canonical example: `apps/worker/src/worker.ts`.
+- **A project's Durable Object is reached through one call per operation.** Each is an entry of
+  `projectCalls`, with the Schemas of its input, its answer, and its error; both sides encode with
+  them as JSON text, so tagged errors cross the boundary typed. The Worker calls
+  `ProjectObjects.call(project, projectCalls.x, input)`; the object composes the engines' layers
+  once and serves each call on a visible line.
+- Canonical examples: `apps/worker/src/worker.ts`; for Durable Object calls,
+  `apps/worker/src/project-calls.ts`, `project-object.ts`, and `project-objects.ts`.
 
 ## 17. Background work
 
@@ -587,6 +606,11 @@ describe("FeatureKey", () => {
   tests, `packages/workspace-rules/test/check-workspace.test.ts`; tests inside a Durable Object,
   `product/foundation/test/activity-log.test.ts`.
 - **Time** is controlled with `TestClock`; durations come from settings, which tests make short.
+  Code that runs inside a Durable Object gets its own `TestClock`
+  (`product/engines/signals/test/in-object.ts`). A journey uses real time, because the Worker it
+  calls does: `layer(..., { excludeTestServices: true })`.
+- **Fixtures from real systems** are captured once, kept as test files with a note of where they
+  came from, and never edited by hand: `packages/otlp/test/fixtures/`.
 - **Names state behavior:** `"rejects a key with spaces"`.
 - **Never mock** our own services or the database.
 
@@ -640,7 +664,19 @@ The configuration files are the specification; this entry says what each one own
 - **Product words keep their product meaning** (`GLOSSARY.md`): in code, a UI building block is a
   view, never a "component"; a file is a file, never a "module".
 
-## 22. Recipes
+## 22. Credentials
+
+- **A credential is `Redacted` from the moment it is read** (entry 11), and never logged.
+- **Stores keep a digest, never the credential.** Keys and tokens are compared by their SHA-256
+  digests, which also makes the comparison take the same time whatever is presented.
+- **Refusals say nothing about which part was wrong:** an unknown project, component, or secret
+  fails the same way.
+- **A key that names where it belongs** (`cluenori.<project>.<component>.<secret>`) lets the Worker
+  route it before the owner checks it.
+- Canonical examples: ingest keys, `product/engines/projects/src/ingest-key.ts` and `projects.ts`;
+  the API token, `apps/worker/src/member-authorization-layer.ts`.
+
+## 23. Recipes
 
 These become `cluenori add` commands once there are a few examples to generate from.
 

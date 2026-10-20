@@ -16,7 +16,7 @@ and email), and runs in the founder's own Cloudflare account. `concept/Cluenori 
 is the source.
 
 ```
-founders' apps (SDK) ──signals──▶ ingest ──▶ counters, lake, exact counts
+founders' apps (SDK), services (OpenTelemetry) ──signals──▶ ingest ──▶ counts, lake
                      ◀──manifest──
 dashboard, cluenori CLI, MCP clients, agents ──▶ public API: queries and actions
                                                        │
@@ -103,6 +103,7 @@ AGENTS.md, ARCHITECTURE.md, PATTERNS.md, GLOSSARY.md, README.md
 concept/                       the product: vision, foundation, modules, platform
 flake.nix, flake.lock          the pinned toolchain
 dev, run, setup, update        entry points: check Nix, enter the toolchain, run a program in apps/cli
+cluenori                       the cluenori command: projects, components, and questions about them
 package.json                   workspaces, scripts, and the catalog: the one exact version of every dependency
 bun.lock, bunfig.toml          the lockfile; isolated installs
 tsconfig.base.json             compiler settings and Effect diagnostics every package extends
@@ -121,9 +122,11 @@ packages/
     test/
   workspace-rules/             @bagatka/workspace-rules: checks packages' names, entries, and dependencies
   web-crypto/                  @bagatka/web-crypto: Effect's Crypto service on the Web Crypto API
+  otlp/                        @bagatka/otlp: reads OTLP/HTTP protobuf exports
+  quantile-sketch/             @bagatka/quantile-sketch: percentiles from small mergeable sketches
 product/
   foundation/                  @cluenori/foundation
-  engines/<engine>/            @cluenori/<engine>
+  engines/<engine>/            @cluenori/<engine>: projects, signals
   modules/<module>/            @cluenori/<module>
 apps/
   worker/                      @cluenori/worker: the deployable Worker and composition root
@@ -145,15 +148,15 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 
 | Part | Package | Purpose | Status |
 |---|---|---|---|
-| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: serves the API's health check and its OpenAPI document |
-| CLI | `apps/cli` | `cluenori`: run, setup, update, and the repository's check and generate; later `project create` and `add module` | Built |
+| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token (projects, components, the endpoint table, requests over time), OTLP trace ingest, and each project's Durable Object |
+| CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, questions about them, and the repository's check and generate | Built |
 | Dashboard | `apps/dashboard` | The web app over the public API | Planned; its UI stack is decided with its first page |
 | Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, and `ActivityLog`, which commits a write with its activity. Delivery to Queues comes with the first reaction, the module contract with the first module |
-| Engines | `product/engines/<engine>` | Actions and policy first, then each engine with the first module that needs it (`concept/Foundation.md`, "Shared engines") | Planned |
+| Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys) and `signals` (requests from traces, counted); Actions and policy come with the first module |
 | Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Planned |
-| Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | Built: `workspace-rules`, for the architecture check; `web-crypto`, for `Crypto` in workerd |
+| Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | Built: `workspace-rules`, for the architecture check; `web-crypto`, for `Crypto` in workerd; `otlp`, for OpenTelemetry exports; `quantile-sketch`, for percentiles |
 | Web SDK | `sdks/web` | Init, identify, consent, track, feature, flags, and the client kit views, for browsers and JavaScript backends | Planned |
-| Journeys | `tests/journeys` | The Worker in workerd, through its public API | Built: the deployment journey |
+| Journeys | `tests/journeys` | The Worker in workerd, through its public API | Built: the deployment and telemetry journeys |
 
 ## Dependency rules
 
@@ -164,10 +167,10 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 | Engine | foundation, other engines (no cycles), `@bagatka/*`, `effect` | modules, hosts |
 | Module | foundation, engines, `@bagatka/*`, `effect` | other modules, hosts |
 | `apps/worker` | everything above, `@effect/sql-*` drivers, Cloudflare packages | — |
-| `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; `@bagatka/*`, `effect`; the CLI also `@effect/platform-bun` | engine and module implementations |
+| `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; foundation's and engines' contracts, for the Schemas of what they send (open decision: "How clients import the API definition"); `@bagatka/*`, `effect`; the CLI also `@effect/platform-bun` | engine and module implementations |
 | `@cluenori/sdk` | `@bagatka/*`, `effect`, the API definition of what it calls | server packages |
 | Package tests | the package they test, `@effect/vitest`, Vitest; product packages also `@cloudflare/vitest-plugin`, Wrangler, and `@effect/sql-sqlite-do`, to run inside a Durable Object | other packages' private files |
-| `tests/journeys` | `apps/worker`, `effect`, `@cloudflare/vitest-plugin`, Wrangler, Vitest | the Worker's private files |
+| `tests/journeys` | `apps/worker`, foundation's and engines' contracts, `effect`, `@cloudflare/vitest-plugin`, Wrangler, Vitest | the Worker's private files |
 
 - A module reaches another module only through activity and its declared actions, never by
   importing it. Reacting to activity is the sanctioned reverse direction, as it is between engines.
@@ -198,9 +201,9 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
   |---|---|---|
   | Records | SQLite in a Durable Object: one per project, one for the workspace | The engine or module that owns the table |
   | Activity | Committed with its record, delivered through Queues, archived to R2 | Foundation |
-  | Signals: counters | Analytics Engine, no person IDs, added up for each batch at ingest | Ingest writes, the Query engine reads |
-  | Signals: lake | Basin Pipelines into R2 as Iceberg: product events, requests, kept traces, logs | Ingest writes, the Query engine reads |
-  | Exact counts, duplicate window | Durable Objects | Ingest |
+  | Signals: counts | SQLite in each project's Durable Object: requests by endpoint and environment, with a quantile sketch of their durations, by the minute for 14 days and by the hour for 15 months; no person IDs | Signals: added up where an export arrives, recorded by the project's object |
+  | Signals: duplicate window | The digest of each export, kept an hour in the project's object | Signals |
+  | Signals: lake | Planned: Basin Pipelines into R2 as Iceberg, for product events, kept traces, and logs | Signals |
   | Durable steps | Cloudflare Workflows | The workflows engine |
   | Media, uploads, symbol files | R2 | Content; symbol files, Errors |
 
@@ -219,9 +222,9 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
   activity.
 - A write and its activity commit together, in one transaction in the project's object. An alarm
   in that object delivers activity to Queues after the commit, at least once.
-- Personal data follows `concept/Foundation.md` and `concept/Platform.md`: no person IDs in
-  Analytics Engine, a pseudonymous ID in the lake with the mapping in SQL, and every module can
-  export and delete one person's data.
+- Personal data follows `concept/Foundation.md` and `concept/Platform.md`: no person IDs in counts,
+  a pseudonymous ID in the lake with the mapping in SQL, and every module can export and delete one
+  person's data.
 - The jurisdiction (global or EU) is chosen once, at setup, because a store's jurisdiction can't
   change after it is made. Local runs use none: workerd doesn't implement jurisdictions.
 - Backends send OpenTelemetry traces and logs, not metrics (yet). Ingest turns each request's trace
@@ -246,7 +249,13 @@ named system actor.
 
 From `concept/`; each gets its pattern when it is built.
 
-- **SDK keys** are public, one per component, and allow only ingest and the manifest.
+- **Ingest keys** belong to one component each and allow only sending its telemetry. A key names its
+  project, so the Worker routes it unread; the project's object checks it against the SHA-256 digest
+  it keeps (`@cluenori/projects`). The SDK's keys, for apps, will be public and also allow the
+  manifest.
+- **The public API** needs the deployment's API token, `CLUENORI_API_TOKEN`, which `./setup` makes;
+  until members are records, it stands for the deployment's owner, `CLUENORI_OWNER`. A deployment
+  without one refuses every call but the health check.
 - **The dashboard** sits behind Cloudflare Access when self-hosted.
 - **Agents** get a scoped key or an OIDC token per run: one project, read-only unless policy grants
   more, within a spend limit.
@@ -258,12 +267,16 @@ From `concept/`; each gets its pattern when it is built.
 
 - **Nix pins the toolchain:** Bun, Node 24 (Wrangler requires Node 22 or later), and Git. Wrangler,
   TypeScript, and everything else come from `bun.lock`, so every machine uses the same versions.
-- **Four entry points, one command each:**
+- **Five entry points, one command each:**
   - `./dev` opens the pinned shell.
-  - `./run` runs Cluenori on this computer, with local Durable Objects, R2, and Queues.
-  - `./setup` deploys it to your Cloudflare account: signs in with Wrangler and deploys. With the
-    first store and the SDK it also asks once for global or EU data, creates what Wrangler can't
-    create on deploy, and prints the SDK keys.
+  - `./run` runs Cluenori on this computer, with local Durable Objects, R2, and Queues, and an API
+    token in `apps/worker/.dev.vars` made on the first run.
+  - `./setup` deploys it to your Cloudflare account: signs in with Wrangler, deploys, and the first
+    time gives the deployment an API token, saved for this computer in
+    `~/.config/cluenori/deployment.json`. With the first store and the SDK it also asks once for
+    global or EU data and creates what Wrangler can't create on deploy.
+  - `./cluenori` asks the deployment, or with `--local` the Cluenori `./run` serves, about projects:
+    `project create`, `component add`, `endpoints`, `requests`.
   - `./update` pulls the new version (fast-forward only: a clone with commits of its own is left for
     its owner to merge), installs it, and deploys. With the first tables it also wakes every
     project's object, so each one migrates and a failed migration shows during the update.
@@ -316,6 +329,17 @@ These are choices, not omissions. Change them only through `PATTERNS.md`, with a
   costs: each project answers from one location (the SDK uses its last manifest, so app starts
   don't wait), questions across projects read summaries, and D1's console and export give way to
   Cloudflare's Data Studio and each module's export.
+- **Counts live in each project's Durable Object, not Analytics Engine** (October 2026). A spike
+  found that locally Analytics Engine keeps nothing and nothing answers its SQL, so charts couldn't
+  work under `./run` or in tests. Counting in the project's own SQLite works the same everywhere,
+  exactly rather than sampled, and can be deleted. Counts are kept by the minute for 14 days, for
+  incidents, and by the hour for 15 months, for trends, as CloudWatch does; both are written as an
+  export arrives, so they always agree. It costs one writer per project, which a founder's traffic
+  is far below, and SQLite row writes: two per endpoint and environment in each export, about 20
+  million a month for a service with a million requests a day (50 million are included per
+  account). Rolling hours up from minutes in an alarm would halve that, at the cost of tracking
+  late data; a project that outgrows either can count in Analytics Engine behind the same `Signals`
+  contract.
 - **SQL directly, through `effect/sql`.** Parameterized tagged templates and Schema-decoded rows; no
   ORM and no query builder.
 - **No mediator and no event bus.** Callers call services; activity on Queues is the only
@@ -338,26 +362,21 @@ Each needs evidence or a product choice before the code that depends on it.
    layer from the same `HttpApi` definition.
 2. **Where the Swift and Kotlin SDKs live.** Swift Package Manager expects a package at a
    repository's root, which argues for their own repositories.
-3. **Who owns ingest.** `concept/` lists twelve engines, and none of them writes signals: catalog
-   rules, the duplicate window, counters, and the lake. Ingest is either its own engine or the
-   write side of the Query engine. Decide with the first signal.
-4. **How clients import the API definition.** The dashboard, the CLI, and the SDK need the
+3. **How clients import the API definition.** The dashboard, the CLI, and the SDK need the
    `HttpApi` definition, but not the server code that sits beside it in an engine's or module's
    `src/index.ts`. Either each such package gets a second entry, `./api`, with only its definition
    (the one exception to "one entry"), or one `@cluenori/api` package holds every definition.
    Effect's own guide to `HttpApi` keeps definitions apart from server code, ideally in a package of
-   their own. Today `CluenoriApi` lives in `apps/worker`, whose contract is only that definition.
-   Decide with the first module, by checking what reaches the dashboard's bundle.
-5. **How signals are read on a developer's machine.** A spike (October 2026, Wrangler 4.151.2)
-   found that locally, Analytics Engine's `writeDataPoint` and Pipelines' `send` accept anything and
-   keep nothing, and nothing local answers Analytics Engine SQL or reads the lake; R2 works. So
-   `./run` and the tests can't show a chart from these stores. The options: a local store behind the
-   same contract (such as SQLite in a Durable Object), with one conformance suite; or lake files
-   written to R2. Also, Wrangler fetches a Pipelines stream's schema with the developer's stored
-   login whenever it generates types, so a Pipelines binding makes `./run` and `bun install` call
-   Cloudflare unless Wrangler's config is isolated (`XDG_CONFIG_HOME`). Decide with the first
-   signal, together with decision 3.
-6. **Publishing.** The build for published packages (TypeScript's own emit or a bundler), the
+   their own. Today `CluenoriApi` lives in `apps/worker`, and the CLI and journeys also depend on
+   foundation's and engines' contracts for the Schemas of what they send. Decide with the first
+   module, by checking what reaches the dashboard's bundle.
+4. **How the lake works on a developer's machine.** The spike behind "Counts live in each
+   project's Durable Object" also found that locally Pipelines' `send` keeps nothing and nothing
+   reads the lake; R2 works. Wrangler also fetches a Pipelines stream's schema with the
+   developer's stored login whenever it generates types, so a Pipelines binding makes `./run` and
+   `bun install` call Cloudflare unless Wrangler's config is isolated (`XDG_CONFIG_HOME`). Decide
+   with the first signal that needs the lake: logs or kept traces.
+5. **Publishing.** The build for published packages (TypeScript's own emit or a bundler), the
    versioning tool, and the npm scope and license of `@bagatka/*` (assumed MIT, like the SDKs).
 
 ## Module map
@@ -367,4 +386,5 @@ updates this table in the same change.
 
 | Package | Kind | Owns | Uses | Reacts to |
 |---|---|---|---|---|
-| — | | | | |
+| `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests | Foundation's `ActivityLog` | — |
+| `@cluenori/signals` | Engine | Requests from trace exports, counted by endpoint, environment and bucket; the duplicate window | `@bagatka/otlp`, `@bagatka/quantile-sketch`; `projects` for its API's errors | — |

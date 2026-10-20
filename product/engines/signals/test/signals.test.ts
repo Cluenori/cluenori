@@ -1,0 +1,300 @@
+import { SketchValue, sketchOf } from "@bagatka/quantile-sketch"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Period } from "@cluenori/foundation"
+import { assert, describe, it } from "@effect/vitest"
+import { DateTime, Duration, Effect } from "effect"
+import { Base64 } from "effect/encoding"
+import { TestClock } from "effect/testing"
+
+import type { RequestBatch, RequestCounts } from "../src/index.ts"
+import { BatchDigest, readRequests, Signals } from "../src/index.ts"
+import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
+import { inProject, WebCrypto } from "./in-object.ts"
+
+// The fixture's requests started at 2026-10-19T22:49:43Z; the tests ask a minute later.
+const capturedAt = 1792442983314
+const now = capturedAt + 60_000
+const api = ComponentKey.make("notes-api")
+const days = (count: number) => Duration.toMillis(Duration.days(count))
+const lastHour = new Period({ from: DateTime.makeUnsafe(now - 3_600_000), to: DateTime.makeUnsafe(now) })
+
+const fixture = Effect.fromResult(Base64.decode(dotnetTraces)).pipe(Effect.orDie)
+
+const readFixtureAt = (time: number) =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(time)
+    const body = yield* fixture
+    return yield* readRequests(body)
+  }).pipe(Effect.provide(WebCrypto))
+
+const counts = (endpoint: string, requests: number, overrides: Partial<RequestCounts> = {}): RequestCounts => ({
+  bucket: DateTime.makeUnsafe(capturedAt - (capturedAt % 60_000)),
+  endpoint: EnvelopeName.make(endpoint),
+  environment: EnvironmentKey.make("prod"),
+  requests,
+  errors: 0,
+  totalMs: requests * 10,
+  durations: sketchOf(Array.from({ length: requests }, () => SketchValue.make(10))),
+  ...overrides,
+})
+
+const batchOf = (digit: string, entries: ReadonlyArray<RequestCounts>): RequestBatch => ({
+  digest: BatchDigest.make(digit.repeat(64)),
+  counts: entries,
+})
+
+describe("readRequests", () => {
+  it.effect("counts a .NET export's server spans by endpoint, and skips its client spans", () =>
+    Effect.gen(function* () {
+      const { batch, rejected } = yield* readFixtureAt(now)
+      const byEndpoint = Object.fromEntries(
+        batch.counts.map((entry) => [entry.endpoint, [entry.requests, entry.errors]]),
+      )
+
+      assert.isUndefined(rejected)
+      assert.deepStrictEqual(byEndpoint, {
+        "GET /api/notes/{id}": [5, 0],
+        "GET /api/render/{format}": [3, 0],
+        "POST /api/export": [3, 0],
+        "GET /api/fail": [2, 2],
+        "GET /api/missing": [2, 0],
+        GET: [1, 0],
+      })
+      assert.isTrue(batch.counts.every((entry) => entry.environment === "production"))
+      assert.match(batch.digest, /^[0-9a-f]{64}$/)
+    }),
+  )
+
+  it.effect("refuses requests older than the 14 days they are kept, saying why", () =>
+    Effect.gen(function* () {
+      const { batch, rejected } = yield* readFixtureAt(now + Duration.toMillis(Duration.days(15)))
+
+      assert.isEmpty(batch.counts)
+      assert.deepStrictEqual(rejected, {
+        count: 16,
+        problem: "A request is older than the 14 days requests are kept",
+      })
+    }),
+  )
+})
+
+describe("Signals", () => {
+  it.effect("answers the endpoint table from a recorded export, with percentiles", () =>
+    Effect.gen(function* () {
+      const { batch } = yield* readFixtureAt(now)
+      const table = yield* inProject(
+        "endpoint-table",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.record(api, batch)
+          return yield* signals.endpoints({ period: lastHour })
+        }),
+      )
+      const notes = table.rows.find((row) => row.endpoint === "GET /api/notes/{id}")
+
+      assert.strictEqual(table.requests, 16)
+      assert.strictEqual(table.errors, 2)
+      assert.strictEqual(table.rows[0]?.endpoint, "GET /api/notes/{id}")
+      assert.strictEqual(notes?.component, "notes-api")
+      assert.strictEqual(notes?.environment, "production")
+      assert.deepStrictEqual([notes?.requests, notes?.errors], [5, 0])
+      // Durations 0.067, 0.082, 0.090, 0.801 and 32.111 ms: p50 is 0.090 and p99 the slowest, within 2%.
+      assert.closeTo(notes?.p50Ms ?? 0, 0.09, 0.09 * 0.02)
+      assert.closeTo(notes?.p99Ms ?? 0, 32.111, 32.111 * 0.02)
+      assert.closeTo(notes?.averageMs ?? 0, 33.151 / 5, 0.001)
+    }),
+  )
+
+  it.effect("counts an exporter's retry once", () =>
+    inProject(
+      "retry",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const batch = batchOf("a", [counts("GET /api/notes/{id}", 3)])
+        const first = yield* signals.record(api, batch)
+        const retry = yield* signals.record(api, batch)
+        const table = yield* signals.endpoints({ period: lastHour })
+
+        assert.deepStrictEqual([first, retry], ["recorded", "duplicate"])
+        assert.strictEqual(table.requests, 3)
+      }),
+    ),
+  )
+
+  it.effect("adds batches of the same endpoint and bucket together", () =>
+    inProject(
+      "adds-up",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        yield* signals.record(api, batchOf("a", [counts("GET /api/notes/{id}", 3)]))
+        yield* signals.record(api, batchOf("b", [counts("GET /api/notes/{id}", 2, { errors: 1 })]))
+        const table = yield* signals.endpoints({ period: lastHour })
+
+        assert.deepInclude(table.rows[0], { requests: 5, errors: 1, averageMs: 10 })
+        assert.strictEqual(table.rows.length, 1)
+      }),
+    ),
+  )
+
+  it.effect("counts a component's endpoints past 500 as (other endpoints)", () =>
+    inProject(
+      "too-many-endpoints",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const many = Array.from({ length: 503 }, (_, index) => counts(`GET /api/items/${index}`, 1))
+        yield* signals.record(api, batchOf("c", many))
+        const table = yield* signals.endpoints({ period: lastHour })
+        const other = table.rows.find((row) => row.endpoint === "(other endpoints)")
+
+        assert.strictEqual(table.rows.length, 501)
+        assert.strictEqual(other?.requests, 3)
+        assert.strictEqual(table.requests, 503)
+      }),
+    ),
+  )
+
+  it.effect("filters by environment and component", () =>
+    inProject(
+      "filters",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        yield* signals.record(
+          api,
+          batchOf("d", [counts("GET /a", 1), counts("GET /a", 2, { environment: EnvironmentKey.make("staging") })]),
+        )
+        yield* signals.record(ComponentKey.make("notes-jobs"), batchOf("e", [counts("GET /a", 4)]))
+        const staging = yield* signals.endpoints({ period: lastHour, environment: EnvironmentKey.make("staging") })
+        const jobs = yield* signals.endpoints({ period: lastHour, component: ComponentKey.make("notes-jobs") })
+
+        assert.deepStrictEqual([staging.requests, jobs.requests], [2, 4])
+      }),
+    ),
+  )
+
+  it.effect("says which part of a period it covers: no further back than its counts are kept, no later than now", () =>
+    inProject(
+      "covered",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const periodOf = (back: number) =>
+          new Period({ from: DateTime.makeUnsafe(now - days(back)), to: DateTime.makeUnsafe(now + 3_600_000) })
+        const month = yield* signals.endpoints({ period: periodOf(30) })
+        const twoYears = yield* signals.endpoints({ period: periodOf(730) })
+        const fromOf = (table: typeof month) => DateTime.toEpochMillis(table.covered?.from ?? DateTime.makeUnsafe(0))
+        const toOf = (table: typeof month) => DateTime.toEpochMillis(table.covered?.to ?? DateTime.makeUnsafe(0))
+
+        // Hourly counts answer both, so the month is covered whole and two years back to 15 months.
+        assert.strictEqual(fromOf(month), now - days(30) - ((now - days(30)) % 3_600_000))
+        assert.isAtLeast(fromOf(twoYears), now - days(455))
+        assert.isAtMost(fromOf(twoYears), now - days(454))
+        assert.isAtMost(toOf(month), now + 3_600_000)
+        assert.isUndefined(month.dataUntil)
+        assert.isEmpty(month.rows)
+      }),
+    ),
+  )
+
+  it.effect("keeps hourly counts for 15 months and answers longer questions from them", () =>
+    inProject(
+      "hourly-history",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const twentyDaysAgo = now - Duration.toMillis(Duration.days(20))
+        const old = counts("GET /api/notes/{id}", 4, {
+          bucket: DateTime.makeUnsafe(twentyDaysAgo - (twentyDaysAgo % 60_000)),
+        })
+        yield* signals.record(api, batchOf("1", [old, counts("GET /api/notes/{id}", 1)]))
+        const month = new Period({
+          from: DateTime.makeUnsafe(now - Duration.toMillis(Duration.days(30))),
+          to: DateTime.makeUnsafe(now),
+        })
+        const lastMonth = yield* signals.endpoints({ period: month })
+        const recent = yield* signals.endpoints({ period: lastHour })
+
+        // The minute counts of 20 days ago are gone; the hourly ones remain.
+        assert.strictEqual(lastMonth.requests, 5)
+        assert.strictEqual(recent.requests, 1)
+        assert.closeTo(lastMonth.rows[0]?.p50Ms ?? 0, 10, 10 * 0.02)
+      }),
+    ),
+  )
+
+  it.effect("counts a question of two days or less by the minute", () =>
+    inProject(
+      "by-minute",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const minute = capturedAt - (capturedAt % 60_000)
+        yield* signals.record(
+          api,
+          batchOf("2", [
+            counts("GET /a", 1, { bucket: DateTime.makeUnsafe(minute - 120_000) }),
+            counts("GET /a", 2, { bucket: DateTime.makeUnsafe(minute - 60_000) }),
+            counts("GET /a", 3, { bucket: DateTime.makeUnsafe(minute) }),
+          ]),
+        )
+        const series = yield* signals.requestsOverTime({ period: lastHour }, "1m")
+        const table = yield* signals.endpoints({ period: lastHour })
+
+        assert.strictEqual(series.step, "1m")
+        assert.deepStrictEqual(
+          series.points.map((point) => point.requests),
+          [1, 2, 3],
+        )
+        assert.strictEqual(
+          DateTime.toEpochMillis(table.dataUntil ?? DateTime.makeUnsafe(0)),
+          Math.min(minute + 60_000, now),
+        )
+      }),
+    ),
+  )
+
+  it.effect("widens a step finer than the hourly counts of a long question to an hour", () =>
+    inProject(
+      "wide-step",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        yield* signals.record(api, batchOf("3", [counts("GET /a", 2)]))
+        const week = new Period({
+          from: DateTime.makeUnsafe(now - Duration.toMillis(Duration.days(7))),
+          to: DateTime.makeUnsafe(now),
+        })
+        const series = yield* signals.requestsOverTime({ period: week }, "1m")
+
+        assert.strictEqual(series.step, "1h")
+        assert.strictEqual(series.points[0]?.requests, 2)
+      }),
+    ),
+  )
+
+  it.effect("shows requests over time, one point per step with requests", () =>
+    inProject(
+      "series",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const earlier = DateTime.makeUnsafe(capturedAt - (capturedAt % 300_000) - 600_000)
+        yield* signals.record(api, batchOf("f", [counts("GET /a", 2), counts("GET /a", 3, { bucket: earlier })]))
+        const fiveMinutes = yield* signals.requestsOverTime({ period: lastHour }, "5m")
+        const hours = yield* signals.requestsOverTime({ period: lastHour }, "1h")
+
+        assert.deepStrictEqual(
+          fiveMinutes.points.map((point) => point.requests),
+          [3, 2],
+        )
+        assert.strictEqual(
+          hours.points.reduce((total, point) => total + point.requests, 0),
+          5,
+        )
+      }),
+    ),
+  )
+})

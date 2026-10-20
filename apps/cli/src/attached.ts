@@ -15,13 +15,15 @@ export class CommandFailed extends Schema.TaggedError<CommandFailed>()("CommandF
 export const attached = Effect.fn("attached")(function* (
   command: string,
   args: ReadonlyArray<string>,
-  options: { readonly cwd?: string },
+  options: { readonly cwd?: string; readonly env?: Readonly<Record<string, string>> },
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const exitCode = yield* spawner
     .exitCode(
       ChildProcess.make(command, args, {
-        ...options,
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        // The program sees this terminal's environment, plus `env`.
+        ...(options.env === undefined ? {} : { env: { ...options.env }, extendEnv: true }),
         stdin: "inherit",
         stdout: "inherit",
         stderr: "inherit",
@@ -37,6 +39,6 @@ export const attached = Effect.fn("attached")(function* (
   }
 })
 
-/** Runs Wrangler, from the Worker's package, attached to this terminal. */
-export const wrangler = (args: ReadonlyArray<string>) =>
-  attached("bun", ["run", "wrangler", ...args], { cwd: "apps/worker" })
+/** Runs Wrangler, from the Worker's package, attached to this terminal, with `env` added. */
+export const wrangler = (args: ReadonlyArray<string>, env?: Readonly<Record<string, string>>) =>
+  attached("bun", ["run", "wrangler", ...args], { cwd: "apps/worker", ...(env === undefined ? {} : { env }) })

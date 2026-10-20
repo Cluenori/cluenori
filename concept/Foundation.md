@@ -52,7 +52,7 @@ A record gets its feature key in one of four ways:
 
 Four rules keep the filter honest:
 
-- **Rules apply at ingest.** Analytics Engine counters cannot change after they are written, so the Worker applies the catalog rules before it writes. Data in the lake can get new keys later by a backfill.
+- **Rules apply at ingest.** Counts are added up as data arrives, and the raw data behind them is not kept for long, so the Worker applies the catalog rules before it counts. Data in the lake can get new keys later by a backfill.
 - **Two fields, one precedence.** `feature` is the owner of the code that ran: a key in code wins over a catalog rule. `callerFeature` is the feature of the screen that started the request, from baggage. The filter uses the owner by default. A switch adds the calls that a feature started, for example `GET /api/me` from the Export screen.
 - **Calls keep their origin.** An API span has its own component, `notes-api`, and the origin app and release from the baggage, `notes-ios 2.4.0`. Thus "Export in the iOS app" includes the API calls that the iOS app made.
 - **Keys are per project.** Blueprint keys, for example `billing`, have the same name in each project, so the portfolio can compare them.
@@ -64,7 +64,7 @@ All data has one of three shapes. Each shape has its own store and rules.
 
 | Shape | What it is | Volume | Store | Examples |
 | --- | --- | --- | --- | --- |
-| Signals | Measurements and telemetry. Append only. | High | Lake (R2, Iceberg), counters (Analytics Engine), exact counts for each person (Durable Objects) | Product events, requests and their traces, logs, errors, web vitals |
+| Signals | Measurements and telemetry. Append only. | High | Lake (R2, Iceberg), and counts in the database of each project (Durable Objects) | Product events, requests and their traces, logs, errors, web vitals |
 | Records | Objects with state that one module owns | Low | The database of the project or the workspace | Releases, deployments, provider resources, flags, version policies, campaigns, feedback, issues, decisions, consent records, ledger lines, distribution attempts |
 | Activity | Typed facts about each change. Never edited. | Low to medium | With its record, then archived to R2 | release.published, flag.changed, payment.succeeded, feedback.submitted, agent\_run.finished |
 
@@ -198,13 +198,13 @@ These choices are expensive to change after data and shipped builds exist. Versi
 | Choice | Why a later change is expensive | Version 1 slice |
 | --- | --- | --- |
 | Scope keys and the envelope | Every stored row carries them. A change needs a backfill of the lake. | The full envelope, with origin and installation. Feature, account and session are optional. |
-| Feature keys on counters | Analytics Engine counters cannot change after they are written. | Fixed counter fields for the feature and the caller feature. Catalog rules run at ingest. |
+| Feature keys on counts | Counts are added up when data arrives, and recounting needs raw data that is gone. | Counts carry the feature and the caller feature. Catalog rules run at ingest. |
 | The SDK in shipped builds | Shipped builds live for years. Only builds with the gate can be blocked, and only builds with push registration get push. | The manifest, kill switches, update gate, version header, push registration, consent, first touch and the generic views |
 | Person, installation and consent | Consent cannot be collected for the past. A wrong merge of two people is hard to undo. | Identities, installations, a merge log, and consent records with purpose, channel, wording version, source and time |
 | First touch | Install referrers and campaign tags cannot be collected later. | Play Install Referrer, the Apple AdServices token, and UTM tags or the referrer on the web |
-| Duplicates | Analytics Engine and the lake do not remove duplicates, so SDK retries count twice. | Event IDs. A short window in a Durable Object removes duplicates before the counters; queries remove the rest. |
-| Personal data in stores that cannot delete | Analytics Engine rows cannot be deleted, and Iceberg files need a rewrite. | No person IDs in Analytics Engine. The lake keeps a pseudonymous ID, and the mapping lives in the database of the project. A delete removes the mapping at once and the rows at the next rewrite. |
-| Retention of counters | Analytics Engine keeps data for 3 months. | Nightly summaries in the database of each project from the first day |
+| Duplicates | SDKs and exporters retry, so data can arrive twice, and the lake does not remove duplicates. | Event IDs, and the digest of each batch, kept for an hour in the project's database, so a retry counts once; queries remove the rest. |
+| Personal data in stores that cannot delete | Iceberg files need a rewrite to delete a row. | No person IDs in counts. The lake keeps a pseudonymous ID, and the mapping lives in the database of the project. A delete removes the mapping at once and the rows at the next rewrite. |
+| Retention of counts | Detail is kept only so long: counts by the minute 14 days. | Counts by the hour, kept 15 months, in the database of each project from the first day |
 | Database layout | Each database has a size limit (10 GB) and one writer. | One SQLite database for each project, and one for the workspace, each in its own Durable Object |
 | Activity on every write | Timelines, workflows and agents need history from the first day. | All module writes go through one function that emits activity. |
 | Actions with audit and policy | Agents need a complete and enforced history before they act. | The dashboard, API, CLI and MCP use one action layer. |

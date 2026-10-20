@@ -7,6 +7,8 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
+    "@cluenori/foundation": "workspace:*",
+    "@cluenori/projects": "workspace:*",
     "@cluenori/worker": "workspace:*",
     "@effect/vitest": "catalog:",
     "effect": "catalog:",

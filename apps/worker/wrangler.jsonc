@@ -6,4 +6,7 @@
   "compatibility_date": "2026-10-01",
   // Served at https://cluenori.<your subdomain>.workers.dev until you add a route.
   "workers_dev": true,
+  // One Durable Object per project, named `<workspace>/<project>`, holding its database.
+  "durable_objects": { "bindings": [{ "name": "PROJECT", "class_name": "ProjectObject" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ProjectObject"] }],
 }

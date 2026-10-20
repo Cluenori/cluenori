@@ -91,7 +91,7 @@ export class ActivityLog extends Context.Service<
               attrs,
             })
             const json = yield* encodeEnvelope(envelope).pipe(Effect.orDie)
-            yield* sql`INSERT INTO activity ${sql.insert({ id: envelope.id, name, ts: DateTime.formatIso(ts), envelope: json })}`
+            yield* sql`INSERT INTO foundation_activity ${sql.insert({ id: envelope.id, name, ts: DateTime.formatIso(ts), envelope: json })}`
           }
         })
 
@@ -106,7 +106,7 @@ export class ActivityLog extends Context.Service<
         const findLatest = SqlSchema.findAll({
           Request: Schema.Void,
           Result: Schema.Struct({ envelope: Schema.fromJsonString(Envelope) }),
-          execute: () => sql`SELECT envelope FROM activity ORDER BY seq DESC LIMIT ${latestCount}`,
+          execute: () => sql`SELECT envelope FROM foundation_activity ORDER BY seq DESC LIMIT ${latestCount}`,
         })
 
         const latest = findLatest(undefined).pipe(

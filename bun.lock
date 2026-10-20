@@ -17,6 +17,9 @@
       "name": "@cluenori/cli",
       "dependencies": {
         "@bagatka/workspace-rules": "workspace:*",
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/projects": "workspace:*",
+        "@cluenori/signals": "workspace:*",
         "@cluenori/worker": "workspace:*",
         "@effect/platform-bun": "catalog:",
         "effect": "catalog:",
@@ -25,10 +28,36 @@
     "apps/worker": {
       "name": "@cluenori/worker",
       "dependencies": {
+        "@bagatka/otlp": "workspace:*",
+        "@bagatka/web-crypto": "workspace:*",
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/projects": "workspace:*",
+        "@cluenori/signals": "workspace:*",
+        "@effect/sql-sqlite-do": "catalog:",
         "effect": "catalog:",
       },
       "devDependencies": {
         "wrangler": "catalog:",
+      },
+    },
+    "packages/otlp": {
+      "name": "@bagatka/otlp",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/quantile-sketch": {
+      "name": "@bagatka/quantile-sketch",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
       },
     },
     "packages/web-crypto": {
@@ -51,6 +80,39 @@
         "vitest": "catalog:",
       },
     },
+    "product/engines/projects": {
+      "name": "@cluenori/projects",
+      "dependencies": {
+        "@cluenori/foundation": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
+    "product/engines/signals": {
+      "name": "@cluenori/signals",
+      "dependencies": {
+        "@bagatka/otlp": "workspace:*",
+        "@bagatka/quantile-sketch": "workspace:*",
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/projects": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
     "product/foundation": {
       "name": "@cluenori/foundation",
       "dependencies": {
@@ -69,6 +131,8 @@
       "name": "@cluenori/journeys",
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/projects": "workspace:*",
         "@cluenori/worker": "workspace:*",
         "@effect/vitest": "catalog:",
         "effect": "catalog:",
@@ -93,6 +157,10 @@
     "wrangler": "4.151.2",
   },
   "packages": {
+    "@bagatka/otlp": ["@bagatka/otlp@workspace:packages/otlp"],
+
+    "@bagatka/quantile-sketch": ["@bagatka/quantile-sketch@workspace:packages/quantile-sketch"],
+
     "@bagatka/web-crypto": ["@bagatka/web-crypto@workspace:packages/web-crypto"],
 
     "@bagatka/workspace-rules": ["@bagatka/workspace-rules@workspace:packages/workspace-rules"],
@@ -118,6 +186,10 @@
     "@cluenori/foundation": ["@cluenori/foundation@workspace:product/foundation"],
 
     "@cluenori/journeys": ["@cluenori/journeys@workspace:tests/journeys"],
+
+    "@cluenori/projects": ["@cluenori/projects@workspace:product/engines/projects"],
+
+    "@cluenori/signals": ["@cluenori/signals@workspace:product/engines/signals"],
 
     "@cluenori/worker": ["@cluenori/worker@workspace:apps/worker"],
 

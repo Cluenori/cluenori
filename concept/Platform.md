@@ -14,7 +14,7 @@ Self-hosting has three steps. The cost starts at the $5 minimum of Workers Paid.
 
 Until Cluenori replaces my current tools, `./setup` must work only for me. These items come later:
 
-- **One-click deploy:** a [Deploy to Cloudflare button](https://developers.cloudflare.com/workers/platform/deploy-buttons/) copies the repository to the GitHub or GitLab account of the founder, makes D1, R2, KV, Durable Objects and Queues, and deploys. It does not make Analytics Engine or Pipelines, and it needs a public repository. Thus `./setup` stays the main method.
+- **One-click deploy:** a [Deploy to Cloudflare button](https://developers.cloudflare.com/workers/platform/deploy-buttons/) copies the repository to the GitHub or GitLab account of the founder, makes R2, KV, Durable Objects and Queues, and deploys. It does not make Pipelines, and it needs a public repository. Thus `./setup` stays the main method.
 - **Dashboard login, self-hosted:** [Cloudflare Access](https://www.cloudflare.com/en-gb/products/zero-trust/access) adds a login page to the dashboard. It is free for teams of fewer than 50 users, so there is no authentication code to maintain.
 - **Dashboard login, official hosting:** [WorkOS](https://workos.com/pricing.md) AuthKit is free for up to 1 million monthly active users. SSO costs $125 for each connection, so SSO is for a paid team plan.
 
@@ -74,8 +74,7 @@ A consent call sets the analytics mode and the message purposes: `consent({ anal
 | Store | Contents | EU control |
 | --- | --- | --- |
 | R2 | Raw data, uploads | [EU jurisdiction buckets](https://developers.cloudflare.com/r2/reference/data-location/) keep the data in the EU |
-| Durable Objects | The database of each project and of the workspace (people, issues, feedback, summaries), and exact counts | [EU jurisdiction](https://developers.cloudflare.com/durable-objects/reference/data-location/) keeps them in the EU |
-| Analytics Engine | Counters | No location control. It gets only aggregates without personal data: no user IDs, emails or IP addresses. |
+| Durable Objects | The database of each project and of the workspace (people, issues, feedback, summaries), and counts | [EU jurisdiction](https://developers.cloudflare.com/durable-objects/reference/data-location/) keeps them in the EU |
 | Pipelines, Data Catalog | Writes to the raw data | Support for EU buckets is not documented. Examine this before you offer an EU hosted region. |
 
 A jurisdiction controls where Cloudflare keeps and processes the data. It does not control which data center answers a request. For that, Cloudflare has Regional Services ([compatibility](https://developers.cloudflare.com/data-localization/compatibility/)).

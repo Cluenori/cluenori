@@ -113,8 +113,9 @@
         },
         "overrides": [
           {
-            // Tests and hosts are where layers are provided (PATTERNS.md, "Services and layers").
-            "include": ["**/test/**/*.ts", "**/src/main.ts", "**/src/worker.ts"],
+            // Tests and hosts are where layers are provided (PATTERNS.md, "Services and layers"). The
+            // CLI is a host whose every command picks its API target, so it builds clients there.
+            "include": ["**/test/**/*.ts", "**/src/main.ts", "**/src/worker.ts", "**/apps/cli/src/**/*.ts"],
             "options": { "diagnosticSeverity": { "strictEffectProvide": "off" } }
           }
         ]

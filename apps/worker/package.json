@@ -10,6 +10,12 @@
     "typecheck": "wrangler types > /dev/null && tsc"
   },
   "dependencies": {
+    "@bagatka/otlp": "workspace:*",
+    "@bagatka/web-crypto": "workspace:*",
+    "@cluenori/foundation": "workspace:*",
+    "@cluenori/projects": "workspace:*",
+    "@cluenori/signals": "workspace:*",
+    "@effect/sql-sqlite-do": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

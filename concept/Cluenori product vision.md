@@ -176,7 +176,7 @@ Cluenori keeps three classes of data, with different rules.
 
 Each insight shows its population and denominator, its comparison period and cohort, the data freshness, the sampling or collection gaps, the attribution method and the remaining uncertainty. Missing data never shows as zero.
 
-Sampling is stated, not hidden. Analytics Engine samples data at high volume, so charts show sample sizes. To keep a trace because it was slow or failed, Cluenori must see the completed request before it decides (tail sampling). Thus a chart point opens retained examples. It does not promise every request behind the point.
+Sampling is stated, not hidden. Request counts are exact and their percentiles are within 2%, and charts say so. To keep a trace because it was slow or failed, Cluenori must see the completed request before it decides (tail sampling). Thus a chart point opens retained examples. It does not promise every request behind the point.
 
 ## Act from the same place
 

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Asks Cluenori about your projects and changes them: ./cluenori --help lists the commands.
+# The commands live in apps/cli/src; this script only enters the toolchain. Installing is quiet
+# unless it fails, and then runs again to show why.
+set -eu
+cd "$(dirname "$0")"
+exec ./dev sh -c '{ bun install --frozen-lockfile > /dev/null 2>&1 || bun install --frozen-lockfile; } && exec bun apps/cli/src/main.ts "$@"' sh "$@"

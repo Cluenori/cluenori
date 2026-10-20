@@ -150,7 +150,7 @@ Each row shows the change from the previous release, the result against its rout
 
 Backends send standard OpenTelemetry traces and logs. Web frameworks, HTTP clients and database drivers send them without more code, for example ASP.NET Core and Entity Framework Core in .NET. The mobile and web SDKs add screens and web vitals. Cluenori does not accept OpenTelemetry metrics yet.
 
-A request is one unit of work in a service: an HTTP request, a queue message or a scheduled job. When its trace arrives, Cluenori turns it into one row: route, status, duration, database time, query count, slowest query, external calls, error, person, feature and release. The charts come from these rows: request counts, error counts and latency distributions for each normalized route, environment and release. When Analytics Engine samples at high volume, charts show the sample size.
+A request is one unit of work in a service: an HTTP request, a queue message or a scheduled job. When its trace arrives, Cluenori turns it into one row: route, status, duration, database time, query count, slowest query, external calls, error, person, feature and release. The charts come from these rows: request counts, error counts and latency distributions for each normalized route, environment and release. Counts are exact, and percentiles are within 2% of the true value, which the charts say.
 
 Cluenori keeps the full traces of failed and slow requests by a tail decision, after the request completes, and a small sample of the other requests. Thus each "slowest traces" link opens retained examples.
 
@@ -159,7 +159,7 @@ Cluenori keeps the full traces of failed and slow requests by a tail decision, a
 | Product events | 5 years |
 | Requests (one row each) and all logs | 14 days |
 | The full trace of each failed, slow or sampled request, and each error and warning log | 90 days |
-| Counters | 3 months in Analytics Engine, then as nightly summaries |
+| Counts (requests by endpoint) | By the minute for 14 days, and by the hour for 15 months, in the database of each project |
 | Error groups and other records | Until you delete them |
 
 ### Errors and crashes

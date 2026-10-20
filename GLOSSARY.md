@@ -10,9 +10,10 @@ Product terms (project, component, origin, environment, release, feature, person
 account, session, trace, request, idea, signals, records, activity, engines, and the module catalog)
 are defined in `concept/Foundation.md` and `concept/Modules.md`. When code implements one, its row moves here.
 
-## Terms Foundation implements
+## Terms the code implements
 
-Each is a Schema or service in `@cluenori/foundation`, whose doc comment holds its exact rule.
+Each is a Schema or service in the package named (Foundation unless said), whose doc comment holds
+its exact rule.
 
 | Term | Meaning | In code | Don't call it |
 |---|---|---|---|
@@ -25,6 +26,11 @@ Each is a Schema or service in `@cluenori/foundation`, whose doc comment holds i
 | Source | Where data comes from: `sdk-ios`, `otel`, `module:releases` | `Source` | origin (that is the app that started a request) |
 | Activity entry | One fact about a change to a record, named `<record>.<past tense>` | an `Envelope` of kind `activity`; its payload a `Schema.TaggedStruct` | event, audit row, log |
 | Activity log | The activity of one database, and the only way to change its records | `ActivityLog`, its `commit` | event store, outbox, journal |
+| Ingest key | The credential a component sends its telemetry with: `cluenori.<project>.<component>.<secret>` | `IngestKey`, `@cluenori/projects` | API key, API token; SDK key (the apps' key, later) |
+| API token | The credential that lets someone use a deployment's public API | `CLUENORI_API_TOKEN`, `MemberAuthorization` in `apps/worker` | API key, password |
+| Endpoint | A request's name in its component, its server span's name: `GET /api/notes/{id}` | `endpoint`, `@cluenori/signals` | route (the template inside it), URL, path |
+| Counts | Requests added up by endpoint and environment, by the minute and by the hour, with a sketch of their durations | `RequestCounts`, `Signals`, `@cluenori/signals` | metrics (a separate signal, later), counters |
+| Covered period | The part of an asked-for period that counts answer for: no earlier than they are kept, no later than now | `covered` | — |
 
 ## Words that already mean a product concept
 

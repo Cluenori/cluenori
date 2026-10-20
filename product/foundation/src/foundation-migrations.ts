@@ -11,7 +11,7 @@ export const migrateFoundation = Migrator.make({})({
     // `seq` is the commit order; AUTOINCREMENT never reuses one, even after rows are deleted.
     "0001_activity": Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
-      yield* sql`CREATE TABLE activity (
+      yield* sql`CREATE TABLE foundation_activity (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         id TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
