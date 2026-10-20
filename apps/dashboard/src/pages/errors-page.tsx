@@ -1,5 +1,4 @@
 import type { ComponentKey, ProjectKey } from "@cluenori/foundation"
-import type { ErrorGroup, ErrorGroupId } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -7,66 +6,27 @@ import { BugIcon, CalendarClockIcon } from "lucide-react"
 
 import { failureColor, warningColor } from "@/lib/colors"
 import { count, moment } from "@/lib/format"
-import { errorAtom, errorsAtom, logCountsAtom, periodAtom, useComponentKeys } from "@/project-data"
-import {
-  colorOf,
-  columnTimesOf,
-  endOf,
-  framesOf,
-  logColumnsOf,
-  periodWords,
-  statusOf,
-  ticksOf,
-  zoneOf,
-} from "@/project-facts"
+import { errorsAtom, logCountsAtom, periodAtom, useComponentKeys } from "@/project-data"
+import { colorOf, columnTimesOf, endOf, logColumnsOf, periodWords, statusOf, ticksOf, zoneOf } from "@/project-facts"
 import { navigate } from "@/router"
 import { BarRows } from "@/views/bar-rows"
 import { ComponentSwitch } from "@/views/component-switch"
-import { ErrorEvidence, ErrorList } from "@/views/error-list"
+import { ErrorList } from "@/views/error-list"
 import { Loaded } from "@/views/loaded"
 import { Panel, PanelStats } from "@/views/panel"
 import { PeriodSwitch } from "@/views/period-switch"
 import { ProjectHeader } from "@/views/project-header"
 
-/** An opened error's evidence: its latest occurrences in the period, and its stack. */
-function OpenedError({
-  project,
-  group,
-  now,
-}: {
-  readonly project: ProjectKey
-  readonly group: ErrorGroup
-  readonly now: number
-}) {
-  const detail = useAtomValue(errorAtom({ project, error: group.id }))
-  return (
-    <Loaded result={detail}>
-      {({ latest }) => (
-        <ErrorEvidence
-          project={project}
-          group={group}
-          now={now}
-          latest={latest}
-          frames={framesOf(latest.find((line) => line.exception?.stack !== undefined)?.exception)}
-        />
-      )}
-    </Loaded>
-  )
-}
-
 /**
  * Every error of a project, or of one component, over the period: when they happened, by component,
- * and each error group, most frequent first, opening in place with its stack and its latest
- * occurrences, each one click from its request.
+ * and each error group, most frequent first, each one click from its own page.
  */
 export function ErrorsPage({
   project,
   component,
-  error,
 }: {
   readonly project: ProjectKey
   readonly component?: ComponentKey
-  readonly error?: ErrorGroupId
 }) {
   const scope = { project, ...(component === undefined ? {} : { component }) }
   const period = useAtomValue(periodAtom)
@@ -174,14 +134,7 @@ export function ErrorsPage({
                     ? logColumnsOf(counts, [group.id]).values
                     : undefined
                 }
-                opened={error}
-                onOpen={(opened) =>
-                  navigate(
-                    { page: "errors", ...scope, ...(opened === undefined ? {} : { error: opened }) },
-                    { replace: true },
-                  )
-                }
-                renderOpened={(group) => <OpenedError project={project} group={group} now={now} />}
+                linkOf={(group) => ({ page: "error", ...scope, error: group.id })}
               />
             )
           }}

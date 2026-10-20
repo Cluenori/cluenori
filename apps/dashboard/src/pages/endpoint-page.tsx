@@ -29,9 +29,9 @@ import { PeriodSwitch } from "@/views/period-switch"
 import { SinceUsual } from "@/views/since-usual"
 import { buttonVariants } from "@/views/ui/button"
 
-// The height of one row of requests; the latency chart is as tall as both, so the two line up.
+// The height of a chart's row. The latency chart is under the requests, on the same time axis, so a
+// step's requests and its p95 line up.
 const rowHeight = 64
-const rowGap = 12
 
 /** The top of the page: back to every endpoint, the endpoint's name, its component, and the period. */
 function EndpointHeader({ back, children }: { readonly back: Route; readonly children: ReactNode }) {
@@ -52,8 +52,8 @@ function EndpointHeader({ back, children }: { readonly back: Route; readonly chi
 }
 
 /**
- * One endpoint full screen: its requests and failures over the period, its p95 over the same steps
- * beside how the last day compares with its usual p95, and its percentiles over the period.
+ * One endpoint full screen: its requests and failures over the period, then its p95 over the same
+ * steps, under them, with how the last day compares with its usual p95, and its percentiles.
  */
 export function EndpointPage({
   project,
@@ -92,7 +92,7 @@ export function EndpointPage({
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
       <EndpointHeader back={back}>
         <h1 className="flex min-w-0 items-baseline gap-3 text-2xl font-semibold tracking-[-0.02em]">
-          <EndpointName endpoint={endpoint} />
+          <EndpointName endpoint={endpoint} wrap />
           {known?.slower !== undefined && (
             <span className="shrink-0 font-mono text-sm font-normal text-yellow">slower</span>
           )}
@@ -135,13 +135,12 @@ export function EndpointPage({
               .map((entry) => entry.requests * entry.averageMs),
           )
           return (
-            <div className="grid gap-4 xl:grid-cols-12">
+            <div className="flex flex-col gap-4">
               <Panel
                 icon={ActivityIcon}
                 title="Requests"
                 subtitle={`${periodWords[period]}, and how many failed`}
                 badge={zoneOf(series)}
-                className="xl:col-span-7"
               >
                 <div className="p-5">
                   <BarRows
@@ -176,15 +175,10 @@ export function EndpointPage({
                 />
               </Panel>
 
-              <Panel
-                icon={GaugeIcon}
-                title="Latency"
-                subtitle={`p95 of each step's requests${elsewhere}`}
-                className="xl:col-span-5"
-              >
+              <Panel icon={GaugeIcon} title="Latency" subtitle={`p95 of each step's requests${elsewhere}`}>
                 <div className="p-5">
                   <BarRows
-                    rowHeight={2 * rowHeight + rowGap}
+                    rowHeight={rowHeight}
                     label={`The p95 latency of ${endpoint} over the period; over the whole period it is ${duration(row.p95Ms)}.`}
                     rows={[
                       {

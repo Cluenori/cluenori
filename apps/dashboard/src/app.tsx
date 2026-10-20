@@ -7,6 +7,7 @@ import { lazy, Suspense, useEffect, useState } from "react"
 
 import { EndpointPage } from "@/pages/endpoint-page"
 import { EndpointsPage } from "@/pages/endpoints-page"
+import { ErrorPage } from "@/pages/error-page"
 import { ErrorsPage } from "@/pages/errors-page"
 import { LogsPage } from "@/pages/logs-page"
 import { OverviewPage } from "@/pages/overview-page"
@@ -113,7 +114,15 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
         <ErrorsPage
           project={route.project}
           {...(route.component === undefined ? {} : { component: route.component })}
-          {...(route.error === undefined ? {} : { error: route.error })}
+        />
+      )
+    case "error":
+      return (
+        <ErrorPage
+          key={route.error}
+          project={route.project}
+          error={route.error}
+          {...(route.component === undefined ? {} : { component: route.component })}
         />
       )
     case "logs":

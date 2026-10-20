@@ -25,7 +25,7 @@ function ProjectErrors({ project, go }: { readonly project: ProjectKey; readonly
   return (
     <CommandGroup heading="Errors">
       {errors.value.groups.map((group) => (
-        <CommandItem key={group.id} onSelect={() => go({ page: "errors", project, error: group.id })}>
+        <CommandItem key={group.id} onSelect={() => go({ page: "error", project, error: group.id })}>
           <BugIcon className="text-failure" />
           <span className="truncate">{group.title}</span>
         </CommandItem>

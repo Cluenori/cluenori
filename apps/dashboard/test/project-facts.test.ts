@@ -1,6 +1,6 @@
-import { ComponentKey, EnvelopeName, Period, ProjectKey } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, Period, ProjectKey, TraceId } from "@cluenori/foundation"
 import type { EndpointRow, ErrorGroup, RequestSeries } from "@cluenori/signals"
-import { ErrorGroupId } from "@cluenori/signals"
+import { ErrorGroupId, SpanId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
@@ -8,10 +8,11 @@ import { axisTime, dayOf } from "@/lib/format"
 import {
   attentionOf,
   columnTimesOf,
+  exceptionsOf,
   failureSpikeOf,
-  framesOf,
   logColumnsOf,
   requestColumnsOf,
+  requestOf,
   slowerOf,
   statusOf,
 } from "@/project-facts"
@@ -136,25 +137,91 @@ describe("statusOf", () => {
   })
 })
 
-describe("framesOf", () => {
-  it("reads a .NET stack, the app's own frames being those with a source location", () => {
-    const stack = [
-      "Npgsql.NpgsqlException (0x80004005): Failed to connect",
-      "   at Npgsql.Internal.NpgsqlConnector.Connect(NpgsqlTimeout timeout)",
-      "   at Notes.Api.Exports.ExportStore.SaveAsync(Export export) in /src/Exports/ExportStore.cs:line 48",
-    ].join("\n")
-    assert.deepStrictEqual(framesOf({ type: "Npgsql.NpgsqlException", message: "Failed to connect", stack }), [
-      { method: "Npgsql.Internal.NpgsqlConnector.Connect(NpgsqlTimeout timeout)", ours: false },
+describe("exceptionsOf", () => {
+  // A .NET exception with one inside it, as `Exception.ToString()` writes it.
+  const nested = {
+    type: "System.InvalidOperationException",
+    message: "The export couldn't be saved",
+    stack: [
+      "System.InvalidOperationException: The export couldn't be saved",
+      ' ---> Npgsql.PostgresException (0x80004005): 23505: duplicate key value violates unique constraint "ix_exports_id"',
+      "",
+      "DETAIL: Detail redacted as it may contain sensitive data.",
+      "   at Npgsql.Internal.NpgsqlConnector.ReadMessageLong(Boolean async)",
+      "   at Npgsql.NpgsqlDataReader.NextResult(Boolean async, Boolean isConsuming)",
+      "   --- End of inner exception stack trace ---",
+      "   at Notes.Api.Exports.ExportStore.SaveAsync(Export export) in /src/Exports/ExportStore.cs:line 52",
+      "--- End of stack trace from previous location ---",
+      "   at Notes.Api.Exports.ExportEndpoint.HandleAsync(ExportRequest request) in /src/Exports/ExportEndpoint.cs:line 31",
+    ].join("\n"),
+  }
+
+  it("reads an exception and the one inside it, each with its own frames", () => {
+    assert.deepStrictEqual(exceptionsOf(nested), [
       {
-        method: "Notes.Api.Exports.ExportStore.SaveAsync(Export export)",
-        place: "/src/Exports/ExportStore.cs:line 48",
-        ours: true,
+        type: "System.InvalidOperationException",
+        message: "The export couldn't be saved",
+        frames: [
+          {
+            method: "Notes.Api.Exports.ExportStore.SaveAsync(Export export)",
+            place: "/src/Exports/ExportStore.cs:line 52",
+            ours: true,
+          },
+          {
+            method: "Notes.Api.Exports.ExportEndpoint.HandleAsync(ExportRequest request)",
+            place: "/src/Exports/ExportEndpoint.cs:line 31",
+            ours: true,
+          },
+        ],
+      },
+      {
+        type: "Npgsql.PostgresException",
+        message:
+          '23505: duplicate key value violates unique constraint "ix_exports_id"\nDETAIL: Detail redacted as it may contain sensitive data.',
+        frames: [
+          { method: "Npgsql.Internal.NpgsqlConnector.ReadMessageLong(Boolean async)", ours: false },
+          { method: "Npgsql.NpgsqlDataReader.NextResult(Boolean async, Boolean isConsuming)", ours: false },
+        ],
       },
     ])
   })
 
-  it("has no frames for an exception sent without a stack", () => {
-    assert.isUndefined(framesOf({ type: "TimeoutException", message: "Took too long" }))
+  it("has one exception without frames when it came without a stack", () => {
+    assert.deepStrictEqual(exceptionsOf({ type: "TimeoutException", message: "Took too long" }), [
+      { type: "TimeoutException", message: "Took too long", frames: [] },
+    ])
+  })
+})
+
+describe("requestOf", () => {
+  const span = (id: string, parent: string | undefined, kind: "server" | "client") => ({
+    span: SpanId.make(id),
+    ...(parent === undefined ? {} : { parent: SpanId.make(parent) }),
+    depth: parent === undefined ? 0 : 1,
+    name: kind === "server" ? "POST /api/export" : "INSERT exports",
+    kind,
+    component: api,
+    start: at(now),
+    durationMs: 12,
+    failed: false,
+    attributes: {},
+    events: [],
+  })
+  const view = {
+    trace: TraceId.make("f2b7d04e9a1c3865e7d0b4a9c2f15e63"),
+    searched: new Period({ from: at(now - minute), to: at(now + minute) }),
+    spans: [span("a1a1a1a1a1a1a1a1", undefined, "server"), span("b2b2b2b2b2b2b2b2", "a1a1a1a1a1a1a1a1", "client")],
+    logs: [],
+    files: { read: 1, unread: 0 },
+  }
+
+  it("finds the request a record was written in, from the step it was written in", () => {
+    assert.strictEqual(requestOf(view, SpanId.make("b2b2b2b2b2b2b2b2"))?.name, "POST /api/export")
+  })
+
+  it("takes the trace's first step for a record without one, and nothing from an empty trace", () => {
+    assert.strictEqual(requestOf(view, undefined)?.span, "a1a1a1a1a1a1a1a1")
+    assert.isUndefined(requestOf({ ...view, spans: [] }, undefined))
   })
 })
 

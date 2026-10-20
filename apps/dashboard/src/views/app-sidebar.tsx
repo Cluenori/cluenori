@@ -34,9 +34,11 @@ import {
   SidebarRail,
 } from "@/views/ui/sidebar"
 
-// Pages that open from the performance page, so Performance stays marked on them.
-const underPerformance = (route: Route) =>
-  route.page === "endpoints" || route.page === "endpoint" || route.page === "trace"
+// Pages that open from an area's page, so the area stays marked on them.
+const underArea = (route: Route, area: Area) =>
+  area === "performance"
+    ? route.page === "endpoints" || route.page === "endpoint" || route.page === "trace"
+    : area === "errors" && route.page === "error"
 
 const areas: ReadonlyArray<{ readonly area: Area; readonly label: string; readonly icon: typeof BugIcon }> = [
   { area: "performance", label: "Performance", icon: ActivityIcon },
@@ -122,9 +124,7 @@ export function AppSidebar({
                         {areas.map((entry) => (
                           <SidebarMenuSubItem key={entry.area}>
                             <SidebarMenuSubButton
-                              isActive={
-                                route.page === entry.area || (entry.area === "performance" && underPerformance(route))
-                              }
+                              isActive={route.page === entry.area || underArea(route, entry.area)}
                               render={
                                 <Link
                                   to={{

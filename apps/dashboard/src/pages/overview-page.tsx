@@ -50,6 +50,10 @@ function OpenButton({ project, area }: { readonly project: ProjectKey; readonly 
   )
 }
 
+// A summary chart's rows: as tall as the errors list beside it, about four errors, so a panel of the
+// summary row holds no empty space.
+const summaryRowHeight = 96
+
 // A summary chart is narrow, so it names only every other of the usual four times.
 const everyOther = <T,>(ticks: ReadonlyArray<T>) => ticks.filter((_, index) => index % 2 === 0)
 
@@ -102,7 +106,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
                 <>
                   <div className="my-auto px-5 py-5">
                     <BarRows
-                      rowHeight={64}
+                      rowHeight={summaryRowHeight}
                       label="Requests to every component over the period, and failed requests."
                       rows={[
                         { label: "Requests", color: "var(--blue)", values: asked.values },
@@ -149,7 +153,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
                       {table.groups.slice(0, 4).map((group) => (
                         <li key={group.id}>
                           <Link
-                            to={{ page: "errors", project, error: group.id }}
+                            to={{ page: "error", project, error: group.id }}
                             className="flex items-center gap-4 px-5 py-3 hover:bg-accent/60"
                           >
                             <span className="flex min-w-0 flex-1 flex-col">
@@ -204,7 +208,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
                 <>
                   <div className="my-auto px-5 py-5">
                     <BarRows
-                      rowHeight={64}
+                      rowHeight={summaryRowHeight}
                       label="Warnings and errors logged over the period."
                       rows={[
                         { label: "Warnings", color: warningColor, values: warnings.values },

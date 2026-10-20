@@ -319,7 +319,7 @@ function HoverCardSample() {
       Most errors today are{" "}
       <HoverCard>
         <HoverCardTrigger
-          render={<Link to={{ page: "errors", project: sampleProject, error: npgsql.id }} />}
+          render={<Link to={{ page: "error", project: sampleProject, error: npgsql.id }} />}
           className="font-medium text-foreground underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground"
         >
           NpgsqlException

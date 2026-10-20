@@ -15,6 +15,9 @@ import type {
   RequestPoint,
   RequestSeries,
   SeriesStep,
+  SpanId,
+  TraceSpan,
+  TraceView,
 } from "@cluenori/signals"
 import { stepMillis } from "@cluenori/signals"
 import { DateTime } from "effect"
@@ -203,22 +206,81 @@ export const statusOf = (group: ErrorGroup, now: number) => ({
 /** A frame of a stack: the function, where in the source when known, and whether it is the app's own. */
 export type StackFrame = { readonly method: string; readonly place?: string; readonly ours: boolean }
 
+/** One exception of a chain: its type, what it said, and its frames, the throwing one first. */
+export type ThrownException = {
+  readonly type: string
+  readonly message: string
+  readonly frames: ReadonlyArray<StackFrame>
+}
+
+// A frame as .NET writes it, `at Method(Args) in /src/File.cs:line 48`. One with a source location is
+// the app's own code: libraries' frames come without one.
+const frameOf = (line: string): StackFrame => {
+  const [method = "", place] = line.trim().slice(3).split(" in ")
+  return place === undefined ? { method, ours: false } : { method, place, ours: true }
+}
+
+// The first line of an exception as .NET writes it, `Type (0x80004005): message`.
+const headerOf = (line: string) => {
+  const match = /^(\S+?)(?: \(0x[0-9A-Fa-f]+\))?: (.*)$/.exec(line.trim())
+  return match === null ? { type: line.trim(), message: "" } : { type: match[1] ?? "", message: match[2] ?? "" }
+}
+
 /**
- * An exception's stack as frames, the throwing frame first; absent when it came without one. Frames
- * are read as .NET writes them, `at Method(Args) in /src/File.cs:line 48`. A frame with a source
- * location is the app's own code: libraries' frames come without one.
+ * An exception and the ones inside it, outermost first, read from its stack as .NET writes it
+ * (`Exception.ToString()`): each inner exception's header starts with `--->`, the innermost's frames
+ * come first, and `--- End of inner exception stack trace ---` ends each one's. The outermost's type
+ * and message are the record's own. Without a stack, it is one exception without frames.
+ * Not handled: an `AggregateException`'s several inner exceptions, read as one chain, and Java's
+ * `Caused by:`, read as frames of one exception.
  */
-export const framesOf = (exception: LogException | undefined): ReadonlyArray<StackFrame> | undefined => {
-  if (exception?.stack === undefined) {
-    return undefined
+export const exceptionsOf = (exception: LogException): ReadonlyArray<ThrownException> => {
+  if (exception.stack === undefined) {
+    return [{ type: exception.type, message: exception.message, frames: [] }]
   }
-  return exception.stack
-    .split("\n")
-    .filter((line) => line.trimStart().startsWith("at "))
-    .map((line) => {
-      const [method = "", place] = line.trim().slice(3).split(" in ")
-      return place === undefined ? { method, ours: false } : { method, place, ours: true }
-    })
+  const headers: Array<{ type: string; message: string }> = []
+  const sections: Array<Array<StackFrame>> = [[]]
+  for (const line of exception.stack.split("\n")) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith("--->")) {
+      headers.push(headerOf(trimmed.slice(4)))
+    } else if (trimmed.startsWith("at ")) {
+      sections.at(-1)?.push(frameOf(trimmed))
+    } else if (trimmed === "--- End of inner exception stack trace ---") {
+      sections.push([])
+    } else if (trimmed.startsWith("--- ") || trimmed === "") {
+      // An async boundary, such as `--- End of stack trace from previous location ---`, or a gap.
+    } else if (headers.length === 0) {
+      headers.push(headerOf(trimmed))
+    } else if (sections.every((section) => section.length === 0)) {
+      // A message of several lines, before the first frame.
+      const last = headers.at(-1)
+      if (last !== undefined) {
+        last.message = `${last.message}\n${trimmed}`
+      }
+    }
+  }
+  // The outermost is the record's own exception: its type and whole message, as sent.
+  const chain = [{ type: exception.type, message: exception.message }, ...headers.slice(1)]
+  // The first section is the innermost exception's; each one after it, the next one out's.
+  return chain.map((thrown, index) => ({
+    type: thrown.type,
+    message: thrown.message,
+    frames: sections[chain.length - 1 - index] ?? [],
+  }))
+}
+
+/**
+ * The request a log record was written in, from its trace: the server or consumer span it, or the
+ * span it was written in, belongs to; else the trace's first span. Absent when the trace has none.
+ */
+export const requestOf = (view: TraceView, span: SpanId | undefined): TraceSpan | undefined => {
+  const byId = new Map(view.spans.map((entry) => [entry.span, entry] as const))
+  let current = span === undefined ? undefined : byId.get(span)
+  while (current !== undefined && current.kind !== "server" && current.kind !== "consumer") {
+    current = current.parent === undefined ? undefined : byId.get(current.parent)
+  }
+  return current ?? view.spans[0]
 }
 
 // ---- Needs attention -------------------------------------------------------------------------------
@@ -265,6 +327,10 @@ export const failureSpikeOf = (series: RequestSeries) => {
   }
 }
 
+// "1 occurrence", "36 occurrences".
+const occurrencesText = (occurrences: number) =>
+  `${count(occurrences)} ${occurrences === 1 ? "occurrence" : "occurrences"}`
+
 // The most slower, against its usual, first.
 const byHowMuchSlower = (left: Slower, right: Slower) => right.p95Ms / right.usualP95Ms - left.p95Ms / left.usualP95Ms
 
@@ -290,7 +356,7 @@ export const attentionOf = (facts: {
       return found === undefined ? [] : [{ row, ...found }]
     })
     .toSorted(byHowMuchSlower)
-  const errorRoute = (error: ErrorGroupId) => ({ page: "errors" as const, project, error })
+  const errorRoute = (error: ErrorGroupId) => ({ page: "error" as const, project, error })
   // Nothing of the period is kept when it has no end, so there are no errors to judge.
   const groups =
     now === undefined
@@ -308,7 +374,7 @@ export const attentionOf = (facts: {
         key: `ongoing ${group.id}`,
         tone: "failure" as const,
         title: `${titleParts(group).type} is ${isNew ? "new, and " : ""}happening right now`,
-        detail: `${count(group.occurrences)} occurrences in the period, last ${lastSeen}`,
+        detail: `${occurrencesText(group.occurrences)} in the period, last ${lastSeen}`,
         action: { label: "Open the error", to: errorRoute(group.id) },
       })),
     ...(spike === undefined
@@ -328,7 +394,7 @@ export const attentionOf = (facts: {
         key: `new ${group.id}`,
         tone: "warning" as const,
         title: `${titleParts(group).type} is new`,
-        detail: `First seen ${firstSeen}, ${count(group.occurrences)} occurrences since`,
+        detail: `First seen ${firstSeen}, ${occurrencesText(group.occurrences)} since`,
         action: { label: "Open the error", to: errorRoute(group.id) },
       })),
     ...slower.map((entry) => ({

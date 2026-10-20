@@ -31,8 +31,9 @@ import { buttonVariants } from "@/views/ui/button"
 const summaryRows = 8
 
 /**
- * Requests to a project's components, or to one: how many over the period and how many failed, and
- * the endpoints that got slower or take the most time, each one click from its own page.
+ * Requests to a project's components, or to one: how many over the period and how many failed, then
+ * the endpoints that got slower or take the most time, each one click from its own page, each panel
+ * the page's full width.
  */
 export function PerformancePage({
   project,
@@ -72,13 +73,12 @@ export function PerformancePage({
         <PeriodSwitch />
       </ProjectHeader>
 
-      <div className="grid items-start gap-4 xl:grid-cols-12">
+      <div className="flex flex-col gap-4">
         <Panel
           icon={ActivityIcon}
           title={`Requests to ${shown}`}
           subtitle={`${periodWords[period]}, and how many failed`}
           badge={AsyncResult.isSuccess(requests) ? zoneOf(requests.value) : undefined}
-          className="xl:col-span-5"
         >
           <Loaded result={requests}>
             {(series) => {
@@ -135,7 +135,6 @@ export function PerformancePage({
               All endpoints
             </Link>
           }
-          className="xl:col-span-7"
         >
           <Loaded result={AsyncResult.all({ endpoints, compared })}>
             {({ endpoints: table, compared: usual }) => {

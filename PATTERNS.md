@@ -704,9 +704,10 @@ language.
   an answer says, never on a component's name.
 - **One click, nothing hidden.** A choice among a few is a `Segmented` (`src/views/segmented.tsx`),
   always visible; the component a page shows is a `ComponentSwitch`, kept in the URL. Details of a
-  short item open in place, such as an error group. A summary shows the top few of a long list and
+  short item open in place, such as a log line. A summary shows the top few of a long list and
   links to a page with all of them, searchable and sortable; an item with more to show, such as an
-  endpoint or a request's trace, has a page of its own (`src/pages/endpoints-page.tsx`).
+  endpoint, an error, or a request's trace, has a page of its own (`src/pages/error-page.tsx`).
+  Folded detail, such as a stack's library frames, opens with one click where it is.
 - **Data comes from one file,** `src/project-data.ts`: an atom for each question the pages ask the
   public API, run on its typed client, `kept` so going back shows an answer at once and a stale one
   is asked again. The period is an atom the questions read, so changing it asks again and keeps

@@ -23,12 +23,20 @@ describe("errors journey", () => {
       yield* expectAccessible()
       yield* Effect.promise(() => screen.getByRole("link", { name: "Open the error" }).first().click())
 
-      // The error opens in place: the stack in the app's own code, and its latest occurrences.
+      // The error's page: what it said, every frame, the library ones folded, and its request.
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("heading", { level: 1, name: "NpgsqlException" })).toBeVisible(),
+      )
       yield* Effect.promise(() =>
         expect.element(screen.getByText("Notes.Api.Exports.ExportStore.SaveAsync(Export export)")).toBeVisible(),
       )
-      yield* Effect.promise(() => expect.element(screen.getByText("and 2 frames in libraries")).toBeVisible())
-      yield* Effect.promise(() => expect.element(screen.getByText("Latest occurrences")).toBeVisible())
+      yield* Effect.promise(() => screen.getByRole("button", { name: "Show 2 frames in libraries" }).click())
+      yield* Effect.promise(() =>
+        expect
+          .element(screen.getByText("Npgsql.Internal.NpgsqlConnector.Connect(NpgsqlTimeout timeout)"))
+          .toBeVisible(),
+      )
+      yield* Effect.promise(() => expect.element(screen.getByText("Notes.Api.Exports.ExportEndpoint")).toBeVisible())
       yield* expectAccessible()
 
       // An occurrence opens its request's trace, read from the archive around when it happened.

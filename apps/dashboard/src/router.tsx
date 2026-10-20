@@ -10,8 +10,8 @@ export type Area = "performance" | "errors" | "logs"
 /**
  * Every page the dashboard has. The start, `/`, shows the first project; a project opens on its
  * overview; each area is a page that can show one component (`?component=notes-api`); performance
- * leads to every endpoint and then to one; an error opens in place on the errors page, so it has a
- * URL too; a request's trace is a page of its own, at the time it happened (`?around=<ISO 8601>`),
+ * leads to every endpoint and then to one; the errors page leads to one error, with all it was sent
+ * with; a request's trace is a page of its own, at the time it happened (`?around=<ISO 8601>`),
  * which the archive is read by. `hrefOf` and `routeOf` convert to and from URLs. An address is
  * untrusted input, so its keys are decoded here, once: one that isn't a page's is `missing`.
  */
@@ -27,15 +27,22 @@ export type Route =
       readonly component?: ComponentKey
       readonly endpoint: EnvelopeName
     }
+  | { readonly page: "errors"; readonly project: ProjectKey; readonly component?: ComponentKey }
   | {
-      readonly page: "errors"
+      readonly page: "error"
       readonly project: ProjectKey
       readonly component?: ComponentKey
-      readonly error?: ErrorGroupId
+      readonly error: ErrorGroupId
     }
   | { readonly page: "logs"; readonly project: ProjectKey; readonly component?: ComponentKey }
   | { readonly page: "trace"; readonly project: ProjectKey; readonly trace: TraceId; readonly around?: DateTime.Utc }
   | { readonly page: "kit" }
+
+// An endpoint's name often holds slashes (`GET /api/notes/{id}`). An address keeps them as its own:
+// Cloudflare turns an escaped slash, `%2F`, back into one before the page sees it. So a name is
+// written as path segments, each escaped, and read back from everything after `/endpoints/`, a
+// trailing slash included (`POST /api/profile/`).
+const endpointPath = (endpoint: string) => endpoint.split("/").map(encodeURIComponent).join("/")
 
 const withComponent = (path: string, component: string | undefined) =>
   component === undefined ? path : `${path}?component=${encodeURIComponent(component)}`
@@ -52,12 +59,11 @@ export const hrefOf = (route: Route): string => {
     case "endpoints":
       return withComponent(`/${route.project}/endpoints`, route.component)
     case "endpoint":
-      return withComponent(`/${route.project}/endpoints/${encodeURIComponent(route.endpoint)}`, route.component)
+      return withComponent(`/${route.project}/endpoints/${endpointPath(route.endpoint)}`, route.component)
     case "errors":
-      return withComponent(
-        route.error === undefined ? `/${route.project}/errors` : `/${route.project}/errors/${route.error}`,
-        route.component,
-      )
+      return withComponent(`/${route.project}/errors`, route.component)
+    case "error":
+      return withComponent(`/${route.project}/errors/${route.error}`, route.component)
     case "logs":
       return withComponent(`/${route.project}/logs`, route.component)
     case "trace":
@@ -97,7 +103,9 @@ export const routeOf = (path: string, search: string): Route => {
   const project = projectKey(first)
   const named = query.get("component") ?? undefined
   const component = componentKey(named)
-  if (Option.isNone(project) || (named !== undefined && Option.isNone(component)) || rest.length > 0) {
+  const endpointsAt = `/${first}/endpoints/`
+  const isEndpoint = page === "endpoints" && id !== undefined && path.startsWith(endpointsAt)
+  if (Option.isNone(project) || (named !== undefined && Option.isNone(component)) || (rest.length > 0 && !isEndpoint)) {
     return { page: "missing" }
   }
   const scope = { project: project.value, ...(Option.isSome(component) ? { component: component.value } : {}) }
@@ -111,7 +119,7 @@ export const routeOf = (path: string, search: string): Route => {
     if (id === undefined) {
       return { page: "endpoints", ...scope }
     }
-    const endpoint = keyOf(EnvelopeName, decoded(id))
+    const endpoint = keyOf(EnvelopeName, path.slice(endpointsAt.length).split("/").map(decoded).join("/"))
     return Option.isSome(endpoint) ? { page: "endpoint", ...scope, endpoint: endpoint.value } : { page: "missing" }
   }
   if (page === "errors") {
@@ -119,7 +127,7 @@ export const routeOf = (path: string, search: string): Route => {
       return { page: "errors", ...scope }
     }
     const error = keyOf(ErrorGroupId, id)
-    return Option.isSome(error) ? { page: "errors", ...scope, error: error.value } : { page: "missing" }
+    return Option.isSome(error) ? { page: "error", ...scope, error: error.value } : { page: "missing" }
   }
   if (page === "traces") {
     const trace = keyOf(TraceId, id)

@@ -2,7 +2,6 @@ import type { ProjectKey, TraceId } from "@cluenori/foundation"
 import type { LogLevel, TraceView } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { cn } from "cn"
-import type { Schema } from "effect"
 import { DateTime } from "effect"
 import { ArrowLeftIcon, ListTreeIcon, MousePointerClickIcon, ScrollTextIcon, SearchXIcon } from "lucide-react"
 import type { ReactNode } from "react"
@@ -11,6 +10,7 @@ import { useState } from "react"
 import { count, duration, moment, preciseTime } from "@/lib/format"
 import { traceAtom } from "@/project-data"
 import { Link } from "@/router"
+import { AttributeList } from "@/views/attribute-list"
 import { Loaded } from "@/views/loaded"
 import { Panel, PanelStats } from "@/views/panel"
 import { buttonVariants } from "@/views/ui/button"
@@ -29,22 +29,6 @@ const levelColor: Readonly<Record<LogLevel, string>> = {
 const noApps = () => false
 
 const millisOf = DateTime.toEpochMillis
-
-/** An attribute's value as text: scalars as they are, lists and objects spelled out. */
-const attributeText = (value: Schema.Json): string => {
-  if (value === null) {
-    return "null"
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(attributeText).join(", ")}]`
-  }
-  if (typeof value === "object") {
-    return `{${Object.entries(value)
-      .map(([key, entry]) => `${key}: ${attributeText(entry)}`)
-      .join(", ")}}`
-  }
-  return `${value}`
-}
 
 /** The top of the page: back to the project's performance, and what the request is. */
 function TraceHeader({ project, children }: { readonly project: ProjectKey; readonly children: ReactNode }) {
@@ -117,105 +101,91 @@ function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly 
       )}
 
       <div className="grid items-start gap-4 xl:grid-cols-12">
-        <Panel
-          icon={ListTreeIcon}
-          title="Steps"
-          subtitle="Each step under the one that started it"
-          className="xl:col-span-8"
-        >
-          <div className="pt-4">
-            <Waterfall trace={view} selected={span.span} onSelect={setSelected} isApp={noApps} />
-          </div>
-          <PanelStats
-            stats={[
-              { label: "Took", value: duration(root.durationMs), ...(root.failed ? { color: "var(--failure)" } : {}) },
-              { label: "Steps", value: count(view.spans.length) },
-              {
-                label: "Database",
-                value: `${duration(timeIn("database"))}, ${count(ofKind("database").length)}`,
-                color: stepKinds.database.color,
-              },
-              {
-                label: "External calls",
-                value: `${duration(timeIn("call"))}, ${count(ofKind("call").length)}`,
-                color: stepKinds.call.color,
-              },
-            ]}
-          />
-        </Panel>
-
-        <Panel
-          icon={MousePointerClickIcon}
-          title={span.name}
-          subtitle={`${stepKinds[stepKindOf(span, noApps)].label}, ${duration(span.durationMs)}`}
-          className="xl:col-span-4"
-        >
-          <div className="flex flex-col gap-4 px-5 py-5">
-            <p className="text-sm text-muted-foreground">
-              In {span.component}, starting{" "}
-              {millisOf(span.start) === rootStart
-                ? "with the request"
-                : `${duration(millisOf(span.start) - rootStart)} in`}
-              .
-            </p>
-            {span.statusMessage !== undefined && (
-              <p className="border-l-2 border-failure bg-failure/[0.07] px-3 py-2 text-sm text-failure">
-                {span.statusMessage}
-              </p>
-            )}
-            {Object.keys(span.attributes).length === 0 ? (
-              <p className="text-sm text-muted-foreground">This step sent no details.</p>
+        {/* The steps and their log lines, one under the other; the step chosen beside them, in view as they scroll. */}
+        <div className="flex min-w-0 flex-col gap-4 xl:col-span-8">
+          <Panel icon={ListTreeIcon} title="Steps" subtitle="Each step under the one that started it">
+            <div className="pt-4">
+              <Waterfall trace={view} selected={span.span} onSelect={setSelected} isApp={noApps} />
+            </div>
+            <PanelStats
+              stats={[
+                {
+                  label: "Took",
+                  value: duration(root.durationMs),
+                  ...(root.failed ? { color: "var(--failure)" } : {}),
+                },
+                { label: "Steps", value: count(view.spans.length) },
+                {
+                  label: "Database",
+                  value: `${duration(timeIn("database"))}, ${count(ofKind("database").length)}`,
+                  color: stepKinds.database.color,
+                },
+                {
+                  label: "External calls",
+                  value: `${duration(timeIn("call"))}, ${count(ofKind("call").length)}`,
+                  color: stepKinds.call.color,
+                },
+              ]}
+            />
+          </Panel>
+          <Panel icon={ScrollTextIcon} title="Log lines" subtitle="Everything it logged, at every level">
+            {view.logs.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">This request logged nothing.</p>
             ) : (
-              <dl className="flex flex-col divide-y border text-[13px]">
-                {Object.entries(span.attributes).map(([key, value]) => (
-                  <div key={key} className="flex flex-col gap-0.5 px-3 py-2">
-                    <dt className="font-mono text-muted-foreground">{key}</dt>
-                    <dd className="font-mono break-all">{attributeText(value)}</dd>
-                  </div>
+              <ol className="divide-y">
+                {view.logs.map((log, index) => (
+                  <li key={`${millisOf(log.time)} ${index}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (log.span !== undefined) {
+                          setSelected(log.span)
+                        }
+                      }}
+                      className="grid w-full grid-cols-[4.5rem_0.5rem_minmax(0,1fr)] items-center gap-x-3 px-5 py-2.5 text-left text-sm hover:bg-accent/60 md:grid-cols-[4.5rem_8rem_0.5rem_minmax(0,1fr)]"
+                    >
+                      <span className="font-mono text-[13px] text-muted-foreground">
+                        +{duration(Math.max(0, millisOf(log.time) - rootStart))}
+                      </span>
+                      <span className="hidden font-mono text-[13px] text-muted-foreground md:block">
+                        {preciseTime(millisOf(log.time))}
+                      </span>
+                      <span className={cn("size-2 rounded-full", levelColor[log.level ?? "info"])} />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">{log.message}</span>
+                        <span className="truncate font-mono text-xs text-muted-foreground">{log.category}</span>
+                      </span>
+                    </button>
+                  </li>
                 ))}
-              </dl>
+              </ol>
             )}
-          </div>
-        </Panel>
-
-        <Panel
-          icon={ScrollTextIcon}
-          title="Log lines"
-          subtitle="Everything it logged, at every level"
-          className="xl:col-span-8"
-        >
-          {view.logs.length === 0 ? (
-            <p className="px-5 py-6 text-sm text-muted-foreground">This request logged nothing.</p>
-          ) : (
-            <ol className="divide-y">
-              {view.logs.map((log, index) => (
-                <li key={`${millisOf(log.time)} ${index}`}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (log.span !== undefined) {
-                        setSelected(log.span)
-                      }
-                    }}
-                    className="grid w-full grid-cols-[4.5rem_0.5rem_minmax(0,1fr)] items-center gap-x-3 px-5 py-2.5 text-left text-sm hover:bg-accent/60 md:grid-cols-[4.5rem_8rem_0.5rem_minmax(0,1fr)]"
-                  >
-                    <span className="font-mono text-[13px] text-muted-foreground">
-                      +{duration(Math.max(0, millisOf(log.time) - rootStart))}
-                    </span>
-                    <span className="hidden font-mono text-[13px] text-muted-foreground md:block">
-                      {preciseTime(millisOf(log.time))}
-                    </span>
-                    <span className={cn("size-2 rounded-full", levelColor[log.level ?? "info"])} />
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate">{log.message}</span>
-                      <span className="truncate font-mono text-xs text-muted-foreground">{log.category}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ol>
-          )}
-        </Panel>
+          </Panel>
+        </div>
+        <div className="min-w-0 xl:col-span-4 xl:self-stretch">
+          <Panel
+            icon={MousePointerClickIcon}
+            title={span.name}
+            subtitle={`${stepKinds[stepKindOf(span, noApps)].label}, ${duration(span.durationMs)}`}
+            className="xl:sticky xl:top-4"
+          >
+            <div className="flex flex-col gap-4 px-5 py-5">
+              <p className="text-sm text-muted-foreground">
+                In {span.component}, starting{" "}
+                {millisOf(span.start) === rootStart
+                  ? "with the request"
+                  : `${duration(millisOf(span.start) - rootStart)} in`}
+                .
+              </p>
+              {span.statusMessage !== undefined && (
+                <p className="border-l-2 border-failure bg-failure/[0.07] px-3 py-2 text-sm text-failure">
+                  {span.statusMessage}
+                </p>
+              )}
+              <AttributeList attributes={span.attributes} empty="This step sent no details." />
+            </div>
+          </Panel>
+        </div>
       </div>
     </div>
   )

@@ -190,27 +190,32 @@ export const errorAtom = Atom.family((key: { readonly project: ProjectKey; reado
   ),
 )
 
-/** Warnings and errors counted over the period, a series for each level, component, or error group. */
-export const logCountsAtom = Atom.family((key: Scope & { readonly by: LogCountsBy; readonly level?: IndexedLevel }) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = get(periodAtom)
-        const range = yield* lastOf(periodMillis[period])
-        return yield* client.signals.logCounts({
-          params: { project: key.project },
-          query: {
-            ...range,
-            step: stepOf[period],
-            by: key.by,
-            ...(key.component === undefined ? {} : { component: key.component }),
-            ...(key.level === undefined ? {} : { level: key.level }),
-          },
-        })
-      }),
+/**
+ * Warnings and errors counted over the period, a series for each level, component, or error group;
+ * of one component, or one error group, when the key names it.
+ */
+export const logCountsAtom = Atom.family(
+  (key: Scope & { readonly by: LogCountsBy; readonly level?: IndexedLevel; readonly error?: ErrorGroupId }) =>
+    kept(
+      CluenoriClient.runtime.atom((get) =>
+        Effect.gen(function* () {
+          const client = yield* CluenoriClient
+          const period = get(periodAtom)
+          const range = yield* lastOf(periodMillis[period])
+          return yield* client.signals.logCounts({
+            params: { project: key.project },
+            query: {
+              ...range,
+              step: stepOf[period],
+              by: key.by,
+              ...(key.component === undefined ? {} : { component: key.component }),
+              ...(key.level === undefined ? {} : { level: key.level }),
+              ...(key.error === undefined ? {} : { error: key.error }),
+            },
+          })
+        }),
+      ),
     ),
-  ),
 )
 
 /**
