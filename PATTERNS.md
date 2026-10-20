@@ -696,23 +696,35 @@ language.
 - **Color means one thing each.** A component's color comes from `componentColor` in
   `src/lib/colors.ts`; failure is `failure`, a warning `yellow`; no view picks a color of its own.
 - **Each question is a `Panel`** (`src/views/panel.tsx`): icon, title, what it covers, the time
-  zone of its chart, and the numbers that matter in a strip at its foot. Counts over time are
-  `BarRows` (`src/views/bar-rows.tsx`), a row per thing counted, such as each origin of a backend's
-  requests. Canonical example: `src/pages/performance-page.tsx`.
-- **A component is an app or a backend,** by its platform (`roleOf` in `src/project-facts.ts`), and
-  each page shows what matters for its role: an app's start, screens, sessions, and crashes; a
-  backend's requests and endpoints. A page branches on the role, never on a component's name, and
-  on the platform only for words and formats (dSYM files, source maps, Web Vitals). A component that
-  has sent nothing shows `NothingReceived` with the step that starts it, never empty charts.
+  zone of its chart, and its answer, ending with `PanelStats`, the numbers that matter in a strip.
+  Counts over time are `BarRows` (`src/views/bar-rows.tsx`), a row per thing counted. Canonical
+  example: `src/pages/performance-page.tsx`.
+- **Pages show what the API answers.** A view for data the API doesn't carry yet waits in the
+  design kit, on sample data (`src/pages/kit-ahead.tsx`), never on a page. A page branches on what
+  an answer says, never on a component's name.
 - **One click, nothing hidden.** A choice among a few is a `Segmented` (`src/views/segmented.tsx`),
   always visible; the component a page shows is a `ComponentSwitch`, kept in the URL. Details of a
   short item open in place, such as an error group. A summary shows the top few of a long list and
   links to a page with all of them, searchable and sortable; an item with more to show, such as an
   endpoint or a request's trace, has a page of its own (`src/pages/endpoints-page.tsx`).
-- **What a page says about a project** (who asked, what needs attention) is computed once in
-  `src/project-facts.ts`; pages show it. It is also the one file that reads the data, the sample
-  until the API is wired: pages and views import types from `src/sample/` and values only from it.
-  Views never import pages, and shadcn's views import none of ours. Lint enforces all three.
+- **Data comes from one file,** `src/project-data.ts`: an atom for each question the pages ask the
+  public API, run on its typed client, `kept` so going back shows an answer at once and a stale one
+  is asked again. The period is an atom the questions read, so changing it asks again and keeps
+  the old answer, marked waiting, meanwhile. A question's family is keyed by a plain object (a
+  project, a component), which Effect compares by value. Pages read atoms with `useAtomValue` and
+  show each answer, or several with `AsyncResult.all`, through `Loaded` (`src/views/loaded.tsx`):
+  a quiet line while it first loads, what failed if it did, the answer dimmed while a newer one
+  loads.
+- **What a page says about the answers** (what needs attention, what got slower) is computed once,
+  by pure rules in `src/project-facts.ts`; pages show it. "Now" is the time an answer covers up to,
+  never the clock, and a step without a point is unknown (`requestColumnsOf`) unless the API says it
+  means none (`logColumnsOf`).
+- **An address is untrusted input:** `src/router.tsx` decodes its keys with the API's own schemas,
+  once, so pages take `ProjectKey`, `ComponentKey`, and the like; an address that isn't a page's
+  opens one that says so.
+- **Lint keeps the layers** (`.oxlintrc.json`): only `src/project-data.ts` imports the API client;
+  only the design kit reads the sample (others may import its types); views never import pages;
+  shadcn's views import none of ours.
 - **A link that looks like a button is a `Link`** with `buttonVariants`; a `Button` is for actions
   only, so a screen reader hears each for what it does (`src/views/attention-list.tsx`).
 - **Views aren't memoized by hand.** React Compiler memoizes them at build time
@@ -725,17 +737,22 @@ language.
   `useSyncExternalStore`: the router (`src/router.tsx`), the viewport (`src/hooks/use-mobile.ts`).
   A DOM node is measured or scrolled by a ref callback (`useWidth` in `src/views/bar-rows.tsx`,
   `scrollIntoView` in `src/views/error-list.tsx`). State that must start fresh for another item is
-  reset with a `key` (the trace page in `src/app.tsx`). `bun run check` enforces these with
-  Oxlint's React rules (`.oxlintrc.json`).
+  reset with a `key` (the trace page in `src/app.tsx`, the log pages in `src/pages/logs-page.tsx`).
+  `bun run check` enforces these with Oxlint's React rules (`.oxlintrc.json`).
 - **Work that waits runs as an Effect,** started with `Effect.runFork` in a React effect and
   interrupted in its cleanup: `src/hooks/use-highlighted-code.ts`.
 - **Tests run in a real browser,** Playwright's Chromium, in an unfriendly locale and time zone
   (`vitest.config.ts`): rules through `src/project-facts.ts` (`test/project-facts.test.ts`), and
-  journeys through the app (`test/crash-journey.test.tsx`), each step checked with axe
-  (`test/accessible.ts`). Any error a page logs fails the test (`test/setup.ts`).
+  journeys through the app (`test/errors-journey.test.tsx`), each step checked with axe
+  (`test/accessible.ts`). Any error a page logs fails the test (`test/setup.ts`). Journeys call a
+  fake public API at the network (`test/fake-api.ts`), which answers from a project made for each
+  question's period and encoded with the API's own schemas (`test/notes-project.ts`), so a fixture
+  that drifts from the contract fails.
 - **The first load has a budget,** compressed, checked by every build (`vite.config.ts`): code
   that most visits don't need loads when it is needed, as the design kit does, or after start, as
-  search does (`src/app.tsx`).
+  search does (`src/app.tsx`). A package the dashboard imports is side-effect free
+  (`"sideEffects": false`), and keeps an API's schemas apart from server code, so only the
+  definitions reach the bundle (`trace-view.ts` and `read-archived-trace.ts` in Signals).
 
 ## 24. Recipes
 

@@ -1,11 +1,14 @@
+import type { ProjectKey } from "@cluenori/foundation"
+import type { ErrorGroup, ErrorGroupId, LogLine } from "@cluenori/signals"
 import { cn } from "cn"
+import { DateTime } from "effect"
 import { ChevronDownIcon } from "lucide-react"
+import type { ReactNode } from "react"
 
-import { ago, count, duration, moment, share } from "@/lib/format"
+import { ago, count, moment } from "@/lib/format"
+import type { StackFrame } from "@/project-facts"
 import { statusOf } from "@/project-facts"
 import { Link } from "@/router"
-import type { ErrorGroup, LogLine, StackFrame, TrailEvent } from "@/sample/sample-project"
-import { EndpointName } from "@/views/endpoint-name"
 import { titleParts } from "@/views/error-group"
 import { buttonVariants } from "@/views/ui/button"
 
@@ -15,17 +18,20 @@ const scrollIntoView = (element: HTMLElement | null) => {
   element?.scrollIntoView({ behavior: "smooth", block: "nearest" })
 }
 
-/** A day of an error as a strip of small bars, one an hour, taller when it happened more. */
-function HourBars({ hourly }: { readonly hourly: ReadonlyArray<number> }) {
-  const most = Math.max(1, ...hourly)
-  const slot = 100 / Math.max(1, hourly.length)
+/**
+ * An error over the period as a strip of small bars, one a step, taller when it happened more. A step
+ * with nothing counted has no bar.
+ */
+function StepBars({ values }: { readonly values: ReadonlyArray<number | undefined> }) {
+  const most = Math.max(1, ...values.map((value) => value ?? 0))
+  const slot = 100 / Math.max(1, values.length)
   return (
     <svg width="100%" height="20" aria-hidden className="block border-b border-foreground/15">
-      {hourly.map((value, hour) =>
-        value === 0 ? null : (
+      {values.map((value, step) =>
+        value === undefined || value === 0 ? null : (
           <rect
-            key={hour}
-            x={`${hour * slot + slot * 0.15}%`}
+            key={step}
+            x={`${step * slot + slot * 0.15}%`}
             width={`${slot * 0.7}%`}
             y={20 - Math.max(2, (value / most) * 18)}
             height={Math.max(2, (value / most) * 18)}
@@ -57,154 +63,107 @@ function Stack({ frames }: { readonly frames: ReadonlyArray<StackFrame> }) {
           {frame.place !== undefined && <span className="block break-all text-muted-foreground">{frame.place}</span>}
         </li>
       ))}
-      <li className="border-t px-3 py-2 font-sans text-xs text-muted-foreground">
-        and {count(frames.length - ours.length)} frames in libraries
+      <li className={cn("px-3 py-2 font-sans text-xs text-muted-foreground", ours.length > 0 && "border-t")}>
+        {ours.length === 0
+          ? `${count(frames.length)} frames, none in the app's own code`
+          : `and ${count(frames.length - ours.length)} ${frames.length - ours.length === 1 ? "frame" : "frames"} in libraries`}
       </li>
     </ol>
   )
 }
 
-/** How an error spreads over releases: each release's share of its occurrences, the newest first. */
-function ByRelease({ group }: { readonly group: ErrorGroup }) {
-  const most = Math.max(1, ...group.releases.map((entry) => entry.occurrences))
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="text-sm text-muted-foreground">By release</span>
-      <ul className="flex flex-col gap-1.5">
-        {group.releases.map((entry) => (
-          <li key={entry.release} className="grid grid-cols-[8rem_minmax(0,1fr)_3.5rem] items-center gap-3 text-sm">
-            <span className="truncate font-mono text-[13px]">{entry.release}</span>
-            <span className="h-2 bg-muted">
-              <span className="block h-full bg-failure" style={{ width: `${(entry.occurrences / most) * 100}%` }} />
-            </span>
-            <span className="text-right font-mono text-[13px] text-muted-foreground">
-              {share(entry.occurrences, group.occurrences)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-// What a trail's event says, in a few words.
-function TrailText({ event, project }: { readonly event: TrailEvent; readonly project: string }) {
-  switch (event.kind) {
-    case "screen":
-      return <span className="text-muted-foreground">Opened {event.text}</span>
-    case "action":
-      return <span>{event.text}</span>
-    case "error":
-      return <span className="text-failure">{event.text}</span>
-    case "request":
-      return (
-        <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <EndpointName endpoint={event.endpoint} className="max-w-full" />
-          <span
-            className={cn(
-              "shrink-0 font-mono text-[13px]",
-              event.status >= 500 ? "text-failure" : "text-muted-foreground",
-            )}
-          >
-            {event.status}, {duration(event.durationMs)}
-          </span>
-          <Link
-            to={{ page: "trace", project, trace: event.trace }}
-            className={buttonVariants({ variant: "outline", size: "sm", className: "ml-auto shrink-0" })}
-          >
-            Open the request
-          </Link>
-        </span>
-      )
-  }
-}
-
 /**
- * What the app did before the error, in its latest session: screens, what the person did, and the
- * requests it made, each one click from its trace, timed back from the error.
+ * Where an error happened and what it broke: how often, the stack of its latest occurrence, and its
+ * latest occurrences, each one click from its request's trace.
  */
-function Trail({ trail, project }: { readonly trail: ReadonlyArray<TrailEvent>; readonly project: string }) {
-  const at = trail.at(-1)?.time ?? 0
+export function ErrorEvidence({
+  project,
+  group,
+  now,
+  latest,
+  frames,
+}: {
+  readonly project: ProjectKey
+  readonly group: ErrorGroup
+  /** The time the answer covers up to, which "ago" counts back from. */
+  readonly now: number
+  readonly latest: ReadonlyArray<LogLine>
+  /** The stack of its latest occurrence, when that came with one. */
+  readonly frames: ReadonlyArray<StackFrame> | undefined
+}) {
   return (
-    <div className="flex flex-col gap-2">
-      <span className="text-sm text-muted-foreground">Before it, in the latest session</span>
-      <ol className="divide-y border">
-        {trail.map((event, index) => (
-          <li
-            key={`${event.time} ${index}`}
-            className="grid min-h-11 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-3 px-3 py-1.5 text-sm"
-          >
-            <span className="text-right font-mono text-[13px] text-muted-foreground">
-              {event.time === at ? "" : `−${duration(at - event.time)}`}
-            </span>
-            <TrailText event={event} project={project} />
-          </li>
-        ))}
-      </ol>
-    </div>
-  )
-}
-
-/** The latest requests a backend's error broke, each one click from its trace. */
-function BrokenRequests({ lines, project }: { readonly lines: ReadonlyArray<LogLine>; readonly project: string }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="text-sm text-muted-foreground">Latest requests it broke</span>
-      <ul className="divide-y border">
-        {lines.map((line) => (
-          <li key={line.id} className="flex items-center gap-4 px-3 py-2 text-sm">
-            <span className="w-36 shrink-0 font-mono text-[13px] whitespace-nowrap text-muted-foreground">
-              {moment(line.time)}
-            </span>
-            <span className="min-w-0 flex-1 truncate">{line.message}</span>
-            {line.trace !== undefined && (
-              <Link
-                to={{ page: "trace", project, trace: line.trace }}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                Open the request
-              </Link>
-            )}
-          </li>
-        ))}
-      </ul>
+    <div className="flex flex-col gap-5">
+      <p className="text-sm text-muted-foreground">
+        {count(group.occurrences)} times in the period, first seen {moment(DateTime.toEpochMillis(group.firstSeen))};
+        last {ago(DateTime.toEpochMillis(group.lastSeen), now)}, in {group.lastComponent}
+        {group.lastRelease !== undefined && ` ${group.lastRelease}`}.
+      </p>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="min-w-0">
+          {frames === undefined ? (
+            <p className="font-mono text-[13px] text-muted-foreground">{group.culprit}</p>
+          ) : (
+            <Stack frames={frames} />
+          )}
+        </div>
+        {latest.length > 0 && (
+          <div className="flex min-w-0 flex-col gap-2">
+            <span className="text-sm text-muted-foreground">Latest occurrences</span>
+            <ul className="divide-y border">
+              {latest.map((line) => (
+                <li key={line.id} className="flex items-center gap-4 px-3 py-2 text-sm">
+                  <span className="w-36 shrink-0 font-mono text-[13px] whitespace-nowrap text-muted-foreground">
+                    {moment(DateTime.toEpochMillis(line.time))}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{line.message}</span>
+                  {line.trace !== undefined && (
+                    <Link
+                      to={{ page: "trace", project, trace: line.trace, around: line.time }}
+                      className={buttonVariants({ variant: "outline", size: "sm" })}
+                    >
+                      Open the request
+                    </Link>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
 /**
- * The project's errors, most frequent first, each in its component's color and opening in place:
- * where in the code it happened, how it spreads over releases, and its evidence. For an app, what
- * the app did before it; for a backend, the latest requests it broke, each one click from its
- * trace. A crash, an error that ended the app, says so.
+ * The project's errors, most frequent first, each in its component's color and opening in place with
+ * its evidence, which the page loads (`renderOpened`).
  */
 export function ErrorList({
-  project,
   groups,
-  framesOf,
-  occurrencesOf,
+  now,
   colorOf,
+  stepsOf,
   opened,
   onOpen,
-  now,
+  renderOpened,
 }: {
-  readonly project: string
   readonly groups: ReadonlyArray<ErrorGroup>
-  readonly framesOf: (group: ErrorGroup) => ReadonlyArray<StackFrame> | undefined
-  readonly occurrencesOf: (group: ErrorGroup) => ReadonlyArray<LogLine>
-  readonly colorOf: (component: string) => string
-  readonly opened: string | undefined
-  readonly onOpen: (error: string | undefined) => void
+  /** The time the answer covers up to: what "new" and "now" are measured from. */
   readonly now: number
+  readonly colorOf: (component: string) => string
+  /** A group's occurrences in each step of the period, when counted. */
+  readonly stepsOf: (group: ErrorGroup) => ReadonlyArray<number | undefined> | undefined
+  readonly opened: ErrorGroupId | undefined
+  readonly onOpen: (error: ErrorGroupId | undefined) => void
+  readonly renderOpened: (group: ErrorGroup) => ReactNode
 }) {
   return (
     <ul className="divide-y">
       {groups.map((group) => {
         const { type, message } = titleParts(group)
-        const status = statusOf(group)
+        const status = statusOf(group, now)
         const isOpen = opened === group.id
-        const frames = framesOf(group)
-        const occurrences = occurrencesOf(group)
+        const steps = stepsOf(group)
         return (
           <li key={group.id} ref={isOpen ? scrollIntoView : undefined} className="scroll-mt-4">
             <button
@@ -221,7 +180,6 @@ export function ErrorList({
                     title={group.lastComponent}
                   />
                   <span className="truncate font-medium">{type}</span>
-                  {group.crash && <span className="shrink-0 font-mono text-xs text-failure">crash</span>}
                   {status.ongoing && <span className="shrink-0 font-mono text-xs text-failure">now</span>}
                   {status.isNew && <span className="shrink-0 font-mono text-xs text-yellow">new</span>}
                 </span>
@@ -229,8 +187,8 @@ export function ErrorList({
                   {group.lastComponent}: {message ?? group.culprit}
                 </span>
               </span>
-              <span className="hidden md:block" title="Each bar is an hour of the last day">
-                <HourBars hourly={group.hourly} />
+              <span className="hidden md:block" title="Each bar is a step of the period">
+                {steps !== undefined && <StepBars values={steps} />}
               </span>
               <span className="text-right font-mono">{count(group.occurrences)}</span>
               <ChevronDownIcon
@@ -240,32 +198,7 @@ export function ErrorList({
                 )}
               />
             </button>
-            {isOpen && (
-              <div className="flex flex-col gap-5 border-t bg-background/60 px-5 py-5">
-                <p className="text-sm text-muted-foreground">
-                  {count(group.occurrences)} times
-                  {group.people !== undefined && ` for ${count(group.people)} people`} since {moment(group.firstSeen)};
-                  last {ago(group.lastSeen, now)}, in {group.lastComponent}
-                  {group.lastRelease !== undefined && ` ${group.lastRelease}`}.
-                </p>
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <div className="flex min-w-0 flex-col gap-5">
-                    {frames === undefined ? (
-                      <p className="font-mono text-[13px] text-muted-foreground">{group.culprit}</p>
-                    ) : (
-                      <Stack frames={frames} />
-                    )}
-                    {group.releases.length > 0 && <ByRelease group={group} />}
-                  </div>
-                  <div className="min-w-0">
-                    {group.trail !== undefined && <Trail trail={group.trail} project={project} />}
-                    {group.trail === undefined && occurrences.length > 0 && (
-                      <BrokenRequests lines={occurrences} project={project} />
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+            {isOpen && <div className="border-t bg-background/60 px-5 py-5">{renderOpened(group)}</div>}
           </li>
         )
       })}

@@ -1,4 +1,4 @@
-import type { ErrorGroup } from "@/sample/sample-project"
+import type { ErrorGroup } from "@cluenori/signals"
 
 /** An error group's type, and what it said, apart: "NpgsqlException" and "Exception while reading…". */
 export const titleParts = (group: ErrorGroup) => {

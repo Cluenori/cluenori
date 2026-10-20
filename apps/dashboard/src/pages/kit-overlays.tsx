@@ -24,7 +24,7 @@ import { useState } from "react"
 import { ago, count, duration, share } from "@/lib/format"
 import { KitCard, KitColumn, KitGroup, KitSample } from "@/pages/kit-section"
 import { Link } from "@/router"
-import { errorGroups, sampleNow } from "@/sample/sample-project"
+import { errorGroups, sampleNow, sampleProject } from "@/sample/sample-project"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -236,7 +236,7 @@ function SheetSample({ side, label }: { readonly side: "right" | "bottom" | "lef
           ))}
         </dl>
         <SheetFooter>
-          <Link to={{ page: "overview", project: "folio" }} className={buttonVariants()}>
+          <Link to={{ page: "overview", project: sampleProject }} className={buttonVariants()}>
             Open in Performance
           </Link>
           <SheetClose render={<Button variant="outline" />}>Close</SheetClose>
@@ -319,7 +319,7 @@ function HoverCardSample() {
       Most errors today are{" "}
       <HoverCard>
         <HoverCardTrigger
-          render={<Link to={{ page: "errors", project: "folio", error: npgsql.id }} />}
+          render={<Link to={{ page: "errors", project: sampleProject, error: npgsql.id }} />}
           className="font-medium text-foreground underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground"
         >
           NpgsqlException

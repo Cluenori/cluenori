@@ -4,8 +4,8 @@ import type { ReactNode } from "react"
 
 /**
  * A panel: one question about the project, answered in place. A header with an icon, a title, a
- * gray line that says what it covers, and the time zone of its chart; then the content; then,
- * optionally, a strip of the few numbers that matter, so they are read without pointing at anything.
+ * gray line that says what it covers, and the time zone of its chart; then the content, which may
+ * end with `PanelStats`.
  */
 export function Panel({
   icon: Icon,
@@ -13,7 +13,6 @@ export function Panel({
   subtitle,
   badge,
   action,
-  stats,
   children,
   className,
 }: {
@@ -24,7 +23,6 @@ export function Panel({
   readonly badge?: ReactNode
   /** A button in the header, such as a link to the page with the details. */
   readonly action?: ReactNode
-  readonly stats?: ReadonlyArray<Stat>
   readonly children: ReactNode
   readonly className?: string
 }) {
@@ -44,19 +42,26 @@ export function Panel({
         {action}
       </header>
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-      {stats !== undefined && stats.length > 0 && (
-        <dl className="grid divide-y border-t sm:auto-cols-fr sm:grid-flow-col sm:divide-x sm:divide-y-0">
-          {stats.map((stat) => (
-            <div key={stat.label} className="flex min-w-0 flex-col gap-1.5 px-5 py-4">
-              <dt className="truncate text-sm text-muted-foreground">{stat.label}</dt>
-              <dd className="truncate font-mono text-lg" style={stat.color === undefined ? {} : { color: stat.color }}>
-                {stat.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
     </section>
+  )
+}
+
+/**
+ * The few numbers that matter to a panel, in a strip at its foot, so they are read without pointing
+ * at anything. It goes last in the panel's content, with the answer the numbers come from.
+ */
+export function PanelStats({ stats }: { readonly stats: ReadonlyArray<Stat> }) {
+  return (
+    <dl className="mt-auto grid divide-y border-t sm:auto-cols-fr sm:grid-flow-col sm:divide-x sm:divide-y-0">
+      {stats.map((stat) => (
+        <div key={stat.label} className="flex min-w-0 flex-col gap-1.5 px-5 py-4">
+          <dt className="truncate text-sm text-muted-foreground">{stat.label}</dt>
+          <dd className="truncate font-mono text-lg" style={stat.color === undefined ? {} : { color: stat.color }}>
+            {stat.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 

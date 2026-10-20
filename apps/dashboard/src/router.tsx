@@ -1,3 +1,6 @@
+import { ComponentKey, EnvelopeName, ProjectKey, TraceId } from "@cluenori/foundation"
+import { ErrorGroupId } from "@cluenori/signals"
+import { DateTime, Option, Schema } from "effect"
 import type { ComponentProps, MouseEvent } from "react"
 import { useSyncExternalStore } from "react"
 
@@ -5,29 +8,43 @@ import { useSyncExternalStore } from "react"
 export type Area = "performance" | "errors" | "logs"
 
 /**
- * Every page the dashboard has. A project opens on its overview; each area is a page that can show
- * one component (`?component=folio-ios`); a backend's performance leads to every endpoint and then
- * to one; an error opens in place on the errors page, so it has a URL too; a request's trace is a
- * page of its own. `hrefOf` and `routeOf` convert to and from URLs; anything else opens the first
- * project's overview.
+ * Every page the dashboard has. The start, `/`, shows the first project; a project opens on its
+ * overview; each area is a page that can show one component (`?component=notes-api`); performance
+ * leads to every endpoint and then to one; an error opens in place on the errors page, so it has a
+ * URL too; a request's trace is a page of its own, at the time it happened (`?around=<ISO 8601>`),
+ * which the archive is read by. `hrefOf` and `routeOf` convert to and from URLs. An address is
+ * untrusted input, so its keys are decoded here, once: one that isn't a page's is `missing`.
  */
 export type Route =
-  | { readonly page: "overview"; readonly project: string }
-  | { readonly page: "performance"; readonly project: string; readonly component?: string }
-  | { readonly page: "endpoints"; readonly project: string; readonly component?: string }
-  | { readonly page: "endpoint"; readonly project: string; readonly component?: string; readonly endpoint: string }
-  | { readonly page: "errors"; readonly project: string; readonly component?: string; readonly error?: string }
-  | { readonly page: "logs"; readonly project: string; readonly component?: string }
-  | { readonly page: "trace"; readonly project: string; readonly trace: string }
+  | { readonly page: "start" }
+  | { readonly page: "missing" }
+  | { readonly page: "overview"; readonly project: ProjectKey }
+  | { readonly page: "performance"; readonly project: ProjectKey; readonly component?: ComponentKey }
+  | { readonly page: "endpoints"; readonly project: ProjectKey; readonly component?: ComponentKey }
+  | {
+      readonly page: "endpoint"
+      readonly project: ProjectKey
+      readonly component?: ComponentKey
+      readonly endpoint: EnvelopeName
+    }
+  | {
+      readonly page: "errors"
+      readonly project: ProjectKey
+      readonly component?: ComponentKey
+      readonly error?: ErrorGroupId
+    }
+  | { readonly page: "logs"; readonly project: ProjectKey; readonly component?: ComponentKey }
+  | { readonly page: "trace"; readonly project: ProjectKey; readonly trace: TraceId; readonly around?: DateTime.Utc }
   | { readonly page: "kit" }
-
-const firstProject = "folio"
 
 const withComponent = (path: string, component: string | undefined) =>
   component === undefined ? path : `${path}?component=${encodeURIComponent(component)}`
 
 export const hrefOf = (route: Route): string => {
   switch (route.page) {
+    case "start":
+    case "missing":
+      return "/"
     case "overview":
       return `/${route.project}`
     case "performance":
@@ -44,7 +61,9 @@ export const hrefOf = (route: Route): string => {
     case "logs":
       return withComponent(`/${route.project}/logs`, route.component)
     case "trace":
-      return `/${route.project}/traces/${route.trace}`
+      return route.around === undefined
+        ? `/${route.project}/traces/${route.trace}`
+        : `/${route.project}/traces/${route.trace}?around=${encodeURIComponent(DateTime.formatIso(route.around))}`
     case "kit":
       return "/kit"
   }
@@ -59,28 +78,63 @@ const decoded = (segment: string) => {
   }
 }
 
+// Each part of an address as the key it names, or absent when it isn't one.
+const keyOf = <T,>(schema: Schema.Codec<T, string>, text: string | undefined): Option.Option<T> =>
+  text === undefined ? Option.none() : Schema.decodeOption(schema)(text)
+
+const projectKey = (text: string) => keyOf(ProjectKey, text)
+const componentKey = (text: string | undefined) => keyOf(ComponentKey, text)
+
 export const routeOf = (path: string, search: string): Route => {
-  const [project = firstProject, page, id] = path.split("/").filter((part) => part.length > 0)
-  const component = new URLSearchParams(search).get("component") ?? undefined
-  const filtered = component === undefined ? {} : { component }
-  if (project === "kit") {
+  const [first, page, id, ...rest] = path.split("/").filter((part) => part.length > 0)
+  const query = new URLSearchParams(search)
+  if (first === undefined) {
+    return { page: "start" }
+  }
+  if (first === "kit") {
     return { page: "kit" }
   }
-  if (page === "performance" || page === "logs") {
-    return { page, project, ...filtered }
+  const project = projectKey(first)
+  const named = query.get("component") ?? undefined
+  const component = componentKey(named)
+  if (Option.isNone(project) || (named !== undefined && Option.isNone(component)) || rest.length > 0) {
+    return { page: "missing" }
+  }
+  const scope = { project: project.value, ...(Option.isSome(component) ? { component: component.value } : {}) }
+  if (page === undefined) {
+    return id === undefined ? { page: "overview", project: project.value } : { page: "missing" }
+  }
+  if ((page === "performance" || page === "logs") && id === undefined) {
+    return { page, ...scope }
   }
   if (page === "endpoints") {
-    return id === undefined
-      ? { page: "endpoints", project, ...filtered }
-      : { page: "endpoint", project, ...filtered, endpoint: decoded(id) }
+    if (id === undefined) {
+      return { page: "endpoints", ...scope }
+    }
+    const endpoint = keyOf(EnvelopeName, decoded(id))
+    return Option.isSome(endpoint) ? { page: "endpoint", ...scope, endpoint: endpoint.value } : { page: "missing" }
   }
   if (page === "errors") {
-    return { page: "errors", project, ...filtered, ...(id === undefined ? {} : { error: id }) }
+    if (id === undefined) {
+      return { page: "errors", ...scope }
+    }
+    const error = keyOf(ErrorGroupId, id)
+    return Option.isSome(error) ? { page: "errors", ...scope, error: error.value } : { page: "missing" }
   }
-  if (page === "traces" && id !== undefined) {
-    return { page: "trace", project, trace: id }
+  if (page === "traces") {
+    const trace = keyOf(TraceId, id)
+    // Without a time the trace page can't read the archive; it says so, rather than opening nothing.
+    const around = keyOf(Schema.DateTimeUtcFromString, query.get("around") ?? undefined)
+    return Option.isSome(trace)
+      ? {
+          page: "trace",
+          project: project.value,
+          trace: trace.value,
+          ...(Option.isSome(around) ? { around: around.value } : {}),
+        }
+      : { page: "missing" }
   }
-  return { page: "overview", project }
+  return { page: "missing" }
 }
 
 const subscribe = (onChange: () => void) => {

@@ -19,12 +19,13 @@ export type Latency = {
 export type Slower = { readonly p95Ms: number; readonly usualP95Ms: number }
 
 /**
- * One endpoint's row: its name, component, requests, failures, average, and latency percentiles, and
- * whether it got slower.
+ * One endpoint's row: its name, component, environment when the sender gave one, requests,
+ * failures, average, and latency percentiles, and whether it got slower.
  */
 export type EndpointLatency = Latency & {
   readonly endpoint: string
   readonly component: string
+  readonly environment?: string
   readonly requests: number
   readonly errors: number
   readonly averageMs: number
@@ -125,23 +126,24 @@ export const sortEndpoints = <Row extends EndpointLatency>(rows: ReadonlyArray<R
 /**
  * Endpoints by latency: p50, p80, p95, and p99, each a value beside a cell filled as high as it is
  * on a log scale from 1 ms to 10 s; then the error rate and the requests. An endpoint that got
- * slower says so beside its name. Every row opens its endpoint. With `onSort`, a click on a column's
- * name sorts by it.
+ * slower says so beside its name, and so does its environment when the rows are of more than one.
+ * Every row opens its endpoint. With `onSort`, a click on a column's name sorts by it.
  */
-export function EndpointTable({
+export function EndpointTable<Row extends EndpointLatency>({
   rows,
   colorOf,
   linkOf,
   sort,
   onSort,
 }: {
-  readonly rows: ReadonlyArray<EndpointLatency>
+  readonly rows: ReadonlyArray<Row>
   readonly colorOf: (component: string) => string
   /** The page each row opens. */
-  readonly linkOf: (row: EndpointLatency) => Route
+  readonly linkOf: (row: Row) => Route
   readonly sort?: Sort
   readonly onSort?: (sort: Sort) => void
 }) {
+  const environments = new Set(rows.map((row) => row.environment))
   // On a phone only p50 and p95 show, so endpoint names fit.
   const grid =
     "grid grid-cols-[minmax(0,1fr)_repeat(2,4.5rem)] gap-x-3 sm:grid-cols-[minmax(0,1fr)_repeat(4,4.5rem)_3.5rem_4rem]"
@@ -187,12 +189,17 @@ export function EndpointTable({
         const errorRate = errorRateOf(row)
         return (
           <Link
-            key={`${row.component} ${row.endpoint}`}
+            key={`${row.component} ${row.environment ?? ""} ${row.endpoint}`}
             to={linkOf(row)}
             className={cn(grid, "items-center border-b py-2 outline-none hover:bg-accent/60 focus-visible:bg-accent")}
           >
             <span className="flex min-w-0 items-baseline gap-2.5">
               <EndpointName endpoint={row.endpoint} className="text-[15px]" />
+              {environments.size > 1 && (
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                  {row.environment ?? "no environment"}
+                </span>
+              )}
               {row.slower !== undefined && <SlowerTag slower={row.slower} />}
             </span>
             {percentiles.map((column) => (

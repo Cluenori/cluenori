@@ -1,4 +1,6 @@
-import { colorOf, components } from "@/project-facts"
+import type { ComponentKey } from "@cluenori/foundation"
+
+import { colorOf } from "@/project-facts"
 import { Segmented } from "@/views/segmented"
 
 const all = "all"
@@ -8,25 +10,28 @@ const all = "all"
  * page can show every component at once.
  */
 export function ComponentSwitch({
+  components,
   value,
   onChange,
   allowAll,
 }: {
+  /** The project's components, in the order that gives each its color. */
+  readonly components: ReadonlyArray<ComponentKey>
   /** The chosen component, or undefined for all of them. */
-  readonly value: string | undefined
-  readonly onChange: (component: string | undefined) => void
+  readonly value: ComponentKey | undefined
+  readonly onChange: (component: ComponentKey | undefined) => void
   readonly allowAll: boolean
 }) {
   return (
-    <Segmented
+    <Segmented<ComponentKey | typeof all>
       label="Component"
       options={[
-        ...(allowAll ? [{ value: all, label: "All" }] : []),
+        ...(allowAll ? [{ value: all, label: "All" } as const] : []),
         ...components.map((component) => ({
           value: component,
           label: (
             <>
-              <span className="size-2" style={{ backgroundColor: colorOf(component) }} />
+              <span className="size-2" style={{ backgroundColor: colorOf(component, components) }} />
               {component}
             </>
           ),

@@ -85,8 +85,9 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     folders: "apps/dashboard",
     name: "@cluenori/dashboard",
     contract: false,
-    mayUse: ["packages/*", "apps/worker"],
-    mayInstall: ["effect", ...forTheBrowser],
+    mayUse: ["packages/*", "product/foundation", "product/engines/*", "apps/worker"],
+    // Effect's React binding: the dashboard reads the API through atoms.
+    mayInstall: ["effect", "@effect/atom-react", ...forTheBrowser],
     mayInstallForDevelopment: [
       // React Compiler, its Rust port, memoizes the views at build time.
       "oxc-transform-react",

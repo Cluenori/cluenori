@@ -10,6 +10,11 @@
   },
   "dependencies": {
     "@base-ui/react": "catalog:",
+    "@cluenori/foundation": "workspace:*",
+    "@cluenori/projects": "workspace:*",
+    "@cluenori/signals": "workspace:*",
+    "@cluenori/worker": "workspace:*",
+    "@effect/atom-react": "catalog:",
     "@fontsource-variable/geist-mono": "catalog:",
     "@fontsource-variable/inter": "catalog:",
     "@shadcn/react": "catalog:",

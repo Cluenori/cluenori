@@ -1,7 +1,8 @@
+import type { LogLevel, SpanId, TraceSpan, TraceView } from "@cluenori/signals"
 import { cn } from "cn"
+import { DateTime } from "effect"
 
 import { duration } from "@/lib/format"
-import type { TraceLog, TraceSpan, TraceView } from "@/sample/sample-project"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/views/ui/tooltip"
 
 /**
@@ -33,11 +34,16 @@ export const stepKinds: Readonly<Record<StepKind, { readonly label: string; read
   work: { label: "Internal", color: "var(--mint)" },
 }
 
-const logColor: Readonly<Record<TraceLog["level"], string>> = {
+const logColor: Readonly<Record<LogLevel, string>> = {
+  trace: "bg-muted-foreground",
+  debug: "bg-muted-foreground",
   info: "bg-muted-foreground",
   warn: "bg-yellow",
   error: "bg-failure",
+  fatal: "bg-failure",
 }
+
+const millisOf = DateTime.toEpochMillis
 
 const ticks = [0, 0.25, 0.5, 0.75, 1]
 
@@ -61,12 +67,12 @@ export function Waterfall({
   isApp,
 }: {
   readonly trace: TraceView
-  readonly selected: string | undefined
-  readonly onSelect: (span: string) => void
+  readonly selected: SpanId | undefined
+  readonly onSelect: (span: SpanId) => void
   readonly isApp: (component: string) => boolean
 }) {
-  const start = Math.min(...trace.spans.map((span) => span.start))
-  const end = Math.max(...trace.spans.map((span) => span.start + span.durationMs))
+  const start = Math.min(...trace.spans.map((span) => millisOf(span.start)))
+  const end = Math.max(...trace.spans.map((span) => millisOf(span.start) + span.durationMs))
   const total = Math.max(1, end - start)
   const placeOf = (time: number) => ((time - start) / total) * 100
 
@@ -116,20 +122,20 @@ export function Waterfall({
                   <span
                     className="absolute top-1/2 h-3 -translate-y-1/2"
                     style={{
-                      left: `${placeOf(span.start)}%`,
+                      left: `${placeOf(millisOf(span.start))}%`,
                       width: `max(3px, ${(span.durationMs / total) * 100}%)`,
                       backgroundColor: color,
                     }}
                   />
                   {logs.map((log) => (
-                    <Tooltip key={`${log.time} ${log.message}`}>
+                    <Tooltip key={`${millisOf(log.time)} ${log.message}`}>
                       <TooltipTrigger
                         render={<span />}
                         className={cn(
                           "absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 ring-2 ring-card",
-                          logColor[log.level],
+                          logColor[log.level ?? "info"],
                         )}
-                        style={{ left: `${placeOf(log.time)}%` }}
+                        style={{ left: `${placeOf(millisOf(log.time))}%` }}
                       />
                       <TooltipContent className="max-w-sm">{log.message}</TooltipContent>
                     </Tooltip>

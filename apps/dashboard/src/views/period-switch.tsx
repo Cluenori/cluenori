@@ -1,21 +1,19 @@
-import { useFilters } from "@/filters"
-import { periods, periodWords } from "@/project-facts"
+import { useAtom } from "@effect/atom-react"
+
+import { periodAtom, periods } from "@/project-data"
+import { periodWords } from "@/project-facts"
 import { Segmented } from "@/views/segmented"
 
-/** How far back the page looks, shared by every page that follows it. */
+/** How far back every page looks: one choice, kept as the viewer moves between pages. */
 export function PeriodSwitch() {
-  const { filters, change } = useFilters()
+  const [period, setPeriod] = useAtom(periodAtom)
   return (
     <Segmented
       label="Period"
       mono
-      options={periods.map((period) => ({
-        value: period.key,
-        label: period.label,
-        description: periodWords[period.key],
-      }))}
-      value={filters.period}
-      onChange={(period) => change({ period })}
+      options={periods.map((entry) => ({ value: entry.key, label: entry.label, description: periodWords[entry.key] }))}
+      value={period}
+      onChange={setPeriod}
     />
   )
 }

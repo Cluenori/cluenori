@@ -1,23 +1,31 @@
+import type { ProjectKey } from "@cluenori/foundation"
 import { cn } from "cn"
 
 import { duration, moment } from "@/lib/format"
-import type { KeptRequest } from "@/project-facts"
-import { failedRequest, originColor, originLabel } from "@/project-facts"
 import { Link } from "@/router"
+import type { RequestRow } from "@/sample/sample-project"
 import { EndpointName } from "@/views/endpoint-name"
 
+/** A request worth opening; `slow` when it took longer than its endpoint's p95 that day. */
+export type KeptRequest = RequestRow & { readonly slow: boolean }
+
+// What a request list will show once the API keeps single requests: until then the design kit shows
+// it on sample data.
+
 /**
- * Single requests, each a row that opens its trace: when, the endpoint, the origin, how long it
- * took (yellow when slow for its endpoint), and its status (red when it failed). On one endpoint's
- * page, `withEndpoint` is false, so every row doesn't repeat it.
+ * Single requests, each a row that opens its trace: when, the endpoint, the app that started it
+ * (Other when none did), how long it took (yellow when slow for its endpoint), and its status (red
+ * when it failed). On one endpoint's page, `withEndpoint` is false, so every row doesn't repeat it.
  */
 export function RequestList({
   project,
   rows,
+  colorOf,
   withEndpoint = true,
 }: {
-  readonly project: string
+  readonly project: ProjectKey
   readonly rows: ReadonlyArray<KeptRequest>
+  readonly colorOf: (component: string) => string
   readonly withEndpoint?: boolean
 }) {
   const grid = withEndpoint
@@ -36,8 +44,11 @@ export function RequestList({
             </span>
             {withEndpoint && <EndpointName endpoint={row.endpoint} className="text-[15px]" />}
             <span className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
-              <span className="size-2" style={{ backgroundColor: originColor(row.origin) }} />
-              {originLabel(row.origin)}
+              <span
+                className="size-2"
+                style={{ backgroundColor: row.origin === undefined ? "var(--muted-foreground)" : colorOf(row.origin) }}
+              />
+              {row.origin ?? "Other"}
             </span>
             <span className={cn("text-right font-mono text-[13px]", row.slow && "text-yellow")}>
               {duration(row.durationMs)}
@@ -45,7 +56,7 @@ export function RequestList({
             <span
               className={cn(
                 "text-right font-mono text-[13px]",
-                failedRequest(row) ? "text-failure" : "text-muted-foreground",
+                row.status >= 500 ? "text-failure" : "text-muted-foreground",
               )}
             >
               {row.status}

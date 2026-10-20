@@ -21,7 +21,7 @@ import { useState } from "react"
 import { ago, clockTime, count, duration, share } from "@/lib/format"
 import { KitCard, KitColumn, KitGroup, KitSample } from "@/pages/kit-section"
 import { Link } from "@/router"
-import { incident, logLines, sampleNow, sampleProjects, sampleTrace } from "@/sample/sample-project"
+import { incident, logLines, sampleNow, sampleProject, sampleProjects, sampleTrace } from "@/sample/sample-project"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/views/ui/accordion"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/views/ui/alert"
 import { AspectRatio } from "@/views/ui/aspect-ratio"
@@ -244,7 +244,7 @@ function NavigationMenuSample() {
           <NavigationMenuContent>
             <ul className="grid w-80 gap-1">
               <li>
-                <NavigationMenuLink render={<Link to={{ page: "overview", project: "folio" }} />}>
+                <NavigationMenuLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
                   <GaugeIcon />
                   <span className="flex flex-col">
                     <span className="font-medium">Performance</span>
@@ -253,7 +253,7 @@ function NavigationMenuSample() {
                 </NavigationMenuLink>
               </li>
               <li>
-                <NavigationMenuLink render={<Link to={{ page: "overview", project: "folio" }} />}>
+                <NavigationMenuLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
                   <BugIcon />
                   <span className="flex flex-col">
                     <span className="font-medium">Errors</span>
@@ -262,7 +262,7 @@ function NavigationMenuSample() {
                 </NavigationMenuLink>
               </li>
               <li>
-                <NavigationMenuLink render={<Link to={{ page: "overview", project: "folio" }} />}>
+                <NavigationMenuLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
                   <ScrollTextIcon />
                   <span className="flex flex-col">
                     <span className="font-medium">Logs</span>
@@ -295,7 +295,7 @@ export function KitDisplay() {
             <Badge variant="destructive">Failed</Badge>
             <Badge variant="outline">folio-api</Badge>
             <Badge variant="ghost">Draft</Badge>
-            <Badge variant="link" render={<Link to={{ page: "overview", project: "folio" }} />}>
+            <Badge variant="link" render={<Link to={{ page: "overview", project: sampleProject }} />}>
               {count(6)} errors
             </Badge>
           </KitSample>
@@ -331,7 +331,7 @@ export function KitDisplay() {
             </AlertDescription>
             <AlertAction>
               <Link
-                to={{ page: "overview", project: "folio" }}
+                to={{ page: "overview", project: sampleProject }}
                 className={buttonVariants({ variant: "outline", size: "xs" })}
               >
                 Open
@@ -367,7 +367,10 @@ export function KitDisplay() {
             ))}
           </ItemGroup>
           <ItemSeparator />
-          <Item variant="muted" render={<Link to={{ page: "trace", project: "folio", trace: sampleTrace.trace }} />}>
+          <Item
+            variant="muted"
+            render={<Link to={{ page: "trace", project: sampleProject, trace: sampleTrace.trace }} />}
+          >
             <ItemMedia variant="icon">
               <ActivityIcon />
             </ItemMedia>
@@ -672,13 +675,13 @@ export function KitDisplay() {
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink render={<Link to={{ page: "overview", project: "folio" }} />}>
+                  <BreadcrumbLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
                     Folio
                   </BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbLink render={<Link to={{ page: "overview", project: "folio" }} />}>
+                  <BreadcrumbLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
                     Errors
                   </BreadcrumbLink>
                 </BreadcrumbItem>
@@ -691,7 +694,7 @@ export function KitDisplay() {
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink render={<Link to={{ page: "overview", project: "folio" }} />}>
+                  <BreadcrumbLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
                     Folio
                   </BreadcrumbLink>
                 </BreadcrumbItem>

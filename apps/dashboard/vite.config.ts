@@ -6,8 +6,11 @@ import { defineConfig } from "vite"
 
 // The most the first page load may download, compressed, in kilobytes: the entry's script with every
 // script it imports statically, and the styles. A build over either fails; a budget is raised on
-// purpose, in the change that needs it, and lowered whenever a change makes room.
-const firstLoadBudget = { scriptKb: 180, styleKb: 36 }
+// purpose, in the change that needs it, and lowered whenever a change makes room. Scripts were
+// raised from 180 KB when the pages began reading the API: the typed client derived from its
+// definition (Effect's runtime, Schema, and HTTP API client) is about 75 KB of it, and every page
+// needs it before it can show anything.
+const firstLoadBudget = { scriptKb: 245, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>
@@ -71,4 +74,7 @@ export default defineConfig({
   // `checkFirstLoad` governs size by what the first load downloads; Vite's warning about any chunk
   // over 500 KB, uncompressed, would only repeat it less precisely, for chunks loaded later too.
   build: { chunkSizeWarningLimit: 2_000 },
+  // `vite` alone serves the dashboard with its changes as they are made; the API it calls is
+  // Cluenori on this computer, `./run`, at Wrangler's port.
+  server: { proxy: { "/api": "http://localhost:8787" } },
 })

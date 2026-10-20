@@ -1,18 +1,30 @@
+import type { ProjectKey } from "@cluenori/foundation"
+import type { LogLevel, LogLine } from "@cluenori/signals"
 import { cn } from "cn"
+import { DateTime } from "effect"
 import { useState } from "react"
 
 import { axisTime, dayOf } from "@/lib/format"
 import { Link } from "@/router"
-import type { LogLine } from "@/sample/sample-project"
 import { buttonVariants } from "@/views/ui/button"
 
-const levelColor: Readonly<Record<LogLine["level"], string>> = {
+const levelColor: Readonly<Record<LogLevel, string>> = {
+  trace: "bg-muted-foreground",
+  debug: "bg-muted-foreground",
+  info: "bg-muted-foreground",
   warn: "bg-yellow",
   error: "bg-failure",
   fatal: "bg-failure",
 }
 
-const levelWord: Readonly<Record<LogLine["level"], string>> = { warn: "warning", error: "error", fatal: "fatal" }
+const levelWord: Readonly<Record<LogLevel, string>> = {
+  trace: "trace",
+  debug: "debug",
+  info: "info",
+  warn: "warning",
+  error: "error",
+  fatal: "fatal",
+}
 
 /**
  * Log lines, newest first, one line each: when, how serious, what it said. A line opens in place
@@ -23,7 +35,7 @@ export function LogList({
   lines,
   colorOf,
 }: {
-  readonly project: string
+  readonly project: ProjectKey
   readonly lines: ReadonlyArray<LogLine>
   readonly colorOf: (component: string) => string
 }) {
@@ -32,6 +44,7 @@ export function LogList({
     <ul className="divide-y">
       {lines.map((line) => {
         const isOpen = opened === line.id
+        const time = DateTime.toEpochMillis(line.time)
         return (
           <li key={line.id}>
             <button
@@ -40,8 +53,8 @@ export function LogList({
               onClick={() => setOpened(isOpen ? undefined : line.id)}
               className="grid w-full grid-cols-[3.25rem_0.5rem_minmax(0,1fr)] items-center gap-x-3 px-5 py-2.5 text-left text-sm outline-none hover:bg-accent/60 focus-visible:bg-accent"
             >
-              <span className="font-mono text-[13px] text-muted-foreground" title={dayOf(line.time)}>
-                {axisTime(line.time)}
+              <span className="font-mono text-[13px] text-muted-foreground" title={dayOf(time)}>
+                {axisTime(time)}
               </span>
               <span className={cn("size-2 rounded-full", levelColor[line.level])} aria-label={levelWord[line.level]} />
               <span className={cn("truncate", line.level === "fatal" && "text-failure")}>{line.message}</span>
@@ -55,7 +68,7 @@ export function LogList({
                 <span className="min-w-0 truncate font-mono text-[13px] text-muted-foreground">{line.category}</span>
                 {line.trace !== undefined && (
                   <Link
-                    to={{ page: "trace", project, trace: line.trace }}
+                    to={{ page: "trace", project, trace: line.trace, around: line.time }}
                     className={buttonVariants({ variant: "outline", size: "sm", className: "ml-auto" })}
                   >
                     Open the request

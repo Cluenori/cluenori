@@ -19,7 +19,7 @@ import { useHighlightedCode } from "@/hooks/use-highlighted-code"
 import { clockTime, count, duration } from "@/lib/format"
 import { KitCard, KitGroup, KitSample } from "@/pages/kit-section"
 import { Link } from "@/router"
-import { errorStacks, incident, sampleNow, sampleTrace } from "@/sample/sample-project"
+import { errorStacks, incident, sampleNow, sampleProject, sampleTrace } from "@/sample/sample-project"
 import {
   Attachment,
   AttachmentAction,
@@ -285,7 +285,7 @@ function Conversation() {
                       </Attachment>
                       <Attachment>
                         <AttachmentTrigger
-                          render={<Link to={{ page: "trace", project: "folio", trace: sampleTrace.trace }} />}
+                          render={<Link to={{ page: "trace", project: sampleProject, trace: sampleTrace.trace }} />}
                           aria-label="Open the trace"
                         />
                         <AttachmentMedia>

@@ -6,14 +6,19 @@ import { page } from "vitest/browser"
 import { App } from "@/app"
 
 import { expectAccessible } from "./accessible.ts"
+import { answerApi } from "./fake-api.ts"
+import { notesApi } from "./notes-project.ts"
 
 describe("performance journey", () => {
-  it.effect("leads from a backend's endpoints to one endpoint's slowest requests", () =>
+  it.effect("leads from the endpoints that take the most time to one endpoint's latency", () =>
     Effect.gen(function* () {
-      window.history.pushState(null, "", "/folio/performance")
+      answerApi(notesApi())
+      window.history.pushState(null, "", "/notes/performance")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      yield* Effect.promise(() => expect.element(screen.getByText("Requests to folio-api")).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByText("Requests to every component")).toBeVisible())
+      // The endpoint that got slower comes first, marked.
+      yield* Effect.promise(() => expect.element(screen.getByText("slower").first()).toBeVisible())
       yield* expectAccessible()
       yield* Effect.promise(() => screen.getByRole("link", { name: "All endpoints" }).click())
 
@@ -25,36 +30,37 @@ describe("performance journey", () => {
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: /\/api\/export$/ })).toBeVisible(),
       )
-      yield* Effect.promise(() => expect.element(screen.getByText("Slowest and failed requests")).toBeVisible())
-      yield* expectAccessible()
-    }),
-  )
-
-  it.effect("shows an app's start and screens, and how to start an app that has sent nothing", () =>
-    Effect.gen(function* () {
-      window.history.pushState(null, "", "/folio/performance?component=folio-ios")
-      const screen = yield* Effect.promise(() => render(<App />))
-
-      yield* Effect.promise(() => expect.element(screen.getByText("App start")).toBeVisible())
-      yield* Effect.promise(() => expect.element(screen.getByText("FeedView")).toBeVisible())
-      yield* Effect.promise(() => expect.element(screen.getByText("Network calls")).toBeVisible())
-      yield* expectAccessible()
-
-      yield* Effect.promise(() => screen.getByRole("button", { name: "folio-android" }).click())
+      yield* Effect.promise(() => expect.element(screen.getByText("p95 of each step's requests")).toBeVisible())
       yield* Effect.promise(() =>
-        expect.element(screen.getByText("folio-android has sent nothing yet")).toBeVisible(),
+        expect.element(screen.getByText(/over the last day, 4 s over the 7 days before/)).toBeVisible(),
       )
       yield* expectAccessible()
     }),
   )
 
-  it.effect("fits a phone: an app's crashes with nothing wider than the screen", () =>
+  it.effect("says when an endpoint got slower than usual, and what usual is", () =>
     Effect.gen(function* () {
-      yield* Effect.promise(() => page.viewport(390, 844))
-      window.history.pushState(null, "", "/folio/errors?component=folio-ios")
+      answerApi(notesApi())
+      window.history.pushState(null, "", `/notes/endpoints/${encodeURIComponent("GET /api/feed")}?component=notes-api`)
       const screen = yield* Effect.promise(() => render(<App />))
 
-      yield* Effect.promise(() => expect.element(screen.getByText("Crashes by hour")).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByText("Slower than usual:")).toBeVisible())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByText(/p95 620 ms over the last day, 300 ms over the 7 days before/)).toBeVisible(),
+      )
+      yield* expectAccessible()
+    }),
+  )
+
+  it.effect("fits a phone: the errors with nothing wider than the screen", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi())
+      yield* Effect.promise(() => page.viewport(390, 844))
+      window.history.pushState(null, "", "/notes/errors")
+      const screen = yield* Effect.promise(() => render(<App />))
+
+      yield* Effect.promise(() => expect.element(screen.getByText("Errors over time")).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByText("NpgsqlException")).toBeVisible())
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
       yield* expectAccessible()
       yield* Effect.promise(() => page.viewport(1280, 900))

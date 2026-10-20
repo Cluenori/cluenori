@@ -151,7 +151,7 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 |---|---|---|---|
 | Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, endpoints, requests, errors and logs over time, logs, traces), OTLP ingest of traces, logs and metrics, the archive in R2, each project's Durable Object and the workspace's, and the dashboard's files |
 | CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, questions about them, and the repository's check and generate | Built |
-| Dashboard | `apps/dashboard` | The web app over the public API | Prototype on sample data: a project's overview, its performance, errors, and logs pages by component, each showing what matters for an app or a backend, a request's trace, and a design kit; not yet reading the API or served by the Worker |
+| Dashboard | `apps/dashboard` | The web app over the public API | Built: served by the Worker, signed in with the API token; reads the public API for a project's overview, its performance, endpoints, errors, and logs by component, and a request's trace; the views waiting for app data are in its design kit, on sample data |
 | Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, and `ActivityLog`, which commits a write with its activity. Delivery to Queues comes with the first reaction, the module contract with the first module |
 | Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys) and `signals` (the archive, request counts, warnings and errors, error groups, traces); Actions and policy come with the first module |
 | Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Planned |
@@ -375,9 +375,10 @@ Each needs evidence or a product choice before the code that depends on it.
 
 1. **The dashboard's UI stack.** Being tried in a prototype (October 2026): React 19, Vite 8,
    Tailwind CSS 4, and shadcn/ui on Base UI; its charts are our own views, Recharts only in the
-   design kit. Decide once the look is
-   settled and the first page reads the API, checking the bundle's size and how fast pages switch.
-   `effect/reactivity` can derive its data layer from the same `HttpApi` definition.
+   design kit. Decide once the look is settled. The pages read the API (October 2026) through
+   `effect/reactivity`'s atoms on the client derived from the `HttpApi` definition; the first load
+   is 241 KB of scripts, compressed, about 75 KB of it that client, and a page shown a moment ago
+   shows again without asking.
 2. **Where the Swift and Kotlin SDKs live.** Swift Package Manager expects a package at a
    repository's root, which argues for their own repositories.
 3. **How clients import the API definition.** The dashboard, the CLI, and the SDK need the
@@ -386,8 +387,10 @@ Each needs evidence or a product choice before the code that depends on it.
    (the one exception to "one entry"), or one `@cluenori/api` package holds every definition.
    Effect's own guide to `HttpApi` keeps definitions apart from server code, ideally in a package of
    their own. Today `CluenoriApi` lives in `apps/worker`, and the CLI and journeys also depend on
-   foundation's and engines' contracts for the Schemas of what they send. Decide with the first
-   module, by checking what reaches the dashboard's bundle.
+   foundation's and engines' contracts for the Schemas of what they send. Checked with the
+   dashboard (October 2026): with every package side-effect free and an API's schemas in modules of
+   their own, apart from server code, only the definitions reach its bundle, with no second entry.
+   Nothing checks that yet beyond the first-load budget. Decide with the first module.
 4. **The lake: SQL over long periods.** The archive keeps everything 90 days, but questions such as
    "every info log mentioning X this month" need SQL over it. Basin Pipelines and R2 SQL would do
    it in production; locally Pipelines' `send` keeps nothing and nothing reads the lake, and a

@@ -1,6 +1,9 @@
+import type { ProjectKey } from "@cluenori/foundation"
+import { useAtomValue } from "@effect/atom-react"
+import { AsyncResult } from "effect/reactivity"
 import { BugIcon, FolderIcon, PaletteIcon } from "lucide-react"
 
-import { errorGroups, projects } from "@/project-facts"
+import { errorsAtom } from "@/project-data"
 import type { Route } from "@/router"
 import { navigate } from "@/router"
 import {
@@ -13,15 +16,36 @@ import {
   CommandList,
 } from "@/views/ui/command"
 
+/** The project's errors of the period, asked for when search opens; none until they arrive. */
+function ProjectErrors({ project, go }: { readonly project: ProjectKey; readonly go: (route: Route) => void }) {
+  const errors = useAtomValue(errorsAtom({ project }))
+  if (!AsyncResult.isSuccess(errors) || errors.value.groups.length === 0) {
+    return null
+  }
+  return (
+    <CommandGroup heading="Errors">
+      {errors.value.groups.map((group) => (
+        <CommandItem key={group.id} onSelect={() => go({ page: "errors", project, error: group.id })}>
+          <BugIcon className="text-failure" />
+          <span className="truncate">{group.title}</span>
+        </CommandItem>
+      ))}
+    </CommandGroup>
+  )
+}
+
 /** ⌘K: every project, and the current project's errors, found by typing a few letters. */
 export function SearchDialog({
   open,
   onOpenChange,
   project,
+  projects,
 }: {
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
-  readonly project: string
+  /** The project whose errors are listed, if a page shows one. */
+  readonly project: ProjectKey | undefined
+  readonly projects: ReadonlyArray<{ readonly key: ProjectKey; readonly name: string }>
 }) {
   const go = (route: Route) => {
     onOpenChange(false)
@@ -52,14 +76,7 @@ export function SearchDialog({
               Design kit
             </CommandItem>
           </CommandGroup>
-          <CommandGroup heading="Errors">
-            {errorGroups.map((group) => (
-              <CommandItem key={group.id} onSelect={() => go({ page: "errors", project, error: group.id })}>
-                <BugIcon className="text-failure" />
-                <span className="truncate">{group.title}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
+          {project !== undefined && <ProjectErrors project={project} go={go} />}
         </CommandList>
       </Command>
     </CommandDialog>

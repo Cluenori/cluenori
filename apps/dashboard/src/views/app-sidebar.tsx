@@ -1,7 +1,9 @@
+import type { ProjectKey } from "@cluenori/foundation"
 import {
   ActivityIcon,
   BugIcon,
   LayoutGridIcon,
+  LogOutIcon,
   MoonIcon,
   PaletteIcon,
   ScrollTextIcon,
@@ -12,7 +14,6 @@ import { useState } from "react"
 
 import type { Theme } from "@/lib/theme"
 import { applyTheme, storedTheme } from "@/lib/theme"
-import { projects } from "@/project-facts"
 import type { Area, Route } from "@/router"
 import { Link } from "@/router"
 import { Kbd } from "@/views/ui/kbd"
@@ -33,16 +34,6 @@ import {
   SidebarRail,
 } from "@/views/ui/sidebar"
 
-// The sample's state of each project: failing now, receiving data, or quiet.
-const sampleState: Readonly<Record<string, "failing" | "receiving" | "quiet">> = {
-  folio: "failing",
-  notes: "receiving",
-  landing: "quiet",
-}
-
-const stateColor = { failing: "var(--failure)", receiving: "var(--mint)", quiet: "var(--dot)" } as const
-const stateWords = { failing: "failing now", receiving: "receiving data", quiet: "nothing reported lately" } as const
-
 // Pages that open from the performance page, so Performance stays marked on them.
 const underPerformance = (route: Route) =>
   route.page === "endpoints" || route.page === "endpoint" || route.page === "trace"
@@ -57,10 +48,23 @@ const areas: ReadonlyArray<{ readonly area: Area; readonly label: string; readon
  * The sidebar: every project, one click away, with the open project's pages under it, search, and
  * the viewer's settings. A component chosen on one page stays chosen on the others.
  */
-export function AppSidebar({ route, onSearch }: { readonly route: Route; readonly onSearch: () => void }) {
+export function AppSidebar({
+  route,
+  current,
+  projects,
+  onSearch,
+  onSignOut,
+}: {
+  readonly route: Route
+  /** The project the page shows, if any. */
+  readonly current: ProjectKey | undefined
+  readonly projects: ReadonlyArray<{ readonly key: ProjectKey; readonly name: string }>
+  readonly onSearch: () => void
+  readonly onSignOut: () => void
+}) {
   const [theme, setTheme] = useState<Theme>(storedTheme)
-  const current = route.page === "kit" ? undefined : route.project
   const component = "component" in route ? route.component : undefined
+  const onOverview = route.page === "overview" || route.page === "start"
 
   return (
     <Sidebar collapsible="icon">
@@ -69,10 +73,7 @@ export function AppSidebar({ route, onSearch }: { readonly route: Route; readonl
           <span className="grid size-7 place-items-center bg-primary font-mono text-sm font-semibold text-primary-foreground">
             C
           </span>
-          <span className="flex flex-col leading-tight">
-            <span className="text-[15px] font-semibold">Cluenori</span>
-            <span className="text-xs text-muted-foreground">Bagatka</span>
-          </span>
+          <span className="text-[15px] font-semibold">Cluenori</span>
         </div>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -90,27 +91,28 @@ export function AppSidebar({ route, onSearch }: { readonly route: Route; readonl
           <SidebarGroupContent>
             <SidebarMenu>
               {projects.map((project) => {
-                const state = sampleState[project.key] ?? "quiet"
                 return (
                   <SidebarMenuItem key={project.key}>
                     <SidebarMenuButton
-                      isActive={current === project.key && route.page === "overview"}
+                      isActive={current === project.key && onOverview}
                       tooltip={project.name}
                       render={<Link to={{ page: "overview", project: project.key }} />}
                       className="h-9"
                     >
+                      {/* The project's initial, so a collapsed sidebar still tells projects apart. */}
                       <span
-                        aria-label={stateWords[state]}
-                        className="size-2.5 shrink-0"
-                        style={{ backgroundColor: stateColor[state] }}
-                      />
+                        aria-hidden
+                        className="grid size-4 shrink-0 place-items-center border font-mono text-[10px] uppercase"
+                      >
+                        {project.name.slice(0, 1)}
+                      </span>
                       <span>{project.name}</span>
                     </SidebarMenuButton>
                     {current === project.key && (
                       <SidebarMenuSub>
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton
-                            isActive={route.page === "overview"}
+                            isActive={onOverview}
                             render={<Link to={{ page: "overview", project: project.key }} />}
                           >
                             <LayoutGridIcon />
@@ -172,6 +174,12 @@ export function AppSidebar({ route, onSearch }: { readonly route: Route; readonl
             >
               {theme === "dark" ? <SunIcon /> : <MoonIcon />}
               <span>{theme === "dark" ? "Light" : "Dark"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton tooltip="Sign out" className="text-muted-foreground" onClick={onSignOut}>
+              <LogOutIcon />
+              <span>Sign out</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

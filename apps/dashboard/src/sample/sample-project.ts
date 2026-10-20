@@ -1,6 +1,10 @@
 // Sample answers for the dashboard's design: a project like folio, shaped like the public API's
 // answers (@cluenori/signals), with times as epoch milliseconds. Deterministic, so screenshots
-// compare. Nothing here reaches a deployment: the dashboard reads the API once it is wired.
+// compare. Only the design kit and tests read it; the pages read the API. Keys are the API's own,
+// typed, so the views the kit shows take what they will take from the API.
+
+import { ProjectKey, TraceId } from "@cluenori/foundation"
+import { ErrorGroupId } from "@cluenori/signals"
 
 /** The time every sample answer is "now": 2026-10-20 09:40 UTC. */
 export const sampleNow = 1_792_489_200_000
@@ -90,25 +94,6 @@ export const requestSeries = (period: PeriodKey): RequestSeries => {
   return { step, from, to, points }
 }
 
-/**
- * The requests that one origin started, in each column of a period: an app, by the `baggage` its
- * requests carry, or nothing, for webhooks, jobs, and callers without it.
- */
-export type OriginColumns = { readonly origin?: string; readonly values: ReadonlyArray<number> }
-
-/**
- * A period cut into 72 columns, with the backend's requests by who started them, and all failed
- * requests, in each. Not in the API yet: its counts are by endpoint and environment, not by origin.
- */
-export type RequestColumns = {
-  readonly from: number
-  readonly step: number
-  readonly rows: ReadonlyArray<OriginColumns>
-  readonly failed: ReadonlyArray<number>
-}
-
-export const columnCount = 72
-
 // Who asks the API when, in UTC: the iOS app in the evening, the web app during working hours,
 // webhooks and jobs all day.
 const originShapes: ReadonlyArray<{
@@ -124,35 +109,6 @@ const originShapes: ReadonlyArray<{
   },
   { share: 0.12, shape: (hourOfDay) => 0.45 + 0.25 * Math.sin((Math.PI * hourOfDay) / 6) },
 ]
-
-export const requestColumns = (period: PeriodKey): RequestColumns => {
-  const random = seeded(23)
-  const millis = periods.find((entry) => entry.key === period)?.millis ?? day
-  const step = millis / columnCount
-  // Columns start on whole steps, the last one holding now.
-  const from = (Math.floor(sampleNow / step) + 1) * step - millis
-  const perColumn = (peakPerMinute * step) / minute
-  const shaped = originShapes.map((entry) => ({
-    ...(entry.origin === undefined ? {} : { origin: entry.origin }),
-    values: Array.from({ length: columnCount }, (_, index) => {
-      const start = from + index * step
-      const hourOfDay = ((start + step / 2) % day) / hour
-      const shape = step >= 6 * hour ? 0.55 : entry.shape(hourOfDay)
-      return perColumn * entry.share * 1.6 * shape * (0.85 + 0.3 * random())
-    }),
-  }))
-  // The same total as the endpoint table, so every page of the sample agrees.
-  const shapedTotal = shaped.reduce((sum, entry) => sum + entry.values.reduce((rowSum, value) => rowSum + value, 0), 0)
-  const scale = endpointTable(period).requests / Math.max(1, shapedTotal)
-  const rows = shaped.map((entry) => ({ ...entry, values: entry.values.map((value) => Math.round(value * scale)) }))
-  const failed = Array.from({ length: columnCount }, (_, index) => {
-    const start = from + index * step
-    const requests = rows.reduce((sum, entry) => sum + (entry.values[index] ?? 0), 0)
-    const failing = inIncident(start, step) && step <= hour ? 0.09 : 0.004
-    return Math.round(requests * failing * (0.5 + random()))
-  })
-  return { from, step, rows, failed }
-}
 
 /** Requests by endpoint, with how long they took: one row of the endpoint table. */
 export type EndpointRow = {
@@ -254,41 +210,9 @@ export const endpointTable = (period: PeriodKey): EndpointTable => {
   }
 }
 
-/** One endpoint's requests by origin, its failed requests, and its p95 latency, in each column. */
-export type EndpointColumns = RequestColumns & {
-  /** The p95 latency of each column, in milliseconds. Not in the API yet: its counts keep a sketch per bucket. */
-  readonly p95: ReadonlyArray<number>
-}
-
-/** One endpoint over the period, as its share of the backend's requests; absent for an unknown endpoint. */
-export const endpointColumns = (endpoint: string, period: PeriodKey): EndpointColumns | undefined => {
-  const table = endpointTable(period)
-  const found = table.rows.find((entry) => entry.endpoint === endpoint)
-  if (found === undefined) {
-    return undefined
-  }
-  const all = requestColumns(period)
-  const share = found.requests / Math.max(1, table.requests)
-  const rows = all.rows.map((entry) => ({ ...entry, values: entry.values.map((value) => Math.round(value * share)) }))
-  const allFailed = all.failed.reduce((sum, value) => sum + value, 0)
-  const failed = all.failed.map((value) => Math.round((value / Math.max(1, allFailed)) * found.errors))
-  const totals = all.failed.map((_, index) => rows.reduce((sum, entry) => sum + (entry.values[index] ?? 0), 0))
-  const busiest = Math.max(1, ...totals)
-  const random = seeded(endpoint.length * 31)
-  // Busier is a little slower; exports waited on thumbnails during the incident.
-  // Before the last day it was at its usual p95, so a longer period shows when it got slower.
-  const p95 = totals.map((total, index) => {
-    const start = all.from + index * all.step
-    const slowdown = endpoint === "POST /api/export" && inIncident(start, all.step) ? 2.2 : 1
-    const level = start < sampleNow - day ? (found.usualP95Ms ?? found.p95Ms) : found.p95Ms
-    return level * (0.7 + 0.5 * (total / busiest)) * (0.9 + 0.2 * random()) * slowdown
-  })
-  return { ...all, rows, failed, p95 }
-}
-
 /** One error, as it shows in a list, with its occurrences in each of the last 24 hours. */
 export type ErrorGroup = {
-  readonly id: string
+  readonly id: ErrorGroupId
   readonly kind: "exception" | "log"
   /** Whether it ended the app: a crash on a phone, an unhandled error in a browser. Never for a backend. */
   readonly crash: boolean
@@ -322,7 +246,7 @@ export type TrailEvent =
       readonly endpoint: string
       readonly status: number
       readonly durationMs: number
-      readonly trace: string
+      readonly trace: TraceId
     }
 
 // A day of occurrences that adds up to `total`: a random level each hour from hour `from`, nine
@@ -351,7 +275,7 @@ const webErrorAt = sampleNow - 50 * minute
 
 const unsortedGroups: ReadonlyArray<ErrorGroup> = [
   {
-    id: "4f1c9a2e7b3d5068",
+    id: ErrorGroupId.make("4f1c9a2e7b3d5068"),
     kind: "exception",
     crash: false,
     title: "NpgsqlException: Exception while reading from stream",
@@ -366,7 +290,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
     hourly: hourly(3, 214, 21),
   },
   {
-    id: "a90e3b7c14d2f685",
+    id: ErrorGroupId.make("a90e3b7c14d2f685"),
     kind: "exception",
     crash: false,
     title: "InvalidOperationException: Sequence contains no elements",
@@ -384,7 +308,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
     hourly: hourly(5, 97, 21),
   },
   {
-    id: "c2d7e0f81a4b9356",
+    id: ErrorGroupId.make("c2d7e0f81a4b9356"),
     kind: "exception",
     crash: false,
     title: "TaskCanceledException: The operation was canceled.",
@@ -399,7 +323,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
     hourly: hourly(7, 61, undefined),
   },
   {
-    id: "18b6f4a0d9c3e275",
+    id: ErrorGroupId.make("18b6f4a0d9c3e275"),
     kind: "log",
     crash: false,
     title: "Export {ExportId} failed after {Attempts} attempts",
@@ -413,7 +337,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
     hourly: hourly(9, 33, 21),
   },
   {
-    id: "e73a5c1b0f8d2946",
+    id: ErrorGroupId.make("e73a5c1b0f8d2946"),
     kind: "exception",
     crash: false,
     title: "JsonException: The JSON value could not be converted to System.DateTime. Path: $.dueAt",
@@ -428,7 +352,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
     hourly: [...Array.from({ length: 21 }, () => 0), 3, 5, 4],
   },
   {
-    id: "5b0d8e2f6a1c7394",
+    id: ErrorGroupId.make("5b0d8e2f6a1c7394"),
     kind: "exception",
     crash: false,
     title: "UnauthorizedAccessException: The refresh token has expired.",
@@ -443,7 +367,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
     hourly: hourly(13, 8, undefined),
   },
   {
-    id: "7c3a9e1f5b2d4068",
+    id: ErrorGroupId.make("7c3a9e1f5b2d4068"),
     kind: "exception",
     crash: true,
     title: "EXC_BAD_ACCESS: KERN_INVALID_ADDRESS at 0x0000000000000010",
@@ -465,7 +389,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
         endpoint: "GET /api/feed",
         status: 200,
         durationMs: 1_240,
-        trace: "4be1c07a9d3f2e8615b0c7d9e2a4f381",
+        trace: TraceId.make("4be1c07a9d3f2e8615b0c7d9e2a4f381"),
       },
       { time: before(iosCrashAt, 31), kind: "action", text: "Tapped a note" },
       { time: before(iosCrashAt, 31), kind: "screen", text: "NoteEditorView" },
@@ -475,7 +399,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
         endpoint: "GET /api/notes/{id}",
         status: 200,
         durationMs: 58,
-        trace: "8d41f0c2a7b39e5d1c06f4a2b8e7d390",
+        trace: TraceId.make("8d41f0c2a7b39e5d1c06f4a2b8e7d390"),
       },
       { time: before(iosCrashAt, 12), kind: "action", text: "Added a photo" },
       {
@@ -484,13 +408,13 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
         endpoint: "POST /api/media",
         status: 200,
         durationMs: 2_310,
-        trace: "1d8e3f5a0b7c9264d1e8f3a5c0b7d926",
+        trace: TraceId.make("1d8e3f5a0b7c9264d1e8f3a5c0b7d926"),
       },
       { time: iosCrashAt, kind: "error", text: "EXC_BAD_ACCESS in NoteEditorView.renderAttachment(_:)" },
     ],
   },
   {
-    id: "2e8d0b6f4a1c9357",
+    id: ErrorGroupId.make("2e8d0b6f4a1c9357"),
     kind: "exception",
     crash: true,
     title: "Fatal error: Index out of range",
@@ -515,7 +439,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
         endpoint: "GET /api/feed",
         status: 200,
         durationMs: 980,
-        trace: "7a2c9e4f1b6d8305a7c2e9f4b1d6a830",
+        trace: TraceId.make("7a2c9e4f1b6d8305a7c2e9f4b1d6a830"),
       },
       { time: before(feedCrashAt, 6), kind: "action", text: "Pulled to refresh" },
       {
@@ -524,14 +448,14 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
         endpoint: "GET /api/feed",
         status: 200,
         durationMs: 1_410,
-        trace: "0c5e8a2d7f1b4369c0e5a8d2f7b14362",
+        trace: TraceId.make("0c5e8a2d7f1b4369c0e5a8d2f7b14362"),
       },
       { time: before(feedCrashAt, 1), kind: "action", text: "Scrolled the feed" },
       { time: feedCrashAt, kind: "error", text: "Fatal error: Index out of range in FeedViewModel.item(at:)" },
     ],
   },
   {
-    id: "9a4f2c7e0d1b8365",
+    id: ErrorGroupId.make("9a4f2c7e0d1b8365"),
     kind: "exception",
     crash: false,
     title: "URLError: The network connection was lost.",
@@ -559,7 +483,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
     ],
   },
   {
-    id: "d5b1e8a3c6f04927",
+    id: ErrorGroupId.make("d5b1e8a3c6f04927"),
     kind: "exception",
     crash: true,
     title: "TypeError: Cannot read properties of undefined (reading 'id')",
@@ -581,7 +505,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
         endpoint: "GET /api/notes",
         status: 200,
         durationMs: 140,
-        trace: "5f9b2d6e1a8c4073f5b9d2e6a1c84075",
+        trace: TraceId.make("5f9b2d6e1a8c4073f5b9d2e6a1c84075"),
       },
       { time: before(webErrorAt, 3), kind: "action", text: "Deleted a note" },
       {
@@ -590,7 +514,7 @@ const unsortedGroups: ReadonlyArray<ErrorGroup> = [
         endpoint: "DELETE /api/notes/{id}",
         status: 200,
         durationMs: 80,
-        trace: "a3d7f1c5e9b20486a3d7f1c5e9b20488",
+        trace: TraceId.make("a3d7f1c5e9b20486a3d7f1c5e9b20488"),
       },
       { time: webErrorAt, kind: "error", text: "TypeError: Cannot read properties of undefined (reading 'id')" },
     ],
@@ -616,47 +540,6 @@ export const errorStacks: Readonly<Record<string, string>> = {
    at Microsoft.AspNetCore.Mvc.Infrastructure.ActionMethodExecutor.TaskOfIActionResultExecutor.Execute(ActionContext actionContext)`,
 }
 
-/**
- * A frame of a stack: the function, where in the source or which library, and whether it is the
- * app's own code. An app's stacks are made readable from its dSYM files, mapping files, or source
- * maps before they are grouped.
- */
-export type StackFrame = { readonly method: string; readonly place?: string; readonly ours: boolean }
-
-const library = (method: string, place: string): StackFrame => ({ method, place, ours: false })
-
-/** The apps' stacks, symbolicated, by error group. */
-export const appStacks: Readonly<Record<string, ReadonlyArray<StackFrame>>> = {
-  "7c3a9e1f5b2d4068": [
-    { method: "NoteEditorView.renderAttachment(_:)", place: "NoteEditorView.swift:148", ours: true },
-    { method: "closure #1 in NoteEditorView.body.getter", place: "NoteEditorView.swift:61", ours: true },
-    library("ForEach.body.getter", "SwiftUI"),
-    library("ViewGraph.updateOutputs()", "SwiftUI"),
-    library("GraphHost.flushTransactions()", "SwiftUI"),
-    library("UIApplicationMain", "UIKitCore"),
-    { method: "FolioApp.main()", place: "FolioApp.swift:12", ours: true },
-  ],
-  "2e8d0b6f4a1c9357": [
-    library("_assertionFailure(_:_:file:line:flags:)", "libswiftCore.dylib"),
-    { method: "FeedViewModel.item(at:)", place: "FeedViewModel.swift:88", ours: true },
-    { method: "FeedView.row(for:)", place: "FeedView.swift:54", ours: true },
-    library("LazyVStack.body.getter", "SwiftUI"),
-    library("UIApplicationMain", "UIKitCore"),
-  ],
-  "9a4f2c7e0d1b8365": [
-    { method: "SyncEngine.push()", place: "SyncEngine.swift:203", ours: true },
-    { method: "SyncEngine.run()", place: "SyncEngine.swift:97", ours: true },
-    library("URLSession.data(for:delegate:)", "Foundation"),
-  ],
-  d5b1e8a3c6f04927: [
-    { method: "NoteList", place: "src/notes/note-list.tsx:48:21", ours: true },
-    library("renderWithHooks", "react-dom"),
-    library("updateFunctionComponent", "react-dom"),
-    { method: "NotesPage", place: "src/notes/notes-page.tsx:22:7", ours: true },
-    library("performUnitOfWork", "react-dom"),
-  ],
-}
-
 /** A log record of warning level or above, as the logs page lists it. */
 export type LogLine = {
   readonly id: number
@@ -675,7 +558,7 @@ const logTemplates: ReadonlyArray<Omit<LogLine, "id" | "time">> = [
     component: "folio-api",
     category: "Folio.Api.Notes.NoteRepository",
     message: "Exception while reading from stream",
-    trace: "8d41f0c2a7b39e5d1c06f4a2b8e7d390",
+    trace: TraceId.make("8d41f0c2a7b39e5d1c06f4a2b8e7d390"),
     error: "4f1c9a2e7b3d5068",
   },
   {
@@ -683,14 +566,14 @@ const logTemplates: ReadonlyArray<Omit<LogLine, "id" | "time">> = [
     component: "folio-api",
     category: "Folio.Api.Media.ThumbnailClient",
     message: "Thumbnail fetch took 2,140 ms for media 7f3e…, over the 1,000 ms budget",
-    trace: "3a90c1d7e2f84b6a05d9c3e1f7a2b648",
+    trace: TraceId.make("3a90c1d7e2f84b6a05d9c3e1f7a2b648"),
   },
   {
     level: "error",
     component: "folio-api",
     category: "Folio.Api.Export.ExportJob",
     message: "Export 51c2… failed after 3 attempts",
-    trace: "f2b7d04e9a1c3865e7d0b4a9c2f15e63",
+    trace: TraceId.make("f2b7d04e9a1c3865e7d0b4a9c2f15e63"),
     error: "18b6f4a0d9c3e275",
   },
   {
@@ -716,7 +599,7 @@ const logTemplates: ReadonlyArray<Omit<LogLine, "id" | "time">> = [
     component: "folio-api",
     category: "Folio.Api.Notes.NotesController",
     message: "The JSON value could not be converted to System.DateTime. Path: $.dueAt",
-    trace: "b5e8a3f1c0d74296e3b1a8f05c7d2e94",
+    trace: TraceId.make("b5e8a3f1c0d74296e3b1a8f05c7d2e94"),
     error: "e73a5c1b0f8d2946",
   },
   {
@@ -724,7 +607,7 @@ const logTemplates: ReadonlyArray<Omit<LogLine, "id" | "time">> = [
     component: "folio-api",
     category: "Folio.Api.Export.ExportService",
     message: "Sequence contains no elements",
-    trace: "6c1e9b4d2f7a0853c6e1b9d4f2a70851",
+    trace: TraceId.make("6c1e9b4d2f7a0853c6e1b9d4f2a70851"),
     error: "a90e3b7c14d2f685",
   },
   {
@@ -732,7 +615,7 @@ const logTemplates: ReadonlyArray<Omit<LogLine, "id" | "time">> = [
     component: "folio-api",
     category: "Folio.Api.Media.ThumbnailClient",
     message: "The operation was canceled.",
-    trace: "d4a7f0c3e6b92185d4a7f0c3e6b92187",
+    trace: TraceId.make("d4a7f0c3e6b92185d4a7f0c3e6b92187"),
     error: "c2d7e0f81a4b9356",
   },
   {
@@ -740,7 +623,7 @@ const logTemplates: ReadonlyArray<Omit<LogLine, "id" | "time">> = [
     component: "folio-api",
     category: "Folio.Api.Auth.RefreshHandler",
     message: "The refresh token has expired.",
-    trace: "2b8e5a1f4c7d0396b2e8a5f1c4d70398",
+    trace: TraceId.make("2b8e5a1f4c7d0396b2e8a5f1c4d70398"),
     error: "5b0d8e2f6a1c7394",
   },
   {
@@ -772,7 +655,7 @@ export const logLines: ReadonlyArray<LogLine> = (() => {
 
 /** A request worth opening: slow or failed, with its status and the app that started it. */
 export type RequestRow = {
-  readonly trace: string
+  readonly trace: TraceId
   readonly time: number
   readonly endpoint: string
   readonly durationMs: number
@@ -783,7 +666,7 @@ export type RequestRow = {
 // Requests the backend kept from the last day: failed ones, and slow ones, over their endpoint's p95.
 const keptByHand: ReadonlyArray<RequestRow> = [
   {
-    trace: "f2b7d04e9a1c3865e7d0b4a9c2f15e63",
+    trace: TraceId.make("f2b7d04e9a1c3865e7d0b4a9c2f15e63"),
     time: sampleNow - 132 * minute,
     endpoint: "POST /api/export",
     durationMs: 4_210,
@@ -791,7 +674,7 @@ const keptByHand: ReadonlyArray<RequestRow> = [
     origin: "folio-ios",
   },
   {
-    trace: "9c41e07b2d5af6831e0c7d2b4a9f6e15",
+    trace: TraceId.make("9c41e07b2d5af6831e0c7d2b4a9f6e15"),
     time: sampleNow - 140 * minute,
     endpoint: "POST /api/export",
     durationMs: 4_870,
@@ -799,7 +682,7 @@ const keptByHand: ReadonlyArray<RequestRow> = [
     origin: "folio-web",
   },
   {
-    trace: "1d8e3f5a0b7c9264d1e8f3a5c0b7d926",
+    trace: TraceId.make("1d8e3f5a0b7c9264d1e8f3a5c0b7d926"),
     time: sampleNow - 151 * minute,
     endpoint: "POST /api/media",
     durationMs: 2_640,
@@ -807,7 +690,7 @@ const keptByHand: ReadonlyArray<RequestRow> = [
     origin: "folio-ios",
   },
   {
-    trace: "7a2c9e4f1b6d8305a7c2e9f4b1d6a830",
+    trace: TraceId.make("7a2c9e4f1b6d8305a7c2e9f4b1d6a830"),
     time: sampleNow - 3 * hour,
     endpoint: "GET /api/feed",
     durationMs: 1_380,
@@ -815,7 +698,7 @@ const keptByHand: ReadonlyArray<RequestRow> = [
     origin: "folio-ios",
   },
   {
-    trace: "3e6b1d9f4a2c7058e3b6d1f9a4c2e705",
+    trace: TraceId.make("3e6b1d9f4a2c7058e3b6d1f9a4c2e705"),
     time: sampleNow - 5 * hour,
     endpoint: "POST /api/export",
     durationMs: 5_340,
@@ -823,7 +706,7 @@ const keptByHand: ReadonlyArray<RequestRow> = [
     origin: "folio-web",
   },
   {
-    trace: "b5f0a3c8e1d6297b5f0a3c8e1d6297b4",
+    trace: TraceId.make("b5f0a3c8e1d6297b5f0a3c8e1d6297b4"),
     time: sampleNow - 7 * hour,
     endpoint: "PUT /api/notes/{id}",
     durationMs: 312,
@@ -831,14 +714,14 @@ const keptByHand: ReadonlyArray<RequestRow> = [
     origin: "folio-ios",
   },
   {
-    trace: "c8d2f6a0e4b1937c8d2f6a0e4b193752",
+    trace: TraceId.make("c8d2f6a0e4b1937c8d2f6a0e4b193752"),
     time: sampleNow - 11 * hour,
     endpoint: "POST /webhooks/revenuecat",
     durationMs: 1_120,
     status: 502,
   },
   {
-    trace: "e0a4c8f2b6d1359e0a4c8f2b6d135911",
+    trace: TraceId.make("e0a4c8f2b6d1359e0a4c8f2b6d135911"),
     time: sampleNow - 16 * hour,
     endpoint: "POST /api/media",
     durationMs: 3_110,
@@ -858,7 +741,13 @@ const originOf = (pick: number) => {
 // The three slowest requests of each endpoint in the last day, past its p99, at random times.
 const slowestOfEach: ReadonlyArray<RequestRow> = (() => {
   const random = seeded(29)
-  const traceId = () => Array.from({ length: 32 }, () => Math.floor(random() * 16).toString(16)).join("")
+  // Never all zeros, which isn't a trace ID: the first digit is 1 to f.
+  const traceId = () =>
+    TraceId.make(
+      Array.from({ length: 32 }, (_, index) =>
+        Math.floor(index === 0 ? 1 + random() * 15 : random() * 16).toString(16),
+      ).join(""),
+    )
   return dayOfEndpoints.flatMap((entry) =>
     [1.1, 1.4, 2].map((times) => ({
       trace: traceId(),
@@ -899,7 +788,7 @@ export type TraceLog = {
 }
 
 export type TraceView = {
-  readonly trace: string
+  readonly trace: TraceId
   readonly spans: ReadonlyArray<TraceSpan>
   readonly logs: ReadonlyArray<TraceLog>
 }
@@ -948,7 +837,7 @@ const backendSpans: ReadonlyArray<TraceSpan> = [
 ]
 
 export const sampleTrace: TraceView = {
-  trace: "f2b7d04e9a1c3865e7d0b4a9c2f15e63",
+  trace: TraceId.make("f2b7d04e9a1c3865e7d0b4a9c2f15e63"),
   spans: [
     span("z0", 0, "POST /api/export", "client", "folio-ios", -140, 4_470, "The server answered 500", {
       "http.request.method": "POST",
@@ -1019,11 +908,18 @@ function span(
 }
 
 /** The projects of the sample workspace, for the project switcher. */
-export const sampleProjects: ReadonlyArray<{ readonly key: string; readonly name: string; readonly live: boolean }> = [
-  { key: "folio", name: "Folio", live: true },
-  { key: "notes", name: "Notes", live: true },
-  { key: "landing", name: "Landing", live: false },
+export const sampleProjects: ReadonlyArray<{
+  readonly key: ProjectKey
+  readonly name: string
+  readonly live: boolean
+}> = [
+  { key: ProjectKey.make("folio"), name: "Folio", live: true },
+  { key: ProjectKey.make("notes"), name: "Notes", live: true },
+  { key: ProjectKey.make("landing"), name: "Landing", live: false },
 ]
+
+/** The sample's project, as links to its pages take it. */
+export const sampleProject = ProjectKey.make("folio")
 
 /** Where a component runs; whether it is an app or a backend follows from it. */
 export type Platform = "ios" | "android" | "browser" | "dotnet" | "node"
@@ -1038,88 +934,6 @@ export const sampleComponents: ReadonlyArray<SampleComponent> = [
   { key: "folio-web", platform: "browser", receiving: true },
   { key: "folio-android", platform: "android", receiving: false },
 ]
-
-// The last day's hours, oldest first, the last one holding now.
-const lastDayHours = Array.from({ length: 24 }, (_, index) => Math.floor(sampleNow / hour) * hour - (23 - index) * hour)
-
-// When each app is used, by hour of the day in UTC: the iOS app in the evening, the web app at work.
-const appShapes: Readonly<Record<string, (hourOfDay: number) => number>> = {
-  "folio-ios": (hourOfDay) => 0.15 + 0.85 * Math.exp(-((hourOfDay - 19) ** 2) / 14),
-  "folio-web": (hourOfDay) => 0.05 + 0.95 * Math.max(0, Math.sin((Math.PI * (hourOfDay - 7)) / 11)),
-}
-
-// An app's sessions in a day.
-const sessionsPerDay: Readonly<Record<string, number>> = { "folio-ios": 5_200, "folio-web": 4_800 }
-
-/**
- * An app's sessions in each hour of the last day, oldest first; absent for a component that has
- * none. The sessions its crashes ended are its crash groups' occurrences. Not in the API yet.
- */
-export const appSessionsHourly = (component: string): ReadonlyArray<number> | undefined => {
-  const shape = appShapes[component]
-  const total = sessionsPerDay[component]
-  if (shape === undefined || total === undefined) {
-    return undefined
-  }
-  const random = seeded(component.length * 7)
-  const weights = lastDayHours.map((start) => shape(((start + hour / 2) % day) / hour) * (0.85 + 0.3 * random()))
-  const sum = weights.reduce((all, weight) => all + weight, 0)
-  return weights.map((weight) => Math.round((weight / sum) * total))
-}
-
-/** An app's sessions over the period. */
-export const appSessions = (component: string, period: PeriodKey): number | undefined => {
-  const total = sessionsPerDay[component]
-  const millis = periods.find((entry) => entry.key === period)?.millis ?? day
-  return total === undefined ? undefined : Math.round((total * millis) / day)
-}
-
-/**
- * How long an app takes to be usable, in each column of the period: the p95 of a cold start on a
- * phone, the p75 of the largest contentful paint (LCP) in a browser. Not in the API yet.
- */
-export type StartColumns = { readonly from: number; readonly step: number; readonly values: ReadonlyArray<number> }
-
-// The usual level of each app's start, in milliseconds.
-const startLevel: Readonly<Record<string, number>> = { "folio-ios": 1_750, "folio-web": 2_100 }
-
-export const appStartColumns = (component: string, period: PeriodKey): StartColumns | undefined => {
-  const level = startLevel[component]
-  const shape = appShapes[component]
-  if (level === undefined || shape === undefined) {
-    return undefined
-  }
-  const random = seeded(component.length * 13)
-  const millis = periods.find((entry) => entry.key === period)?.millis ?? day
-  const step = millis / columnCount
-  const from = (Math.floor(sampleNow / step) + 1) * step - millis
-  // Busier is a little slower: more people on slow networks and old phones.
-  const values = Array.from({ length: columnCount }, (_, index) => {
-    const busy = step >= 6 * hour ? 0.5 : shape((((from + index * step + step / 2) % day) / hour) % 24)
-    return level * (0.85 + 0.25 * busy) * (0.9 + 0.2 * random())
-  })
-  return { from, step, values }
-}
-
-/** A phone app's cold start over the last day, with its usual p95, over the 7 days before. */
-export type AppStart = {
-  readonly p50Ms: number
-  readonly p95Ms: number
-  readonly p99Ms: number
-  readonly lastDayP95Ms: number
-  readonly usualP95Ms?: number
-}
-
-export const appStarts: Readonly<Record<string, AppStart>> = {
-  "folio-ios": { p50Ms: 620, p95Ms: 1_750, p99Ms: 3_200, lastDayP95Ms: 1_750, usualP95Ms: 1_700 },
-}
-
-/** A browser app's Core Web Vitals at their p75, over the last day: loading, responding, and layout shift. */
-export type WebVitals = { readonly lcpMs: number; readonly inpMs: number; readonly cls: number }
-
-export const webVitals: Readonly<Record<string, WebVitals>> = {
-  "folio-web": { lcpMs: 2_100, inpMs: 160, cls: 0.06 },
-}
 
 /**
  * A screen of an app, or a page in a browser: how often it was shown, and how long it took to

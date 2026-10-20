@@ -40,9 +40,6 @@ export const count = (value: number) => whole.format(value)
 /** 48.2K */
 export const compact = (value: number) => compactNumber.format(value)
 
-/** A share close to all, to two decimals, such as crash-free sessions: 99.53%, or "–" without a total. */
-export const nearlyAll = (part: number, total: number) => (total === 0 ? "–" : percentFine.format(part / total))
-
 /** The share of `part` in `total`: 0.4%, or "–" when there is no total to share. */
 export const share = (part: number, total: number) => {
   if (total === 0) {

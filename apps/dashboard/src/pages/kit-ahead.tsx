@@ -1,0 +1,93 @@
+import { KitCard, KitColumn, KitGroup } from "@/pages/kit-section"
+import { colorOf, slowerMeaning, slowerOf } from "@/project-facts"
+import {
+  endpointTable,
+  errorGroups,
+  networkCalls,
+  sampleComponents,
+  sampleProject,
+  screenTable,
+  slowAndFailedRequests,
+} from "@/sample/sample-project"
+import { ByRelease, Trail } from "@/views/app-evidence"
+import { NetworkTable } from "@/views/network-table"
+import { RequestList } from "@/views/request-list"
+import { ScreenTable } from "@/views/screen-table"
+
+const components = sampleComponents.map((component) => component.key)
+const colorOfComponent = (component: string) => colorOf(component, components)
+const backend = "folio-api"
+const app = "folio-ios"
+
+const lastDay = endpointTable("24h").rows
+
+// Each request is slow when it took longer than its endpoint's p95 that day.
+const requests = slowAndFailedRequests.map((row) => {
+  const endpoint = lastDay.find((entry) => entry.endpoint === row.endpoint)
+  return { ...row, slow: endpoint !== undefined && row.durationMs > endpoint.lastDayP95Ms }
+})
+
+const screens = screenTable(app, "24h").map((row) => {
+  const slower = slowerOf(row)
+  return slower === undefined ? row : { ...row, slower }
+})
+
+const calls = networkCalls(app, "24h").map((row) => {
+  const served = lastDay.find((entry) => entry.endpoint === row.endpoint)
+  return served === undefined ? row : { ...row, backendP95Ms: served.p95Ms }
+})
+
+const appError = errorGroups.find((group) => group.trail !== undefined)
+
+/**
+ * Views the pages will show once the public API carries their data: an app's screens and the calls
+ * it makes, single slow and failed requests, and what an app did before an error. They wait here,
+ * on sample data, so their design is kept up as the theme changes.
+ */
+export function KitAhead() {
+  return (
+    <KitGroup
+      id="ahead"
+      title="Ahead of the API"
+      description="Views waiting for data the API doesn't carry yet: from the apps' SDKs, and single requests. On sample data."
+    >
+      <KitColumn>
+        <KitCard
+          title="Screens"
+          description="An app's screens by how long they took to show, the most shown first."
+          files={["screen-table.tsx"]}
+        >
+          <ScreenTable rows={screens} color={colorOfComponent(app)} heading="Screen" />
+          <p className="text-sm text-muted-foreground">{slowerMeaning}</p>
+        </KitCard>
+        <KitCard
+          title="Network calls"
+          description="The backend's endpoints as the app saw them, with the backend's share of the time."
+          files={["network-table.tsx"]}
+        >
+          <NetworkTable rows={calls} backendColor={colorOfComponent(backend)} linkOf={() => ({ page: "kit" })} />
+        </KitCard>
+      </KitColumn>
+      <KitColumn>
+        <KitCard
+          title="Slow and failed requests"
+          description="Single requests worth opening, each one click from its trace."
+          files={["request-list.tsx"]}
+          className="px-0"
+        >
+          <RequestList project={sampleProject} rows={requests} colorOf={colorOfComponent} />
+        </KitCard>
+        {appError?.trail !== undefined && (
+          <KitCard
+            title="An app's error"
+            description="What the app did before it, and how it spreads over releases."
+            files={["app-evidence.tsx"]}
+          >
+            <Trail trail={appError.trail} project={sampleProject} />
+            <ByRelease releases={appError.releases} occurrences={appError.occurrences} />
+          </KitCard>
+        )}
+      </KitColumn>
+    </KitGroup>
+  )
+}

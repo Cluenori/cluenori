@@ -1,116 +1,186 @@
+import type { ComponentKey, ProjectKey } from "@cluenori/foundation"
+import type { IndexedLevel } from "@cluenori/signals"
+import { useAtomValue } from "@effect/atom-react"
+import { DateTime } from "effect"
+import { AsyncResult } from "effect/reactivity"
 import { CalendarClockIcon, ScrollTextIcon, SearchIcon } from "lucide-react"
 import { useState } from "react"
 
 import { failureColor, warningColor } from "@/lib/colors"
-import { axisTime, count, moment } from "@/lib/format"
-import {
-  colorOf,
-  isReceiving,
-  logLines,
-  now,
-  platformOf,
-  platformWords,
-  roleOf,
-  setUpStepOf,
-  zoneName,
-} from "@/project-facts"
+import { count, moment } from "@/lib/format"
+import { logCountsAtom, logsAtom, periodAtom, useComponentKeys } from "@/project-data"
+import { colorOf, columnTimesOf, logColumnsOf, periodWords, sumOf, ticksOf, zoneOf } from "@/project-facts"
 import { navigate } from "@/router"
 import { BarRows } from "@/views/bar-rows"
 import { ComponentSwitch } from "@/views/component-switch"
+import { Loaded } from "@/views/loaded"
 import { LogList } from "@/views/log-list"
-import { NothingReceived } from "@/views/nothing-received"
-import { Panel } from "@/views/panel"
+import { Panel, PanelStats } from "@/views/panel"
+import { PeriodSwitch } from "@/views/period-switch"
 import { ProjectHeader } from "@/views/project-header"
 import { Segmented } from "@/views/segmented"
+import { Button } from "@/views/ui/button"
 
+// Which lines to show, as the API's lowest level: every warning and error, or errors only.
 const levels = [
-  { value: "all", label: "All", shows: ["warn", "error", "fatal"] },
-  { value: "warn", label: "Warnings", shows: ["warn"] },
-  { value: "error", label: "Errors", shows: ["error", "fatal"] },
-] as const
+  { value: "warn", label: "All" },
+  { value: "error", label: "Errors" },
+] as const satisfies ReadonlyArray<{ readonly value: IndexedLevel; readonly label: string }>
 
-type Level = (typeof levels)[number]["value"]
+// The longest search the API takes.
+const longestSearch = 200
 
-const hour = 3_600_000
-const hours = Array.from({ length: 24 }, (_, index) => Math.floor(now / hour) * hour - (23 - index) * hour)
+type Lines = {
+  readonly project: ProjectKey
+  readonly component?: ComponentKey
+  readonly level: IndexedLevel
+  readonly search?: string
+}
+
+/** One page of lines, from `before` on, and the button to the next older one when there is one. */
+function LogPage({
+  lines,
+  before,
+  colorOf: colorOfComponent,
+  onOlder,
+}: {
+  readonly lines: Lines
+  readonly before: number | undefined
+  readonly colorOf: (component: string) => string
+  readonly onOlder: ((next: number) => void) | undefined
+}) {
+  const page = useAtomValue(logsAtom({ ...lines, ...(before === undefined ? {} : { before }) }))
+  return (
+    <Loaded result={page}>
+      {({ lines: shown, next }) => (
+        <>
+          {before === undefined && shown.length === 0 ? (
+            <p className="max-w-2xl px-5 py-6 text-[15px] text-muted-foreground">
+              {lines.search === undefined
+                ? "Nothing was logged at this level in this period."
+                : `Nothing matches “${lines.search}”.`}
+            </p>
+          ) : (
+            <LogList project={lines.project} lines={shown} colorOf={colorOfComponent} />
+          )}
+          {next !== undefined && onOlder !== undefined && (
+            <div className="border-t px-5 py-3">
+              <Button variant="outline" size="sm" onClick={() => onOlder(next)}>
+                Show older lines
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </Loaded>
+  )
+}
 
 /**
- * A project's warnings and errors, or one component's, over the last day: how many each hour, and
- * every line, searchable, each opening in place with a way to its request.
+ * The lines, a page of 100 at a time, newest first. Older pages continue from where the one before
+ * ended, so the pages start over when what they show changes (`key`).
  */
-export function LogsPage({ project, component }: { readonly project: string; readonly component?: string }) {
-  const [level, setLevel] = useState<Level>("all")
-  const [search, setSearch] = useState("")
-  const chosen = levels.find((entry) => entry.value === level) ?? levels[0]
-  const needle = search.trim().toLowerCase()
-  const shown = (of: string) => component === undefined || of === component
-  const lines = logLines.filter(
-    (line) =>
-      shown(line.component) &&
-      chosen.shows.some((kept) => kept === line.level) &&
-      (needle.length === 0 || `${line.message} ${line.category}`.toLowerCase().includes(needle)),
-  )
-  const perHour = (keep: (line: (typeof logLines)[number]) => boolean) =>
-    hours.map((start) => lines.filter((line) => keep(line) && line.time >= start && line.time < start + hour).length)
-  const warnings = lines.filter((line) => line.level === "warn").length
-  const role = component === undefined ? undefined : roleOf(component)
-
-  const header = (
-    <ProjectHeader title="Logs">
-      <ComponentSwitch
-        value={component}
-        allowAll
-        onChange={(picked) =>
-          navigate({ page: "logs", project, ...(picked === undefined ? {} : { component: picked }) }, { replace: true })
-        }
-      />
-    </ProjectHeader>
-  )
-
-  if (component !== undefined && !isReceiving(component)) {
-    return (
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
-        {header}
-        <NothingReceived
-          component={component}
-          platform={platformWords[platformOf(component)]}
-          shows="the warnings and errors it logs, searchable, each with a way to what it was doing"
-          step={setUpStepOf(component)}
+function LogPages({
+  lines,
+  colorOf: colorOfComponent,
+}: {
+  readonly lines: Lines
+  readonly colorOf: (component: string) => string
+}) {
+  const [older, setOlder] = useState<ReadonlyArray<number>>([])
+  const pages = [undefined, ...older]
+  return (
+    <div className="flex flex-col">
+      {pages.map((before, index) => (
+        <LogPage
+          key={before ?? "newest"}
+          lines={lines}
+          before={before}
+          colorOf={colorOfComponent}
+          onOlder={index === pages.length - 1 ? (next) => setOlder([...older, next]) : undefined}
         />
-      </div>
-    )
-  }
+      ))}
+    </div>
+  )
+}
+
+/**
+ * A project's warnings and errors, or one component's, over the period: how many in each step, and
+ * every line, newest first, searchable, each opening in place with a way to its request.
+ */
+export function LogsPage({ project, component }: { readonly project: ProjectKey; readonly component?: ComponentKey }) {
+  const scope = { project, ...(component === undefined ? {} : { component }) }
+  const period = useAtomValue(periodAtom)
+  const components = useComponentKeys(project)
+  const counts = useAtomValue(logCountsAtom({ ...scope, by: "level" }))
+  const [level, setLevel] = useState<IndexedLevel>("warn")
+  const [draft, setDraft] = useState("")
+  const [search, setSearch] = useState<string | undefined>(undefined)
+  const lines: Lines = { ...scope, level, ...(search === undefined ? {} : { search }) }
+  const newest = useAtomValue(logsAtom(lines))
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
-      {header}
+      <ProjectHeader
+        title="Logs"
+        latest={AsyncResult.map(newest, (page) => {
+          const first = page.lines[0]
+          return first === undefined ? undefined : DateTime.toEpochMillis(first.time)
+        })}
+      >
+        <ComponentSwitch
+          components={components}
+          value={component}
+          allowAll
+          onChange={(picked) =>
+            navigate(
+              { page: "logs", project, ...(picked === undefined ? {} : { component: picked }) },
+              { replace: true },
+            )
+          }
+        />
+        <PeriodSwitch />
+      </ProjectHeader>
 
       <Panel
         icon={CalendarClockIcon}
-        title="Warnings and errors by hour"
-        subtitle={component === undefined ? "Last 24 hours, every component" : `Last 24 hours, ${component}`}
-        badge={zoneName}
-        stats={[
-          { label: "Warnings", value: count(warnings), ...(warnings > 0 ? { color: warningColor } : {}) },
-          {
-            label: "Errors",
-            value: count(lines.length - warnings),
-            ...(lines.length > warnings ? { color: failureColor } : {}),
-          },
-        ]}
+        title="Warnings and errors over time"
+        subtitle={`${periodWords[period]}, ${component ?? "every component"}`}
+        badge={AsyncResult.isSuccess(counts) ? zoneOf(counts.value) : undefined}
       >
-        <div className="p-5">
-          <BarRows
-            rowHeight={64}
-            label="Warnings and errors logged in each hour of the last day."
-            rows={[
-              { label: "Warnings", color: warningColor, values: perHour((line) => line.level === "warn") },
-              { label: "Errors", color: failureColor, values: perHour((line) => line.level !== "warn") },
-            ]}
-            ticks={[0, 6, 12, 18].map((column) => ({ column, label: axisTime(hours[column] ?? now) }))}
-            timeOf={(span) => moment(hours[span.first] ?? now)}
-          />
-        </div>
+        <Loaded result={counts}>
+          {(answer) => {
+            const warnings = logColumnsOf(answer, ["warn"])
+            const errors = logColumnsOf(answer, ["error", "fatal"])
+            const { startOf } = columnTimesOf(warnings)
+            const totalOf = (keys: ReadonlyArray<string>) =>
+              sumOf(answer.series.filter((series) => keys.includes(series.key)).map((series) => series.total))
+            const warned = totalOf(["warn"])
+            const failed = totalOf(["error", "fatal"])
+            return (
+              <>
+                <div className="p-5">
+                  <BarRows
+                    rowHeight={64}
+                    label="Warnings and errors logged over the period."
+                    rows={[
+                      { label: "Warnings", note: count(warned), color: warningColor, values: warnings.values },
+                      { label: "Errors", note: count(failed), color: failureColor, values: errors.values },
+                    ]}
+                    ticks={ticksOf(warnings)}
+                    timeOf={(span) => moment(startOf(span.first))}
+                  />
+                </div>
+                <PanelStats
+                  stats={[
+                    { label: "Warnings", value: count(warned), ...(warned > 0 ? { color: warningColor } : {}) },
+                    { label: "Errors", value: count(failed), ...(failed > 0 ? { color: failureColor } : {}) },
+                  ]}
+                />
+              </>
+            )
+          }}
+        </Loaded>
       </Panel>
 
       <Panel icon={ScrollTextIcon} title="Log lines" subtitle="Newest first; open one to see where it came from">
@@ -121,26 +191,34 @@ export function LogsPage({ project, component }: { readonly project: string; rea
             value={level}
             onChange={setLevel}
           />
-          <label className="flex h-9 min-w-48 flex-1 items-center gap-2 border bg-card px-3 focus-within:border-ring md:max-w-md">
+          {/* A search is asked when it is submitted, with Enter, not on every key. */}
+          <form
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const needle = draft.trim()
+              setSearch(needle.length === 0 ? undefined : needle)
+            }}
+            className="flex h-9 min-w-48 flex-1 items-center gap-2 border bg-card px-3 focus-within:border-ring md:max-w-md"
+          >
             <SearchIcon className="size-4 text-muted-foreground" />
-            <span className="sr-only">Search the logs</span>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search messages and loggers"
-              className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-          </label>
+            <label className="flex-1">
+              <span className="sr-only">Search messages and exceptions</span>
+              <input
+                value={draft}
+                maxLength={longestSearch}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Search messages and exceptions, then press Enter"
+                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
+            </label>
+          </form>
         </div>
-        {lines.length === 0 ? (
-          <p className="max-w-2xl px-5 py-6 text-[15px] text-muted-foreground">
-            {role === "app" && needle.length === 0
-              ? `${component} logged no ${chosen.label.toLowerCase()} in the last 24 hours; an app sends the warnings and errors it logs through the Cluenori SDK.`
-              : `Nothing matches${needle.length > 0 ? ` “${search.trim()}”` : ""}.`}
-          </p>
-        ) : (
-          <LogList project={project} lines={lines} colorOf={colorOf} />
-        )}
+        <LogPages
+          key={[component ?? "", level, search ?? "", period].join("\u0000")}
+          lines={lines}
+          colorOf={(of) => colorOf(of, components)}
+        />
       </Panel>
     </div>
   )

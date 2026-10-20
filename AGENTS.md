@@ -502,8 +502,8 @@ conflict.
   export is archived 90 days, scrubbed, in R2; the Projects and Signals engines count requests and
   keep warnings, errors and error groups in each project's Durable Object; and the public API
   (behind an API token) and `./cluenori` show endpoints, requests, errors, logs, and any request's
-  trace. The dashboard (`apps/dashboard`) is a prototype on sample data, to settle its look. No
-  module exists yet.
+  trace. The dashboard (`apps/dashboard`), served by the Worker and signed in with the API token,
+  shows the same through the public API. No module exists yet.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository
