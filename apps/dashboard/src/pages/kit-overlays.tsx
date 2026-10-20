@@ -332,7 +332,7 @@ function HoverCardSample() {
             <span className="font-medium">NpgsqlException</span>
           </div>
           <p className="text-muted-foreground">Exception while reading from stream</p>
-          <code className="font-mono text-xs break-all text-muted-foreground">{npgsql.culprit}</code>
+          <code className="font-mono text-xs wrap-anywhere text-muted-foreground">{npgsql.culprit}</code>
           <p className="text-xs text-muted-foreground tabular-nums">
             {count(npgsql.occurrences)} times, last {ago(npgsql.lastSeen, sampleNow)}.
           </p>

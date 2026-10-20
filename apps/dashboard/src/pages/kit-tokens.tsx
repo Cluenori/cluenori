@@ -203,7 +203,7 @@ export function KitTokens() {
             </KitSample>
             <KitSample label="Code, in font-mono" className="flex-col items-start">
               <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[13px]">POST /api/export</code>
-              <code className="font-mono text-xs break-all text-muted-foreground">
+              <code className="font-mono text-xs wrap-anywhere text-muted-foreground">
                 Folio.Api.Export.ExportService.BuildAsync(ExportRequest request)
               </code>
             </KitSample>

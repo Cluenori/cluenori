@@ -1,5 +1,7 @@
 import { cn } from "cn"
 
+import { TemplateText } from "@/views/template-text"
+
 const methods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
 
 /**
@@ -22,16 +24,8 @@ export function EndpointName({
   return (
     <span className={cn("flex min-w-0 items-baseline gap-2", className)}>
       {isHttp && <span className="shrink-0 font-mono text-xs text-muted-foreground sm:w-12">{method}</span>}
-      <span className={wrap ? "break-all" : "truncate"}>
-        {route.split(/(\{[^}]+\})/).map((part, index) =>
-          part.startsWith("{") ? (
-            <span key={index} className="text-muted-foreground">
-              {part}
-            </span>
-          ) : (
-            part
-          ),
-        )}
+      <span className={wrap ? "wrap-anywhere" : "truncate"}>
+        <TemplateText text={route} />
       </span>
     </span>
   )

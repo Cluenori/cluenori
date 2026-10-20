@@ -29,8 +29,8 @@ function FrameRow({ frame, culprit }: { readonly frame: StackFrame; readonly cul
         !frame.ours && "text-muted-foreground",
       )}
     >
-      <span className="block break-all">{frame.method}</span>
-      {frame.place !== undefined && <span className="block break-all text-muted-foreground">{frame.place}</span>}
+      <span className="block wrap-anywhere">{frame.method}</span>
+      {frame.place !== undefined && <span className="block wrap-anywhere text-muted-foreground">{frame.place}</span>}
     </li>
   )
 }
@@ -97,7 +97,7 @@ export function ExceptionView({ chain }: { readonly chain: ReadonlyArray<ThrownE
             <span className="text-sm text-muted-foreground">Inner exception, which caused the one above</span>
           )}
           <div className="flex flex-col gap-1">
-            <span className="font-mono text-[13px] break-all text-failure">{thrown.type}</span>
+            <span className="font-mono text-[13px] wrap-anywhere text-failure">{thrown.type}</span>
             {thrown.message.length > 0 && (
               <p className="text-[15px] break-words whitespace-pre-wrap">{thrown.message}</p>
             )}

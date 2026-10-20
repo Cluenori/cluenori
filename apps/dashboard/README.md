@@ -113,7 +113,9 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
   what it did before an error); a request's origin; single slow and failed requests. Their views
   wait in the design kit, "Ahead of the API", on sample data (`src/sample/`), which nothing else
   reads.
-- **Navigation is instant:** every page is in one bundle and switches without a request; an answer
-  a page showed a moment ago is shown again at once, and refreshed in the background when stale.
-- **The first load's budget** is 245 KB of scripts, compressed, of which the typed API client is
+- **Navigation is instant:** the pages most visits open are in the first load; one error's page and
+  a request's trace load right after start, as search does, so they are there before anyone opens
+  them. An answer a page showed a moment ago is shown again at once, and refreshed in the
+  background when stale.
+- **The first load's budget** is 240 KB of scripts, compressed, of which the typed API client is
   about 75 KB; `vite.config.ts` fails a build over it.

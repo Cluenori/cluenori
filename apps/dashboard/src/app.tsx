@@ -7,12 +7,10 @@ import { lazy, Suspense, useEffect, useState } from "react"
 
 import { EndpointPage } from "@/pages/endpoint-page"
 import { EndpointsPage } from "@/pages/endpoints-page"
-import { ErrorPage } from "@/pages/error-page"
 import { ErrorsPage } from "@/pages/errors-page"
 import { LogsPage } from "@/pages/logs-page"
 import { OverviewPage } from "@/pages/overview-page"
 import { PerformancePage } from "@/pages/performance-page"
-import { TracePage } from "@/pages/trace-page"
 import { projectsAtom, signOutAtom } from "@/project-data"
 import type { Route } from "@/router"
 import { Link, useRoute } from "@/router"
@@ -32,6 +30,16 @@ const KitPage = lazy(() => import("@/pages/kit-page").then((module) => ({ defaul
 // the app starts, so it is there by the time anyone presses ⌘K.
 const searchDialog = import("@/views/search-dialog")
 const SearchDialog = lazy(() => searchDialog.then((module) => ({ default: module.SearchDialog })))
+
+// One error's page and one request's trace load after start too: most visits begin on a summary,
+// and they are there by the time anyone opens one.
+const errorPage = import("@/pages/error-page")
+const ErrorPage = lazy(() => errorPage.then((module) => ({ default: module.ErrorPage })))
+const tracePage = import("@/pages/trace-page")
+const TracePage = lazy(() => tracePage.then((module) => ({ default: module.TracePage })))
+
+// While a page that loads after start isn't there yet, on a visit that opens on it.
+const opening = <div className="p-8 text-sm text-muted-foreground">Opening the page…</div>
 
 const page = "mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6"
 
@@ -118,12 +126,14 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
       )
     case "error":
       return (
-        <ErrorPage
-          key={route.error}
-          project={route.project}
-          error={route.error}
-          {...(route.component === undefined ? {} : { component: route.component })}
-        />
+        <Suspense fallback={opening}>
+          <ErrorPage
+            key={route.error}
+            project={route.project}
+            error={route.error}
+            {...(route.component === undefined ? {} : { component: route.component })}
+          />
+        </Suspense>
       )
     case "logs":
       return (
@@ -131,12 +141,14 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
       )
     case "trace":
       return (
-        <TracePage
-          key={route.trace}
-          project={route.project}
-          trace={route.trace}
-          {...(route.around === undefined ? {} : { around: route.around })}
-        />
+        <Suspense fallback={opening}>
+          <TracePage
+            key={route.trace}
+            project={route.project}
+            trace={route.trace}
+            {...(route.around === undefined ? {} : { around: route.around })}
+          />
+        </Suspense>
       )
     case "kit":
       return (

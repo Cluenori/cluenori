@@ -11,6 +11,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   FileTextIcon,
+  MessageSquareTextIcon,
   WaypointsIcon,
 } from "lucide-react"
 import type { ReactNode } from "react"
@@ -39,6 +40,7 @@ import { ExceptionView } from "@/views/exception-view"
 import { Loaded } from "@/views/loaded"
 import { Panel, PanelStats } from "@/views/panel"
 import { PeriodSwitch } from "@/views/period-switch"
+import { TemplateText } from "@/views/template-text"
 import { Button, buttonVariants } from "@/views/ui/button"
 
 // The last part of a type's name, as people say it: `BadHttpRequestException`.
@@ -94,7 +96,7 @@ function RequestSummary({
           { label: "Took", value: <span className="font-mono">{duration(request.durationMs)}</span> },
           ...(path === undefined
             ? []
-            : [{ label: "Path", value: <span className="font-mono text-[13px] break-all">{path}</span> }]),
+            : [{ label: "Path", value: <span className="font-mono text-[13px] wrap-anywhere">{path}</span> }]),
           ...(client === undefined ? [] : [{ label: "Client", value: client }]),
           {
             label: "Component",
@@ -130,14 +132,14 @@ function SentWith({ line, request }: { readonly line: LogLine; readonly request:
         <span className="text-sm text-muted-foreground">The log record</span>
         <Facts
           rows={[
-            { label: "Logger", value: <span className="font-mono text-[13px] break-all">{line.category}</span> },
+            { label: "Logger", value: <span className="font-mono text-[13px] wrap-anywhere">{line.category}</span> },
             { label: "Message", value: <span className="whitespace-pre-wrap">{line.message}</span> },
             ...(line.template === undefined
               ? []
               : [
                   {
                     label: "Template",
-                    value: <span className="font-mono text-[13px] break-all">{line.template}</span>,
+                    value: <span className="font-mono text-[13px] wrap-anywhere">{line.template}</span>,
                   },
                 ]),
           ]}
@@ -170,20 +172,22 @@ function OccurrenceDetail({
   return (
     <>
       <div className="grid gap-4 xl:grid-cols-12">
-        <Panel
-          icon={BugIcon}
-          title="Exception"
-          subtitle="As it was thrown: every exception inside it, and every frame"
-          className="xl:col-span-8"
-        >
-          <div className="px-5 py-5">
-            {line.exception === undefined ? (
-              <p className="text-[15px] break-words whitespace-pre-wrap">{line.message}</p>
-            ) : (
+        {line.exception === undefined ? (
+          <Panel icon={MessageSquareTextIcon} title="Message" subtitle="As it was logged" className="xl:col-span-8">
+            <p className="px-5 py-5 text-[15px] break-words whitespace-pre-wrap">{line.message}</p>
+          </Panel>
+        ) : (
+          <Panel
+            icon={BugIcon}
+            title="Exception"
+            subtitle="As it was thrown: every exception inside it, and every frame"
+            className="xl:col-span-8"
+          >
+            <div className="px-5 py-5">
               <ExceptionView key={line.id} chain={exceptionsOf(line.exception)} />
-            )}
-          </div>
-        </Panel>
+            </div>
+          </Panel>
+        )}
         <Panel icon={WaypointsIcon} title="Request" subtitle="The request it happened in" className="xl:col-span-4">
           <div className="flex-1 px-5 py-5">
             {request === undefined ? (
@@ -246,6 +250,9 @@ export function ErrorPage({
   const [position, setPosition] = useState(0)
   const group = AsyncResult.isSuccess(detail) ? detail.value.group : undefined
   const parts = group === undefined ? undefined : titleParts(group)
+  const isLogged = group?.kind === "log"
+  const named = parts === undefined ? "Error" : shortName(parts.type)
+  const heading = isLogged && group !== undefined ? <TemplateText text={group.title} /> : named
   const back = { page: "errors" as const, project, ...(component === undefined ? {} : { component }) }
 
   return (
@@ -259,12 +266,22 @@ export function ErrorPage({
           <ArrowLeftIcon />
         </Link>
         <div className="flex min-w-0 flex-[1_1_20rem] flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em] break-all" title={parts?.type}>
-            {parts === undefined ? "Error" : shortName(parts.type)}
+          {/* An exception is named by its type, what it said under it; a logged error by its
+              message's template, at most two lines, its placeholders dimmed. */}
+          <h1
+            title={group?.title}
+            className={cn(
+              "font-semibold tracking-[-0.02em] break-words",
+              isLogged ? "line-clamp-2 text-xl leading-snug" : "text-2xl",
+            )}
+          >
+            {heading}
           </h1>
-          {group !== undefined && <p className="text-[15px] break-words">{parts?.message ?? group.title}</p>}
-          <p className="text-sm text-muted-foreground">
-            {group === undefined ? "" : `${group.lastComponent}, `}
+          {group !== undefined && !isLogged && (
+            <p className="line-clamp-3 text-[15px] break-words">{parts?.message ?? group.title}</p>
+          )}
+          <p className="text-sm break-words text-muted-foreground">
+            {group === undefined ? "" : `${isLogged ? `${group.culprit}, ` : ""}${group.lastComponent}, `}
             {periodWords[period].toLowerCase()}
           </p>
         </div>

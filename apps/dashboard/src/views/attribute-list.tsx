@@ -39,8 +39,8 @@ export function AttributeList({
           key={key}
           className="grid gap-x-4 gap-y-0.5 border-b px-3 py-1.5 last:border-b-0 @md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
         >
-          <dt className="break-all text-muted-foreground">{key}</dt>
-          <dd className="break-all">{attributeText(value)}</dd>
+          <dt className="wrap-anywhere text-muted-foreground">{key}</dt>
+          <dd className="wrap-anywhere">{attributeText(value)}</dd>
         </div>
       ))}
     </dl>
