@@ -51,6 +51,8 @@
           "effect/FileSystem",
           "effect/Path",
           "effect/PlatformError",
+          "effect/reactivity",
+          "@effect/atom-react",
           "@effect/platform-bun",
           "@effect/sql-sqlite-do",
           "@effect/vitest"
@@ -117,6 +119,19 @@
             // CLI is a host whose every command picks its API target, so it builds clients there.
             "include": ["**/test/**/*.ts", "**/src/main.ts", "**/src/worker.ts", "**/apps/cli/src/**/*.ts"],
             "options": { "diagnosticSeverity": { "strictEffectProvide": "off" } }
+          },
+          {
+            // The typed clients of the whole public API: Effect's client type gives an endpoint without a
+            // payload or errors, such as sign-out, a requirement of `[Mode] extends [...] ? never : never`,
+            // which is never, and which the diagnostic can't reduce.
+            "include": ["**/tests/journeys/test/cluenori-client.ts", "**/apps/dashboard/src/api-client.ts"],
+            "options": { "diagnosticSeverity": { "leakingRequirements": "off" } }
+          },
+          {
+            // HTTP middleware runs per request, so its methods need the request, which the API's
+            // builder passes in; a cookie credential is read from it.
+            "include": ["**/apps/worker/src/member-authorization.ts"],
+            "options": { "diagnosticSeverity": { "leakingRequirements": "off" } }
           },
           {
             // The dashboard's tests fail on any error a page logs, which they see by watching `console`.
