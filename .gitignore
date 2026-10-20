@@ -10,6 +10,12 @@ worker-configuration.d.ts
 # Local secrets for `wrangler dev`; production secrets live in Wrangler
 .dev.vars*
 
+# The dashboard's build: `bun run check` builds it to check its first-load budget
+apps/dashboard/dist/
+
+# Screenshots Vitest takes of a browser test that failed
+.vitest/
+
 # Nix build links
 /result
 /result-*

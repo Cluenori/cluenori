@@ -151,7 +151,7 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 |---|---|---|---|
 | Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token (projects, components, endpoints, requests, errors, logs, traces), OTLP ingest of traces, logs and metrics, the archive in R2, and each project's Durable Object |
 | CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, questions about them, and the repository's check and generate | Built |
-| Dashboard | `apps/dashboard` | The web app over the public API | Planned; its UI stack is decided with its first page |
+| Dashboard | `apps/dashboard` | The web app over the public API | Prototype on sample data: a project's overview, its performance, errors, and logs pages by component, each showing what matters for an app or a backend, a request's trace, and a design kit; not yet reading the API or served by the Worker |
 | Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, and `ActivityLog`, which commits a write with its activity. Delivery to Queues comes with the first reaction, the module contract with the first module |
 | Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys) and `signals` (the archive, request counts, warnings and errors, error groups, traces); Actions and policy come with the first module |
 | Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Planned |
@@ -168,7 +168,7 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 | Engine | foundation, other engines (no cycles), `@bagatka/*`, `effect` | modules, hosts |
 | Module | foundation, engines, `@bagatka/*`, `effect` | other modules, hosts |
 | `apps/worker` | everything above, `@effect/sql-*` drivers, Cloudflare packages | — |
-| `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; foundation's and engines' contracts, for the Schemas of what they send (open decision: "How clients import the API definition"); `@bagatka/*`, `effect`; the CLI also `@effect/platform-bun` | engine and module implementations |
+| `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; foundation's and engines' contracts, for the Schemas of what they send (open decision: "How clients import the API definition"); `@bagatka/*`, `effect`; the CLI also `@effect/platform-bun`; the dashboard also React, Vite, Tailwind CSS, and the libraries of shadcn/ui's views, and for its build and tests React Compiler, Playwright, and axe (its README) | engine and module implementations |
 | `@cluenori/sdk` | `@bagatka/*`, `effect`, the API definition of what it calls | server packages |
 | Package tests | the package they test, `@effect/vitest`, Vitest; product packages also `@cloudflare/vitest-plugin`, Wrangler, and `@effect/sql-sqlite-do`, to run inside a Durable Object | other packages' private files |
 | `tests/journeys` | `apps/worker`, foundation's and engines' contracts, `effect`, `@cloudflare/vitest-plugin`, Wrangler, Vitest | the Worker's private files |
@@ -371,8 +371,11 @@ These are choices, not omissions. Change them only through `PATTERNS.md`, with a
 
 Each needs evidence or a product choice before the code that depends on it.
 
-1. **The dashboard's UI stack.** Decided with its first page. `effect/reactivity` can derive its data
-   layer from the same `HttpApi` definition.
+1. **The dashboard's UI stack.** Being tried in a prototype (October 2026): React 19, Vite 8,
+   Tailwind CSS 4, and shadcn/ui on Base UI; its charts are our own views, Recharts only in the
+   design kit. Decide once the look is
+   settled and the first page reads the API, checking the bundle's size and how fast pages switch.
+   `effect/reactivity` can derive its data layer from the same `HttpApi` definition.
 2. **Where the Swift and Kotlin SDKs live.** Swift Package Manager expects a package at a
    repository's root, which argues for their own repositories.
 3. **How clients import the API definition.** The dashboard, the CLI, and the SDK need the

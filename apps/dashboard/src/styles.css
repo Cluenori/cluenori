@@ -1,0 +1,151 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./shadcn.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist-mono";
+
+/*
+  Cluenori's look: near-black panels on a dark page, thin borders, square corners, and a few simple
+  colors that each mean one thing.
+
+  - Each component has its own color, the same everywhere (src/lib/colors.ts).
+  - Red is failure and only failure; yellow is a warning. Nothing reported is hatched, never zero.
+  - Words are Inter; numbers, times, and axes are Geist Mono.
+  - Dark is the default; light can be chosen (src/lib/theme.ts), and both read `light-dark()`.
+*/
+
+@custom-variant dark (&:where(:root:not(.light), :root:not(.light) *));
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-blue: var(--blue);
+  --color-purple: var(--purple);
+  --color-mint: var(--mint);
+  --color-yellow: var(--yellow);
+  --color-sky: var(--sky);
+  --color-pink: var(--pink);
+  --color-failure: var(--failure);
+  --color-dot: var(--dot);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Square corners everywhere; dots and toggles stay round where they say `rounded-full`. */
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --radius-2xl: var(--radius);
+  --radius-3xl: var(--radius);
+  --radius-4xl: var(--radius);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root {
+  color-scheme: dark;
+  --radius: 0;
+
+  --background: light-dark(#f2f2f2, #161616);
+  --card: light-dark(#ffffff, #0b0b0b);
+  --popover: light-dark(#ffffff, #121212);
+  --foreground: light-dark(#141414, #ededed);
+  --muted: light-dark(#ececec, #1a1a1a);
+  --muted-foreground: light-dark(#6e6e6e, #8b8b8b);
+  --accent: light-dark(#e8e8e8, #1f1f1f);
+  --primary: light-dark(#141414, #f0f0f0);
+  --primary-foreground: light-dark(#ffffff, #0b0b0b);
+  --border: light-dark(#e2e2e2, #262626);
+  --input: light-dark(#d6d6d6, #2e2e2e);
+  --ring: light-dark(#141414, #ededed);
+  --sidebar: light-dark(#ebebeb, #0f0f0f);
+  --dot: light-dark(#e6e6e6, #222222);
+
+  --blue: light-dark(#4769e8, #6e8ef5);
+  --purple: light-dark(#7c5ce6, #a78bfa);
+  --mint: light-dark(#1fa874, #7ee6b4);
+  --yellow: light-dark(#c99412, #f5cc6a);
+  --sky: light-dark(#5682b8, #9bb8df);
+  --pink: light-dark(#c4478f, #e27ab8);
+  --failure: light-dark(#e0373f, #f2555a);
+
+  /* shadcn/ui's other variables, named as its views and examples expect. */
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--failure);
+  --chart-1: var(--blue);
+  --chart-2: var(--purple);
+  --chart-3: var(--mint);
+  --chart-4: var(--yellow);
+  --chart-5: var(--pink);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+:root.light {
+  color-scheme: light;
+}
+
+/* Diagonal stripes in the current text color: what nobody reported, or what is over its limit. */
+@utility hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklab, currentColor 55%, transparent) 0 1px,
+    transparent 1px 5px
+  );
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+  body {
+    @apply bg-background;
+  }
+}

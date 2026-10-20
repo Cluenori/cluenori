@@ -626,6 +626,8 @@ The configuration files are the specification; this entry says what each one own
 | `.oxfmtrc.json` | Formatting |
 | `bunfig.toml` | Isolated installs, and exact versions from `bun add` |
 | `vitest.config.ts` (root) | Which packages' tests `bun run test` runs |
+| `apps/dashboard/vite.config.ts` | React Compiler, and the dashboard's first-load budget, which `bun run check` builds to check |
+| `apps/dashboard/vitest.config.ts` | The browser the dashboard's tests run in, and its locale and time zone |
 | `apps/cli/src/dependency-rules.ts` | The dependency rules the architecture check enforces |
 | `flake.nix`, `flake.lock` | Bun, Node, Git |
 | `apps/worker/wrangler.jsonc` | The Worker's bindings, routes, and compatibility date |
@@ -679,7 +681,61 @@ The configuration files are the specification; this entry says what each one own
 - Canonical examples: ingest keys, `product/engines/projects/src/ingest-key.ts` and `projects.ts`;
   the API token, `apps/worker/src/member-authorization-layer.ts`.
 
-## 23. Recipes
+## 23. Dashboard views
+
+The dashboard (`apps/dashboard`) is React with shadcn/ui; its README is its map and holds the design
+language.
+
+- **Views, not components.** shadcn's views are copied into `src/views/ui/` and are our code: change
+  them there, for every page. Our views sit in `src/views/`, pages in `src/pages/`. A view takes
+  plain data and callbacks, and knows nothing of where data comes from. Imports start at the
+  source root, `@/views/ui/button`, as `shadcn add` writes them; it is the one place imports don't
+  name a relative file with its extension (entry 1).
+- **Color means one thing each.** A component's color comes from `componentColor` in
+  `src/lib/colors.ts`; failure is `failure`, a warning `yellow`; no view picks a color of its own.
+- **Each question is a `Panel`** (`src/views/panel.tsx`): icon, title, what it covers, the time
+  zone of its chart, and the numbers that matter in a strip at its foot. Counts over time are
+  `BarRows` (`src/views/bar-rows.tsx`), a row per thing counted, such as each origin of a backend's
+  requests. Canonical example: `src/pages/performance-page.tsx`.
+- **A component is an app or a backend,** by its platform (`roleOf` in `src/project-facts.ts`), and
+  each page shows what matters for its role: an app's start, screens, sessions, and crashes; a
+  backend's requests and endpoints. A page branches on the role, never on a component's name, and
+  on the platform only for words and formats (dSYM files, source maps, Web Vitals). A component that
+  has sent nothing shows `NothingReceived` with the step that starts it, never empty charts.
+- **One click, nothing hidden.** A choice among a few is a `Segmented` (`src/views/segmented.tsx`),
+  always visible; the component a page shows is a `ComponentSwitch`, kept in the URL. Details of a
+  short item open in place, such as an error group. A summary shows the top few of a long list and
+  links to a page with all of them, searchable and sortable; an item with more to show, such as an
+  endpoint or a request's trace, has a page of its own (`src/pages/endpoints-page.tsx`).
+- **What a page says about a project** (who asked, what needs attention) is computed once in
+  `src/project-facts.ts`; pages show it. It is also the one file that reads the data, the sample
+  until the API is wired: pages and views import types from `src/sample/` and values only from it.
+  Views never import pages, and shadcn's views import none of ours. Lint enforces all three.
+- **A link that looks like a button is a `Link`** with `buttonVariants`; a `Button` is for actions
+  only, so a screen reader hears each for what it does (`src/views/attention-list.tsx`).
+- **Views aren't memoized by hand.** React Compiler memoizes them at build time
+  (`vite.config.ts`); `useMemo` and `useCallback` appear only where an identity is part of the
+  contract, such as a context's value or a ref callback.
+- **Numbers and times** go through `src/lib/format.ts`, in the viewer's locale and time zone, set in
+  mono.
+- **Effects only sync with something outside React.** A value derived from props or state is
+  computed while rendering. A value from outside React that changes is read with
+  `useSyncExternalStore`: the router (`src/router.tsx`), the viewport (`src/hooks/use-mobile.ts`).
+  A DOM node is measured or scrolled by a ref callback (`useWidth` in `src/views/bar-rows.tsx`,
+  `scrollIntoView` in `src/views/error-list.tsx`). State that must start fresh for another item is
+  reset with a `key` (the trace page in `src/app.tsx`). `bun run check` enforces these with
+  Oxlint's React rules (`.oxlintrc.json`).
+- **Work that waits runs as an Effect,** started with `Effect.runFork` in a React effect and
+  interrupted in its cleanup: `src/hooks/use-highlighted-code.ts`.
+- **Tests run in a real browser,** Playwright's Chromium, in an unfriendly locale and time zone
+  (`vitest.config.ts`): rules through `src/project-facts.ts` (`test/project-facts.test.ts`), and
+  journeys through the app (`test/crash-journey.test.tsx`), each step checked with axe
+  (`test/accessible.ts`). Any error a page logs fails the test (`test/setup.ts`).
+- **The first load has a budget,** compressed, checked by every build (`vite.config.ts`): code
+  that most visits don't need loads when it is needed, as the design kit does, or after start, as
+  search does (`src/app.tsx`).
+
+## 24. Recipes
 
 These become `cluenori add` commands once there are a few examples to generate from.
 

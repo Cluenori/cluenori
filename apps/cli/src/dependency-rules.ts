@@ -6,6 +6,28 @@ const forTests = ["@effect/vitest", "vitest"]
 // Durable Object's SQLite.
 const forTestsInDurableObjects = ["@cloudflare/vitest-plugin", "@effect/sql-sqlite-do", "wrangler", ...forTests]
 
+// The dashboard is React with shadcn/ui, whose views are our source and use these (its README,
+// "Depends on").
+const forTheBrowser = [
+  "@base-ui/react",
+  "@fontsource-variable/geist-mono",
+  "@fontsource-variable/inter",
+  "@shadcn/react",
+  "class-variance-authority",
+  "cmdk",
+  "cn",
+  "embla-carousel-react",
+  "input-otp",
+  "lucide-react",
+  "react",
+  "react-day-picker",
+  "react-dom",
+  "react-resizable-panels",
+  "recharts",
+  "shiki",
+  "tw-animate-css",
+]
+
 /**
  * Which packages may depend on which: the table in ARCHITECTURE.md, "Dependency rules", as data.
  * A change here is an architecture change, and updates that table in the same change.
@@ -64,8 +86,23 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/dashboard",
     contract: false,
     mayUse: ["packages/*", "apps/worker"],
-    mayInstall: ["effect"],
-    mayInstallForDevelopment: forTests,
+    mayInstall: ["effect", ...forTheBrowser],
+    mayInstallForDevelopment: [
+      // React Compiler, its Rust port, memoizes the views at build time.
+      "oxc-transform-react",
+      // Journeys run in a real browser, Playwright's Chromium, and check accessibility with axe.
+      "@vitest/browser-playwright",
+      "axe-core",
+      "playwright",
+      "vitest-browser-react",
+      "@tailwindcss/vite",
+      "@types/react",
+      "@types/react-dom",
+      "@vitejs/plugin-react",
+      "tailwindcss",
+      "vite",
+      ...forTests,
+    ],
   },
   {
     folders: "sdks/web",

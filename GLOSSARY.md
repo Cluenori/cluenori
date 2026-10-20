@@ -48,6 +48,9 @@ keep the product meaning only.
 | Session | One visit or app session of a person, with device context | a sign-in |
 | Event | A product event an app tracks, such as `export.completed` (the envelope's kind `event`) | activity, for facts about changes to records |
 | Release | One version of one component | a deploy of Cluenori itself |
+| App | A component that runs on people's devices: an iOS, Android, or web app. It has sessions, screens, and crashes | the dashboard, for Cluenori's own web app |
+| Backend | A component that runs on servers and answers requests, such as `notes-api` or `notes-jobs`; an app and a backend are the two roles of a component, which its platform decides | the Worker, for Cluenori's own server; a service, which is an Effect service |
+| Crash | An error that ended an app: on a phone it closed, in a browser it was not handled. Crash-free sessions are the share without one | a defect, for a bug in Cluenori |
 | Workflow | A run of the Workflows engine: durable steps for a person or an operation | a Cloudflare Workflow (the runtime it uses) |
 | Query | A named read a module declares, served as an API route and an MCP tool | a SQL statement |
 | Action | A change with an actor, class, target, before and after, reason, result, and undo | a function, a handler |
