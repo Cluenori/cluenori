@@ -79,6 +79,10 @@ Nothing answers at http://localhost:8787. Start Cluenori on this computer with .
   bucket's and a Durable Object's jurisdiction can't change. It makes the archive's bucket if it is
   missing, sets its 90-day expiry (replacing its lifecycle rules, so setup can run again), and
   deploys with `--env eu` for the EU. `./update` refuses without a saved choice rather than guess.
+- **Setup asks for a domain each time,** the saved one kept with Enter: a hostname on a zone of the
+  Cloudflare account Wrangler signs in to, such as app.example.com, deployed with `--domain`, so
+  Cloudflare makes its DNS record and certificate; workers.dev keeps serving too. Commands then use
+  the domain, and `./update` deploys with it. Nothing about a deployment's domain is in the repo.
 - **Setup reads where Wrangler deployed** from its machine-readable output
   (`WRANGLER_OUTPUT_FILE_PATH`), and sets the API token with `wrangler secret bulk` from a file only
   its user can read, deleted after. Running setup on another computer makes a new token, and the

@@ -67,12 +67,22 @@ export const ensureLocalApiSettings = Effect.gen(function* () {
 export const Jurisdiction = Schema.Literals(["global", "eu"])
 export type Jurisdiction = typeof Jurisdiction.Type
 
+/** A hostname a deployment can serve at, such as app.example.com, lowercase. */
+export const Hostname = Schema.String.check(
+  Schema.isPattern(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, {
+    expected: "a hostname such as app.example.com",
+  }),
+).pipe(Schema.brand("Hostname"))
+export type Hostname = typeof Hostname.Type
+
 /**
  * The deployment `./setup` made from this computer: where it keeps its data, saved as soon as it is
- * chosen; and, once deployed, where it serves and its API token.
+ * chosen; the domain it serves at besides workers.dev, if one was given; and, once deployed, where
+ * commands reach it and its API token.
  */
 export const SavedDeployment = Schema.Struct({
   jurisdiction: Jurisdiction,
+  domain: Schema.optionalKey(Hostname),
   url: Schema.optionalKey(Schema.String),
   token: Schema.optionalKey(Schema.String),
 })
