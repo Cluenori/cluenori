@@ -326,8 +326,8 @@ export function KitDisplay() {
             <TriangleAlertIcon />
             <AlertTitle>Exports failed for 40 minutes</AlertTitle>
             <AlertDescription>
-              folio-api couldn't read from Postgres in time, from {clockTime(incident.from)} to{" "}
-              {clockTime(incident.to)}.
+              folio-api couldn't read from Postgres in time, from {clockTime(incident.from)} to {clockTime(incident.to)}
+              .
             </AlertDescription>
             <AlertAction>
               <Link

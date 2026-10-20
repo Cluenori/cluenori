@@ -78,11 +78,7 @@ function ComponentsField() {
   return (
     <Field>
       <FieldLabel htmlFor="kit-components">Components</FieldLabel>
-      <Combobox
-        items={sampleComponents.map((entry) => entry.key)}
-        multiple
-        defaultValue={["folio-api", "folio-ios"]}
-      >
+      <Combobox items={sampleComponents.map((entry) => entry.key)} multiple defaultValue={["folio-api", "folio-ios"]}>
         <ComboboxChips ref={anchor}>
           <ComboboxValue>
             {(values: ReadonlyArray<string>) => (
