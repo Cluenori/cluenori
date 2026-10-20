@@ -426,6 +426,37 @@ const failureOf = (lambda: string, line: number, exportId: string) =>
     }),
   )
 
+// One request failure in folio-api, as it logs it (October 2026): ASP.NET Core's frames around the
+// app's own differ between occurrences, by `EndpointMiddleware.Invoke`, as its async path does.
+const unboundStackOf = (parameter: string, withEndpointFrame: boolean) =>
+  [
+    `Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "bool ${parameter}" was not provided from query string.`,
+    "   at lambda_method298(Closure, Object, HttpContext)",
+    ...(withEndpointFrame
+      ? ["   at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)"]
+      : []),
+    "   at Microsoft.AspNetCore.Authorization.AuthorizationMiddleware.Invoke(HttpContext context)",
+    "   at Microsoft.AspNetCore.RateLimiting.RateLimitingMiddleware.InvokeInternal(HttpContext context, EnableRateLimitingAttribute enableRateLimitingAttribute)",
+    "   at Microsoft.AspNetCore.Authentication.AuthenticationMiddleware.Invoke(HttpContext context)",
+    "   at Folio.Shared.Infrastructure.Clients.FolioClientCompatibilityMiddleware.InvokeAsync(HttpContext httpContext) in /src/Shared/Clients/FolioClientCompatibilityMiddleware.cs:line 98",
+    "   at Folio.Shared.Infrastructure.Clients.FolioClientMetadataMiddleware.InvokeAsync(HttpContext httpContext) in /src/Shared/Clients/FolioClientMetadataMiddleware.cs:line 55",
+    "   at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.<Invoke>g__Awaited|10_0(ExceptionHandlerMiddlewareImpl middleware, HttpContext context, Task task)",
+  ].join("\n")
+
+const unboundOf = (parameter: string, withEndpointFrame: boolean) =>
+  encodeLogs(
+    oneRecordExport({
+      severityNumber: 17,
+      severityText: "Error",
+      body: "Unhandled request exception.",
+      attributes: new Map([
+        ["exception.type", "Microsoft.AspNetCore.Http.BadHttpRequestException"],
+        ["exception.message", `Required parameter "bool ${parameter}" was not provided from query string.`],
+        ["exception.stacktrace", unboundStackOf(parameter, withEndpointFrame)],
+      ]),
+    }),
+  )
+
 describe("error groups", () => {
   it.effect("group the same code's errors after a rebuild, naming where they happen as written", () =>
     Effect.gen(function* () {
@@ -436,6 +467,29 @@ describe("error groups", () => {
       assert.strictEqual(group?.id, after.export.errors[0]?.id)
       assert.strictEqual(group?.culprit, "Program.<>c.<<<Main>$>b__0_5>d.MoveNext()")
       assert.strictEqual(group?.title, "TimeoutException: Notification service did not answer")
+    }),
+  )
+
+  it.effect("group an error by the app's own frames, whatever the framework's around them", () =>
+    Effect.gen(function* () {
+      const one = yield* readAt(now, readLogs(unboundOf("unreadOnly", false)))
+      const again = yield* readAt(now, readLogs(unboundOf("unreadOnly", true)))
+      const [group] = one.export.errors
+
+      assert.strictEqual(group?.id, again.export.errors[0]?.id)
+      assert.strictEqual(
+        group?.culprit,
+        "Folio.Shared.Infrastructure.Clients.FolioClientCompatibilityMiddleware.InvokeAsync(HttpContext httpContext)",
+      )
+    }),
+  )
+
+  it.effect("tell apart errors thrown in shared code by what they say", () =>
+    Effect.gen(function* () {
+      const unread = yield* readAt(now, readLogs(unboundOf("unreadOnly", false)))
+      const verified = yield* readAt(now, readLogs(unboundOf("verifiedOnly", false)))
+
+      assert.notStrictEqual(unread.export.errors[0]?.id, verified.export.errors[0]?.id)
     }),
   )
 

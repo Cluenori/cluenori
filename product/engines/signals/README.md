@@ -39,8 +39,9 @@ again. An unknown error ID fails with `ErrorGroupNotFound`.
 
 - **Rules:** what a request is (a server or consumer span), its endpoint and whether it failed; a
   log record's level; which records are indexed (warnings and up); which errors are the same error
-  (exception type and the top five frames of its stack, or logger and message template); and how
-  each question's period is cut to what is kept.
+  (exception type and the top five frames of the app's own code in its stack, those with a source
+  location, and, when it was thrown outside that code, its message without numbers and IDs; or
+  logger and message template); and how each question's period is cut to what is kept.
 - **Data,** in each project's database:
   - requests counted by endpoint and environment, by the minute (`signals_minute_counts`, 14 days)
     and by the hour (`signals_hour_counts`, 15 months), each component's endpoints, at most 500
