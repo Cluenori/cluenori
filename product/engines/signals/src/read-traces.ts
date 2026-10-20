@@ -2,7 +2,7 @@ import type { Attributes, Span } from "@bagatka/otlp"
 import { decodeTraces, encodeTraces } from "@bagatka/otlp"
 import type { SketchValue } from "@bagatka/quantile-sketch"
 import { SketchValue as SketchValueSchema, sketchOf } from "@bagatka/quantile-sketch"
-import { EnvelopeName, EnvironmentKey, ReleaseVersion } from "@cluenori/foundation"
+import { EnvelopeName, EnvironmentKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Hex } from "effect/encoding"
 
@@ -145,6 +145,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
     nowMillis,
   )
   const latest = spans.reduce((most, span) => Math.max(most, Number(span.endTimeUnixNano / 1_000_000n)), 0)
+  const traces = new Set(spans.map((span) => span.traceId).filter((trace) => Schema.is(TraceId)(trace)))
   const read: ReadTraces = {
     export: {
       digest: BatchDigest.make(Hex.encode(digest)),
@@ -153,6 +154,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
       to: DateTime.makeUnsafe(spans.length === 0 ? nowMillis : latest),
       spans: spans.length,
       counts,
+      traces: [...traces],
     },
     rejected: firstProblem === undefined ? undefined : { count: rejectedCount, problem: firstProblem },
   }

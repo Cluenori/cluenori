@@ -257,11 +257,11 @@ export const trace = Command.make(
           }),
         )
       yield* Console.log(
-        `Trace ${traceId}, looked for from ${utcSecond(view.searched.from)} to ${utcSecond(view.searched.to)} in ${count(view.files.read)} archive files\n`,
+        `Trace ${traceId}, from ${utcSecond(view.searched.from)} to ${utcSecond(view.searched.to)}, read from ${count(view.files.read)} archive files\n`,
       )
       if (view.spans.length === 0 && view.logs.length === 0) {
         return yield* Console.log(
-          "Nothing of this trace is in the archive at that time. It keeps every export 90 days; check the time.",
+          "Nothing of this trace is in the archive. It keeps every export 90 days; check the trace's ID and project.",
         )
       }
       yield* Console.log(traceLines(view).join("\n"))

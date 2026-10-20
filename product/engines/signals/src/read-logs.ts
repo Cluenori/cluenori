@@ -162,6 +162,7 @@ export const readLogs = Effect.fn("readLogs")(function* (body: Uint8Array) {
 
   const entries: Array<LogEntry> = []
   const shapes = new Map<string, ErrorGroupShape>()
+  const traces = new Set<TraceId>()
   let records = 0
   let earliest = nowMillis
   let latest = 0
@@ -171,6 +172,9 @@ export const readLogs = Effect.fn("readLogs")(function* (body: Uint8Array) {
     for (const { scope, logRecords } of scopeLogs) {
       for (const record of logRecords) {
         records += 1
+        if (Schema.is(TraceId)(record.traceId)) {
+          traces.add(record.traceId)
+        }
         const time = timeOf(record, nowMillis)
         earliest = Math.min(earliest, time)
         latest = Math.max(latest, time)
@@ -205,6 +209,7 @@ export const readLogs = Effect.fn("readLogs")(function* (body: Uint8Array) {
       records,
       entries,
       errors: [...shapes.values()],
+      traces: [...traces],
     },
     rejected: firstProblem === undefined ? undefined : { count: rejectedCount, problem: firstProblem },
   }

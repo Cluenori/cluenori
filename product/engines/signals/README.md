@@ -84,8 +84,11 @@ in the project's object; `SignalsGroup` is the API's part.
 - **Counts over time come from what is kept, in one indexed read.** A requests series merges the
   stored percentiles of each step's buckets; counts of warnings and errors group the 90-day index
   by step and by level, component, or error group, at most 100 series, the largest first.
-- **A trace is read by time:** up to 60 archive files within two minutes of when it happened, the
-  nearest first. `trace` says how many files it read, and how many it didn't.
+- **A trace is read from its own files:** the archive's index keeps which files hold each trace's
+  records, by the first 52 bits of its ID, so a trace is read from up to 60 of its files, the
+  nearest to the time asked about first, however many other exports arrived then. A service that
+  exports every few seconds would crowd a lookup by time. `trace` says how many of its files it read,
+  and how many it didn't. Exports archived before the index (October 2026) aren't in it.
 - **Counted once.** An export's SHA-256 digest is kept an hour, so an exporter's retry is skipped.
 - **Percentiles are within 2% of the true value,** by nearest rank.
 - **An answer's schemas live apart from the code that makes them** (`trace-view.ts` from

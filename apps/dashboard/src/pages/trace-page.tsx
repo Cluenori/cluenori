@@ -66,8 +66,7 @@ function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly 
           <h1 className="font-mono text-2xl font-semibold tracking-[-0.02em]">{view.trace}</h1>
         </TraceHeader>
         <NoSteps title="No steps of this request">
-          The archive has no steps of this request between {moment(millisOf(view.searched.from))} and{" "}
-          {moment(millisOf(view.searched.to))}. It may be older than 90 days, or from another project.
+          The archive has none of this request&apos;s steps. It may be older than 90 days, or from another project.
         </NoSteps>
       </div>
     )

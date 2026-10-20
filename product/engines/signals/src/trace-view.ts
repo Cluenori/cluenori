@@ -34,9 +34,9 @@ export type TraceLog = typeof TraceLog.Type
 
 /**
  * One request across services, from the archive: its spans in tree order, each subtree by start
- * time, and its logs, oldest first. `searched` is the time the archive was read for, around the time
- * asked about; `files` says how many of the archive's files for it were read, and how many weren't
- * because there were too many.
+ * time, and its logs, oldest first. `searched` is when the records of the archive files that hold
+ * it span, or, when none is kept, the two minutes either side of the time asked about; `files` says
+ * how many of those files were read, and how many weren't because there were too many.
  */
 export const TraceView = Schema.Struct({
   trace: TraceId,

@@ -75,5 +75,19 @@ export const migrateSignals = Migrator.make({})({
       )`
       yield* sql`CREATE INDEX signals_archive_time ON signals_archive (from_time, to_time)`
     }),
+    // Which archive files hold each trace's records, so a trace is read from its own files, however
+    // many others arrived around then. A trace is kept by the first 52 bits of its ID, as an integer:
+    // as good as unique, and 8 bytes; a file shared by two traces with the same first bits is read
+    // for both, and each finds only its own records in it. Files are found by trace now, not by time.
+    "0003_trace_index": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE signals_trace_files (
+        trace INTEGER NOT NULL,
+        file INTEGER NOT NULL,
+        PRIMARY KEY (trace, file)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE INDEX signals_trace_files_file ON signals_trace_files (file)`
+      yield* sql`DROP INDEX signals_archive_time`
+    }),
   }),
 })

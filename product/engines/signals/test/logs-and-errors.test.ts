@@ -6,7 +6,7 @@ import { DateTime, Duration, Effect, Layer } from "effect"
 import { Base64 } from "effect/encoding"
 import { TestClock } from "effect/testing"
 
-import type { LogEntry, LogExport } from "../src/index.ts"
+import type { LogEntry, LogExport, TraceExport } from "../src/index.ts"
 import {
   ArchiveStore,
   ArchiveUnavailable,
@@ -77,6 +77,7 @@ const logExportOf = (digit: string, entries: ReadonlyArray<LogEntry>): LogExport
   records: entries.length,
   entries,
   errors: [],
+  traces: [],
 })
 
 describe("readLogs", () => {
@@ -377,7 +378,7 @@ describe("Signals' traces", () => {
     }),
   )
 
-  it.effect("finds nothing far from when the request happened", () =>
+  it.effect("finds a request by its ID, however far from then it is asked about", () =>
     Effect.gen(function* () {
       const { export: traces } = yield* readAt(now, fixtureTraces)
       const view = yield* inProject(
@@ -390,8 +391,37 @@ describe("Signals' traces", () => {
         }),
       )
 
-      assert.isEmpty(view.spans)
-      assert.deepStrictEqual(view.files, { read: 0, unread: 0 })
+      assert.lengthOf(view.spans, 3)
+      assert.deepStrictEqual(view.files, { read: 1, unread: 0 })
+    }),
+  )
+
+  it.effect("reads only the request's own files, however many others arrived around then", () =>
+    Effect.gen(function* () {
+      const { export: traces } = yield* readAt(now, fixtureTraces)
+      // Other requests' exports from the same moment, more than a trace is read from.
+      const others = Array.from({ length: 80 }, (_, index): TraceExport => ({
+        digest: BatchDigest.make((index + 1).toString(16).padStart(64, "f")),
+        archive: new Uint8Array(0),
+        from: DateTime.makeUnsafe(capturedAt),
+        to: DateTime.makeUnsafe(capturedAt),
+        spans: 1,
+        counts: [],
+        traces: [TraceId.make((index + 1).toString(16).padStart(32, "a"))],
+      }))
+      const view = yield* inProject(
+        "trace-among-many",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* Effect.forEach(others, (other) => signals.recordTraces(api, other))
+          yield* signals.recordTraces(api, traces)
+          return yield* signals.trace(exportTrace, DateTime.makeUnsafe(capturedAt))
+        }),
+      )
+
+      assert.lengthOf(view.spans, 3)
+      assert.deepStrictEqual(view.files, { read: 1, unread: 0 })
     }),
   )
 })

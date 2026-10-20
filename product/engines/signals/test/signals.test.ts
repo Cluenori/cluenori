@@ -44,6 +44,7 @@ const batchOf = (digit: string, entries: ReadonlyArray<RequestCounts>): TraceExp
   to: DateTime.makeUnsafe(capturedAt),
   spans: entries.length,
   counts: entries,
+  traces: [],
 })
 
 describe("readTraces", () => {

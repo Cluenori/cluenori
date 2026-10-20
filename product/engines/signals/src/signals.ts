@@ -34,10 +34,10 @@ const batchWindow = Duration.hours(1)
 // Old data is removed while recording, at most this often.
 const cleanupInterval = Duration.minutes(10)
 
-// A trace is looked for this long before and after the time it is asked about, in at most this
-// many archive files, the nearest first.
-const traceWindow = Duration.minutes(2)
+// A trace is read from at most this many of its archive files, the nearest to the time it is asked
+// about first. When none is kept, its answer says it was looked for this long either side of then.
 const traceFiles = 60
+const traceWindow = Duration.minutes(2)
 
 /** Whose signals these are. */
 export type SignalsSettings = ArchiveSettings
@@ -93,8 +93,8 @@ export class Signals extends Context.Service<
     readonly logCounts: (query: LogCountQuery) => Effect.Effect<LogCounts>
     /**
      * Trace `trace` from the archive: its spans and its logs at every level, from every component,
-     * looked for within two minutes of `around`. Reads up to 60 archive files. Fails with
-     * `ArchiveUnavailable` when the archive can't be read.
+     * read from the archive files that hold its records, found by its ID: up to 60 of them, the
+     * nearest to `around` first. Fails with `ArchiveUnavailable` when the archive can't be read.
      */
     readonly trace: (trace: TraceId, around: DateTime.Utc) => Effect.Effect<TraceView, ArchiveUnavailable>
   }
@@ -144,6 +144,7 @@ export class Signals extends Context.Service<
           exported: Archived,
           key: string,
           now: number,
+          traces: ReadonlyArray<TraceId>,
           write: Effect.Effect<void, SqlError.SqlError | Schema.SchemaError>,
         ) {
           const again = yield* findBatch(exported.digest)
@@ -152,7 +153,7 @@ export class Signals extends Context.Service<
           }
           yield* sql`INSERT INTO signals_batches ${sql.insert({ digest: exported.digest, received_at: now })}`
           yield* write
-          yield* index.add(signal, component, exported, key, now)
+          yield* index.add(signal, component, exported, key, now, traces)
           yield* cleanUp(now)
           return "recorded" as const
         })
@@ -163,6 +164,7 @@ export class Signals extends Context.Service<
           signal: ExportSignal,
           component: ComponentKey,
           exported: Archived,
+          traces: ReadonlyArray<TraceId>,
           write: Effect.Effect<void, SqlError.SqlError | Schema.SchemaError>,
         ) {
           const seen = yield* findBatch(exported.digest).pipe(Effect.orDie)
@@ -174,7 +176,7 @@ export class Signals extends Context.Service<
           const key = index.keyOf(signal, component, exported.digest, now)
           yield* archive.put(key, exported.archive)
           return yield* sql
-            .withTransaction(commitExport(signal, component, exported, key, now, write))
+            .withTransaction(commitExport(signal, component, exported, key, now, traces, write))
             .pipe(Effect.orDie)
         })
 
@@ -182,18 +184,24 @@ export class Signals extends Context.Service<
           component: ComponentKey,
           exported: TraceExport,
         ) {
-          return yield* store("traces", component, exported, requests.add(component, exported.counts))
+          return yield* store("traces", component, exported, exported.traces, requests.add(component, exported.counts))
         })
 
         const recordLogs = Effect.fn("Signals.recordLogs")(function* (component: ComponentKey, exported: LogExport) {
-          return yield* store("logs", component, exported, logs.add(component, exported.entries, exported.errors))
+          return yield* store(
+            "logs",
+            component,
+            exported,
+            exported.traces,
+            logs.add(component, exported.entries, exported.errors),
+          )
         })
 
         const recordMetrics = Effect.fn("Signals.recordMetrics")(function* (
           component: ComponentKey,
           exported: MetricsExport,
         ) {
-          return yield* store("metrics", component, exported, Effect.void)
+          return yield* store("metrics", component, exported, [], Effect.void)
         })
 
         const nowMillis = DateTime.now.pipe(Effect.map(DateTime.toEpochMillis))
@@ -220,17 +228,22 @@ export class Signals extends Context.Service<
 
         const trace = Effect.fn("Signals.trace")(function* (traceId: TraceId, around: DateTime.Utc) {
           const middle = DateTime.toEpochMillis(around)
-          const from = middle - Duration.toMillis(traceWindow)
-          const to = middle + Duration.toMillis(traceWindow)
-          const found = yield* index.around(["traces", "logs"], from, to, traceFiles)
+          const found = yield* index.ofTrace(traceId, middle, traceFiles)
           const read = yield* Effect.forEach(
             found.files,
             (file) => archive.get(file.key).pipe(Effect.map(Option.map((bytes) => ({ ...file, bytes })))),
             { concurrency: 8 },
           )
           const files = read.flatMap((file) => (Option.isSome(file) ? [file.value] : []))
-          const searched = new Period({ from: DateTime.makeUnsafe(from), to: DateTime.makeUnsafe(to) })
-          return yield* traceViewOf(traceId, searched, files, found.overlapping - files.length)
+          const searched =
+            found.span === undefined
+              ? new Period({
+                  from: DateTime.makeUnsafe(middle - Duration.toMillis(traceWindow)),
+                  to: DateTime.makeUnsafe(middle + Duration.toMillis(traceWindow)),
+                })
+              : // A period ends before its `to`, so it ends a millisecond after the last record.
+                new Period({ from: DateTime.makeUnsafe(found.span.from), to: DateTime.makeUnsafe(found.span.to + 1) })
+          return yield* traceViewOf(traceId, searched, files, found.total - files.length)
         })
 
         return Signals.of({

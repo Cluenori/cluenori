@@ -1,3 +1,4 @@
+import { TraceId } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
@@ -19,6 +20,8 @@ export const TraceExport = Schema.Struct({
   ...archived,
   spans: Count,
   counts: Schema.Array(RequestCounts),
+  /** The traces it holds spans of, each once: how a trace's files are found. */
+  traces: Schema.Array(TraceId),
 })
 export type TraceExport = typeof TraceExport.Type
 
@@ -40,6 +43,8 @@ export const LogExport = Schema.Struct({
   records: Count,
   entries: Schema.Array(LogEntry),
   errors: Schema.Array(ErrorGroupShape),
+  /** The traces it holds records of, each once: how a trace's files are found. */
+  traces: Schema.Array(TraceId),
 })
 export type LogExport = typeof LogExport.Type
 
