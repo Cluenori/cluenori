@@ -3,8 +3,8 @@ import { Command, Prompt } from "effect/cli"
 
 import { refuse } from "./api-client.ts"
 import type { Jurisdiction } from "./api-settings.ts"
-import { newApiSettings, saveDeployment, savedDeployment } from "./api-settings.ts"
-import { attachedExitCode, wrangler } from "./attached.ts"
+import { deploymentPath, newApiSettings, saveDeployment, savedDeployment } from "./api-settings.ts"
+import { attachedExitCode, buildDashboard, wrangler } from "./attached.ts"
 
 // The bucket wrangler.jsonc binds as ARCHIVE, and how long it keeps a file: 90 days.
 const archiveBucket = "cluenori-archive"
@@ -105,6 +105,7 @@ const deploy = Effect.fn("deploy")(function* (jurisdiction: Jurisdiction, direct
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const outputFile = path.join(directory, "wrangler-output.json")
+  yield* buildDashboard
   yield* wrangler(["deploy", ...environmentFlags(jurisdiction)], { WRANGLER_OUTPUT_FILE_PATH: outputFile })
   const output = yield* fs.readFileString(outputFile).pipe(Effect.orDie)
   const entries = yield* Effect.forEach(
@@ -161,6 +162,8 @@ export const setup = Command.make("setup", {}, () =>
         yield* Console.log(`\nSaved its URL and token in ${file}, readable only by you.`)
       }
       yield* Console.log(`\nCluenori serves at ${url}; /api/health answers 204 when it is serving.`)
+      const settings = yield* deploymentPath.pipe(Effect.orDie)
+      yield* Console.log(`Open the dashboard there, and sign in with the API token: "token" in ${settings}.`)
       yield* Console.log("Create your first project: ./cluenori project create <key> --name <name>")
     }),
   ),

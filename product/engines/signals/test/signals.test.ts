@@ -301,4 +301,36 @@ describe("Signals", () => {
       }),
     ),
   )
+
+  it.effect("shows one endpoint's requests over time, with their percentiles in each step", () =>
+    inProject(
+      "series-of-endpoint",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        // A hundred requests to GET /slow, taking 100 to 199 ms; four quick ones elsewhere.
+        const slow = counts("GET /slow", 100, {
+          totalMs: 14_950,
+          durations: sketchOf(Array.from({ length: 100 }, (_, index) => SketchValue.make(100 + index))),
+        })
+        yield* signals.recordTraces(api, batchOf("e", [counts("GET /a", 4), slow]))
+        const endpoint = EnvelopeName.make("GET /slow")
+        const series = yield* signals.requestsOverTime({ period: lastHour, endpoint }, "5m")
+        const table = yield* signals.endpoints({ period: lastHour, endpoint })
+        const [point] = series.points
+
+        assert.strictEqual(series.points.length, 1)
+        assert.strictEqual(point?.requests, 100)
+        // Nearest rank, each within 2%: the 50th of a hundred is 149, the 95th 194, the 99th 198.
+        assert.closeTo(point?.p50Ms ?? 0, 149, 149 * 0.02)
+        assert.closeTo(point?.p95Ms ?? 0, 194, 194 * 0.02)
+        assert.closeTo(point?.p99Ms ?? 0, 198, 198 * 0.02)
+        assert.deepStrictEqual(
+          table.rows.map((row) => row.endpoint),
+          ["GET /slow"],
+        )
+        assert.strictEqual(table.requests, 100)
+      }),
+    ),
+  )
 })

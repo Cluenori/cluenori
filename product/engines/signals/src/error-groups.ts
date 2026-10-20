@@ -3,6 +3,7 @@ import { Schema } from "effect"
 
 import type { LogLevel } from "./log-entry.ts"
 import { ErrorGroupId, LogLine } from "./log-entry.ts"
+import { SeriesStep } from "./request-queries.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
@@ -87,6 +88,48 @@ export const LogPage = Schema.Struct({
   next: Schema.optionalKey(Schema.Int),
 })
 export type LogPage = typeof LogPage.Type
+
+/** What warnings and errors are counted by: their level, their component, or their error group. */
+export const LogCountsBy = Schema.Literals(["level", "component", "error"])
+export type LogCountsBy = typeof LogCountsBy.Type
+
+/**
+ * Which warnings and errors to count over time: those of `period` at `minimumLevel` or above (`warn`
+ * when absent), with the filters given, in steps of `step`, a series for each value of `by`.
+ */
+export const LogCountQuery = Schema.Struct({
+  period: Period,
+  step: SeriesStep,
+  by: LogCountsBy,
+  minimumLevel: Schema.optionalKey(IndexedLevel),
+  environment: Schema.optionalKey(EnvironmentKey),
+  component: Schema.optionalKey(ComponentKey),
+  error: Schema.optionalKey(ErrorGroupId),
+})
+export type LogCountQuery = typeof LogCountQuery.Type
+
+/** How many warnings and errors there were in one step. */
+export const LogCountPoint = Schema.Struct({ start: Schema.DateTimeUtcFromString, count: Count })
+export type LogCountPoint = typeof LogCountPoint.Type
+
+/**
+ * One value's counts: a level (`warn`, `error`, or `fatal`), a component's key, or an error group's
+ * ID, as `by` says; with its total, and a point for each step that had any, oldest first.
+ */
+export const LogCountSeries = Schema.Struct({ key: Schema.String, total: Count, points: Schema.Array(LogCountPoint) })
+export type LogCountSeries = typeof LogCountSeries.Type
+
+/**
+ * Warnings and errors over time: a series for each value, the largest total first, at most 100. A step
+ * without a point had none recorded. `covered` is the part of the period that is kept, 90 days; absent
+ * when nothing of it is.
+ */
+export const LogCounts = Schema.Struct({
+  covered: Schema.optionalKey(Period),
+  step: SeriesStep,
+  series: Schema.Array(LogCountSeries),
+})
+export type LogCounts = typeof LogCounts.Type
 
 export const levelsFrom: Readonly<Record<IndexedLevel, ReadonlyArray<LogLevel>>> = {
   warn: ["warn", "error", "fatal"],

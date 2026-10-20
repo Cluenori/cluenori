@@ -212,6 +212,58 @@ describe("Signals' warnings and errors", () => {
     }),
   )
 
+  it.effect("counts warnings and errors over time, by level, by component, and by error group", () =>
+    Effect.gen(function* () {
+      const { export: read } = yield* readAt(now, fixtureLogs)
+      const counted = yield* inProject(
+        "counts-logs",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordLogs(api, read)
+          return {
+            byLevel: yield* signals.logCounts({ period: lastHour, step: "1h", by: "level" }),
+            byComponent: yield* signals.logCounts({ period: lastHour, step: "5m", by: "component" }),
+            byError: yield* signals.logCounts({ period: lastHour, step: "1h", by: "error" }),
+            errors: yield* signals.errors({ period: lastHour }),
+            longAgo: yield* signals.logCounts({
+              period: new Period({
+                from: DateTime.makeUnsafe(now - Duration.toMillis(Duration.days(120))),
+                to: DateTime.makeUnsafe(now - Duration.toMillis(Duration.days(100))),
+              }),
+              step: "1d",
+              by: "level",
+            }),
+          }
+        }),
+      )
+      const totalOf = (counts: typeof counted.byLevel) => counts.series.reduce((sum, series) => sum + series.total, 0)
+
+      // The export's eight warnings and errors, split three ways, and each split adds up.
+      assert.strictEqual(totalOf(counted.byLevel), 8)
+      assert.isTrue(counted.byLevel.series.every((series) => ["warn", "error", "fatal"].includes(series.key)))
+      assert.deepStrictEqual(
+        counted.byComponent.series.map((series) => [series.key, series.total]),
+        [["notes-api", 8]],
+      )
+      // By error group: the same groups and counts as the error table, the most frequent first.
+      assert.deepStrictEqual(
+        counted.byError.series.map((series) => [series.key, series.total]),
+        counted.errors.groups.map((group) => [group.id, group.occurrences]),
+      )
+      // Each point starts on its step, and a series' points add up to its total.
+      for (const series of counted.byLevel.series) {
+        assert.isTrue(series.points.every((point) => DateTime.toEpochMillis(point.start) % 3_600_000 === 0))
+        assert.strictEqual(
+          series.points.reduce((sum, point) => sum + point.count, 0),
+          series.total,
+        )
+      }
+      // Nothing is kept from four months ago, and the answer says so.
+      assert.deepStrictEqual(counted.longAgo, { step: "1d", series: [] })
+    }),
+  )
+
   it.effect("pages through many warnings, newest first", () =>
     inProject(
       "pages",

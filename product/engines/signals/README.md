@@ -21,6 +21,14 @@ const table = yield* signals.errors({ period })
 const detail = yield* signals.error(table.groups[0].id, { period }) // latest occurrences, with stacks
 const view = yield* signals.trace(detail.latest[0].trace, detail.latest[0].time)
 // view.spans: the request's spans as a tree; view.logs: its logs at every level, from the archive
+
+// One endpoint over time, with its percentiles in each step.
+const series = yield* signals.requestsOverTime({ period, endpoint: EnvelopeName.make("GET /api/feed") }, "1h")
+// points: [{ start, requests: 940, errors: 3, p50Ms: 85, p80Ms: 160, p95Ms: 420, p99Ms: 1210 }, ...]
+
+// Warnings and errors over time, a series per level, component, or error group.
+const counts = yield* signals.logCounts({ period, step: "1h", by: "error" })
+// series: [{ key: "159dae307f199986", total: 41, points: [{ start, count: 3 }, ...] }, ...]
 ```
 
 An export that isn't one fails with `OtlpInvalid`. When the archive can't take an export,
@@ -72,9 +80,15 @@ in the project's object; `SignalsGroup` is the API's part.
   file no index points to, which the bucket's lifecycle removes.
 - **Scrubbed before stored,** in the archive too (PATTERNS.md, "Credentials and personal data").
   Metrics are archived as received until Cluenori reads them.
+- **Counts over time come from what is kept, in one indexed read.** A requests series merges the
+  stored percentiles of each step's buckets; counts of warnings and errors group the 90-day index
+  by step and by level, component, or error group, at most 100 series, the largest first.
 - **A trace is read by time:** up to 60 archive files within two minutes of when it happened, the
   nearest first. `trace` says how many files it read, and how many it didn't.
 - **Counted once.** An export's SHA-256 digest is kept an hour, so an exporter's retry is skipped.
 - **Percentiles are within 2% of the true value,** by nearest rank.
+- **An answer's schemas live apart from the code that makes them** (`trace-view.ts` from
+  `read-archived-trace.ts`, `request-queries.ts` from `request-store.ts`), and the package is
+  side-effect free, so a client of the API, such as the dashboard, bundles the schemas alone.
 - **Not yet:** scheduled jobs whose root spans are internal, errors from failed spans of services
   that send no logs, and the feature and release of each request.

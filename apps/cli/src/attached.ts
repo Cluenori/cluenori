@@ -65,3 +65,6 @@ export const attachedExitCode = Effect.fn("attachedExitCode")(function* (
 /** Runs Wrangler, from the Worker's package, attached to this terminal, with `env` added. */
 export const wrangler = (args: ReadonlyArray<string>, env?: Readonly<Record<string, string>>) =>
   attached("bun", ["run", "wrangler", ...args], { cwd: "apps/worker", ...(env === undefined ? {} : { env }) })
+
+/** Builds the dashboard's files, which the Worker serves beside its API (wrangler.jsonc, `assets`). */
+export const buildDashboard = attached("bun", ["run", "build"], { cwd: "apps/dashboard" })

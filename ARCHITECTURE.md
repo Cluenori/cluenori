@@ -149,7 +149,7 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 
 | Part | Package | Purpose | Status |
 |---|---|---|---|
-| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token (projects, components, endpoints, requests, errors, logs, traces), OTLP ingest of traces, logs and metrics, the archive in R2, and each project's Durable Object |
+| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, endpoints, requests, errors and logs over time, logs, traces), OTLP ingest of traces, logs and metrics, the archive in R2, each project's Durable Object and the workspace's, and the dashboard's files |
 | CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, questions about them, and the repository's check and generate | Built |
 | Dashboard | `apps/dashboard` | The web app over the public API | Prototype on sample data: a project's overview, its performance, errors, and logs pages by component, each showing what matters for an app or a backend, a request's trace, and a design kit; not yet reading the API or served by the Worker |
 | Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, and `ActivityLog`, which commits a write with its activity. Delivery to Queues comes with the first reaction, the module contract with the first module |
@@ -259,7 +259,9 @@ From `concept/`; each gets its pattern when it is built.
 - **The public API** needs the deployment's API token, `CLUENORI_API_TOKEN`, which `./setup` makes;
   until members are records, it stands for the deployment's owner, `CLUENORI_OWNER`. A deployment
   without one refuses every call but the health check.
-- **The dashboard** sits behind Cloudflare Access when self-hosted.
+- **The dashboard** signs a browser in with the API token (`POST /api/sign-in`), which the Worker
+  keeps as a cookie the page's scripts can't read: HttpOnly, Secure, SameSite=Strict, for `/api`.
+  A team's login comes later, with Cloudflare Access in front when self-hosted (`concept/Platform.md`).
 - **Agents** get a scoped key or an OIDC token per run: one project, read-only unless policy grants
   more, within a spend limit.
 - **Webhooks** are verified with their signature before anything reads them.
@@ -402,5 +404,5 @@ updates this table in the same change.
 
 | Package | Kind | Owns | Uses | Reacts to |
 |---|---|---|---|---|
-| `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests | Foundation's `ActivityLog` | — |
+| `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests; the workspace's index of its projects | Foundation's `ActivityLog` | — |
 | `@cluenori/signals` | Engine | The archive of every export and its index; requests counted by endpoint and environment; warnings and errors; error groups; the duplicate window | `@bagatka/otlp`, `@bagatka/quantile-sketch`, `@bagatka/scrub`; an `ArchiveStore` the host provides; `projects` for its API's errors | — |

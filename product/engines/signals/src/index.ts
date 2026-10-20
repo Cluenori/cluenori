@@ -12,6 +12,11 @@ export {
   ErrorQuery,
   ErrorTable,
   IndexedLevel,
+  LogCountPoint,
+  LogCountQuery,
+  LogCounts,
+  LogCountsBy,
+  LogCountSeries,
   LogPage,
   LogQuery,
 } from "./error-groups.ts"
@@ -23,9 +28,25 @@ export { readMetrics } from "./read-metrics.ts"
 export type { ReadTraces, Rejected } from "./read-traces.ts"
 export { bucketMillis, environmentOf, readTraces, requestRetention } from "./read-traces.ts"
 export { BatchDigest, RequestCounts } from "./request-counts.ts"
-export { EndpointRow, EndpointTable, RequestPoint, RequestQuery, RequestSeries, SeriesStep } from "./request-queries.ts"
-export { hourlyRetention, otherEndpoints } from "./request-store.ts"
-export { LogFilters, RequestFilters, SeriesFilters, SignalsGroup, TraceFilters } from "./signals-api.ts"
+export {
+  EndpointRow,
+  EndpointTable,
+  RequestPoint,
+  RequestQuery,
+  otherEndpoints,
+  RequestSeries,
+  SeriesStep,
+  stepMillis,
+} from "./request-queries.ts"
+export { hourlyRetention } from "./request-store.ts"
+export {
+  LogCountFilters,
+  LogFilters,
+  RequestFilters,
+  SeriesFilters,
+  SignalsGroup,
+  TraceFilters,
+} from "./signals-api.ts"
 export { Signals } from "./signals.ts"
 export type { SignalsSettings } from "./signals.ts"
 export { TraceLog, TraceSpan, TraceView } from "./trace-view.ts"

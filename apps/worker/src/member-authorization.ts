@@ -15,14 +15,21 @@ export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
 ) {}
 
 /**
- * Requires `Authorization: Bearer <API token>` on the routes it guards. Clients provide the token
- * with `HttpApiMiddleware.layerClient`.
+ * The cookie a browser gets by signing in with the API token (`POST /api/sign-in`): HttpOnly, so the
+ * page's scripts can't read it; Secure; SameSite=Strict, so other sites can't send it; for `/api`.
+ */
+export const signInCookie = HttpApiSecurity.apiKey({ key: "cluenori_sign_in", in: "cookie" })
+
+/**
+ * Requires the API token on the routes it guards: `Authorization: Bearer <API token>` from a client,
+ * which provides it with `HttpApiMiddleware.layerClient`; or the sign-in cookie from a browser, which
+ * sends it by itself.
  */
 export class MemberAuthorization extends HttpApiMiddleware.Service<
   MemberAuthorization,
   { provides: CurrentActor; requires: never }
 >()("@cluenori/worker/member-authorization/MemberAuthorization", {
   requiredForClient: true,
-  security: { bearer: HttpApiSecurity.bearer },
+  security: { bearer: HttpApiSecurity.bearer, signIn: signInCookie },
   error: Unauthorized,
 }) {}

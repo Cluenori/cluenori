@@ -80,8 +80,8 @@ export type SavedDeployment = typeof SavedDeployment.Type
 
 const SavedDeploymentJson = Schema.fromJsonString(SavedDeployment, { space: 2 })
 
-// In the user's configuration folder, readable by them alone, since it holds the API token.
-const deploymentPath = Effect.gen(function* () {
+/** Where `./setup` saves the deployment: in the user's configuration folder, readable by them alone, since it holds the API token. */
+export const deploymentPath = Effect.gen(function* () {
   const path = yield* Path.Path
   const configHome = yield* Config.option(Config.String("XDG_CONFIG_HOME"))
   const home = yield* Config.String("HOME").pipe(Effect.orDie)

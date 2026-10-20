@@ -5,14 +5,17 @@ import { Config, ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter, HttpServer } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 
+import { ApiToken } from "./api-token.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
 import { memberAuthorizationLayer } from "./member-authorization-layer.ts"
 import { OtlpLogs, OtlpMetrics, OtlpTraces } from "./otlp-ingest.ts"
 import { ProjectObjects } from "./project-objects.ts"
 import { ProjectsHandlers } from "./projects-handlers.ts"
+import { SignInHandlers } from "./sign-in-handlers.ts"
 import { SignalsHandlers } from "./signals-handlers.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 import { SystemHandlers } from "./system-handlers.ts"
+import { WorkspaceObjects } from "./workspace-objects.ts"
 
 // A self-hosted deployment has one workspace.
 const workspace = WorkspaceKey.make("main")
@@ -25,7 +28,8 @@ const apiSettings = Config.all({
 // Set by wrangler.jsonc's `eu` environment, which ./setup deploys for data kept in the EU.
 const jurisdiction = Config.option(Config.schema(Schema.Literal("eu"), "CLUENORI_JURISDICTION"))
 
-// Projects' Durable Objects are made in the EU when the deployment's data stays there.
+// The Durable Objects, projects' and the workspace's, are made in the EU when the deployment's data
+// stays there.
 const Projects = Layer.unwrap(
   Effect.gen(function* () {
     const where = yield* jurisdiction
@@ -33,17 +37,26 @@ const Projects = Layer.unwrap(
     return ProjectObjects.layer(namespace, workspace)
   }),
 )
+const Workspace = Layer.unwrap(
+  Effect.gen(function* () {
+    const where = yield* jurisdiction
+    const namespace = Option.isSome(where) ? env.WORKSPACE.jurisdiction(where.value) : env.WORKSPACE
+    return WorkspaceObjects.layer(namespace, workspace)
+  }),
+)
 
 // Every route group is provided on its own line.
 const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi.json" }).pipe(
   Layer.provide(SystemHandlers),
+  Layer.provide(SignInHandlers),
   Layer.provide(ProjectsHandlers),
   Layer.provide(SignalsHandlers),
-  Layer.provide(
+  Layer.provide(memberAuthorizationLayer),
+  Layer.provideMerge(
     Layer.unwrap(
       Effect.gen(function* () {
         const settings = yield* apiSettings
-        return memberAuthorizationLayer(settings)
+        return ApiToken.layer(settings)
       }),
     ),
   ),
@@ -55,6 +68,7 @@ const app = HttpRouter.toWebHandler(
   Layer.mergeAll(ApiRoutes, OtlpTraces, OtlpLogs, OtlpMetrics).pipe(
     // The OTLP route asks for these per request, so they are outputs of the app's layer.
     Layer.provideMerge(Projects),
+    Layer.provideMerge(Workspace),
     Layer.provideMerge(webCryptoLayer(crypto)),
     Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
     Layer.provide(HttpServer.layerServices),
@@ -68,3 +82,4 @@ export default {
 
 // The platform finds Durable Object classes among the entry's exports.
 export { ProjectObject } from "./project-object.ts"
+export { WorkspaceObject } from "./workspace-object.ts"

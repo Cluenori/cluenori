@@ -4,17 +4,32 @@ import { Schema } from "effect"
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 
-/** Which requests to count: those that started in `period`, optionally of one environment or component. */
+/**
+ * Which requests to count: those that started in `period`, optionally of one environment, one
+ * component, or one endpoint.
+ */
 export const RequestQuery = Schema.Struct({
   period: Period,
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
+  endpoint: Schema.optionalKey(EnvelopeName),
 })
 export type RequestQuery = typeof RequestQuery.Type
 
 /** How wide each point of a series is. */
 export const SeriesStep = Schema.Literals(["1m", "5m", "1h", "1d"])
 export type SeriesStep = typeof SeriesStep.Type
+
+/** Each step's width in milliseconds. */
+export const stepMillis: Readonly<Record<SeriesStep, number>> = {
+  "1m": 60_000,
+  "5m": 5 * 60_000,
+  "1h": 3_600_000,
+  "1d": 86_400_000,
+}
+
+/** Where a component's requests are counted once it has 500 endpoints: names past that are counted here. */
+export const otherEndpoints = EnvelopeName.make("(other endpoints)")
 
 /** Requests by endpoint, with how long they took: one row of the endpoint table. */
 export const EndpointRow = Schema.Struct({
@@ -52,11 +67,15 @@ export const EndpointTable = Schema.Struct({
 })
 export type EndpointTable = typeof EndpointTable.Type
 
-/** Requests that started in one step of a series. */
+/** Requests that started in one step of a series, with how long they took, as an endpoint's row says. */
 export const RequestPoint = Schema.Struct({
   start: Schema.DateTimeUtcFromString,
   requests: Count,
   errors: Count,
+  p50Ms: Milliseconds,
+  p80Ms: Milliseconds,
+  p95Ms: Milliseconds,
+  p99Ms: Milliseconds,
 })
 export type RequestPoint = typeof RequestPoint.Type
 

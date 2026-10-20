@@ -3,7 +3,7 @@ import { Command } from "effect/cli"
 
 import { refuse } from "./api-client.ts"
 import { savedDeployment } from "./api-settings.ts"
-import { attached, wrangler } from "./attached.ts"
+import { attached, buildDashboard, wrangler } from "./attached.ts"
 import { environmentFlags } from "./setup.ts"
 
 /** `./update`: the newest version of this clone's upstream branch, installed and deployed. */
@@ -22,6 +22,7 @@ export const update = Command.make("update", {}, () =>
     yield* attached("git", ["pull", "--ff-only"], {})
     yield* attached("bun", ["install", "--frozen-lockfile"], {})
     yield* Console.log("\nDeploying it.\n")
+    yield* buildDashboard
     yield* wrangler(["deploy", ...environmentFlags(saved.value.jurisdiction)])
   }),
 ).pipe(Command.withDescription("Install a new version of Cluenori and deploy it."))

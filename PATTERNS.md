@@ -536,8 +536,10 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   them as JSON text, so tagged errors cross the boundary typed. The Worker calls
   `ProjectObjects.call(project, projectCalls.x, input)`; the object composes the engines' layers
   once and serves each call on a visible line.
+- **The workspace's Durable Object is reached the same way,** through `workspaceCalls` and
+  `WorkspaceObjects.call`; both kinds of object share `src/object-calls.ts`.
 - Canonical examples: `apps/worker/src/worker.ts`; for Durable Object calls,
-  `apps/worker/src/project-calls.ts`, `project-object.ts`, and `project-objects.ts`.
+  `apps/worker/src/object-calls.ts`, `project-calls.ts`, `project-object.ts`, and `project-objects.ts`.
 
 ## 17. Background work
 

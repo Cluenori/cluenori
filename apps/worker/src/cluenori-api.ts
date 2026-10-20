@@ -1,8 +1,9 @@
 import { ProjectsGroup } from "@cluenori/projects"
 import { SignalsGroup } from "@cluenori/signals"
+import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
-import { MemberAuthorization } from "./member-authorization.ts"
+import { MemberAuthorization, Unauthorized } from "./member-authorization.ts"
 
 /** Endpoints about the deployment itself, not about any project. */
 export class SystemGroup extends HttpApiGroup.make("system", { topLevel: true }).add(
@@ -12,13 +13,36 @@ export class SystemGroup extends HttpApiGroup.make("system", { topLevel: true })
   ),
 ) {}
 
+/** The API token, as a browser signs in with it. */
+export const SignIn = Schema.Struct({ token: Schema.RedactedFromValue(Schema.String) })
+
+/** Signing a browser in and out: the way the dashboard gets the API token's access. */
+export class SignInGroup extends HttpApiGroup.make("signIn", { topLevel: true })
+  .add(
+    HttpApiEndpoint.post("signIn", "/sign-in", {
+      payload: SignIn,
+      success: HttpApiSchema.NoContent,
+      error: Unauthorized,
+    }).annotate(
+      OpenApi.Description,
+      "Signs a browser in with the deployment's API token: answers 204 with the sign-in cookie, HttpOnly, Secure and SameSite=Strict, for /api, kept 30 days. The API then accepts it in place of the bearer token. A wrong token answers 401 and sets nothing.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("signOut", "/sign-out", { success: HttpApiSchema.NoContent }).annotate(
+      OpenApi.Description,
+      "Signs the browser out: answers 204 and removes the sign-in cookie.",
+    ),
+  ) {}
+
 /**
  * The public API: one definition for the dashboard, the CLI, MCP clients, and agents. Served under
- * `/api`, with its OpenAPI document at `/api/openapi.json`. Everything but the system group needs
- * the deployment's API token.
+ * `/api`, with its OpenAPI document at `/api/openapi.json`. Everything but the system and sign-in groups
+ * needs the deployment's API token, as a bearer token or the sign-in cookie.
  */
 export class CluenoriApi extends HttpApi.make("cluenori")
   .add(SystemGroup)
+  .add(SignInGroup)
   .add(ProjectsGroup.middleware(MemberAuthorization))
   .add(SignalsGroup.middleware(MemberAuthorization))
   .prefix("/api")

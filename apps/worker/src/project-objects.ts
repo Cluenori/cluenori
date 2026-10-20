@@ -1,8 +1,9 @@
 import type { ProjectKey, WorkspaceKey } from "@cluenori/foundation"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer } from "effect"
 
-import type { PlainSchema, ProjectCall } from "./project-calls.ts"
-import { exitText, inputText } from "./project-calls.ts"
+import type { PlainSchema } from "./object-calls.ts"
+import { send } from "./object-calls.ts"
+import type { ProjectCall } from "./project-calls.ts"
 import type { ProjectObject } from "./project-object.ts"
 
 /** The Worker's way to a project's Durable Object. */
@@ -29,11 +30,7 @@ export class ProjectObjects extends Context.Service<
           S extends PlainSchema,
           F extends PlainSchema,
         >(project: ProjectKey, call: ProjectCall<I, S, F>, input: I["Type"]): Effect.fn.Return<S["Type"], F["Type"]> {
-          const encoded = yield* Schema.encodeEffect(inputText(call.input))(input).pipe(Effect.orDie)
-          const stub = namespace.getByName(`${workspace}/${project}`)
-          const reply = yield* Effect.tryPromise(() => stub.call(call.name, encoded)).pipe(Effect.orDie)
-          const exit = yield* Schema.decodeEffect(exitText(call.success, call.error))(reply).pipe(Effect.orDie)
-          return yield* exit
+          return yield* send(namespace.getByName(`${workspace}/${project}`), call, input)
         }),
       }),
     )

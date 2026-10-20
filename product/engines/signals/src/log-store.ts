@@ -2,18 +2,30 @@ import { ComponentKey, EnvironmentKey, Period, ReleaseVersion } from "@cluenori/
 import { DateTime, Duration, Effect, Option, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 
-import type { ErrorDetail, ErrorGroup, ErrorQuery, ErrorTable, LogPage, LogQuery } from "./error-groups.ts"
+import type {
+  ErrorDetail,
+  ErrorGroup,
+  ErrorQuery,
+  ErrorTable,
+  LogCountQuery,
+  LogCounts,
+  LogPage,
+  LogQuery,
+} from "./error-groups.ts"
 import { ErrorGroupNotFound, levelsFrom } from "./error-groups.ts"
 import type { ErrorGroupShape } from "./exports.ts"
 import type { LogLine } from "./log-entry.ts"
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
 import { logRetention } from "./read-logs.ts"
+import { stepMillis } from "./request-queries.ts"
 
 // Error groups outlive their occurrences, so an error that comes back after months is known again.
 const groupRetention = Duration.days(455)
 
 const pageSize = 100
 const latestOccurrences = 10
+// Counts by error group come for the most frequent groups only.
+const mostSeries = 100
 
 const EntryJson = Schema.fromJsonString(LogEntry)
 
@@ -45,6 +57,8 @@ const periodOf = (covered: { readonly from: number; readonly to: number }) =>
 
 // `%` and `_` in what people search for are themselves, not patterns.
 const likePattern = (text: string) => `%${text.replace(/[!%_]/g, (character) => `!${character}`)}%`
+
+const CountRow = Schema.Struct({ start: Schema.Int, key: Schema.String, count: Schema.Int })
 
 const lineOf = (row: typeof LineRow.Type): LogLine => ({ id: row.id, component: row.component, ...row.entry })
 
@@ -232,5 +246,53 @@ export const logStore = Effect.gen(function* () {
     return page
   })
 
-  return { add, cleanUp, error, errors, logs }
+  // What each kind of series is keyed by.
+  const keyOf = { level: sql`l.level`, component: sql`l.component`, error: sql`l.error` } as const
+
+  const findCounts = (covered: { readonly from: number; readonly to: number }, query: LogCountQuery) => {
+    const width = stepMillis[query.step]
+    return SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: CountRow,
+      execute: () => sql`
+        SELECT l.time - (l.time % ${width}) AS start, ${keyOf[query.by]} AS key, count(*) AS count
+        FROM signals_logs l
+        WHERE ${sql.and([
+          ...filtersOf(covered, query),
+          sql`l.level IN ${sql.in(levelsFrom[query.minimumLevel ?? "warn"])}`,
+          ...(query.error === undefined ? [] : [sql`l.error = ${query.error}`]),
+          ...(query.by === "error" ? [sql`l.error IS NOT NULL`] : []),
+        ])}
+        GROUP BY start, key`,
+    })(undefined)
+  }
+
+  const logCounts = Effect.fn("LogStore.logCounts")(function* (query: LogCountQuery, now: number) {
+    const covered = coveredOf(query.period, now)
+    if (Option.isNone(covered)) {
+      const empty: LogCounts = { step: query.step, series: [] }
+      return empty
+    }
+    const rows = yield* findCounts(covered.value, query).pipe(Effect.orDie)
+    const series = Array.from(
+      Map.groupBy(rows, (row) => row.key),
+      ([key, points]) => ({
+        key,
+        total: points.reduce((total, point) => total + point.count, 0),
+        points: points
+          .toSorted((left, right) => left.start - right.start)
+          .map((point) => ({ start: DateTime.makeUnsafe(point.start), count: point.count })),
+      }),
+    )
+    const counts: LogCounts = {
+      covered: periodOf(covered.value),
+      step: query.step,
+      series: series
+        .toSorted((left, right) => right.total - left.total || (left.key < right.key ? -1 : 1))
+        .slice(0, mostSeries),
+    }
+    return counts
+  })
+
+  return { add, cleanUp, error, errors, logCounts, logs }
 })

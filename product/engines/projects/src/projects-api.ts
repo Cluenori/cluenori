@@ -9,8 +9,29 @@ import { CreateProject, Project, ProjectExists, ProjectNotFound } from "./projec
 /** A component just added, with the ingest key its telemetry is sent with: shown this once. */
 export const AddedComponentResponse = Schema.Struct({ component: Component, ingestKey: IngestKey })
 
+/** The workspace's projects, by key. */
+export const ProjectList = Schema.Struct({ projects: Schema.Array(Project) })
+export type ProjectList = typeof ProjectList.Type
+
+/** One project and its components, by key. */
+export const ProjectDetail = Schema.Struct({ project: Project, components: Schema.Array(Component) })
+export type ProjectDetail = typeof ProjectDetail.Type
+
 /** Projects and their components: the public API's part for this engine. */
 export class ProjectsGroup extends HttpApiGroup.make("projects")
+  .add(
+    HttpApiEndpoint.get("listProjects", "/projects", { success: ProjectList }).annotate(
+      OpenApi.Description,
+      "The workspace's projects, by key: each one's key, name, and when it was created.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("project", "/projects/:project", {
+      params: { project: ProjectKey },
+      success: ProjectDetail,
+      error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
+    }).annotate(OpenApi.Description, "One project and its components, by key."),
+  )
   .add(
     HttpApiEndpoint.post("createProject", "/projects", {
       payload: CreateProject,

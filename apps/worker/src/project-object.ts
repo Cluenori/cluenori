@@ -6,8 +6,10 @@ import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
 import { Effect, Exit, Layer, ManagedRuntime, Redacted, Schema } from "effect"
 
-import type { PlainSchema, ProjectCall, ProjectCallName } from "./project-calls.ts"
-import { exitText, inputText, projectCalls } from "./project-calls.ts"
+import type { PlainSchema } from "./object-calls.ts"
+import { exitText, serve } from "./object-calls.ts"
+import type { ProjectCall, ProjectCallName } from "./project-calls.ts"
+import { projectCalls } from "./project-calls.ts"
 import { r2ArchiveLayer } from "./r2-archive.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 
@@ -28,21 +30,13 @@ const served = <I extends PlainSchema, S extends PlainSchema, F extends PlainSch
   call: ProjectCall<I, S, F>,
   handler: (input: I["Type"]) => Effect.Effect<S["Type"], F["Type"], ProjectServices>,
   beforeCreated?: F["Type"],
-): Served => {
-  const decodeInput = Schema.decodeEffect(inputText(call.input))
-  const encodeExit = Schema.encodeEffect(exitText(call.success, call.error))
-  return {
-    serve: (input) =>
-      decodeInput(input).pipe(
-        Effect.orDie,
-        Effect.flatMap(handler),
-        Effect.exit,
-        Effect.flatMap(encodeExit),
-        Effect.orDie,
-      ),
-    beforeCreated: beforeCreated === undefined ? undefined : encodeExit(Exit.fail(beforeCreated)).pipe(Effect.orDie),
-  }
-}
+): Served => ({
+  serve: serve(call, handler),
+  beforeCreated:
+    beforeCreated === undefined
+      ? undefined
+      : Schema.encodeEffect(exitText(call.success, call.error))(Exit.fail(beforeCreated)).pipe(Effect.orDie),
+})
 
 // Each call the Worker can make, on a visible line, translated to the engines' services.
 const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Served>> => ({
@@ -51,6 +45,15 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
       const projects = yield* Projects
       return yield* projects.create(actor, name)
     }),
+  ),
+  detail: served(
+    projectCalls.detail,
+    () =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        return { project: yield* projects.project, components: yield* projects.components }
+      }),
+    new ProjectNotFound({ project }),
   ),
   addComponent: served(
     projectCalls.addComponent,
@@ -137,6 +140,15 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
       Effect.gen(function* () {
         const signals = yield* Signals
         return yield* signals.logs(query)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  logCounts: served(
+    projectCalls.logCounts,
+    (query) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.logCounts(query)
       }),
     new ProjectNotFound({ project }),
   ),

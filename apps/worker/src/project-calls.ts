@@ -6,6 +6,7 @@ import {
   IngestKey,
   IngestKeyRejected,
   Project,
+  ProjectDetail,
   ProjectExists,
   ProjectName,
   ProjectNotFound,
@@ -18,6 +19,8 @@ import {
   ErrorGroupNotFound,
   ErrorQuery,
   ErrorTable,
+  LogCountQuery,
+  LogCounts,
   LogExport,
   LogPage,
   LogQuery,
@@ -30,11 +33,12 @@ import {
 } from "@cluenori/signals"
 import { Schema } from "effect"
 
-/** A Schema that needs no services to encode or decode, as every call's do. */
-export type PlainSchema = Schema.Top & { readonly DecodingServices: never; readonly EncodingServices: never }
+import type { ObjectCall, PlainSchema } from "./object-calls.ts"
+import { objectCall } from "./object-calls.ts"
 
 export type ProjectCallName =
   | "createProject"
+  | "detail"
   | "addComponent"
   | "ingestTraces"
   | "ingestLogs"
@@ -44,25 +48,26 @@ export type ProjectCallName =
   | "errors"
   | "error"
   | "logs"
+  | "logCounts"
   | "trace"
 
 const recorded = Schema.Literals(["recorded", "duplicate"])
 const ingestFailure = Schema.Union([IngestKeyRejected, ArchiveUnavailable])
 
 /** One thing the Worker asks a project's Durable Object: its input, its answer, and how it fails. */
-export interface ProjectCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> {
-  readonly name: ProjectCallName
-  readonly input: I
-  readonly success: S
-  readonly error: F
-}
+export type ProjectCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> = ObjectCall<
+  ProjectCallName,
+  I,
+  S,
+  F
+>
 
 const projectCall = <I extends PlainSchema, S extends PlainSchema, F extends PlainSchema>(
   name: ProjectCallName,
   input: I,
   success: S,
   error: F,
-): ProjectCall<I, S, F> => ({ name, input, success, error })
+): ProjectCall<I, S, F> => objectCall(name, input, success, error)
 
 /** What the Worker asks a project's Durable Object, one entry per call. */
 export const projectCalls = {
@@ -72,6 +77,7 @@ export const projectCalls = {
     Project,
     ProjectExists,
   ),
+  detail: projectCall("detail", Schema.Void, ProjectDetail, ProjectNotFound),
   addComponent: projectCall(
     "addComponent",
     Schema.Struct({ actor: Actor, component: AddComponent }),
@@ -111,6 +117,7 @@ export const projectCalls = {
     Schema.Union([ProjectNotFound, ErrorGroupNotFound]),
   ),
   logs: projectCall("logs", LogQuery, LogPage, ProjectNotFound),
+  logCounts: projectCall("logCounts", LogCountQuery, LogCounts, ProjectNotFound),
   trace: projectCall(
     "trace",
     Schema.Struct({ trace: TraceId, around: Schema.DateTimeUtcFromString }),
@@ -118,13 +125,3 @@ export const projectCalls = {
     Schema.Union([ProjectNotFound, ArchiveUnavailable]),
   ),
 }
-
-// Both sides encode with these, as JSON text, so typed values and tagged errors cross the Durable
-// Object's RPC boundary, which carries only plain data.
-
-/** A call's input as JSON text. */
-export const inputText = <I extends PlainSchema>(input: I) => Schema.fromJsonString(Schema.toCodecJson(input))
-
-/** A call's exit, its answer or its failure, as JSON text. */
-export const exitText = <S extends PlainSchema, F extends PlainSchema>(success: S, error: F) =>
-  Schema.fromJsonString(Schema.toCodecJson(Schema.Exit(success, error, Schema.Defect())))

@@ -7,9 +7,7 @@ import { SqlClient, SqlSchema } from "effect/sql"
 import { requestRetention } from "./read-traces.ts"
 import type { RequestCounts } from "./request-counts.ts"
 import type { EndpointRow, EndpointTable, RequestQuery, RequestSeries, SeriesStep } from "./request-queries.ts"
-
-/** Where a component's requests are counted once it has 500 endpoints: names past that are counted here. */
-export const otherEndpoints = EnvelopeName.make("(other endpoints)")
+import { otherEndpoints, stepMillis } from "./request-queries.ts"
 
 /** How long hourly counts are kept: 15 months, so a year compares with the one before. */
 export const hourlyRetention = Duration.days(455)
@@ -28,13 +26,6 @@ interface Resolution {
 
 const byMinute: Resolution = { table: "signals_minute_counts", width: 60_000, kept: requestRetention }
 const byHour: Resolution = { table: "signals_hour_counts", width: 3_600_000, kept: hourlyRetention }
-
-const stepMillis: Readonly<Record<SeriesStep, number>> = {
-  "1m": 60_000,
-  "5m": 5 * 60_000,
-  "1h": 3_600_000,
-  "1d": 86_400_000,
-}
 
 const floorTo = (millis: number, width: number) => millis - (((millis % width) + width) % width)
 const ceilTo = (millis: number, width: number) => floorTo(millis + width - 1, width)
@@ -134,6 +125,7 @@ export const requestStore = Effect.gen(function* () {
         to: Schema.Int,
         environment: Schema.optionalKey(EnvironmentKey),
         component: Schema.optionalKey(ComponentKey),
+        endpoint: Schema.optionalKey(EnvelopeName),
       }),
       Result: CountsRow,
       execute: (request) => sql`
@@ -145,6 +137,7 @@ export const requestStore = Effect.gen(function* () {
           sql`c.bucket < ${request.to}`,
           ...(request.environment === undefined ? [] : [sql`c.environment = ${request.environment}`]),
           ...(request.component === undefined ? [] : [sql`e.component = ${request.component}`]),
+          ...(request.endpoint === undefined ? [] : [sql`e.name = ${request.endpoint}`]),
         ])}`,
     })
 
@@ -233,6 +226,7 @@ export const requestStore = Effect.gen(function* () {
       to: covered.value.to,
       ...(query.environment === undefined ? {} : { environment: query.environment }),
       ...(query.component === undefined ? {} : { component: query.component }),
+      ...(query.endpoint === undefined ? {} : { endpoint: query.endpoint }),
     }).pipe(Effect.orDie)
     const period = new Period({
       from: DateTime.makeUnsafe(covered.value.from),
@@ -289,11 +283,20 @@ export const requestStore = Effect.gen(function* () {
     const { covered, rows, resolution } = yield* countsIn(query)
     const used: SeriesStep = stepMillis[step] < resolution.width ? "1h" : step
     const byStep = Map.groupBy(rows, (row) => floorTo(row.bucket, stepMillis[used]))
-    const points = Array.from(byStep, ([start, inStep]) => ({
-      start: DateTime.makeUnsafe(start),
-      requests: inStep.reduce((total, row) => total + row.requests, 0),
-      errors: inStep.reduce((total, row) => total + row.errors, 0),
-    }))
+    const points = yield* Effect.forEach(byStep, ([start, inStep]) =>
+      Effect.gen(function* () {
+        const durations = mergeSketches(inStep.map((row) => row.durations))
+        return {
+          start: DateTime.makeUnsafe(start),
+          requests: inStep.reduce((total, row) => total + row.requests, 0),
+          errors: inStep.reduce((total, row) => total + row.errors, 0),
+          p50Ms: yield* percentile(durations, 0.5),
+          p80Ms: yield* percentile(durations, 0.8),
+          p95Ms: yield* percentile(durations, 0.95),
+          p99Ms: yield* percentile(durations, 0.99),
+        }
+      }),
+    )
     const series: RequestSeries = {
       ...(covered._tag === "Some" ? { covered: covered.value } : {}),
       step: used,

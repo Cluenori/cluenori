@@ -8,16 +8,25 @@ import type { ArchiveSettings } from "./archive-index.ts"
 import { archiveIndex } from "./archive-index.ts"
 import type { ArchiveUnavailable } from "./archive-store.ts"
 import { ArchiveStore } from "./archive-store.ts"
-import type { ErrorDetail, ErrorGroupNotFound, ErrorQuery, ErrorTable, LogPage, LogQuery } from "./error-groups.ts"
+import type {
+  ErrorDetail,
+  ErrorGroupNotFound,
+  ErrorQuery,
+  ErrorTable,
+  LogCountQuery,
+  LogCounts,
+  LogPage,
+  LogQuery,
+} from "./error-groups.ts"
 import type { ExportSignal, LogExport, MetricsExport, TraceExport } from "./exports.ts"
 import type { ErrorGroupId } from "./log-entry.ts"
 import { logStore } from "./log-store.ts"
+import { traceViewOf } from "./read-archived-trace.ts"
 import { BatchDigest } from "./request-counts.ts"
 import type { EndpointTable, RequestQuery, RequestSeries, SeriesStep } from "./request-queries.ts"
 import { requestStore } from "./request-store.ts"
 import { migrateSignals } from "./signals-migrations.ts"
 import type { TraceView } from "./trace-view.ts"
-import { traceViewOf } from "./trace-view.ts"
 
 // An exporter retries a failed export within seconds; an hour of digests catches every retry.
 const batchWindow = Duration.hours(1)
@@ -77,6 +86,11 @@ export class Signals extends Context.Service<
     readonly error: (id: ErrorGroupId, query: ErrorQuery) => Effect.Effect<ErrorDetail, ErrorGroupNotFound>
     /** A page of warnings and errors, newest first. Reads only. */
     readonly logs: (query: LogQuery) => Effect.Effect<LogPage>
+    /**
+     * Warnings and errors counted over time, a series by level, component, or error group: one
+     * indexed read of the period's warnings and errors. Kept 90 days.
+     */
+    readonly logCounts: (query: LogCountQuery) => Effect.Effect<LogCounts>
     /**
      * Trace `trace` from the archive: its spans and its logs at every level, from every component,
      * looked for within two minutes of `around`. Reads up to 60 archive files. Fails with
@@ -199,6 +213,11 @@ export class Signals extends Context.Service<
           return yield* logs.logs(query, now)
         })
 
+        const logCounts = Effect.fn("Signals.logCounts")(function* (query: LogCountQuery) {
+          const now = yield* nowMillis
+          return yield* logs.logCounts(query, now)
+        })
+
         const trace = Effect.fn("Signals.trace")(function* (traceId: TraceId, around: DateTime.Utc) {
           const middle = DateTime.toEpochMillis(around)
           const from = middle - Duration.toMillis(traceWindow)
@@ -223,6 +242,7 @@ export class Signals extends Context.Service<
           errors,
           error,
           logs: searchLogs,
+          logCounts,
           trace,
         })
       }),

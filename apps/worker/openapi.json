@@ -21,7 +21,118 @@
         "description": "Answers 204 when the Worker is deployed and serving. Use it for uptime checks; it reads no storage."
       }
     },
+    "/api/sign-in": {
+      "post": {
+        "tags": [
+          "signIn"
+        ],
+        "operationId": "signIn",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Signs a browser in with the deployment's API token: answers 204 with the sign-in cookie, HttpOnly, Secure and SameSite=Strict, for /api, kept 30 days. The API then accepts it in place of the bearer token. A wrong token answers 401 and sets nothing.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/sign-out": {
+      "post": {
+        "tags": [
+          "signIn"
+        ],
+        "operationId": "signOut",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          }
+        },
+        "description": "Signs the browser out: answers 204 and removes the sign-in cookie."
+      }
+    },
     "/api/projects": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.listProjects",
+        "parameters": [],
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "signIn": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProjectEncoded"
+                      }
+                    }
+                  },
+                  "required": [
+                    "projects"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "The workspace's projects, by key: each one's key, name, and when it was created."
+      },
       "post": {
         "tags": [
           "projects"
@@ -31,6 +142,9 @@
         "security": [
           {
             "bearer": []
+          },
+          {
+            "signIn": []
           }
         ],
         "responses": {
@@ -95,6 +209,82 @@
         }
       }
     },
+    "/api/projects/{project}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.project",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "signIn": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "$ref": "#/components/schemas/ProjectEncoded"
+                    },
+                    "components": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ComponentEncoded"
+                      }
+                    }
+                  },
+                  "required": [
+                    "project",
+                    "components"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "One project and its components, by key."
+      }
+    },
     "/api/projects/{project}/components": {
       "post": {
         "tags": [
@@ -115,6 +305,9 @@
         "security": [
           {
             "bearer": []
+          },
+          {
+            "signIn": []
           }
         ],
         "responses": {
@@ -251,11 +444,30 @@
               "maxLength": 40
             },
             "required": false
+          },
+          {
+            "name": "endpoint",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "allOf": [
+                {
+                  "pattern": "^\\P{Cc}*$"
+                }
+              ]
+            },
+            "required": false
           }
         ],
         "security": [
           {
             "bearer": []
+          },
+          {
+            "signIn": []
           }
         ],
         "responses": {
@@ -383,7 +595,7 @@
             }
           }
         },
-        "description": "Every endpoint's requests in a period, most requested first: how many, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover."
+        "description": "Every endpoint's requests in a period, most requested first, or one endpoint's with `endpoint`: how many, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover."
       }
     },
     "/api/projects/{project}/requests": {
@@ -437,6 +649,22 @@
             "required": false
           },
           {
+            "name": "endpoint",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "allOf": [
+                {
+                  "pattern": "^\\P{Cc}*$"
+                }
+              ]
+            },
+            "required": false
+          },
+          {
             "name": "step",
             "in": "query",
             "schema": {
@@ -454,6 +682,9 @@
         "security": [
           {
             "bearer": []
+          },
+          {
+            "signIn": []
           }
         ],
         "responses": {
@@ -493,12 +724,32 @@
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
+                          },
+                          "p50Ms": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "p80Ms": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "p95Ms": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "p99Ms": {
+                            "type": "number",
+                            "minimum": 0
                           }
                         },
                         "required": [
                           "start",
                           "requests",
-                          "errors"
+                          "errors",
+                          "p50Ms",
+                          "p80Ms",
+                          "p95Ms",
+                          "p99Ms"
                         ],
                         "additionalProperties": false
                       }
@@ -534,7 +785,7 @@
             }
           }
         },
-        "description": "Requests and errors over a period, one point per step that has requests: the load on a project's services. A step without a point had no requests reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used."
+        "description": "Requests and errors over a period, one point per step that has requests, with their p50, p80, p95 and p99 durations: the load on a project's services, or on one endpoint with `endpoint`. A step without a point had no requests reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used."
       }
     },
     "/api/projects/{project}/errors": {
@@ -586,11 +837,30 @@
               "maxLength": 40
             },
             "required": false
+          },
+          {
+            "name": "endpoint",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "allOf": [
+                {
+                  "pattern": "^\\P{Cc}*$"
+                }
+              ]
+            },
+            "required": false
           }
         ],
         "security": [
           {
             "bearer": []
+          },
+          {
+            "signIn": []
           }
         ],
         "responses": {
@@ -758,11 +1028,30 @@
               "maxLength": 40
             },
             "required": false
+          },
+          {
+            "name": "endpoint",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "allOf": [
+                {
+                  "pattern": "^\\P{Cc}*$"
+                }
+              ]
+            },
+            "required": false
           }
         ],
         "security": [
           {
             "bearer": []
+          },
+          {
+            "signIn": []
           }
         ],
         "responses": {
@@ -1068,6 +1357,9 @@
         "security": [
           {
             "bearer": []
+          },
+          {
+            "signIn": []
           }
         ],
         "responses": {
@@ -1208,6 +1500,210 @@
         "description": "Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace, or error. Kept 90 days. Records below warning are in the archive, which the traces endpoint reads for one request."
       }
     },
+    "/api/projects/{project}/logs/counts": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.logCounts",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "5m",
+                "1h",
+                "1d"
+              ]
+            },
+            "required": true
+          },
+          {
+            "name": "by",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "level",
+                "component",
+                "error"
+              ]
+            },
+            "required": true
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "warn",
+                "error",
+                "fatal"
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "signIn": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "covered": {
+                      "$ref": "#/components/schemas/PeriodEncoded"
+                    },
+                    "step": {
+                      "type": "string",
+                      "enum": [
+                        "1m",
+                        "5m",
+                        "1h",
+                        "1d"
+                      ]
+                    },
+                    "series": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "points": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "start": {
+                                  "type": "string"
+                                },
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "start",
+                                "count"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "total",
+                          "points"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "step",
+                    "series"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Warnings and errors counted over time: a series for each level, component, or error group (`by`), at `level` or above (warn when absent), with a point for each step that had any. By error group, the 100 most frequent. Kept 90 days; `covered` says which part of the period the counts cover."
+      }
+    },
     "/api/projects/{project}/traces/{trace}": {
       "get": {
         "tags": [
@@ -1244,6 +1740,9 @@
         "security": [
           {
             "bearer": []
+          },
+          {
+            "signIn": []
           }
         ],
         "responses": {
@@ -1686,6 +2185,11 @@
       "bearer": {
         "type": "http",
         "scheme": "Bearer"
+      },
+      "signIn": {
+        "type": "apiKey",
+        "name": "cluenori_sign_in",
+        "in": "cookie"
       }
     }
   },
@@ -1693,6 +2197,9 @@
   "tags": [
     {
       "name": "system"
+    },
+    {
+      "name": "signIn"
     },
     {
       "name": "projects"
