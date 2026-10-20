@@ -117,6 +117,11 @@
             // CLI is a host whose every command picks its API target, so it builds clients there.
             "include": ["**/test/**/*.ts", "**/src/main.ts", "**/src/worker.ts", "**/apps/cli/src/**/*.ts"],
             "options": { "diagnosticSeverity": { "strictEffectProvide": "off" } }
+          },
+          {
+            // The dashboard's tests fail on any error a page logs, which they see by watching `console`.
+            "include": ["**/apps/dashboard/test/setup.ts"],
+            "options": { "diagnosticSeverity": { "globalConsole": "off" } }
           }
         ]
       }
