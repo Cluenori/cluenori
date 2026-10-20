@@ -48,7 +48,7 @@ Eleven rules control what goes into Cluenori and what stays out.
 - **One model for all modules.** Each module uses the same scope, features, people, audiences, activity, actions and ledger. Thus a new module works with all other modules from its first day.
 - **Each action has an outcome.** A decision record keeps the question, the action and the result, so neither I nor an agent repeats a failed attempt.
 - **The factory contract.** Each new project reports to Cluenori from its first deploy, and Cluenori checks that the data arrives.
-- **Quality is measured per journey.** Each project has targets for its critical journeys and routes, checked on each release.
+- **Quality is measured against its own usual.** Each critical journey, endpoint, screen and app start is compared with its own recent past and with the previous release, not with a fixed limit that someone must set and keep current.
 - **Cluenori governs, agents execute.** Cluenori decides what work is permitted, with which evidence, budget and authority. Credentials and APIs enforce these limits, not instructions.
 - **One API for people and agents.** The dashboard and the MCP server use the same queries and actions, so revenue or activation has one definition.
 - **You own the code and the data.** Cluenori runs in your Cloudflare account, keeps data in open formats, and shows its own spend as a project.
@@ -71,7 +71,7 @@ Each project has a short operating profile. These fields let Cluenori interpret 
 | Usage cadence | Daily, weekly or occasional |
 | Current objective | The result that I want now |
 | Budgets | Operating spend, development spend and my attention |
-| Quality targets | Critical journeys and route targets |
+| Critical journeys | The flows that must work, for example sign-up, checkout and export |
 | Next decision | What I must decide, and when |
 
 Cluenori keeps these concepts separate: project, component, feature, release, deployment, person or account, provider resource, change, and decision, action or agent run. A change can be code, a price, a campaign, a configuration or a store listing. Any change can explain a movement in the numbers.
@@ -261,21 +261,16 @@ A blueprint holds this contract as code (Foundation). `npx cluenori project crea
 
 A contract check then verifies that the expected events and the release identity actually arrive. Without this check, hundreds of repositories can contain the SDK while the portfolio stays mostly invisible. A project without data for 7 days shows as "not reporting", never as "no users".
 
-## Quality: critical journeys and route targets
+## Quality: worse than usual
 
-One latency target cannot fit an upload, a search and a background export. Each project sets targets for its critical journeys and for classes of routes, starting from a shared default set.
+One latency limit cannot fit an upload, a search and a background export, and a limit that someone sets once goes stale. So Cluenori sets no limits and asks for none. It compares each measure with its own usual and says when it got worse. An export that always takes 4 s is not news. A feed that went from 180 ms to 420 ms is.
 
-| Target | Example default |
+| Measure | Worse than usual when |
 | --- | --- |
-| Critical journey success (sign-up, checkout, export) | More than 99% |
-| Interactive API routes, p95 | Less than 300 ms |
-| Search routes, p95 | Less than 500 ms |
-| Uploads and exports | Own target, by size |
-| Crash-free sessions | More than 99.5% |
-| Web LCP, p75 | Less than 2.5 s |
-| App start time, p95 | Less than 2 s |
+| The latency of an endpoint, a screen or an app start | Its p95 over the last day is at least 1.5 times its p95 over the 7 days before, and at least 100 ms more |
+| Crash-free sessions, critical journey success, error rate | To decide; the same idea, a drop against the 7 days before that is large enough to matter |
 
-Cluenori compares each release with the targets and shows the sample size. A failure with enough data opens an incident. The targets are examples; I set my own.
+A measure with no usual yet, such as a new endpoint, is shown without a verdict. Each release is also compared with the previous one, with the sample size. A worse result with enough data opens an incident.
 
 ## What we will not build
 
@@ -302,7 +297,7 @@ Modules sets the phase of each module, and its table is the only list of phases.
 
 - [ ] Write the operating profile and the core value event for the first three projects.
 - [ ] Name the first feature catalog and its tagging rules for the three projects.
-- [ ] Set the default route targets and critical journeys.
+- [ ] Decide the "worse than usual" rules for rates (crash-free sessions, journey success, error rate), and name the critical journeys of the first three projects.
 - [ ] Define version 1 of the manifest schema, the version header, and the offline behavior of the update gate.
 - [ ] Confirm that a Worker can send to APNs over HTTP/2, and measure the fan-out cost of a large push.
 - [ ] Choose the email providers for transactional and marketing mail, and set up the sending domains.

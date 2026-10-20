@@ -20,7 +20,7 @@ The sidebar shows each module by name, as in PostHog. Above the sidebar are a wo
 | Product | Surveys | Ask users questions | Surveys, NPS, cancellation reasons | v3 |
 | Engineering | Errors | Find crashes and exceptions | Error groups, readable stack traces, affected customers | v1 |
 | Engineering | Logs | See what your apps report as wrong | Errors and warnings with how often each occurs, search, the logs of one request | v1 |
-| Engineering | Performance | See the load, and make sure that each route, screen and query meets its target | Requests over time, routes, database queries, external calls, screens, the trace of one request | v1 |
+| Engineering | Performance | See the load, and what got slower: each route, screen and query against its usual | Requests over time, routes, database queries, external calls, screens, the trace of one request | v1 |
 | Engineering | Uptime | Make sure that apps are available and jobs run | Monitors, cron check-ins, certificates | v2 |
 | Engineering | Issues | Track bugs and tasks | List, statuses, links | v2 |
 | Delivery | Releases | See what you shipped, who updated, and what changed | Releases, store rollout, impact | v1 |
@@ -144,7 +144,7 @@ Metrics (CPU, memory, queue depth and custom counters) comes later, when a need 
 - **External calls:** third-party APIs, for example Stripe, OpenAI or email providers, with latency and error rate. This shows which provider has the outage.
 - **Screens:** screen load time and app start time on mobile, and Core Web Vitals on the web.
 
-Each row shows the change from the previous release, the result against its route target, the sample size, and a link to retained example traces.
+Each row shows whether it got slower than usual, the change from the previous release, the sample size, and a link to retained example traces.
 
 ### Data sources
 

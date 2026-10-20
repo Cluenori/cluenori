@@ -16,7 +16,7 @@ Twelve keys place every record. Each module uses the same keys, so one filter ba
 | --- | --- | --- | --- |
 | Workspace | The tenant: members, billing, settings | My factory | A self-hosted deployment usually has one |
 | Project | The business unit: one product and one investment | Notes | Owns spend, revenue, brand and decisions |
-| Component | A part that ships separately | notes-ios, notes-android, notes-web, notes-api, notes-jobs | Has a platform, store and bundle IDs, an SDK key and a repository |
+| Component | A part that ships separately | notes-ios, notes-android, notes-web, notes-api, notes-jobs | Has a platform, store and bundle IDs, an SDK key and a repository. Its platform gives its role: an app runs on people's devices (iOS, Android, web), a backend on servers (.NET, Node.js) |
 | Origin | The app and release that started a request | notes-ios 2.4.0 | Comes from baggage. Answers "did iOS 2.4 slow the API?" |
 | Environment | Where a component runs | production, staging | Production is the default view |
 | Release | One version of one component | notes-ios 2.4.0, build 312 | Has commits, PRs, features, notes and store state |
@@ -122,6 +122,7 @@ Rules for shipped builds:
 - **The manifest only grows.** Old SDKs ignore unknown keys. New content and new uses of the generic views need no app release. A new kind of native surface needs a new SDK version.
 - **One small request.** The shared part of the manifest is cached at the edge for each component, version and language. The personal part (flags, messages, unread entries) is small.
 - **Platforms.** Swift (SwiftUI and UIKit), Kotlin (Jetpack Compose) and TypeScript (web components and React) come first. React Native and Flutter come later. Servers use OpenTelemetry, with small helpers for .NET and TypeScript.
+- **One SDK for each platform, in modules.** Each platform has one package with one version, so its parts never disagree. A small core is in every build: keys, installation, the manifest (flags, config, the update gate, messages), the version header, and trace headers on requests. Old builds can only turn on what their core can read, so the core must ship first. A part becomes an opt-in module only when including it has a cost: crash reporting (it installs a crash handler, which conflicts with another reporter), push (a permission prompt and an entitlement), analytics (it changes the app's privacy label), and the ready-made screens (app size). On iOS the modules are libraries of one Swift package, in TypeScript entry points of one npm package with unused code dropped, and on .NET one NuGet package.
 
 ## The module contract
 
@@ -185,7 +186,7 @@ A blueprint is the factory contract as code. It holds the setup that I now repea
 | Client kit | Update gate, What's new, feedback form, consent |
 | Messages | Welcome email, trial-ending reminder, What's new push, failed-payment email |
 | Public pages | Changelog, ideas board, status, privacy, terms, support |
-| Quality | Critical journeys, route targets, uptime checks |
+| Quality | Critical journeys, uptime checks |
 | Automation | The automation policy for agents |
 | Brand | Name, icon, colors, a sending domain, and a subdomain for marketing mail |
 
