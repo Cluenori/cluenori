@@ -102,8 +102,9 @@
       "rules": { "import/no-default-export": "off" }
     },
     {
-      // Layers inside the dashboard (PATTERNS.md, entry 23). Only `src/project-facts.ts` reads the
-      // sample data, so wiring the public API changes one file; types may be imported anywhere.
+      // Layers inside the dashboard (PATTERNS.md, entry 23). Only `src/project-data.ts` asks the API,
+      // so where data comes from is one file; only the design kit shows sample data, though views
+      // ahead of the API may use its types.
       "files": ["apps/dashboard/src/**"],
       "rules": {
         "eslint/no-restricted-imports": [
@@ -127,8 +128,9 @@
               {
                 "group": ["@/sample/*"],
                 "allowTypeImports": true,
-                "message": "Ask `@/project-facts`: it is the one file that knows where data comes from."
-              }
+                "message": "Sample data is for the design kit; pages ask the API through `@/project-data`."
+              },
+              { "group": ["@/api-client"], "message": "Ask `@/project-data`: it is the one file that asks the API." }
             ]
           }
         ]
@@ -159,8 +161,9 @@
               {
                 "group": ["@/sample/*"],
                 "allowTypeImports": true,
-                "message": "Ask `@/project-facts`: it is the one file that knows where data comes from."
+                "message": "Sample data is for the design kit; pages ask the API through `@/project-data`."
               },
+              { "group": ["@/api-client"], "message": "Ask `@/project-data`: it is the one file that asks the API." },
               { "group": ["@/pages/*"], "message": "A view takes data and callbacks; it never imports a page." }
             ]
           }
@@ -192,11 +195,12 @@
               {
                 "group": ["@/sample/*"],
                 "allowTypeImports": true,
-                "message": "Ask `@/project-facts`: it is the one file that knows where data comes from."
+                "message": "Sample data is for the design kit; pages ask the API through `@/project-data`."
               },
+              { "group": ["@/api-client"], "message": "Ask `@/project-data`: it is the one file that asks the API." },
               { "group": ["@/pages/*"], "message": "A view takes data and callbacks; it never imports a page." },
               {
-                "group": ["@/views/*", "!@/views/ui/*", "@/project-facts", "@/router", "@/filters"],
+                "group": ["@/views/*", "!@/views/ui/*", "@/project-data", "@/project-facts", "@/router"],
                 "message": "shadcn's views are generic: they know nothing of our views, pages, routes, or data."
               }
             ]
@@ -205,13 +209,8 @@
       }
     },
     {
-      // The one file that reads the sample, the sample itself, and the design kit, which shows views
-      // on sample data.
-      "files": [
-        "apps/dashboard/src/project-facts.ts",
-        "apps/dashboard/src/sample/**",
-        "apps/dashboard/src/pages/kit-*.tsx"
-      ],
+      // The design kit, which shows views on sample data, and the sample itself.
+      "files": ["apps/dashboard/src/sample/**", "apps/dashboard/src/pages/kit-*.tsx"],
       "rules": {
         "eslint/no-restricted-imports": [
           "error",
@@ -230,6 +229,38 @@
                   "@effect/experimental"
                 ],
                 "message": "Effect 4 has these in `effect`: effect/http, effect/sql, effect/cli, effect/ai, effect/rpc."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The one file that asks the API.
+      "files": ["apps/dashboard/src/project-data.ts"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@effect/schema",
+                  "@effect/platform",
+                  "@effect/sql",
+                  "@effect/cli",
+                  "@effect/ai",
+                  "@effect/rpc",
+                  "@effect/cluster",
+                  "@effect/workflow",
+                  "@effect/experimental"
+                ],
+                "message": "Effect 4 has these in `effect`: effect/http, effect/sql, effect/cli, effect/ai, effect/rpc."
+              },
+              {
+                "group": ["@/sample/*"],
+                "allowTypeImports": true,
+                "message": "Sample data is for the design kit; pages ask the API through `@/project-data`."
               }
             ]
           }
