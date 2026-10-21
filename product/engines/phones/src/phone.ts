@@ -112,6 +112,31 @@ export type PairPhone = typeof PairPhone.Type
 export const PairedPhone = Schema.Struct({ phone: Phone, key: PhoneKey }).annotate({ identifier: "PairedPhone" })
 export type PairedPhone = typeof PairedPhone.Type
 
+/** The token APNs gave the app on one phone, as lowercase hex: 64 characters today, up to 200. */
+export const PushToken = Schema.String.check(
+  Schema.isPattern(/^[0-9a-f]{64,200}$/, { expected: "a push token: 64 to 200 lowercase hex digits" }),
+).pipe(Schema.brand("PushToken"))
+export type PushToken = typeof PushToken.Type
+
+/**
+ * Which APNs a push token belongs to: `development` for a build Xcode installs, `production` for one
+ * from TestFlight.
+ */
+export const PushEnvironment = Schema.Literals(["development", "production"]).annotate({
+  identifier: "PushEnvironment",
+})
+export type PushEnvironment = typeof PushEnvironment.Type
+
+/** What a phone sends so pushes reach it: the token iOS gave the app, and its environment. */
+export const RegisterPush = Schema.Struct({ token: PushToken, environment: PushEnvironment }).annotate({
+  identifier: "RegisterPush",
+})
+export type RegisterPush = typeof RegisterPush.Type
+
+/** A phone pushes reach, by the token it last registered. */
+export const PushTarget = Schema.Struct({ phone: PhoneId, token: PushToken, environment: PushEnvironment })
+export type PushTarget = typeof PushTarget.Type
+
 /** The pairing code is wrong, already used, or older than 10 minutes: show a new one on the web. */
 export class PairingCodeRejected extends Schema.TaggedError<PairingCodeRejected>()("PairingCodeRejected", {}) {}
 

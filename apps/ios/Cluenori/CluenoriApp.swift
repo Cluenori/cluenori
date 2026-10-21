@@ -1,15 +1,32 @@
+import AppIntents
 import CluenoriScreens
 import CluenoriViews
 import SwiftUI
 
-/// The app: its one window, and the pairing links the system opens it with.
+/// The phone's pairing, one for the app: its window shows it, its delegate gives it push tokens and
+/// what alerts' actions ask, and the alarms' Acknowledge intent acts on it, also when the system
+/// wakes the app without a window.
+@MainActor let pairing = PairingModel(
+    store: KeychainStore(),
+    details: .thisPhone,
+    cacheDirectory: .cachesDirectory,
+    alertSystem: AlertsOnThisPhone()
+)
+
+/// The app: its one window, the pairing links the system opens it with, and the system's calls
+/// about alerts.
 @main
 struct CluenoriApp: App {
-    @State private var pairing = PairingModel(
-        store: KeychainStore(),
-        details: .thisPhone,
-        cacheDirectory: .cachesDirectory
-    )
+    @UIApplicationDelegateAdaptor private var delegate: AppDelegate
+
+    init() {
+        // Before any intent runs: an alarm's Acknowledge can launch the app (Apple's App Intents
+        // guidance, "Dependencies"). SwiftUI makes the app on the main thread.
+        MainActor.assumeIsolated {
+            let model = pairing
+            AppDependencyManager.shared.add(dependency: model)
+        }
+    }
 
     var body: some Scene {
         WindowGroup {

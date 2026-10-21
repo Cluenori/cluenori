@@ -27,6 +27,21 @@
   ],
   // Every export, kept 90 days by the bucket's lifecycle rule, which ./setup adds.
   "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "cluenori-archive" }],
+  // Activity, from each project's object to what reacts to it in the workspace's: alerts on phones.
+  // ./setup and ./update make the queue. A batch waits at most a second, and one that fails is
+  // tried again every 30 seconds, 10 times.
+  "queues": {
+    "producers": [{ "binding": "ACTIVITY", "queue": "cluenori-activity" }],
+    "consumers": [
+      {
+        "queue": "cluenori-activity",
+        "max_batch_size": 100,
+        "max_batch_timeout": 1,
+        "max_retries": 10,
+        "retry_delay": 30,
+      },
+    ],
+  },
   "env": {
     // What ./setup deploys when your data stays in the EU: the same Worker, with its Durable Objects
     // and its archive there. Environments don't inherit bindings, so they are repeated.
@@ -44,6 +59,19 @@
         ],
       },
       "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "cluenori-archive", "jurisdiction": "eu" }],
+      // The queue is made in the EU; its binding names it alone.
+      "queues": {
+        "producers": [{ "binding": "ACTIVITY", "queue": "cluenori-activity" }],
+        "consumers": [
+          {
+            "queue": "cluenori-activity",
+            "max_batch_size": 100,
+            "max_batch_timeout": 1,
+            "max_retries": 10,
+            "retry_delay": 30,
+          },
+        ],
+      },
       "vars": { "CLUENORI_JURISDICTION": "eu" },
     },
   },

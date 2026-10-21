@@ -251,7 +251,7 @@ describe("Incidents", () => {
     ),
   )
 
-  it.effect("acknowledges an incident once, and records who did", () =>
+  it.effect("acknowledges an incident once, records who did, and says so when it resolves", () =>
     inProject(
       "acknowledged",
       start,
@@ -281,6 +281,13 @@ describe("Incidents", () => {
             ["incident.opened", "System"],
           ],
         )
+        assert.strictEqual(latest[0]?.attrs["title"], open.title)
+
+        // Whoever tells people stays quiet about an incident someone is on.
+        yield* checkAt(start + 24 * minute)
+        const [resolved] = yield* log.latest
+        assert.strictEqual(resolved?.name, "incident.resolved")
+        assert.strictEqual(resolved?.attrs["acknowledged"], true)
       }),
     ),
   )

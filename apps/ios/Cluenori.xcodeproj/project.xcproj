@@ -22,16 +22,23 @@
       "name": "Products",
       "children": [
         { "path": "<PRODUCTS>/Cluenori.app", "id": "3C57A6683088EF5C0098022D", "type": "wrapper.application", "index": false },
+        { "path": "<PRODUCTS>/CluenoriAlerts.appex", "id": "3C562C9A30891DF10032FACE", "type": "wrapper.app-extension", "index": false, "target-membership": [ { "build-phase": "Cluenori/copy/Embed Foundation Extensions", "header-preservation": "remove-on-copy" } ] },
       ],
     },
     { "kind": "folder", "path": "Cluenori", "target-membership": [ "Cluenori" ] },
+    { "kind": "folder", "path": "CluenoriAlerts", "target-membership": [ "CluenoriAlerts" ] },
+    { "kind": "folder", "path": "Alarms", "target-membership": [ "Cluenori", "CluenoriAlerts" ] },
     {
       "kind": "group",
       "path": "Config",
       "children": [
         { "path": "Cluenori.xcconfig" },
+        { "path": "App.xcconfig" },
+        { "path": "Alerts.xcconfig" },
         { "path": "Info.plist" },
+        { "path": "Alerts-Info.plist" },
         { "path": "Cluenori.entitlements" },
+        { "path": "Alerts.entitlements" },
         { "path": "Local.example.xcconfig" },
       ],
     },
@@ -42,10 +49,22 @@
       "id": "3C57A6673088EF5C0098022D",
       "product": "Products/Cluenori.app",
       "product-type": "application",
+      "specialized-configurations": [
+        { "name": "Debug", "file": "Config/App.xcconfig" },
+        { "name": "Release", "file": "Config/App.xcconfig" },
+      ],
+      "dependencies": [
+        "CluenoriAlerts",
+      ],
       "build-phases": [
         "compile-sources",
         "frameworks",
         "resources",
+        {
+          "kind": "copy",
+          "name": "Embed Foundation Extensions",
+          "bundle-base-path": "plugins-directory",
+        },
       ],
       "package-product-members": [
         {
@@ -59,6 +78,31 @@
         }, {
           "package": "CluenoriApp",
           "product-name": "CluenoriViews",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+      ],
+    }, {
+      "name": "CluenoriAlerts",
+      "id": "3C562C9930891DF10032FACE",
+      "product": "Products/CluenoriAlerts.appex",
+      "product-type": "app-extension",
+      "specialized-configurations": [
+        { "name": "Debug", "file": "Config/Alerts.xcconfig" },
+        { "name": "Release", "file": "Config/Alerts.xcconfig" },
+      ],
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+      ],
+      "package-product-members": [
+        {
+          "package": "CluenoriApp",
+          "product-name": "CluenoriClient",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "CluenoriApp",
+          "product-name": "CluenoriScreens",
           "build-phase": { "build-phase": "frameworks" },
         },
       ],

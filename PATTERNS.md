@@ -474,6 +474,10 @@ workflows, webhooks, agents, and the audit log read (`concept/Foundation.md`, "D
   the old one keeps being emitted until nothing reacts to it.
 - **Reactions are idempotent.** Delivery through Queues is at least once and may be out of order, so
   a reaction checks before it acts, on a key with a unique index.
+- **Delivery:** the project's object sends its new activity to the activity queue on its alarm
+  (`ActivityLog.deliver`), and the Worker's consumer hands each batch to the engines that react.
+  Canonical example: `@cluenori/notifications`, which pushes each entry to each phone once, keyed
+  by entry and phone in `notifications_sent`.
 - **Activity is an announcement, not a request.** To get an answer, call a service.
 
 ## 15. The public API and MCP
@@ -569,6 +573,9 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
 - **Inbound webhooks** verify their signature with the client, then call the owning engine or module
   with a system actor.
 - **Tests fake vendors at `HttpClient`,** with recorded responses, never by mocking our own services.
+  A journey fakes them with Miniflare's `outboundService`, in a Vitest project of its own, so the
+  other journeys' requests aren't affected.
+- Canonical examples: `packages/apns`, its tests, and `tests/journeys/vitest.alerts.config.ts`.
 
 ## 19. Testing
 

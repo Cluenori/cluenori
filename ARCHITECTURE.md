@@ -128,9 +128,10 @@ packages/
   scrub/                       @bagatka/scrub: removes credentials and personal data from text
   qr-code/                     @bagatka/qr-code: encodes text as a QR code, drawn as SVG path data
   openapi-swift/               @bagatka/openapi-swift: writes a typed Swift client from an OpenAPI document
+  apns/                        @bagatka/apns: sends pushes to Apple devices through APNs
 product/
   foundation/                  @cluenori/foundation
-  engines/<engine>/            @cluenori/<engine>: projects, signals, incidents, phones, today
+  engines/<engine>/            @cluenori/<engine>: projects, signals, incidents, phones, today, notifications
   modules/<module>/            @cluenori/<module>
 apps/
   worker/                      @cluenori/worker: the deployable Worker and composition root
@@ -140,6 +141,7 @@ apps/
   dashboard/                   @cluenori/dashboard: the web app, served as the Worker's static assets
   ios/                         the iPhone app: a small Xcode project, and its Swift package CluenoriApp
     CluenoriApp/Sources/CluenoriClient/CluenoriAPI.swift   generated from the API definition
+    CluenoriAlerts/            the notification extension, which rings alarms
 sdks/
   web/                         @cluenori/sdk: browsers and JavaScript backends (MIT)
 tests/
@@ -156,14 +158,14 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 
 | Part | Package | Purpose | Status |
 |---|---|---|---|
-| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, operations, their load, errors and logs over time, kept traces, logs, traces, incidents and monitors, Today across projects, and phones, each calling with its own key), OTLP ingest of traces, logs and metrics, the archive in R2, each project's Durable Object and the workspace's, the project's alarm that runs its detectors every minute, and the dashboard's files |
+| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, operations, their load, errors and logs over time, kept traces, logs, traces, incidents and monitors, Today across projects, and phones, each calling with its own key), OTLP ingest of traces, logs and metrics, the archive in R2, each project's Durable Object and the workspace's, the project's alarm that runs its detectors every minute and delivers its activity to the activity queue, the queue's consumer that hands it to the workspace's notifications, and the dashboard's files |
 | CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, questions about them, and the repository's check and generate | Built |
 | Dashboard | `apps/dashboard` | The web app over the public API | Built: served by the Worker, signed in with the API token; reads the public API for a project's overview, its performance, operations, errors, and logs by component, and a trace; the views waiting for app data are in its design kit, on sample data |
-| iPhone app | `apps/ios` | Cluenori on the founder's iPhone, from TestFlight: near the web's parity, and where alerts reach them | Built: pairing by the web's QR code, the phone's key in the Keychain, Today, and each project's incidents, load, operations, errors and logs, every screen kept for offline; alerts are next |
-| Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, and `ActivityLog`, which commits a write with its activity. Delivery to Queues comes with the first reaction, the module contract with the first module |
-| Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys) and `signals` (the archive, operation counts, kept traces, warnings and errors, error groups, traces), `incidents` (detectors, incidents, monitors), `phones` (pairing, phone keys, last seen), and `today` (what needs attention now, across projects); Actions and policy come with the first module |
+| iPhone app | `apps/ios` | Cluenori on the founder's iPhone, from TestFlight: near the web's parity, and where alerts reach them | Built: pairing by the web's QR code, the phone's key in the Keychain, Today, and each project's incidents, load, operations, errors and logs, every screen kept for offline; alerts: the push token registered with the phone's key, an alarm through silent mode from its notification extension, Acknowledge on the alarm and the notification, and a test alarm |
+| Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, and `ActivityLog`, which commits a write with its activity and delivers it, at least once. The module contract comes with the first module |
+| Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys) and `signals` (the archive, operation counts, kept traces, warnings and errors, error groups, traces), `incidents` (detectors, incidents, monitors), `phones` (pairing, phone keys, last seen, push tokens), `today` (what needs attention now, across projects), and `notifications` (alerts on phones); Actions and policy come with the first module |
 | Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Planned |
-| Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | Built: `workspace-rules`, for the architecture check; `web-crypto`, for `Crypto` in workerd; `otlp`, for OpenTelemetry exports; `quantile-sketch`, for percentiles; `scrub`, to remove secrets and personal data; `qr-code`, for the links phones pair by; `openapi-swift`, for the iOS app's API client |
+| Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | Built: `workspace-rules`, for the architecture check; `web-crypto`, for `Crypto` in workerd; `otlp`, for OpenTelemetry exports; `quantile-sketch`, for percentiles; `scrub`, to remove secrets and personal data; `qr-code`, for the links phones pair by; `openapi-swift`, for the iOS app's API client; `apns`, for pushes to phones |
 | Web SDK | `sdks/web` | Init, identify, consent, track, feature, flags, and the client kit views, for browsers and JavaScript backends | Planned |
 | Journeys | `tests/journeys` | The Worker in workerd, through its public API | Built: the deployment and telemetry journeys |
 
@@ -290,7 +292,7 @@ From `concept/`; each gets its pattern when it is built.
     token in `apps/worker/.dev.vars` made on the first run.
   - `./setup` deploys it to your Cloudflare account: signs in with Wrangler, asks once whether the
     data stays in the EU (saved at once; it can't change later), makes the archive's bucket there
-    with its 90-day expiry, deploys (`--env eu` for the EU), and the first time gives the
+    with its 90-day expiry and the activity queue, deploys (`--env eu` for the EU), and the first time gives the
     deployment an API token. It saves the choice, the URL and the token for this computer in
     `~/.config/cluenori/deployment.json`; `./update` deploys with the same choice.
   - `./cluenori` asks the deployment, or with `--local` the Cluenori `./run` serves, about projects:
@@ -419,5 +421,6 @@ updates this table in the same change.
 | `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests; the workspace's index of its projects | Foundation's `ActivityLog` | — |
 | `@cluenori/signals` | Engine | The archive of every export and its index; operations counted by name and environment; warnings and errors; error groups; the duplicate window; what "slower", "new" and "happening now" mean | `@bagatka/otlp`, `@bagatka/quantile-sketch`, `@bagatka/scrub`; an `ArchiveStore` the host provides; `projects` for its API's errors | — |
 | `@cluenori/incidents` | Engine | Its project's incidents and monitors; the detectors and what they learn: usual error rates and schedules | `@cluenori/signals`, `@cluenori/projects`; Foundation's `ActivityLog`; an `HttpClient` the host provides, for monitors | — |
-| `@cluenori/phones` | Engine | The workspace's paired phones, their keys' digests, when and where each last called, and open pairings; the names of Apple's models | Foundation's `ActivityLog` | — |
+| `@cluenori/phones` | Engine | The workspace's paired phones, their keys' digests, when and where each last called, their push tokens, and open pairings; the names of Apple's models | Foundation's `ActivityLog` | — |
 | `@cluenori/today` | Engine | Today's detectors and order: what needs attention now in each project, from its incidents and counts | `@cluenori/incidents`, `@cluenori/signals`, `@cluenori/projects` | — |
+| `@cluenori/notifications` | Engine | Each alert's level and words; which activity reached which phone | `@cluenori/phones`, `@cluenori/projects`' index, `@bagatka/apns`; an `HttpClient` the host provides | `incident.*`, from the activity queue |

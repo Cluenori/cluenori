@@ -1784,6 +1784,121 @@
         "description": "Removes a phone: its key stops working at once."
       }
     },
+    "/api/phones/push": {
+      "put": {
+        "tags": [
+          "phonePush"
+        ],
+        "operationId": "phonePush.registerPush",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "PhoneKeyRejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneKeyRejected"
+                }
+              }
+            }
+          }
+        },
+        "description": "Keeps the push token of the phone whose key is the bearer token, and the APNs environment it belongs to, in place of any before: the phone calls it each time iOS gives the app a token. Any other credential, or a removed phone's key, answers 401.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPush"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/phones/{phone}/test-alert": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "notifications.testAlert",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PushNotSetUp | NoPushToken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PushNotSetUp"
+                    },
+                    {
+                      "$ref": "#/components/schemas/NoPushToken"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "PushRejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushRejected"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "PushUnavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "description": "Rings a phone with a test alarm, as a project that is down would, and answers 204 once APNs took it. 409 when push isn't set up or the phone has no push token yet; 502 with Apple's reason when APNs refused it, such as for a wrong key; 503 when APNs didn't answer."
+      }
+    },
     "/api/today": {
       "get": {
         "tags": [
@@ -2287,6 +2402,116 @@
           "problem"
         ],
         "additionalProperties": false
+      },
+      "PushUnavailable": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PushUnavailable"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "PushRejected": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PushRejected"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "NoPushToken": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "NoPushToken"
+            ]
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "phone"
+        ],
+        "additionalProperties": false
+      },
+      "PushNotSetUp": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PushNotSetUp"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
+      "PhoneKeyRejected": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PhoneKeyRejected"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
+      "RegisterPush": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/PushEnvironment"
+          }
+        },
+        "required": [
+          "token",
+          "environment"
+        ],
+        "additionalProperties": false
+      },
+      "PushEnvironment": {
+        "type": "string",
+        "enum": [
+          "development",
+          "production"
+        ]
       },
       "PhoneNotFound": {
         "type": "object",
@@ -3645,6 +3870,12 @@
     },
     {
       "name": "phones"
+    },
+    {
+      "name": "phonePush"
+    },
+    {
+      "name": "notifications"
     },
     {
       "name": "today"

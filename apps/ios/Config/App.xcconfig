@@ -1,0 +1,18 @@
+// The app's own build settings, over Cluenori.xcconfig's.
+
+PRODUCT_NAME = Cluenori
+PRODUCT_BUNDLE_IDENTIFIER = $(CLUENORI_BUNDLE_ID)$(CLUENORI_VARIANT_ID)
+// Enhanced Security, and pushes: their APNs, and time-sensitive notifications.
+CODE_SIGN_ENTITLEMENTS = Config/Cluenori.entitlements
+
+// Keys Xcode writes, and those it can't (the pairing link's URL scheme, AlarmKit's reason), from
+// Info.plist.
+INFOPLIST_FILE = Config/Info.plist
+INFOPLIST_KEY_CFBundleDisplayName = $(CLUENORI_APP_NAME)
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.developer-tools
+INFOPLIST_KEY_NSCameraUsageDescription = Cluenori scans the code your deployment shows, to pair this iPhone.
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
+INFOPLIST_KEY_UILaunchScreen_Generation = YES
+INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+// It sends only HTTPS, which is exempt from export compliance: TestFlight asks nothing.
+INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO

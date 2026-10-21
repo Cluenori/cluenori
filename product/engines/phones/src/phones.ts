@@ -4,7 +4,7 @@ import { Base64Url, Hex } from "effect/encoding"
 import { SqlClient, SqlSchema } from "effect/sql"
 
 import { appleModels } from "./apple-models.ts"
-import type { Caller, Pairing, PairPhone, PhoneList } from "./phone.ts"
+import type { Caller, Pairing, PairPhone, PhoneList, RegisterPush } from "./phone.ts"
 import {
   AppVersion,
   ModelIdentifier,
@@ -15,6 +15,7 @@ import {
   PhoneKey,
   PhoneKeyRejected,
   PhoneNotFound,
+  PushTarget,
   SystemVersion,
 } from "./phone.ts"
 import { PhonePaired, PhoneRemoved, PhoneUpdated } from "./phones-activity.ts"
@@ -110,10 +111,27 @@ export class Phones extends Context.Service<
     /** The phones, the latest paired first. Reads only. */
     readonly phones: Effect.Effect<PhoneList>
     /**
-     * Removes a phone, with `phone.removed`: its key stops working at once. Fails with
-     * `PhoneNotFound` for a phone the deployment doesn't have.
+     * Removes a phone, with `phone.removed`: its key stops working at once, and pushes stop reaching
+     * it. Fails with `PhoneNotFound` for a phone the deployment doesn't have.
      */
     readonly remove: (actor: Actor, phone: PhoneId) => Effect.Effect<void, PhoneNotFound>
+    /**
+     * Keeps the push token of the phone whose key this is, in place of any before; a token another
+     * phone had moves to this one. Authenticates the key as `authenticate` does, and fails the same
+     * way. Without activity: iOS changes a token on its own.
+     */
+    readonly registerPush: (
+      key: Redacted.Redacted<PhoneKey>,
+      caller: Caller,
+      push: RegisterPush,
+    ) => Effect.Effect<void, PhoneKeyRejected>
+    /** The phones with a push token, each with its latest. Reads only. */
+    readonly pushTargets: Effect.Effect<ReadonlyArray<PushTarget>>
+    /**
+     * Forgets a token APNs says no longer reaches its phone. Keeps one the phone registered since,
+     * so a forget that comes late removes nothing new.
+     */
+    readonly forgetPushToken: (target: PushTarget) => Effect.Effect<void>
   }
 >()("@cluenori/phones/phones") {
   /** Builds the engine on the workspace's database, first creating or updating its tables. */
@@ -234,10 +252,14 @@ export class Phones extends Context.Service<
         return { phone, key: Redacted.make(key) }
       })
 
-      const authenticate = Effect.fn("Phones.authenticate")(function* (
-        key: Redacted.Redacted<PhoneKey>,
-        caller: Caller,
-      ) {
+      const findPushTargets = SqlSchema.findAll({
+        Request: Schema.Void,
+        Result: PushTarget,
+        execute: () => sql`SELECT phone, token, environment FROM phones_push ORDER BY phone`,
+      })
+
+      // The phone whose key this is, and who it acts for.
+      const phoneOfKey = Effect.fn("Phones.phoneOfKey")(function* (key: Redacted.Redacted<PhoneKey>, caller: Caller) {
         const presented = Redacted.value(key)
         const id = PhoneId.make(presented.slice(keyPrefix.length, keyPrefix.length + 36))
         const found = yield* findKey(id).pipe(Effect.orDie)
@@ -271,7 +293,39 @@ export class Phones extends Context.Service<
         ) {
           yield* recordSeen(id, now, caller).pipe(Effect.orDie)
         }
-        return phone.actor
+        return { id, actor: phone.actor }
+      })
+
+      const authenticate = Effect.fn("Phones.authenticate")(function* (
+        key: Redacted.Redacted<PhoneKey>,
+        caller: Caller,
+      ) {
+        return (yield* phoneOfKey(key, caller)).actor
+      })
+
+      const registerPush = Effect.fn("Phones.registerPush")(function* (
+        key: Redacted.Redacted<PhoneKey>,
+        caller: Caller,
+        push: RegisterPush,
+      ) {
+        const { id } = yield* phoneOfKey(key, caller)
+        const now = DateTime.toEpochMillis(yield* DateTime.now)
+        yield* sql
+          .withTransaction(
+            Effect.gen(function* () {
+              yield* sql`DELETE FROM phones_push WHERE token = ${push.token} AND phone != ${id}`
+              yield* sql`INSERT INTO phones_push ${sql.insert({ phone: id, token: push.token, environment: push.environment, registered_at: now })}
+                ON CONFLICT (phone) DO UPDATE SET token = excluded.token, environment = excluded.environment,
+                  registered_at = excluded.registered_at`
+            }),
+          )
+          .pipe(Effect.orDie)
+      })
+
+      const pushTargets = findPushTargets(undefined).pipe(Effect.orDie, Effect.withSpan("Phones.pushTargets"))
+
+      const forgetPushToken = Effect.fn("Phones.forgetPushToken")(function* (target: PushTarget) {
+        yield* sql`DELETE FROM phones_push WHERE phone = ${target.phone} AND token = ${target.token}`.pipe(Effect.orDie)
       })
 
       const phones = findPhones(undefined).pipe(
@@ -290,12 +344,22 @@ export class Phones extends Context.Service<
               return yield* new PhoneNotFound({ phone })
             }
             yield* sql`DELETE FROM phones_seen WHERE phone = ${phone}`.pipe(Effect.orDie)
+            yield* sql`DELETE FROM phones_push WHERE phone = ${phone}`.pipe(Effect.orDie)
           }),
           activity: () => [{ payload: PhoneRemoved.make({ phone }) }],
         })
       })
 
-      return Phones.of({ startPairing, pair, authenticate, phones, remove })
+      return Phones.of({
+        startPairing,
+        pair,
+        authenticate,
+        phones,
+        remove,
+        registerPush,
+        pushTargets,
+        forgetPushToken,
+      })
     }),
   )
 }

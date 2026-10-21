@@ -393,6 +393,27 @@ public struct CluenoriAPI: Sendable {
         _ = try await self.send("DELETE", "/api/phones/\(Self.escaped(Self.text(phone)))")
     }
 
+    /// Keeps the push token of the phone whose key is the bearer token, and the APNs environment it
+    /// belongs to, in place of any before: the phone calls it each time iOS gives the app a token.
+    /// Any other credential, or a removed phone's key, answers 401.
+    ///
+    /// Fails with `.phoneKeyRejected`, or as any call can.
+    @concurrent
+    public func registerPush(_ body: RegisterPush) async throws(APIError) {
+        _ = try await self.send("PUT", "/api/phones/push", body: try Self.encoded(body))
+    }
+
+    /// Rings a phone with a test alarm, as a project that is down would, and answers 204 once APNs
+    /// took it. 409 when push isn't set up or the phone has no push token yet; 502 with Apple's
+    /// reason when APNs refused it, such as for a wrong key; 503 when APNs didn't answer.
+    ///
+    /// Fails with `.unauthorized`, `.pushNotSetUp`, `.noPushToken`, `.pushRejected`,
+    /// `.pushUnavailable`, or as any call can.
+    @concurrent
+    public func testAlert(phone: String) async throws(APIError) {
+        _ = try await self.send("POST", "/api/phones/\(Self.escaped(Self.text(phone)))/test-alert")
+    }
+
     /// What needs attention now across every project, the most urgent first: open incidents not
     /// acknowledged, errors happening now (seen in the last 15 minutes), acknowledged incidents,
     /// new errors (first seen in the last day), operations whose p95 over the last day is at least
@@ -418,10 +439,15 @@ public enum APIError: Error, Sendable {
     case monitorExists(MonitorExists)
     case monitorLimitReached(MonitorLimitReached)
     case monitorNotFound(MonitorNotFound)
+    case noPushToken(NoPushToken)
     case pairingCodeRejected(PairingCodeRejected)
+    case phoneKeyRejected(PhoneKeyRejected)
     case phoneNotFound(PhoneNotFound)
     case projectExists(ProjectExists)
     case projectNotFound(ProjectNotFound)
+    case pushNotSetUp(PushNotSetUp)
+    case pushRejected(PushRejected)
+    case pushUnavailable(PushUnavailable)
     case unauthorized(Unauthorized)
     /// The server didn't answer: no connection, a timeout, or a cancelled call.
     case unreachable(URLError)
@@ -1047,6 +1073,14 @@ public struct MonitorState: Codable, Hashable, Sendable {
     }
 }
 
+public struct NoPushToken: Codable, Hashable, Sendable {
+    public let phone: String
+
+    public init(phone: String) {
+        self.phone = phone
+    }
+}
+
 public struct OperationRow: Codable, Hashable, Sendable {
     public let component: String
     public let environment: String?
@@ -1183,6 +1217,11 @@ public struct Phone: Codable, Hashable, Sendable {
     }
 }
 
+public struct PhoneKeyRejected: Codable, Hashable, Sendable {
+    public init() {
+    }
+}
+
 public struct PhoneList: Codable, Hashable, Sendable {
     public let phones: [Phone]
 
@@ -1242,6 +1281,49 @@ public struct ProjectNotFound: Codable, Hashable, Sendable {
 
     public init(project: String) {
         self.project = project
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct PushEnvironment: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let development = PushEnvironment(rawValue: "development")
+    public static let production = PushEnvironment(rawValue: "production")
+}
+
+public struct PushNotSetUp: Codable, Hashable, Sendable {
+    public init() {
+    }
+}
+
+public struct PushRejected: Codable, Hashable, Sendable {
+    public let reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
+}
+
+public struct PushUnavailable: Codable, Hashable, Sendable {
+    public let reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
+}
+
+public struct RegisterPush: Codable, Hashable, Sendable {
+    public let token: String
+    public let environment: PushEnvironment
+
+    public init(token: String, environment: PushEnvironment) {
+        self.token = token
+        self.environment = environment
     }
 }
 
@@ -1632,10 +1714,15 @@ extension CluenoriAPI {
             case "MonitorExists": return .monitorExists(try jsonDecoder().decode(MonitorExists.self, from: data))
             case "MonitorLimitReached": return .monitorLimitReached(try jsonDecoder().decode(MonitorLimitReached.self, from: data))
             case "MonitorNotFound": return .monitorNotFound(try jsonDecoder().decode(MonitorNotFound.self, from: data))
+            case "NoPushToken": return .noPushToken(try jsonDecoder().decode(NoPushToken.self, from: data))
             case "PairingCodeRejected": return .pairingCodeRejected(try jsonDecoder().decode(PairingCodeRejected.self, from: data))
+            case "PhoneKeyRejected": return .phoneKeyRejected(try jsonDecoder().decode(PhoneKeyRejected.self, from: data))
             case "PhoneNotFound": return .phoneNotFound(try jsonDecoder().decode(PhoneNotFound.self, from: data))
             case "ProjectExists": return .projectExists(try jsonDecoder().decode(ProjectExists.self, from: data))
             case "ProjectNotFound": return .projectNotFound(try jsonDecoder().decode(ProjectNotFound.self, from: data))
+            case "PushNotSetUp": return .pushNotSetUp(try jsonDecoder().decode(PushNotSetUp.self, from: data))
+            case "PushRejected": return .pushRejected(try jsonDecoder().decode(PushRejected.self, from: data))
+            case "PushUnavailable": return .pushUnavailable(try jsonDecoder().decode(PushUnavailable.self, from: data))
             case "Unauthorized": return .unauthorized(try jsonDecoder().decode(Unauthorized.self, from: data))
             default: return .unreadable(status: status, reason: "An error this client doesn't know: \(named.error).")
             }

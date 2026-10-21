@@ -1,4 +1,5 @@
-import { Effect } from "effect"
+import { PhoneKey, PhoneKeyRejected } from "@cluenori/phones"
+import { Effect, Schema } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 
@@ -43,6 +44,32 @@ export const PairingHandlers = HttpApiBuilder.group(CluenoriApi, "pairing", (han
       const request = yield* HttpServerRequest.HttpServerRequest
       const workspace = yield* WorkspaceObjects
       return yield* workspace.call(workspaceCalls.pair, { phone: payload, caller: callerOf(request) })
+    }),
+  ),
+)
+
+/**
+ * Serves the phone push group: the phone's own key, as its bearer token, is the only credential
+ * that registers its push token, and the workspace's object checks it with the registration.
+ */
+export const PhonePushHandlers = HttpApiBuilder.group(CluenoriApi, "phonePush", (handlers) =>
+  handlers.handle("registerPush", ({ payload }) =>
+    Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const workspace = yield* WorkspaceObjects
+      const bearer = /^Bearer (.+)$/i.exec(request.headers["authorization"] ?? "")?.[1] ?? ""
+      const key = yield* Schema.decodeEffect(PhoneKey)(bearer).pipe(Effect.mapError(() => new PhoneKeyRejected()))
+      yield* workspace.call(workspaceCalls.registerPush, { key, caller: callerOf(request), push: payload })
+    }),
+  ),
+)
+
+/** Serves the notifications group: a test alarm on a phone. */
+export const NotificationsHandlers = HttpApiBuilder.group(CluenoriApi, "notifications", (handlers) =>
+  handlers.handle("testAlert", ({ params }) =>
+    Effect.gen(function* () {
+      const workspace = yield* WorkspaceObjects
+      yield* workspace.call(workspaceCalls.testAlert, { phone: params.phone })
     }),
   ),
 )

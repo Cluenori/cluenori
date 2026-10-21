@@ -126,7 +126,7 @@ struct BannerText<Content: View>: View {
     }
 }
 
-/// The phone's own settings: which deployment it is paired with, and unpairing it.
+/// The phone's own settings: which deployment it is paired with, its alerts, and unpairing it.
 struct PhoneMenu: View {
     let pairing: PairingModel
     @State private var isConfirming = false
@@ -138,6 +138,9 @@ struct PhoneMenu: View {
                 Section {
                     Text("Paired with \(host)", bundle: #bundle, comment: "The deployment's address, in the menu.")
                 }
+            }
+            if let alerts = pairing.models?.alerts {
+                AlertsMenuSection(alerts: alerts)
             }
             ScanPairingCodeButton(isRequested: $isScanRequested, prominent: false)
             Button(role: .destructive) {
@@ -157,6 +160,7 @@ struct PhoneMenu: View {
             }
         }
         .scansPairingCode($isScanRequested, pairing: pairing)
+        .showsTestAlarm(pairing.models?.alerts)
         .confirmationDialog(
             Text("Unpair this iPhone?", bundle: #bundle, comment: "Title of the confirmation before unpairing."),
             isPresented: $isConfirming,

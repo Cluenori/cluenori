@@ -20,6 +20,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Cluenori rings like an alarm clock when a project is down or failing, even in silent mode.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Cluenori connects to a deployment you run on your local network.</string>
 </dict>

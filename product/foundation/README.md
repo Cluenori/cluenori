@@ -58,8 +58,8 @@ const envelope = yield* Schema.decodeUnknownEffect(Envelope)(body)
 
 - **Building the project's object.** The host makes the Durable Object, its `SqlClient` and its
   `Crypto`, and builds `ActivityLog.layer` once per object (`apps/worker`).
-- **Delivery to Queues.** Activity is stored now; the alarm that delivers it to Queues comes with
-  the first reaction.
+- **The queue.** `deliver` hands what is undelivered to the sender the host gives it; the project's
+  object sends it to the activity queue on its alarm (`apps/worker`).
 - **Who people are.** Person, installation and account IDs are assigned, and linked to the app's
   own IDs, by the engine that owns people, with the first signal that carries them.
 - **The module contract** (`defineModule`), which comes with the first module.

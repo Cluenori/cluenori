@@ -3,5 +3,5 @@
   // Journeys run inside workerd with the Worker, so they see its runtime and its `Env`.
   // The test plugin's `cloudflare:test` runs an object's alarm, as the incidents journey does.
   "compilerOptions": { "types": ["@cloudflare/vitest-plugin/types"] },
-  "include": ["test", "vitest.config.ts", "../../apps/worker/worker-configuration.d.ts"]
+  "include": ["test", "vitest.config.ts", "vitest.alerts.config.ts", "../../apps/worker/worker-configuration.d.ts"]
 }

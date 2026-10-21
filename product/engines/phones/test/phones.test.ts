@@ -5,7 +5,7 @@ import { DateTime, Effect, Exit, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 
 import type { Caller, PairPhone } from "../src/index.ts"
-import { AppVersion, ModelIdentifier, PairingCode, PhoneKey, Phones, SystemVersion } from "../src/index.ts"
+import { AppVersion, ModelIdentifier, PairingCode, PhoneKey, Phones, PushToken, SystemVersion } from "../src/index.ts"
 import { inWorkspace } from "./in-workspace.ts"
 
 // 2026-10-21T10:00:00Z.
@@ -162,6 +162,47 @@ describe("Phones", () => {
         )
         assert.deepStrictEqual(yield* activityNames, ["phone.removed", "phone.paired", "phone.paired"])
         assert.isUndefined((yield* phones.phones).phones.find((each) => each.id === phone.id))
+      }),
+    ),
+  )
+
+  it.effect("keeps each phone's latest push token, on one phone only, until APNs says it's gone", () =>
+    inWorkspace(
+      "pushes",
+      start,
+      Effect.gen(function* () {
+        const phones = yield* Phones
+        const first = yield* startAndPair()
+        const second = yield* startAndPair(home, "iPhone18,2")
+        const old = PushToken.make("a1".repeat(32))
+        const fresh = PushToken.make("b2".repeat(32))
+        const targetsOf = phones.pushTargets.pipe(
+          Effect.map((targets) => targets.map((target) => [target.phone, target.token, target.environment])),
+        )
+
+        yield* phones.registerPush(first.key, home, { token: old, environment: "development" })
+        yield* phones.registerPush(first.key, home, { token: fresh, environment: "production" })
+        assert.deepStrictEqual(yield* targetsOf, [[first.phone.id, fresh, "production"]])
+
+        // A token reaches one phone: the phone that registers it last.
+        yield* phones.registerPush(second.key, home, { token: fresh, environment: "production" })
+        assert.deepStrictEqual(yield* targetsOf, [[second.phone.id, fresh, "production"]])
+
+        // A forget about a token since replaced removes nothing.
+        yield* phones.registerPush(first.key, home, { token: old, environment: "production" })
+        yield* phones.forgetPushToken({ phone: second.phone.id, token: old, environment: "production" })
+        assert.strictEqual((yield* phones.pushTargets).length, 2)
+        yield* phones.forgetPushToken({ phone: second.phone.id, token: fresh, environment: "production" })
+        assert.deepStrictEqual(yield* targetsOf, [[first.phone.id, old, "production"]])
+
+        // A removed phone's token goes with it, and its key registers none.
+        yield* phones.remove(member, first.phone.id)
+        assert.deepStrictEqual(yield* targetsOf, [])
+        const rejected = yield* phones
+          .registerPush(first.key, home, { token: old, environment: "production" })
+          .pipe(Effect.flip)
+        assert.strictEqual(rejected._tag, "PhoneKeyRejected")
+        assert.deepStrictEqual(yield* activityNames, ["phone.removed", "phone.paired", "phone.paired"])
       }),
     ),
   )

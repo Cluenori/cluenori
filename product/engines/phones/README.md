@@ -1,7 +1,8 @@
 # @cluenori/phones
 
 The phones paired with a deployment: pairing one by a link the web shows as a QR code, the key each
-calls the API with, when and where each last called, and removing one.
+calls the API with, when and where each last called, the token pushes reach each by, and removing
+one.
 
 ## Use it
 
@@ -24,7 +25,8 @@ const actor = yield* phones.authenticate(key, caller)
 ## Owns
 
 - **Data:** phones with their keys' digests and who they act for (`phones_phones`), when and where
-  each last called (`phones_seen`), and open pairings by their code's digest (`phones_pairings`).
+  each last called (`phones_seen`), open pairings by their code's digest (`phones_pairings`), and
+  the push token each last registered, with its APNs environment (`phones_push`).
 - **Rules:**
   - A pairing code is good once, for 10 minutes; at most 5 are good at once.
   - A phone's key is `cluenori.phone.<phone ID>.<secret>`, shown once; only its SHA-256 digest is
@@ -36,7 +38,8 @@ const actor = yield* phones.authenticate(key, caller)
 
 ## Does not own
 
-- **Telling a phone anything:** push tokens and notifications come with the notifications engine.
+- **Telling a phone anything:** the notifications engine sends alerts to `pushTargets`, and
+  forgets a token APNs says is gone.
 - **The API token:** the Worker's `ApiToken`.
 - **The caller's address and country:** the host reads them from Cloudflare's headers.
 
@@ -55,6 +58,11 @@ Foundation's `ActivityLog`, and `Crypto` for codes, keys, IDs and digests.
 change; `phone.removed` by whoever removes it.
 
 ## Decisions and constraints
+
+- **A phone registers its push token with its own key,** which `registerPush` checks: no other
+  credential can point a phone's alerts elsewhere. A token is on one phone only, the one that
+  registered it last, so a reinstalled app never gets an alert twice. Registering is without
+  activity, since iOS changes a token on its own.
 
 - **Pairing by link.** The QR code holds `cluenori://pair?url=<deployment>&code=<code>`, so the
   Camera opens the app, and a link pasted into a simulator works too. The deployment is the origin

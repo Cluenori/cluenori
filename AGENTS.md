@@ -504,7 +504,9 @@ conflict.
   detectors look every minute at monitors and counts and open incidents; phones pair by a QR code
   and call the API with keys of their own; and the public API (behind an API token) and
   `./cluenori` show operations, their load, errors, logs, any trace, incidents and monitors. The dashboard (`apps/dashboard`), served by the Worker and signed in with
-  the API token, shows the same through the public API. No module exists yet.
+  the API token, shows the same through the public API; the iPhone app (`apps/ios`), paired by the
+  web's QR code, shows it too, and incidents reach it as alerts through APNs, ringing like an alarm
+  clock for Down and Failing. No module exists yet.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository

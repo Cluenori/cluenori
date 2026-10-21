@@ -1,13 +1,14 @@
 import CluenoriClient
 import Foundation
 
-/// The paired deployment's screens: Today, the projects, and each screen a route opens, every one
+/// The paired deployment's screens: Today, the projects, each screen a route opens, and alerts, every one
 /// asking the deployment with this phone's key and keeping its answers on the phone. A screen's
 /// model is made once and kept while recently used, so going back to it shows it as it was, and a
 /// view may ask for it each time it draws.
 public final class DeploymentModels {
     public let today: TodayModel
     public let projects: ProjectsModel
+    public let alerts: AlertsModel
 
     private let api: CluenoriAPI
     private let context: AnswerContext
@@ -16,11 +17,12 @@ public final class DeploymentModels {
     // The models of the screens recently opened, at most this many; past it, they are made anew.
     private static let keptAtMost = 64
 
-    init(api: CluenoriAPI, context: AnswerContext) {
+    init(api: CluenoriAPI, context: AnswerContext, phone: String, alertSystem: (any AlertSystem)?) {
         self.api = api
         self.context = context
         today = TodayModel(api: api, context: context)
         projects = ProjectsModel(api: api, context: context)
+        alerts = AlertsModel(api: api, phone: phone, system: alertSystem, keyRejected: context.keyRejected)
     }
 
     /// What people call `project`: its name, from the projects or Today; its key until either says.

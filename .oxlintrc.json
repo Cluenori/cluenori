@@ -98,7 +98,7 @@
     {
       // The platforms call these by their default export: Workers call the Worker's entry, and
       // Vitest and Vite read their configuration.
-      "files": ["**/src/worker.ts", "**/vitest.config.ts", "**/vite.config.ts"],
+      "files": ["**/src/worker.ts", "**/vitest.config.ts", "**/vitest.*.config.ts", "**/vite.config.ts"],
       "rules": { "import/no-default-export": "off" }
     },
     {

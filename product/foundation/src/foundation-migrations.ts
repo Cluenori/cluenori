@@ -19,5 +19,16 @@ export const migrateFoundation = Migrator.make({})({
         envelope TEXT NOT NULL
       )`
     }),
+    // How far activity was delivered: the `seq` of the last entry sent. It starts at the newest
+    // entry there is, so activity from before delivery began is never sent.
+    "0002_delivery": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE foundation_delivery (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        delivered_seq INTEGER NOT NULL
+      )`
+      yield* sql`INSERT INTO foundation_delivery (id, delivered_seq)
+        SELECT 1, COALESCE(MAX(seq), 0) FROM foundation_activity`
+    }),
   }),
 })

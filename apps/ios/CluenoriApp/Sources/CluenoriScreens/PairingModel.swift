@@ -47,22 +47,27 @@ public final class PairingModel {
     @ObservationIgnored private let details: PhoneDetails
     @ObservationIgnored private let transport: CluenoriAPI.Transport?
     @ObservationIgnored private let cacheDirectory: URL?
+    @ObservationIgnored private let alertSystem: (any AlertSystem)?
     @ObservationIgnored private var paired: PairedDeployment? = nil
     @ObservationIgnored private var unsent: URL? = nil
+    @ObservationIgnored private var pushToken: RegisterPush? = nil
 
     /// Starts as the phone was left: paired with the deployment `store` holds, or unpaired.
     /// `details` is what the phone says about itself; `transport` sends requests, URLSession's
     /// unless a test gives its own. What the screens last saw is kept in `cacheDirectory`, if any.
+    /// `alertSystem` is the phone's side of alerts; without one, alerts stay off.
     public init(
         store: any PairingStore,
         details: PhoneDetails,
         transport: CluenoriAPI.Transport? = nil,
-        cacheDirectory: URL? = nil
+        cacheDirectory: URL? = nil,
+        alertSystem: (any AlertSystem)? = nil
     ) {
         self.store = store
         self.details = details
         self.transport = transport
         self.cacheDirectory = cacheDirectory
+        self.alertSystem = alertSystem
         do {
             if let deployment = try store.load() {
                 become(deployment)
@@ -101,6 +106,7 @@ public final class PairingModel {
                 return
             }
             become(deployment)
+            await registerPushToken()
         } catch {
             state = before
             switch error {
@@ -140,6 +146,33 @@ public final class PairingModel {
         }
     }
 
+    /// Keeps the push token iOS gave the app, as hex, for the APNs `environment` it belongs to, and
+    /// gives it to the paired deployment, and to each one the phone pairs with after.
+    public func registerPush(token: String, environment: PushEnvironment) async {
+        pushToken = RegisterPush(token: token, environment: environment)
+        await registerPushToken()
+    }
+
+    /// Acknowledges an incident from an alert, for whoever paired the phone: nil once the deployment
+    /// says someone is on it, or why not. Unpaired, the incident is no longer this phone's to tell.
+    public func acknowledge(_ incident: PushAlert.Incident) async -> AlertsModel.Problem? {
+        guard let models else { return .incidentNotFound }
+        return await models.alerts.acknowledge(incident)
+    }
+
+    /// Opens the screen an alert is about, while paired.
+    public func open(_ alert: PushAlert) {
+        if let route = alert.route, state == .paired {
+            navigation.open(route)
+        }
+    }
+
+    private func registerPushToken() async {
+        if let pushToken, let models {
+            await models.alerts.register(token: pushToken.token, environment: pushToken.environment)
+        }
+    }
+
     // The deployment refused the phone's key: it was removed on the web.
     func keyRejected() {
         forget(.removed)
@@ -149,7 +182,12 @@ public final class PairingModel {
         paired = deployment
         host = deployment.deployment.host()
         let context = AnswerContext(store: store(of: deployment)) { [weak self] in self?.keyRejected() }
-        models = DeploymentModels(api: deployment.api(details, transport: transport), context: context)
+        models = DeploymentModels(
+            api: deployment.api(details, transport: transport),
+            context: context,
+            phone: deployment.phone,
+            alertSystem: alertSystem
+        )
         state = .paired
     }
 

@@ -22,6 +22,11 @@ struct TodayScreen: View {
             .safeAreaInset(edge: .bottom) {
                 TodayBanner(today: today)
             }
+            .safeAreaInset(edge: .top) {
+                if let alerts = pairing.models?.alerts {
+                    AlertsCard(alerts: alerts)
+                }
+            }
     }
 }
 

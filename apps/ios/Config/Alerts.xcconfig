@@ -1,0 +1,10 @@
+// The build settings of the app's notification extension, CluenoriAlerts, over Cluenori.xcconfig's:
+// it runs for each alert push, and starts an alarm's ringing.
+
+PRODUCT_NAME = CluenoriAlerts
+PRODUCT_BUNDLE_IDENTIFIER = $(CLUENORI_BUNDLE_ID)$(CLUENORI_VARIANT_ID).alerts
+CODE_SIGN_ENTITLEMENTS = Config/Alerts.entitlements
+INFOPLIST_FILE = Config/Alerts-Info.plist
+INFOPLIST_KEY_CFBundleDisplayName = $(CLUENORI_APP_NAME) Alerts
+// An extension is installed inside the app, not on its own.
+SKIP_INSTALL = YES

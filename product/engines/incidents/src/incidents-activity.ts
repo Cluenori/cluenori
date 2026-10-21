@@ -19,14 +19,23 @@ export const IncidentOpened = Schema.TaggedStruct("incident.opened", incidentFie
 /** A problem came back within 30 minutes of its incident resolving, and reopened it. */
 export const IncidentReopened = Schema.TaggedStruct("incident.reopened", incidentFields)
 
+// Whether someone is on it, as an incident that is already open can be: present when they are.
+const acknowledged = Schema.optionalKey(Schema.Literal(true))
+
 /** An open incident got worse: a failure rate twice what was last told. */
-export const IncidentWorsened = Schema.TaggedStruct("incident.worsened", incidentFields)
+export const IncidentWorsened = Schema.TaggedStruct("incident.worsened", { ...incidentFields, acknowledged })
 
 /** An incident's problem was gone for 10 minutes, or its monitor was removed. */
-export const IncidentResolved = Schema.TaggedStruct("incident.resolved", incidentFields)
+export const IncidentResolved = Schema.TaggedStruct("incident.resolved", { ...incidentFields, acknowledged })
 
-/** Someone is on it: the incident tells no one more. */
-export const IncidentAcknowledged = Schema.TaggedStruct("incident.acknowledged", { incident: IncidentId })
+/**
+ * Someone is on it: the incident tells no one more. Its title is absent on entries from before
+ * October 2026.
+ */
+export const IncidentAcknowledged = Schema.TaggedStruct("incident.acknowledged", {
+  incident: IncidentId,
+  title: Schema.optionalKey(Schema.String),
+})
 
 /** A monitor was added to a component. */
 export const MonitorAdded = Schema.TaggedStruct("monitor.added", {

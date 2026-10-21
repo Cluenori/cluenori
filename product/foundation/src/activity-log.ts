@@ -33,6 +33,11 @@ export interface Change<A, E> {
 
 const latestCount = 100
 
+// A batch of delivery: at most this many entries, as a Queue takes in one send.
+const deliveredAtOnce = 100
+// At most this many batches in one call to `deliver`; the rest wait for the next.
+const batchesAtOnce = 10
+
 /**
  * The activity of one database, and the only way to change its records: every write commits
  * together with the activity it emits. Runs inside the Durable Object that holds the database.
@@ -51,6 +56,15 @@ export class ActivityLog extends Context.Service<
     readonly commit: <A, E>(change: Change<A, E>) => Effect.Effect<A, E>
     /** The 100 most recent activity entries, newest first; entries of one commit in reverse order. */
     readonly latest: Effect.Effect<ReadonlyArray<Envelope>>
+    /**
+     * Sends the activity not yet delivered, oldest first, with `send`: at most 100 entries at a
+     * time, and 1,000 a call, the rest waiting for the next. Each batch is marked delivered once
+     * `send` succeeds, so delivery is at least once: a batch sent whose mark was lost is sent
+     * again, and whoever receives it acts once per envelope ID. Fails with `send`'s error, the
+     * batches before it marked. Activity committed before delivery began is never sent. Returns
+     * how many entries it sent.
+     */
+    readonly deliver: <E>(send: (batch: ReadonlyArray<Envelope>) => Effect.Effect<void, E>) => Effect.Effect<number, E>
   }
 >()("@cluenori/foundation/activity-log/ActivityLog") {
   /**
@@ -115,7 +129,35 @@ export class ActivityLog extends Context.Service<
           Effect.withSpan("ActivityLog.latest"),
         )
 
-        return ActivityLog.of({ commit, latest })
+        const findUndelivered = SqlSchema.findAll({
+          Request: Schema.Void,
+          Result: Schema.Struct({ seq: Schema.Int, envelope: Schema.fromJsonString(Envelope) }),
+          execute: () => sql`
+            SELECT a.seq, a.envelope FROM foundation_activity a, foundation_delivery d
+            WHERE d.id = 1 AND a.seq > d.delivered_seq ORDER BY a.seq LIMIT ${deliveredAtOnce}`,
+        })
+
+        const deliver = Effect.fn("ActivityLog.deliver")(function* <E>(
+          send: (batch: ReadonlyArray<Envelope>) => Effect.Effect<void, E>,
+        ): Effect.fn.Return<number, E> {
+          let sent = 0
+          for (let batch = 0; batch < batchesAtOnce; batch++) {
+            const rows = yield* findUndelivered(undefined).pipe(Effect.orDie)
+            const last = rows.at(-1)
+            if (last === undefined) {
+              break
+            }
+            yield* send(rows.map((row) => row.envelope))
+            yield* sql`UPDATE foundation_delivery SET delivered_seq = ${last.seq} WHERE id = 1`.pipe(Effect.orDie)
+            sent += rows.length
+            if (rows.length < deliveredAtOnce) {
+              break
+            }
+          }
+          return sent
+        })
+
+        return ActivityLog.of({ commit, latest, deliver })
       }),
     )
 }

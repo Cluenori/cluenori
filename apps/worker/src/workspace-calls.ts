@@ -1,4 +1,5 @@
-import { Actor } from "@cluenori/foundation"
+import { Actor, Envelope } from "@cluenori/foundation"
+import { NoPushToken, PushNotSetUp, PushRejected, PushUnavailable } from "@cluenori/notifications"
 import {
   Caller,
   PairedPhone,
@@ -10,6 +11,7 @@ import {
   PhoneKeyRejected,
   PhoneList,
   PhoneNotFound,
+  RegisterPush,
 } from "@cluenori/phones"
 import { Project, ProjectList } from "@cluenori/projects"
 import { Schema } from "effect"
@@ -25,6 +27,9 @@ export type WorkspaceCallName =
   | "pair"
   | "authenticatePhone"
   | "removePhone"
+  | "registerPush"
+  | "notify"
+  | "testAlert"
 
 /** One thing the Worker asks the workspace's Durable Object: its input, its answer, and how it fails. */
 export type WorkspaceCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> = ObjectCall<
@@ -65,5 +70,18 @@ export const workspaceCalls = {
     Schema.Struct({ actor: Actor, phone: PhoneId }),
     Schema.Void,
     PhoneNotFound,
+  ),
+  registerPush: workspaceCall(
+    "registerPush",
+    Schema.Struct({ key: PhoneKey, caller: Caller, push: RegisterPush }),
+    Schema.Void,
+    PhoneKeyRejected,
+  ),
+  notify: workspaceCall("notify", Schema.Array(Envelope), Schema.Void, PushUnavailable),
+  testAlert: workspaceCall(
+    "testAlert",
+    Schema.Struct({ phone: PhoneId }),
+    Schema.Void,
+    Schema.Union([PushNotSetUp, NoPushToken, PushRejected, PushUnavailable]),
   ),
 }

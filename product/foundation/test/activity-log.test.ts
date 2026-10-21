@@ -213,3 +213,51 @@ describe("ActivityLog", () => {
     }),
   )
 })
+
+describe("ActivityLog.deliver", () => {
+  it.effect("sends what was committed since, oldest first, once, and only what came after delivery began", () =>
+    inObject(
+      "delivers",
+      inNotes,
+      Effect.gen(function* () {
+        yield* createNotes
+        const log = yield* ActivityLog
+        const batches: Array<ReadonlyArray<unknown>> = []
+        const send = (batch: ReadonlyArray<Envelope>) =>
+          Effect.sync(() => {
+            batches.push(batch.map((envelope) => envelope.attrs["note"]))
+          })
+
+        yield* addNote("delivered-1", "First")
+        yield* addNote("delivered-2", "Second")
+        assert.strictEqual(yield* log.deliver(send), 2)
+        assert.strictEqual(yield* log.deliver(send), 0)
+        yield* addNote("delivered-3", "Third")
+        assert.strictEqual(yield* log.deliver(send), 1)
+        assert.deepStrictEqual(batches, [["delivered-1", "delivered-2"], ["delivered-3"]])
+      }),
+    ),
+  )
+
+  it.effect("sends a batch again when sending it failed, and marks nothing it didn't send", () =>
+    inObject(
+      "redelivers",
+      inNotes,
+      Effect.gen(function* () {
+        yield* createNotes
+        const log = yield* ActivityLog
+        yield* log.deliver(() => Effect.void)
+        yield* addNote("retried-1", "First")
+        const failed = yield* log.deliver(() => Effect.fail("queue down")).pipe(Effect.flip)
+        assert.strictEqual(failed, "queue down")
+        const sent: Array<unknown> = []
+        yield* log.deliver((batch) =>
+          Effect.sync(() => {
+            sent.push(...batch.map((envelope) => envelope.attrs["note"]))
+          }),
+        )
+        assert.deepStrictEqual(sent, ["retried-1"])
+      }),
+    ),
+  )
+})

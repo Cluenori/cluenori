@@ -8,6 +8,7 @@ import { acknowledge, incidents, monitor, monitors } from "./incidents-commands.
 import { load, operation, operations } from "./operations-commands.ts"
 import { phone, phones } from "./phones-commands.ts"
 import { component, project } from "./projects-commands.ts"
+import { push } from "./push-commands.ts"
 import { run } from "./run.ts"
 import { setup } from "./setup.ts"
 import { today } from "./today-command.ts"
@@ -41,6 +42,7 @@ export const cluenori = Command.make("cluenori").pipe(
     monitor,
     phones,
     phone,
+    push,
     check,
     generate,
     appleModels,

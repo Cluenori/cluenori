@@ -199,7 +199,7 @@ Alerts reach the Cluenori iOS app through APNs, at three levels:
 | --- | --- | --- |
 | Alarm | Rings through silent mode and Do Not Disturb, like an alarm clock | Down, Failing |
 | Time sensitive | Breaks through a Focus I allow it in, and follows the silent switch | Stopped, a reopened incident |
-| Quiet | A normal notification | Recovered |
+| Quiet | A notification without a sound, which doesn't light the screen | Recovered, Acknowledged |
 
 An alarm is an AlarmKit alarm: the push wakes the app's notification extension, which starts one, and it rings through a locked phone, silent mode and Do Not Disturb. It needs no entitlement from Apple. It says what is down, rings our own siren in the app's red, and has an Acknowledge button that acknowledges the incident and stops it.
 

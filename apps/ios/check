@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode27.2RC.app/Contents/Developer}"
 
 echo "Checking the Swift's formatting"
-xcrun swift format lint --strict --recursive Cluenori CluenoriApp/Sources CluenoriApp/Tests CluenoriApp/Package.swift
+xcrun swift format lint --strict --recursive Cluenori CluenoriAlerts Alarms CluenoriApp/Sources CluenoriApp/Tests CluenoriApp/Package.swift
 
 echo "Checking that the client and screen layers stay portable"
 apple_only=$(grep -rhE '^import ' CluenoriApp/Sources/CluenoriClient CluenoriApp/Sources/CluenoriScreens \

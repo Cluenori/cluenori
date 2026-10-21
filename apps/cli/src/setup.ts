@@ -10,6 +10,9 @@ import { attachedExitCode, buildDashboard, wrangler } from "./attached.ts"
 const archiveBucket = "cluenori-archive"
 const archiveDays = 90
 
+// The queue wrangler.jsonc binds as ACTIVITY.
+const activityQueue = "cluenori-activity"
+
 // What Wrangler writes to WRANGLER_OUTPUT_FILE_PATH: one JSON object per line; a deploy's lists the
 // URLs it serves at.
 const OutputEntry = Schema.fromJsonString(
@@ -37,7 +40,10 @@ const LifecycleFile = Schema.fromJsonString(
   }),
 )
 
-/** Wrangler's flags for a deployment's jurisdiction: its `eu` environment, and R2's `--jurisdiction`. */
+/**
+ * Wrangler's flags for a deployment's jurisdiction: its `eu` environment, and the `--jurisdiction`
+ * of R2 and Queues.
+ */
 export const environmentFlags = (jurisdiction: Jurisdiction) => (jurisdiction === "eu" ? ["--env", "eu"] : [])
 const jurisdictionFlags = (jurisdiction: Jurisdiction) => (jurisdiction === "eu" ? ["--jurisdiction", "eu"] : [])
 
@@ -129,6 +135,21 @@ const ensureArchive = Effect.fn("ensureArchive")(function* (jurisdiction: Jurisd
 })
 
 /**
+ * The queue wrangler.jsonc binds as ACTIVITY, made the first time with the deployment's
+ * jurisdiction, which can't change later. A deploy before it exists fails.
+ */
+export const ensureActivityQueue = Effect.fn("ensureActivityQueue")(function* (jurisdiction: Jurisdiction) {
+  yield* Console.log(`Looking for the activity queue, ${activityQueue}:`)
+  const exists = yield* attachedExitCode("bun", ["run", "wrangler", "queues", "info", activityQueue], {
+    cwd: "apps/worker",
+  })
+  if (exists !== 0) {
+    yield* Console.log("It isn't there yet, so it is made now.\n")
+    yield* wrangler(["queues", "create", activityQueue, ...jurisdictionFlags(jurisdiction)])
+  }
+})
+
+/**
  * Deploys, and returns where commands reach it: the domain when there is one, else the workers.dev
  * URL Wrangler says the Worker serves at; and that workers.dev URL, which names the deployment.
  */
@@ -195,6 +216,7 @@ export const setup = Command.make("setup", {}, () =>
         `Deploying Cluenori to your Cloudflare account, keeping its data ${jurisdiction === "eu" ? "in the EU" : "wherever Cloudflare chooses"}. Wrangler signs you in first if it needs to.\n`,
       )
       yield* ensureArchive(jurisdiction, directory)
+      yield* ensureActivityQueue(jurisdiction)
       const { url, workersDev } = yield* deploy(jurisdiction, domain, directory)
       // The token saved for this deployment, found at its domain or at its workers.dev URL, is kept.
       const token =

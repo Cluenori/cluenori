@@ -82,6 +82,7 @@
         "@bagatka/web-crypto": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/notifications": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/signals": "workspace:*",
@@ -91,6 +92,16 @@
       },
       "devDependencies": {
         "wrangler": "catalog:",
+      },
+    },
+    "packages/apns": {
+      "name": "@bagatka/apns",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
       },
     },
     "packages/openapi-swift": {
@@ -173,6 +184,25 @@
       },
       "devDependencies": {
         "@bagatka/quantile-sketch": "workspace:*",
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
+    "product/engines/notifications": {
+      "name": "@cluenori/notifications",
+      "dependencies": {
+        "@bagatka/apns": "workspace:*",
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/incidents": "workspace:*",
+        "@cluenori/phones": "workspace:*",
+        "@cluenori/projects": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
         "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
@@ -269,6 +299,7 @@
         "@cloudflare/vitest-plugin": "catalog:",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/notifications": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/worker": "workspace:*",
@@ -326,6 +357,8 @@
   "packages": {
     "@babel/runtime": ["@babel/runtime@8.0.7", "", {}, "sha512-k0hagDDq/6w4v+0Sp4wFvIz/yswH5O7Va6aRTnD7N62Tnborp4X+YB+H3XUcWVSR4aE47WPEXiIIZchBs0GmYg=="],
 
+    "@bagatka/apns": ["@bagatka/apns@workspace:packages/apns"],
+
     "@bagatka/openapi-swift": ["@bagatka/openapi-swift@workspace:packages/openapi-swift"],
 
     "@bagatka/otlp": ["@bagatka/otlp@workspace:packages/otlp"],
@@ -371,6 +404,8 @@
     "@cluenori/incidents": ["@cluenori/incidents@workspace:product/engines/incidents"],
 
     "@cluenori/journeys": ["@cluenori/journeys@workspace:tests/journeys"],
+
+    "@cluenori/notifications": ["@cluenori/notifications@workspace:product/engines/notifications"],
 
     "@cluenori/phones": ["@cluenori/phones@workspace:product/engines/phones"],
 

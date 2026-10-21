@@ -9,6 +9,7 @@ import { DurableObject } from "cloudflare:workers"
 import { Clock, Duration, Effect, Exit, Layer, ManagedRuntime, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 
+import { sendActivity } from "./activity-queue.ts"
 import type { PlainSchema } from "./object-calls.ts"
 import { exitText, serve } from "./object-calls.ts"
 import type { ProjectCall, ProjectCallName } from "./project-calls.ts"
@@ -238,6 +239,7 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
  */
 export class ProjectObject extends DurableObject<Env> {
   readonly #storage: DurableObjectStorage
+  readonly #activity: Queue
   readonly #runtime: ManagedRuntime.ManagedRuntime<ProjectServices | ActivityLog, never>
   readonly #calls: Readonly<Record<ProjectCallName, Served>>
 
@@ -249,6 +251,7 @@ export class ProjectObject extends DurableObject<Env> {
     const workspace = WorkspaceKey.make(workspaceName ?? "")
     const project = ProjectKey.make(projectName ?? "")
     this.#storage = ctx.storage
+    this.#activity = env.ACTIVITY
     this.#calls = servedCalls(project)
     this.#runtime = ManagedRuntime.make(
       Today.layer.pipe(
@@ -280,20 +283,26 @@ export class ProjectObject extends DurableObject<Env> {
   }
 
   /**
-   * Runs the detectors, then looks again in a minute. The next look is scheduled first, so a check
-   * that fails is tried again then, not retried at once by the platform; its failure is logged.
+   * Runs the detectors, delivers the project's new activity, and looks again in a minute. The next
+   * look is scheduled first, so a check or a delivery that fails is tried again then, not retried at
+   * once by the platform; its failure is logged.
    */
   override alarm(): Promise<void> {
     const storage = this.#storage
+    const activity = this.#activity
     return this.#runtime.runPromise(
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
         yield* Effect.promise(() => storage.setAlarm(now + checkEvery))
         const incidents = yield* Incidents
-        // Not handled: telling anyone. `check` returns its changes, and their activity is kept; the
-        // iOS app's pushes will react to that activity.
-        yield* incidents.check
-      }).pipe(Effect.catchCause((cause) => Effect.logError("The detectors' check failed", cause))),
+        yield* incidents.check.pipe(Effect.catchCause((cause) => Effect.logError("The detectors' check failed", cause)))
+        // What the check and the calls since committed goes to the queue; what the queue doesn't
+        // take goes next time.
+        const log = yield* ActivityLog
+        yield* log
+          .deliver((entries) => sendActivity(activity, entries))
+          .pipe(Effect.catchCause((cause) => Effect.logError("Delivering activity failed", cause)))
+      }),
     )
   }
 

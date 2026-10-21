@@ -9,6 +9,7 @@
     "@cloudflare/vitest-plugin": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/incidents": "workspace:*",
+    "@cluenori/notifications": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/worker": "workspace:*",

@@ -1,5 +1,6 @@
 import { IncidentsGroup } from "@cluenori/incidents"
-import { PairingGroup, PhonesGroup } from "@cluenori/phones"
+import { NotificationsGroup } from "@cluenori/notifications"
+import { PairingGroup, PhonePushGroup, PhonesGroup } from "@cluenori/phones"
 import { ProjectsGroup } from "@cluenori/projects"
 import { SignalsGroup } from "@cluenori/signals"
 import { TodayGroup } from "@cluenori/today"
@@ -42,9 +43,10 @@ export class SignInGroup extends HttpApiGroup.make("signIn", { topLevel: true })
 
 /**
  * The public API: one definition for the dashboard, the CLI, MCP clients, and agents. Served under
- * `/api`, with its OpenAPI document at `/api/openapi.json`. Everything but the system, sign-in and
- * pairing groups needs a member's credential: the deployment's API token as a bearer token or the
- * sign-in cookie, or a paired phone's key as a bearer token.
+ * `/api`, with its OpenAPI document at `/api/openapi.json`. Everything but the system, sign-in,
+ * pairing and phone push groups needs a member's credential: the deployment's API token as a bearer
+ * token or the sign-in cookie, or a paired phone's key as a bearer token. A phone registers its push
+ * token with its own key only.
  */
 export class CluenoriApi extends HttpApi.make("cluenori")
   .add(SystemGroup)
@@ -54,6 +56,8 @@ export class CluenoriApi extends HttpApi.make("cluenori")
   .add(IncidentsGroup.middleware(MemberAuthorization))
   .add(PairingGroup)
   .add(PhonesGroup.middleware(MemberAuthorization))
+  .add(PhonePushGroup)
+  .add(NotificationsGroup.middleware(MemberAuthorization))
   .add(TodayGroup.middleware(MemberAuthorization))
   .prefix("/api")
   .annotate(OpenApi.Title, "Cluenori") {}

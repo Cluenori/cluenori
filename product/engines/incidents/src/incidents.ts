@@ -507,6 +507,7 @@ export class Incidents extends Context.Service<
           component: row.component,
           subject: row.subject,
           title: row.title,
+          ...(row.acknowledgedAt === null ? {} : { acknowledged: true }),
         }),
       })
 
@@ -530,7 +531,15 @@ export class Incidents extends Context.Service<
             subject: row.subject,
             title: row.title,
           }
-          entries.push({ payload: changeEntries[change].make(fields) })
+          entries.push({
+            payload:
+              change === "worsened" || change === "resolved"
+                ? changeEntries[change].make({
+                    ...fields,
+                    ...(row.acknowledgedAt === null ? {} : { acknowledged: true }),
+                  })
+                : changeEntries[change].make(fields),
+          })
           changes.push({ change, incident: incidentOf(row) })
         }
 
@@ -687,7 +696,9 @@ export class Incidents extends Context.Service<
             )
             return incidentOf({ ...row, acknowledgedAt: at })
           }),
-          activity: (incident) => [{ payload: IncidentAcknowledged.make({ incident: incident.id }) }],
+          activity: (incident) => [
+            { payload: IncidentAcknowledged.make({ incident: incident.id, title: incident.title }) },
+          ],
         })
       })
 

@@ -54,6 +54,9 @@ struct PairedTabs: View {
                 }
             }
         }
+        // What the phone allows alerts to do changes in Settings, so it is looked at again on return.
+        .task { await models.alerts.refreshPermission() }
+        .refreshWhenActive { await models.alerts.refreshPermission() }
         // The views also build for macOS, for the package's tests on a Mac; this is iOS's alone.
         #if os(iOS)
             .tabBarMinimizeBehavior(.onScrollDown)

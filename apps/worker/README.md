@@ -22,7 +22,8 @@ through `HttpApiMiddleware.layerClient(MemberAuthorization, ...)`; a missing or 
 SameSite=Strict cookie for `/api`, kept 30 days, which the API accepts in its place;
 `POST /api/sign-out` removes it. A paired phone sends its own key as the bearer token,
 `cluenori.phone.<phone ID>.<secret>`, and acts for whoever paired it; a removed phone's key answers
-401, saying to pair it again.
+401, saying to pair it again. It registers its push token with `PUT /api/phones/push`, which takes
+its key only.
 Services send traces, logs and metrics to `POST /otlp/v1/traces`, `/v1/logs` and `/v1/metrics` with
 a component's ingest key: `Authorization: Bearer cluenori.<project>.<component>.<secret>`. An
 export the archive can't take is answered 503, so the exporter sends it again.
@@ -48,14 +49,19 @@ export the archive can't take is answered 503, so the exporter sends it again.
   engines' layers built once per object, and one served call per operation (`src/project-calls.ts`).
   An object builds no database before its project is created.
 - **The workspace's Durable Object,** `src/workspace-object.ts`, named `<workspace>`: the index of
-  its projects and its phones (`src/workspace-calls.ts`). Both kinds of object are called the same way
+  its projects, its phones, and their alerts (`src/workspace-calls.ts`). Both kinds of object are called the same way
   (`src/object-calls.ts`).
+- **The activity queue,** `src/activity-queue.ts`: its messages, one activity entry each as JSON
+  text. Each project's object sends its new activity on its alarm, every minute; the consumer in
+  `src/worker.ts` hands each batch to the workspace's notifications, and has the queue try it all
+  again, 30 seconds on, up to 10 times, when APNs may take it later.
 - **Serving the dashboard,** from `wrangler.jsonc`'s `assets`: its built files, and any other path,
   so a page's address opens it; `/api/*` and `/otlp/*` always reach the Worker.
 - **`wrangler.jsonc`:** the Worker's name, compatibility date, the dashboard's files, and bindings:
-  `PROJECT`, the projects' Durable Objects, `WORKSPACE`, the workspace's, and `ARCHIVE`, the
-  archive's bucket. Its `eu` environment is the same
-  Worker with both in the EU, which `./setup` deploys when the data stays there.
+  `PROJECT`, the projects' Durable Objects, `WORKSPACE`, the workspace's, `ARCHIVE`, the
+  archive's bucket, and `ACTIVITY`, the activity queue, of which the Worker is also the consumer.
+  Its `eu` environment is the same Worker with them in the EU, which `./setup` deploys when the data
+  stays there.
 - **`openapi.json`:** generated from the definition by `bun run generate`; `bun run check` fails when
   it is stale.
 
@@ -79,6 +85,12 @@ Read from `env` with `ConfigProvider.fromUnknown(env)` in `src/worker.ts`:
 - `CLUENORI_OWNER`: the member the token stands for, until members are records.
 - `CLUENORI_JURISDICTION`: `eu` in the `eu` environment, so projects' Durable Objects are made in
   the EU. Absent otherwise.
+- `CLUENORI_APNS_KEY` (a secret, the `.p8` key's text or its base64 alone), `CLUENORI_APNS_KEY_ID`,
+  `CLUENORI_APNS_TEAM_ID`, and `CLUENORI_APNS_TOPIC`, the app's bundle ID: what alerts are pushed
+  with, read in the workspace's object. `./cluenori push setup` sets them; without them nothing is
+  pushed, and a test alarm answers 409. The Worker `./run` serves can't push even with them:
+  workerd's `fetch` on this computer speaks HTTP/1.1, and APNs only HTTP/2, which a deployed
+  Worker's `fetch` speaks.
 
 A self-hosted deployment has one workspace, `main`.
 

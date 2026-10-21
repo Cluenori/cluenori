@@ -15,5 +15,6 @@ export default defineConfig({
       },
     }),
   ],
-  test: { include: ["test/**/*.test.ts"] },
+  // The alerts journey runs with push set up and a fake APNs (vitest.alerts.config.ts).
+  test: { include: ["test/**/*.test.ts"], exclude: ["test/alerts-journey.test.ts"] },
 })

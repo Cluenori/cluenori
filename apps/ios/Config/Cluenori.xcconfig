@@ -1,14 +1,21 @@
-// The app's build settings, for every configuration. The bundle ID and the team that signs the app
-// are each developer's own: copy Local.example.xcconfig to Local.xcconfig, which git ignores.
+// The build settings of every target, the app and its alerts' extension, for every configuration;
+// each target's own are in App.xcconfig and Alerts.xcconfig. The bundle ID and the team that signs
+// the app are each developer's own: copy Local.example.xcconfig to Local.xcconfig, which git ignores.
 
 CLUENORI_BUNDLE_ID = com.example.cluenori
 CLUENORI_TEAM =
 
-PRODUCT_NAME = Cluenori
-PRODUCT_BUNDLE_IDENTIFIER = $(CLUENORI_BUNDLE_ID)
+// Two apps on one iPhone: Release builds are Cluenori, which pairs with the deployment ./setup
+// made; Debug builds are Cluenori Local, beside it, which pairs with the one ./run serves. Each has
+// its own bundle ID, so its own key, pairing and push token.
+CLUENORI_VARIANT_ID =
+CLUENORI_VARIANT_ID[config=Debug] = .local
+CLUENORI_APP_NAME = Cluenori
+CLUENORI_APP_NAME[config=Debug] = Cluenori Local
+
 DEVELOPMENT_TEAM = $(CLUENORI_TEAM)
 CODE_SIGN_STYLE = Automatic
-CODE_SIGN_ENTITLEMENTS = Config/Cluenori.entitlements
+// The extension's version is the app's, as the App Store requires.
 MARKETING_VERSION = 0.1
 CURRENT_PROJECT_VERSION = 1
 
@@ -20,17 +27,8 @@ SUPPORTED_PLATFORMS = iphoneos iphonesimulator
 TARGETED_DEVICE_FAMILY = 1
 IPHONEOS_DEPLOYMENT_TARGET = 27.0
 
-// Keys Xcode writes, and those it can't (the pairing link's URL scheme), from Info.plist.
+// Each target's Info.plist: the keys Xcode writes, and a file of those it can't.
 GENERATE_INFOPLIST_FILE = YES
-INFOPLIST_FILE = Config/Info.plist
-INFOPLIST_KEY_CFBundleDisplayName = Cluenori
-INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.developer-tools
-INFOPLIST_KEY_NSCameraUsageDescription = Cluenori scans the code your deployment shows, to pair this iPhone.
-INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
-INFOPLIST_KEY_UILaunchScreen_Generation = YES
-INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
-// It sends only HTTPS, which is exempt from export compliance: TestFlight asks nothing.
-INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO
 
 // Swift 6, on the main actor by default, its warnings errors, as the package's targets are.
 SWIFT_VERSION = 6.0
@@ -56,6 +54,8 @@ VALIDATE_PRODUCT[config=Release] = YES
 ENABLE_ENHANCED_SECURITY = YES
 ENABLE_USER_SCRIPT_SANDBOXING = YES
 DEAD_CODE_STRIPPING = YES
+// The extension is stripped when it is built; copied into the app, signed, it is left as it is.
+COPY_PHASE_STRIP = NO
 ALWAYS_SEARCH_USER_PATHS = NO
 
 #include? "Local.xcconfig"

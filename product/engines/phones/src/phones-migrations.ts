@@ -31,5 +31,16 @@ export const migratePhones = Migrator.make({})({
         expires_at INTEGER NOT NULL
       ) WITHOUT ROWID`
     }),
+    // The push token each phone last registered, at most one per phone, and each token on one
+    // phone only; registered when (Unix ms).
+    "0002_push": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE phones_push (
+        phone TEXT PRIMARY KEY,
+        token TEXT NOT NULL UNIQUE,
+        environment TEXT NOT NULL,
+        registered_at INTEGER NOT NULL
+      ) WITHOUT ROWID`
+    }),
   }),
 })
