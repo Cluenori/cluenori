@@ -80,12 +80,12 @@ A person belongs to one project by default, on all of its components. For B2B ap
 
 ## Routines and the portfolio
 
-Cluenori is organized around my recurring routines. The phone app is for the brief, approvals and controls. The web app is for deep investigation: traces, timelines and comparisons.
+Cluenori is organized around my recurring routines. The phone app shows nearly everything the web shows, and is where alerts reach me. The web app adds deep investigation: the steps of a trace, timelines and comparisons.
 
 | Routine | When | Question | Where |
 | --- | --- | --- | --- |
 | Today | Each morning | What needs me now: incidents, due decisions, missing data? | Phone |
-| Incident response | When a detector opens an incident | Is it real, and is it recovering? | Phone to approve, web to investigate |
+| Incident response | When a detector opens an incident | Is it real, and is it recovering? | Phone, and the web for a trace |
 | Release review | After each release | Did the release help or harm? | Web |
 | Portfolio review | Each week | Where does my next hour and euro go? | Web |
 | Ship and announce | When a release reaches its users | What must users know, and who must update? | Web |

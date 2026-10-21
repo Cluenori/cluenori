@@ -175,29 +175,45 @@ Nobody watches a dashboard. Cluenori checks each project every minute and tells 
 
 A detector is a fixed rule that opens an incident. It compares each measure with its own usual, as "Quality: worse than usual" in the vision says, so I set no thresholds.
 
-| Detector | Opens an incident when | Push |
+| Detector | Opens an incident when | Alert |
 | --- | --- | --- |
-| Down | A monitor's URL fails two checks in a row | Yes |
-| Failing | An operation's error rate over the last 15 minutes is at least 2% and three times its usual, with at least 5 failures | Yes |
-| Stopped | An operation that runs on a schedule, such as a cleanup job, misses twice its usual gap. Cluenori learns the schedule from its history. | Yes |
-| New error | An error group appears for the first time | No, the morning brief |
-| Slower | An operation's p95 over the last day is at least 1.5 times its p95 over the 7 days before, and at least 100 ms more | No, the morning brief |
+| Down | A monitor's URL fails two checks in a row | Alarm |
+| Failing | An operation's error rate over the last 15 minutes is at least 2% and three times its usual, with at least 5 failures | Alarm |
+| Stopped | An operation that runs on a schedule, such as a cleanup job, misses twice its usual gap. Cluenori learns the schedule from its history. | Time sensitive |
+| New error | An error group appears for the first time | None; the morning brief |
+| Slower | An operation's p95 over the last day is at least 1.5 times its p95 over the 7 days before, and at least 100 ms more | None; the morning brief |
 
 A monitor is the only thing I set up: one URL for each component, such as its health endpoint, which Cluenori checks every minute. A small app is silent for hours at night, so silence alone cannot tell "down" from "no users".
 
 ### Incidents
 
-An incident is one problem from its start to its recovery, one for each detector and subject: an operation, a monitor or an error group. It notifies me once when it opens, and again only when it gets worse. It resolves after 10 minutes without the problem and notifies "Recovered". A problem that returns within 30 minutes reopens the same incident. Acknowledging an incident stops its notifications. Each incident keeps its evidence: the chart of its window, the error group behind it and a few failed traces.
+An incident is one problem from its start to its recovery, one for each detector and subject: an operation, a monitor or an error group. It alerts me once when it opens, at its detector's level, and again only when it gets worse. It resolves after 10 minutes without the problem and tells me "Recovered", quietly. A problem that returns within 30 minutes reopens the same incident, with a time-sensitive alert. Acknowledging an incident stops its alerts. Each incident keeps its evidence: the chart of its window, the error group behind it and a few failed traces.
 
-Every push goes out when it happens. There are no quiet hours.
+Every alert goes out when it happens, a minute or two after the problem starts. There are no quiet hours.
 
-### Where alerts reach me
+### How alerts reach me
 
-The Cluenori iOS app receives the pushes through APNs. It shows Today, each incident with its evidence, and Acknowledge and Mute. Deep investigation stays on the web. A push names the project, the detector and what it saw: "notes · Failing: POST /api/export, 18% failed, usually 0.1%".
+Alerts reach the Cluenori iOS app through APNs, at three levels:
+
+| Level | What it does | For |
+| --- | --- | --- |
+| Alarm | Rings through silent mode and Do Not Disturb, like an alarm clock | Down, Failing |
+| Time sensitive | Breaks through a Focus I allow it in, and follows the silent switch | Stopped, a reopened incident |
+| Quiet | A normal notification | Recovered |
+
+An alarm needs Apple's Critical Alerts entitlement, which Apple grants on request for health, safety and security, or AlarmKit, if a push can start one. Until one of them works, alarms are time sensitive.
+
+A push names the project, the detector and what it saw: "notes · Failing: POST /api/export, 18% failed, usually 0.1%". Acknowledge is one press on the notification itself.
 
 When a push cannot be delivered, Cluenori tries again, then shows the failure on Today. When the checks themselves stop, Today says since when. If Cluenori itself is down, nothing can tell me; an outside heartbeat comes later. Email, Slack and the morning brief come later.
 
-A deployment sends with its owner's APNs key to the owner's own build of the app.
+### The iOS app
+
+The app shows nearly everything the web shows: Today, each project's overview, its load and the latency of every operation at p50, p80, p95 and p99, errors with their stacks, logs, incidents and monitors. A trace's steps open on the web. It opens instantly with what it last saw, says when that was, and keeps it when the network drops.
+
+A phone joins by scanning a code the web shows for 10 minutes, and gets its own key; the API token stays on my computer. The web lists every phone: its name, its model as people call it (iPhone 17 Pro), its iOS and app versions, the address and country it last called from, and when. I can remove any one of them.
+
+The app is private: I install it from my own TestFlight, never the App Store. A deployment sends with its owner's APNs key to the owner's own build of the app.
 
 ## Releases, versions, changelog, flags and issues
 
