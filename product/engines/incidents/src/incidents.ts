@@ -66,6 +66,9 @@ const hour = Duration.toMillis(Duration.hours(1))
 const resolvedListed = 50
 const resolvedShown = Duration.toMillis(Duration.days(7))
 
+// A Durable Object's SQLite binds at most 100 values in one statement; a baseline has 6.
+const baselinesAtOnce = Math.floor(100 / 6)
+
 // How many monitors are fetched at once.
 const checksAtOnce = 10
 
@@ -328,9 +331,8 @@ export class Incidents extends Context.Service<
           .withTransaction(
             Effect.gen(function* () {
               yield* sql`DELETE FROM incidents_baselines`
-              // A hundred rows at a time stays well within SQLite's limit of bound values.
-              for (let start = 0; start < rows.length; start += 100) {
-                yield* sql`INSERT INTO incidents_baselines ${sql.insert(rows.slice(start, start + 100))}`
+              for (let start = 0; start < rows.length; start += baselinesAtOnce) {
+                yield* sql`INSERT INTO incidents_baselines ${sql.insert(rows.slice(start, start + baselinesAtOnce))}`
               }
               yield* sql`INSERT INTO incidents_state (id, learned_at) VALUES (1, ${now})
               ON CONFLICT (id) DO UPDATE SET learned_at = excluded.learned_at`

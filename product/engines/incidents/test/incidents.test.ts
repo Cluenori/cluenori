@@ -99,6 +99,23 @@ describe("Incidents", () => {
     ),
   )
 
+  it.effect("learns from many operations at once, as a real project has them", () =>
+    inProject(
+      "many-operations",
+      start,
+      Effect.gen(function* () {
+        // Forty operations a week ago: more rows than one statement may bind values for.
+        yield* record(
+          api,
+          Array.from({ length: 40 }, (_, index) => counts(`GET /api/items/${index}`, start - 3 * day, 10)),
+        )
+
+        assert.deepStrictEqual(yield* checkAt(start), [])
+        assert.isDefined((yield* (yield* Incidents).incidents).checkedAt)
+      }),
+    ),
+  )
+
   it.effect("leaves alone a few failures, and failing as usual", () =>
     inProject(
       "failing-as-usual",
