@@ -1,0 +1,195 @@
+import CluenoriClient
+import CluenoriScreens
+import Foundation
+import SwiftUI
+
+/// A project's overview over the period: its open incidents, its load, its errors, and its latest
+/// warnings and errors, each leading to a screen with all of them.
+struct ProjectScreen: View {
+    let project: ProjectModel
+    let name: String
+    @Bindable var navigation: Navigation
+
+    var body: some View {
+        List {
+            Section {
+                PeriodPicker(period: $navigation.period)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+            }
+            IncidentsSection(incidents: project.incidents)
+            LoadSection(project: project.key, load: project.load, operations: project.operations)
+            ErrorsSection(project: project.key, errors: project.errors)
+            LogsSection(project: project.key, logs: project.logs)
+        }
+        .navigationTitle(name)
+        .refreshable { await project.refresh() }
+        .task(id: navigation.period) {
+            // A new period asks everything again; the same one, shown again, does too.
+            if project.period == navigation.period {
+                await project.refresh()
+            } else {
+                await project.choose(navigation.period)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            AnswerBanner(problem: project.load.problem, receivedAt: project.load.receivedAt)
+        }
+    }
+}
+
+struct IncidentsSection: View {
+    let incidents: Answer<IncidentList>
+
+    var body: some View {
+        if let open = incidents.value?.open, !open.isEmpty {
+            Section {
+                ForEach(open, id: \.id) { incident in
+                    IncidentRow(
+                        title: incident.title,
+                        openedAt: incident.openedAt,
+                        acknowledged: incident.acknowledgedAt != nil
+                    )
+                }
+            } header: {
+                Text("Open incidents", bundle: #bundle, comment: "Section of a project's open incidents.")
+            }
+        }
+    }
+}
+
+struct IncidentRow: View {
+    let title: String
+    let openedAt: Date
+    let acknowledged: Bool
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(
+                    "open \(Text(openedAt, style: .relative))",
+                    bundle: #bundle,
+                    comment: "How long an incident has been open. The variable is a duration."
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: acknowledged ? "bell.badge.slash.fill" : "bell.badge.fill")
+                .foregroundStyle(acknowledged ? .orange : .red)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct LoadSection: View {
+    let project: String
+    let load: Answer<LoadSeries>
+    let operations: Answer<OperationTable>
+
+    var body: some View {
+        Section {
+            if let series = load.value {
+                LoadChart(points: series.points, step: series.step)
+                    .padding(.vertical, 8)
+            } else {
+                AnswerPlaceholder(problem: load.problem)
+            }
+            if let table = operations.value {
+                LoadStats(
+                    count: table.count,
+                    errors: table.errors,
+                    slowestP95Ms: table.rows.map(\.p95Ms).max()
+                )
+            }
+            NavigationLink(value: Route.operations(project: project)) {
+                Text("All operations", bundle: #bundle, comment: "Opens every operation of a project.")
+            }
+        } header: {
+            Text("Load", bundle: #bundle, comment: "Section of a project's operations over time.")
+        }
+    }
+}
+
+struct LoadStats: View {
+    let count: Int
+    let errors: Int
+    let slowestP95Ms: Double?
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(count, format: .number)
+                    .font(.title3.monospacedDigit().weight(.semibold))
+                FailedShare(count: count, failed: errors)
+                    .font(.subheadline)
+            }
+            Spacer()
+            if let slowestP95Ms {
+                VStack(alignment: .trailing, spacing: 2) {
+                    DurationText(milliseconds: slowestP95Ms)
+                        .font(.title3.weight(.semibold))
+                    Text("slowest p95", bundle: #bundle, comment: "Below the slowest operation's p95.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct ErrorsSection: View {
+    let project: String
+    let errors: Answer<ErrorTable>
+
+    var body: some View {
+        Section {
+            if let table = errors.value {
+                if table.groups.isEmpty {
+                    Text("No errors in this period.", bundle: #bundle, comment: "A project had no errors.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(table.groups.prefix(4), id: \.id) { group in
+                    NavigationLink(value: Route.error(project: project, id: group.id)) {
+                        ErrorGroupRow(title: group.title, culprit: group.culprit, occurrences: group.occurrences)
+                    }
+                }
+            } else {
+                AnswerPlaceholder(problem: errors.problem)
+            }
+            NavigationLink(value: Route.errors(project: project)) {
+                Text("All errors", bundle: #bundle, comment: "Opens every error of a project.")
+            }
+        } header: {
+            Text("Errors", bundle: #bundle, comment: "Section of a project's errors.")
+        }
+    }
+}
+
+struct LogsSection: View {
+    let project: String
+    let logs: Answer<LogPage>
+
+    var body: some View {
+        Section {
+            if let page = logs.value {
+                if page.lines.isEmpty {
+                    Text("No warnings or errors in this period.", bundle: #bundle, comment: "A project logged none.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(page.lines.prefix(4), id: \.id) { line in
+                    LogLineRow(time: line.time, level: line.level, component: line.component, message: line.message)
+                }
+            } else {
+                AnswerPlaceholder(problem: logs.problem)
+            }
+            NavigationLink(value: Route.logs(project: project)) {
+                Text("All logs", bundle: #bundle, comment: "Opens every warning and error of a project.")
+            }
+        } header: {
+            Text("Logs", bundle: #bundle, comment: "Section of a project's latest warnings and errors.")
+        }
+    }
+}

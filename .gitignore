@@ -19,3 +19,10 @@ apps/dashboard/dist/
 # Nix build links
 /result
 /result-*
+
+# The iOS app: each developer's own bundle ID and team (apps/ios/Config/Local.example.xcconfig),
+# and what Xcode and SwiftPM build
+apps/ios/Config/Local.xcconfig
+apps/ios/build/
+apps/ios/CluenoriApp/.build/
+xcuserdata/

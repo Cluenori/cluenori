@@ -1,0 +1,181 @@
+import CluenoriClient
+import Foundation
+import Observation
+
+/// Whether this phone is paired with a deployment, pairing it by a link from the web, and unpairing
+/// it. While paired, it holds the models of the screens that read the deployment, and where the
+/// app is among them.
+@Observable
+public final class PairingModel {
+    /// Where pairing is.
+    public enum State: Equatable, Sendable {
+        case unpaired
+        case pairing
+        case paired
+    }
+
+    /// Why the phone isn't paired, or why unpairing didn't happen.
+    public enum Problem: Equatable, Sendable {
+        /// The link isn't a pairing link from the web.
+        case notAPairingLink
+        /// The code is wrong, used, or older than 10 minutes.
+        case codeRejected
+        /// The deployment removed this phone, or no longer knows its key.
+        case removed
+        /// The deployment didn't answer.
+        case unreachable
+        /// The deployment answered in a way this app doesn't understand, such as from a newer version.
+        case unreadable
+        /// The phone's key couldn't be kept or read in the Keychain.
+        case keychain
+    }
+
+    public private(set) var state = State.unpaired
+    public private(set) var problem: Problem? = nil
+    /// Whether the last pairing link can be tried again: its pairing failed before reaching the
+    /// deployment, so its code wasn't used. The first call to a deployment on the local network
+    /// fails this way while iOS asks for permission.
+    public private(set) var canRetry = false
+    /// The paired deployment's host, `cluenori.example`; nil when unpaired.
+    public private(set) var host: String? = nil
+    /// The paired deployment's screens; nil when unpaired.
+    public private(set) var models: DeploymentModels? = nil
+    /// Which tab shows, and the screens opened in each.
+    public let navigation = Navigation()
+
+    @ObservationIgnored private let store: any PairingStore
+    @ObservationIgnored private let details: PhoneDetails
+    @ObservationIgnored private let transport: CluenoriAPI.Transport?
+    @ObservationIgnored private let cacheDirectory: URL?
+    @ObservationIgnored private var paired: PairedDeployment? = nil
+    @ObservationIgnored private var unsent: URL? = nil
+
+    /// Starts as the phone was left: paired with the deployment `store` holds, or unpaired.
+    /// `details` is what the phone says about itself; `transport` sends requests, URLSession's
+    /// unless a test gives its own. What the screens last saw is kept in `cacheDirectory`, if any.
+    public init(
+        store: any PairingStore,
+        details: PhoneDetails,
+        transport: CluenoriAPI.Transport? = nil,
+        cacheDirectory: URL? = nil
+    ) {
+        self.store = store
+        self.details = details
+        self.transport = transport
+        self.cacheDirectory = cacheDirectory
+        do {
+            if let deployment = try store.load() {
+                become(deployment)
+            }
+        } catch {
+            problem = .keychain
+        }
+    }
+
+    /// Opens a link: a screen's, `cluenori://projects/...`, while paired; or a pairing link, which
+    /// pairs with the deployment it names in place of any pairing before. When pairing fails, a
+    /// phone paired before stays paired, and `problem` says why.
+    public func open(_ url: URL) async {
+        if let route = Route(url), state == .paired {
+            navigation.open(route)
+            return
+        }
+        guard let link = PairingLink(url) else {
+            problem = .notAPairingLink
+            return
+        }
+        let before = state
+        state = .pairing
+        problem = nil
+        canRetry = false
+        unsent = nil
+        do {
+            let deployment = try await PairedDeployment.pair(link, as: details, transport: transport)
+            do {
+                try store.save(deployment)
+            } catch {
+                // Paired at the deployment, but the key can't be kept: the web lists a phone that
+                // can no longer call; removing it there is all that's left to do.
+                state = before
+                problem = .keychain
+                return
+            }
+            become(deployment)
+        } catch {
+            state = before
+            switch error {
+            case .pairingCodeRejected:
+                problem = .codeRejected
+            case .unreachable:
+                problem = .unreachable
+                unsent = url
+                canRetry = true
+            default:
+                problem = .unreadable
+            }
+        }
+    }
+
+    /// Tries the last pairing link again, when `canRetry`.
+    public func retry() async {
+        guard let unsent else { return }
+        await open(unsent)
+    }
+
+    /// Removes this phone from its deployment, so its key stops working, and forgets the deployment.
+    /// When the deployment doesn't answer, the phone stays paired, and `problem` says why.
+    public func unpair() async {
+        guard let paired else { return }
+        problem = nil
+        do {
+            try await paired.api(details, transport: transport).removePhone(phone: paired.phone)
+            forget(nil)
+        } catch .phoneNotFound, .unauthorized {
+            // Already removed on the web: nothing is left to remove.
+            forget(nil)
+        } catch .unreachable {
+            problem = .unreachable
+        } catch {
+            problem = .unreadable
+        }
+    }
+
+    // The deployment refused the phone's key: it was removed on the web.
+    func keyRejected() {
+        forget(.removed)
+    }
+
+    private func become(_ deployment: PairedDeployment) {
+        paired = deployment
+        host = deployment.deployment.host()
+        let context = AnswerContext(store: store(of: deployment)) { [weak self] in self?.keyRejected() }
+        models = DeploymentModels(api: deployment.api(details, transport: transport), context: context)
+        state = .paired
+    }
+
+    // Where a pairing's answers are kept: a folder of its own, so another deployment's never show.
+    private func store(of deployment: PairedDeployment) -> AnswerStore {
+        AnswerStore(folder: cacheDirectory?.appending(path: "pairing-\(deployment.phone)", directoryHint: .isDirectory))
+    }
+
+    private func forget(_ reason: Problem?) {
+        do {
+            try store.remove()
+        } catch {
+            problem = .keychain
+        }
+        if let paired {
+            // What a removed phone saw goes with it.
+            store(of: paired).removeAll()
+        }
+        paired = nil
+        host = nil
+        models = nil
+        navigation.todayPath = []
+        navigation.projectsPath = []
+        state = .unpaired
+        if let reason {
+            problem = reason
+        }
+    }
+}

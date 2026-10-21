@@ -1,0 +1,67 @@
+{
+  "default-configuration": "Release",
+  "configurations": [
+    { "name": "Debug", "file": "Config/Cluenori.xcconfig" },
+    { "name": "Release", "file": "Config/Cluenori.xcconfig" },
+  ],
+  "localizations": {
+    "development": "en",
+    "supported": [
+      "Base",
+    ],
+  },
+  "packages": [
+    {
+      "kind": "local",
+      "path": "CluenoriApp",
+    },
+  ],
+  "files": [
+    {
+      "kind": "group",
+      "name": "Products",
+      "children": [
+        { "path": "<PRODUCTS>/Cluenori.app", "id": "3C57A6683088EF5C0098022D", "type": "wrapper.application", "index": false },
+      ],
+    },
+    { "kind": "folder", "path": "Cluenori", "target-membership": [ "Cluenori" ] },
+    {
+      "kind": "group",
+      "path": "Config",
+      "children": [
+        { "path": "Cluenori.xcconfig" },
+        { "path": "Info.plist" },
+        { "path": "Cluenori.entitlements" },
+        { "path": "Local.example.xcconfig" },
+      ],
+    },
+  ],
+  "targets": [
+    {
+      "name": "Cluenori",
+      "id": "3C57A6673088EF5C0098022D",
+      "product": "Products/Cluenori.app",
+      "product-type": "application",
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+      ],
+      "package-product-members": [
+        {
+          "package": "CluenoriApp",
+          "product-name": "CluenoriClient",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "CluenoriApp",
+          "product-name": "CluenoriScreens",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "CluenoriApp",
+          "product-name": "CluenoriViews",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+      ],
+    },
+  ],
+}

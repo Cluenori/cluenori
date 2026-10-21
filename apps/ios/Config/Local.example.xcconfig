@@ -1,0 +1,4 @@
+// Copy to Local.xcconfig, which git ignores, with your own values: the bundle ID of your app's App
+// ID, and your team's ID from developer.apple.com, Membership.
+CLUENORI_BUNDLE_ID = com.example.cluenori
+CLUENORI_TEAM = ABCDE12345

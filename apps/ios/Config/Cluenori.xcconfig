@@ -1,0 +1,60 @@
+// The app's build settings, for every configuration. The bundle ID and the team that signs the app
+// are each developer's own: copy Local.example.xcconfig to Local.xcconfig, which git ignores.
+
+CLUENORI_BUNDLE_ID = com.example.cluenori
+CLUENORI_TEAM =
+
+PRODUCT_NAME = Cluenori
+PRODUCT_BUNDLE_IDENTIFIER = $(CLUENORI_BUNDLE_ID)
+DEVELOPMENT_TEAM = $(CLUENORI_TEAM)
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_ENTITLEMENTS = Config/Cluenori.entitlements
+MARKETING_VERSION = 0.1
+CURRENT_PROJECT_VERSION = 1
+
+// iPhone only, iOS 27. Simulators on Apple silicon only: packages built for arm64e (the workspace's
+// iOSPackagesShouldBuildARM64e) are built for those alone.
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64
+SDKROOT = iphoneos
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+TARGETED_DEVICE_FAMILY = 1
+IPHONEOS_DEPLOYMENT_TARGET = 27.0
+
+// Keys Xcode writes, and those it can't (the pairing link's URL scheme), from Info.plist.
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_FILE = Config/Info.plist
+INFOPLIST_KEY_CFBundleDisplayName = Cluenori
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.developer-tools
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
+INFOPLIST_KEY_UILaunchScreen_Generation = YES
+INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+// It sends only HTTPS, which is exempt from export compliance: TestFlight asks nothing.
+INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO
+
+// Swift 6, on the main actor by default, its warnings errors, as the package's targets are.
+SWIFT_VERSION = 6.0
+SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
+SWIFT_APPROACHABLE_CONCURRENCY = YES
+SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES
+SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES
+SWIFT_TREAT_WARNINGS_AS_ERRORS = YES
+SWIFT_EMIT_LOC_STRINGS = YES
+SWIFT_OPTIMIZATION_LEVEL = -O
+SWIFT_OPTIMIZATION_LEVEL[config=Debug] = -Onone
+SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug] = DEBUG
+SWIFT_COMPILATION_MODE = wholemodule
+SWIFT_COMPILATION_MODE[config=Debug] = singlefile
+ONLY_ACTIVE_ARCH[config=Debug] = YES
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+DEBUG_INFORMATION_FORMAT[config=Debug] = dwarf
+ENABLE_TESTABILITY[config=Debug] = YES
+VALIDATE_PRODUCT[config=Release] = YES
+
+// Apple's hardening: Enhanced Security (pointer authentication, typed allocation, the hardened
+// heap; its entitlements are in Cluenori.entitlements), and scripts in a sandbox.
+ENABLE_ENHANCED_SECURITY = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+DEAD_CODE_STRIPPING = YES
+ALWAYS_SEARCH_USER_PATHS = NO
+
+#include? "Local.xcconfig"
