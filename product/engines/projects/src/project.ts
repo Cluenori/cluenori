@@ -1,4 +1,4 @@
-import { ProjectKey } from "@cluenori/foundation"
+import { Instant, ProjectKey } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 /** What people call a project: 1 to 100 characters, without space at either end. */
@@ -11,10 +11,12 @@ export type ProjectName = typeof ProjectName.Type
 export class Project extends Schema.Class<Project>("Project")({
   key: ProjectKey,
   name: ProjectName,
-  createdAt: Schema.DateTimeUtcFromString,
+  createdAt: Instant,
 }) {}
 
-export const CreateProject = Schema.Struct({ key: ProjectKey, name: ProjectName })
+export const CreateProject = Schema.Struct({ key: ProjectKey, name: ProjectName }).annotate({
+  identifier: "CreateProject",
+})
 export type CreateProject = typeof CreateProject.Type
 
 /** The project was created before, with this key. */

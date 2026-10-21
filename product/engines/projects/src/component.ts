@@ -1,4 +1,4 @@
-import { ComponentKey } from "@cluenori/foundation"
+import { ComponentKey, Instant } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 /** What people call a component: 1 to 100 characters, without space at either end. */
@@ -13,10 +13,12 @@ export type ComponentName = typeof ComponentName.Type
 export class Component extends Schema.Class<Component>("Component")({
   key: ComponentKey,
   name: ComponentName,
-  createdAt: Schema.DateTimeUtcFromString,
+  createdAt: Instant,
 }) {}
 
-export const AddComponent = Schema.Struct({ key: ComponentKey, name: ComponentName })
+export const AddComponent = Schema.Struct({ key: ComponentKey, name: ComponentName }).annotate({
+  identifier: "AddComponent",
+})
 export type AddComponent = typeof AddComponent.Type
 
 /** The project has no component with this key. */

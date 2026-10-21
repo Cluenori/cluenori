@@ -1,4 +1,4 @@
-import { ProjectKey, TraceId } from "@cluenori/foundation"
+import { Instant, ProjectKey, TraceId } from "@cluenori/foundation"
 import type { LogLine, TraceLog, TraceView } from "@cluenori/signals"
 import { ErrorGroupId, IndexedLevel } from "@cluenori/signals"
 import { Console, DateTime, Effect, Option, Schema } from "effect"
@@ -210,11 +210,7 @@ export const trace = Command.make(
     Effect.gen(function* () {
       const project = yield* parsed(ProjectKey, input.project, "a project key")
       const traceId = yield* parsed(TraceId, input.trace, "a trace ID")
-      const given = yield* optionalKey(
-        Schema.DateTimeUtcFromString,
-        input.at,
-        "a time in ISO 8601, such as 2026-10-20T12:55:01Z",
-      )
+      const given = yield* optionalKey(Instant, input.at, "a time in ISO 8601, such as 2026-10-20T12:55:01Z")
       const target = yield* apiTarget(input.local)
       const client = yield* apiClient(target)
       const view = yield* client.signals

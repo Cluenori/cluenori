@@ -4,6 +4,7 @@
 // comes from; pages and views ask it (PATTERNS.md, "Dashboard views").
 
 import type { ComponentKey, EnvelopeName, ProjectKey, TraceId } from "@cluenori/foundation"
+import type { PhoneId } from "@cluenori/phones"
 import type { ErrorGroupId, IndexedLevel, LogCountsBy, SeriesStep } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime, Duration, Effect, Redacted } from "effect"
@@ -87,6 +88,33 @@ export const projectsAtom = kept(
   ),
 )
 
+/** The phones paired with the deployment, the latest paired first. */
+export const phonesAtom = kept(
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.phones.phones()
+    }),
+  ),
+)
+
+/** Starts pairing a phone: a link to show as a QR code, good once for 10 minutes. */
+export const startPairingAtom = CluenoriClient.runtime.fn(() =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    return yield* client.phones.startPairing()
+  }),
+)
+
+/** Removes a phone, whose key stops working at once, and asks for the phones again. */
+export const removePhoneAtom = CluenoriClient.runtime.fn((phone: PhoneId) =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    yield* client.phones.removePhone({ params: { phone } })
+    yield* Atom.refresh(phonesAtom)
+  }),
+)
+
 /** A project's incidents: the open ones, and those resolved in the last 7 days, whatever the period. */
 export const incidentsAtom = Atom.family((project: ProjectKey) =>
   kept(
@@ -154,7 +182,7 @@ export const keptTracesAtom = Atom.family((scope: Scope) =>
 
 /**
  * The operations over the last day and over the 7 days before, whatever the period: what "slower"
- * compares (`slowerOf` in `src/project-facts.ts`). Both questions go at once.
+ * compares (`slowerOf` in `@cluenori/signals`). Both questions go at once.
  */
 export const usualOperationsAtom = Atom.family((scope: Scope) =>
   kept(

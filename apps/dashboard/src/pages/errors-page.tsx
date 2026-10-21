@@ -1,4 +1,5 @@
 import type { ComponentKey, ProjectKey } from "@cluenori/foundation"
+import { errorStatusOf } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -7,7 +8,7 @@ import { BugIcon, CalendarClockIcon } from "lucide-react"
 import { failureColor, warningColor } from "@/lib/colors"
 import { count, moment } from "@/lib/format"
 import { errorsAtom, logCountsAtom, periodAtom, useComponentKeys } from "@/project-data"
-import { colorOf, columnTimesOf, endOf, logColumnsOf, periodWords, statusOf, ticksOf, zoneOf } from "@/project-facts"
+import { colorOf, columnTimesOf, endOf, logColumnsOf, periodWords, ticksOf, zoneOf } from "@/project-facts"
 import { navigate } from "@/router"
 import { BarRows } from "@/views/bar-rows"
 import { ComponentSwitch } from "@/views/component-switch"
@@ -73,7 +74,7 @@ export function ErrorsPage({
             const columns = logColumnsOf(counts, shown)
             const { startOf } = columnTimesOf(columns)
             const now = endOf(table)
-            const fresh = now === undefined ? 0 : table.groups.filter((group) => statusOf(group, now).isNew).length
+            const fresh = now === undefined ? 0 : table.groups.filter((group) => errorStatusOf(group, now).isNew).length
             return (
               <>
                 <div className="p-5">

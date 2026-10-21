@@ -1,23 +1,55 @@
-import { Effect, Layer } from "effect"
+import type { Actor } from "@cluenori/foundation"
+import { isPhoneKey, PhoneKey } from "@cluenori/phones"
+import { Effect, Layer, Redacted, Schema } from "effect"
+import { HttpServerRequest } from "effect/http"
 
 import { ApiToken } from "./api-token.ts"
-import { CurrentActor, MemberAuthorization } from "./member-authorization.ts"
+import { callerOf } from "./caller.ts"
+import { CurrentActor, MemberAuthorization, Unauthorized } from "./member-authorization.ts"
+import { workspaceCalls } from "./workspace-calls.ts"
+import { WorkspaceObjects } from "./workspace-objects.ts"
+
+const phoneKeyRejected = new Unauthorized({
+  message: "This phone's key doesn't work: the phone was removed, or the key is wrong. Pair the phone again.",
+})
+
+// Runs the call for the actor whose credential it carries.
+const actAs =
+  (
+    actorOf: (credential: Redacted.Redacted) => Effect.Effect<Actor, Unauthorized, HttpServerRequest.HttpServerRequest>,
+  ) =>
+  <A, E, R>(httpEffect: Effect.Effect<A, E, R>, { credential }: { readonly credential: Redacted.Redacted }) =>
+    actorOf(credential).pipe(Effect.flatMap((actor) => Effect.provideService(httpEffect, CurrentActor, actor)))
 
 /**
- * Lets a call through for the member whose API token it carries: as a bearer token, from a client
- * such as the CLI, or in the cookie a browser got by signing in. The bearer token is tried first.
+ * Lets a call through for the member whose credential it carries: the API token as a bearer token,
+ * from a client such as the CLI; a paired phone's key as a bearer token, acting for whoever paired
+ * it; or the cookie a browser got by signing in with the API token, which holds nothing else.
  */
 export const memberAuthorizationLayer = Layer.effect(
   MemberAuthorization,
   Effect.gen(function* () {
     const token = yield* ApiToken
-    const actAs = Effect.fn("MemberAuthorization.actAs")(function* <A, E, R>(
-      httpEffect: Effect.Effect<A, E, R>,
-      { credential }: { readonly credential: Parameters<typeof token.memberOf>[0] },
-    ) {
+    const workspace = yield* WorkspaceObjects
+
+    const memberOf = Effect.fn("MemberAuthorization.memberOf")(function* (credential: Redacted.Redacted) {
       const member = yield* token.memberOf(credential)
-      return yield* Effect.provideService(httpEffect, CurrentActor, { _tag: "Member", id: member })
+      const actor: Actor = { _tag: "Member", id: member }
+      return actor
     })
-    return MemberAuthorization.of({ bearer: actAs, signIn: actAs })
+
+    const bearerOf = Effect.fn("MemberAuthorization.bearerOf")(function* (credential: Redacted.Redacted) {
+      const presented = Redacted.value(credential)
+      if (!isPhoneKey(presented)) {
+        return yield* memberOf(credential)
+      }
+      const key = yield* Schema.decodeEffect(PhoneKey)(presented).pipe(Effect.mapError(() => phoneKeyRejected))
+      const request = yield* HttpServerRequest.HttpServerRequest
+      return yield* workspace
+        .call(workspaceCalls.authenticatePhone, { key, caller: callerOf(request) })
+        .pipe(Effect.catchTag("PhoneKeyRejected", () => Effect.fail(phoneKeyRejected)))
+    })
+
+    return MemberAuthorization.of({ bearer: actAs(bearerOf), signIn: actAs(memberOf) })
   }),
 )

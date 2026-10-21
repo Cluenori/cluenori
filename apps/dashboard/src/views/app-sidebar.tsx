@@ -8,6 +8,7 @@ import {
   PaletteIcon,
   ScrollTextIcon,
   SearchIcon,
+  SmartphoneIcon,
   SunIcon,
 } from "lucide-react"
 import { useState } from "react"
@@ -151,6 +152,17 @@ export function AppSidebar({
       </SidebarContent>
       <SidebarFooter className="pb-4">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={route.page === "phones"}
+              tooltip="Phones"
+              render={<Link to={{ page: "phones" }} />}
+              className="text-muted-foreground"
+            >
+              <SmartphoneIcon />
+              <span>Phones</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               isActive={route.page === "kit"}

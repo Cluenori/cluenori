@@ -1,4 +1,4 @@
-import { TraceId } from "@cluenori/foundation"
+import { Instant, TraceId } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
@@ -11,8 +11,8 @@ const archived = {
   /** The export as it is kept in the archive: OTLP protobuf, with secrets and personal data removed. */
   archive: Schema.Uint8ArrayFromBase64,
   /** When the earliest and the latest of its records happened. */
-  from: Schema.DateTimeUtcFromString,
-  to: Schema.DateTimeUtcFromString,
+  from: Instant,
+  to: Instant,
 }
 
 /**

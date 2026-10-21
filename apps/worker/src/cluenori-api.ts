@@ -1,6 +1,8 @@
 import { IncidentsGroup } from "@cluenori/incidents"
+import { PairingGroup, PhonesGroup } from "@cluenori/phones"
 import { ProjectsGroup } from "@cluenori/projects"
 import { SignalsGroup } from "@cluenori/signals"
+import { TodayGroup } from "@cluenori/today"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
@@ -15,7 +17,9 @@ export class SystemGroup extends HttpApiGroup.make("system", { topLevel: true })
 ) {}
 
 /** The API token, as a browser signs in with it. */
-export const SignIn = Schema.Struct({ token: Schema.RedactedFromValue(Schema.String) })
+export const SignIn = Schema.Struct({ token: Schema.RedactedFromValue(Schema.String) }).annotate({
+  identifier: "SignIn",
+})
 
 /** Signing a browser in and out: the way the dashboard gets the API token's access. */
 export class SignInGroup extends HttpApiGroup.make("signIn", { topLevel: true })
@@ -38,8 +42,9 @@ export class SignInGroup extends HttpApiGroup.make("signIn", { topLevel: true })
 
 /**
  * The public API: one definition for the dashboard, the CLI, MCP clients, and agents. Served under
- * `/api`, with its OpenAPI document at `/api/openapi.json`. Everything but the system and sign-in groups
- * needs the deployment's API token, as a bearer token or the sign-in cookie.
+ * `/api`, with its OpenAPI document at `/api/openapi.json`. Everything but the system, sign-in and
+ * pairing groups needs a member's credential: the deployment's API token as a bearer token or the
+ * sign-in cookie, or a paired phone's key as a bearer token.
  */
 export class CluenoriApi extends HttpApi.make("cluenori")
   .add(SystemGroup)
@@ -47,5 +52,8 @@ export class CluenoriApi extends HttpApi.make("cluenori")
   .add(ProjectsGroup.middleware(MemberAuthorization))
   .add(SignalsGroup.middleware(MemberAuthorization))
   .add(IncidentsGroup.middleware(MemberAuthorization))
+  .add(PairingGroup)
+  .add(PhonesGroup.middleware(MemberAuthorization))
+  .add(TodayGroup.middleware(MemberAuthorization))
   .prefix("/api")
   .annotate(OpenApi.Title, "Cluenori") {}

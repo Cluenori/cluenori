@@ -1,8 +1,8 @@
 import type { ErrorGroup } from "@cluenori/signals"
+import { errorStatusOf } from "@cluenori/signals"
 import { ChevronRightIcon } from "lucide-react"
 
 import { count } from "@/lib/format"
-import { statusOf } from "@/project-facts"
 import type { Route } from "@/router"
 import { Link } from "@/router"
 import { titleParts } from "@/views/error-group"
@@ -56,7 +56,7 @@ export function ErrorList({
     <ul className="divide-y">
       {groups.map((group) => {
         const { type, message } = titleParts(group)
-        const status = statusOf(group, now)
+        const status = errorStatusOf(group, now)
         const steps = stepsOf(group)
         return (
           <li key={group.id}>

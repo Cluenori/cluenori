@@ -1,4 +1,4 @@
-import { Actor, TraceId } from "@cluenori/foundation"
+import { Actor, Instant, TraceId } from "@cluenori/foundation"
 import {
   AddMonitor,
   Incident,
@@ -46,6 +46,7 @@ import {
   TraceExport,
   TraceView,
 } from "@cluenori/signals"
+import { TodayItem } from "@cluenori/today"
 import { Schema } from "effect"
 
 import type { ObjectCall, PlainSchema } from "./object-calls.ts"
@@ -71,6 +72,7 @@ export type ProjectCallName =
   | "monitors"
   | "addMonitor"
   | "removeMonitor"
+  | "today"
 
 const recorded = Schema.Literals(["recorded", "duplicate"])
 const ingestFailure = Schema.Union([IngestKeyRejected, ArchiveUnavailable])
@@ -142,7 +144,7 @@ export const projectCalls = {
   logCounts: projectCall("logCounts", LogCountQuery, LogCounts, ProjectNotFound),
   trace: projectCall(
     "trace",
-    Schema.Struct({ trace: TraceId, around: Schema.optionalKey(Schema.DateTimeUtcFromString) }),
+    Schema.Struct({ trace: TraceId, around: Schema.optionalKey(Instant) }),
     TraceView,
     Schema.Union([ProjectNotFound, ArchiveUnavailable]),
   ),
@@ -166,4 +168,5 @@ export const projectCalls = {
     Schema.Void,
     Schema.Union([ProjectNotFound, MonitorNotFound]),
   ),
+  today: projectCall("today", Schema.Void, Schema.Array(TodayItem), ProjectNotFound),
 }

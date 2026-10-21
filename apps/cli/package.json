@@ -6,11 +6,14 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@bagatka/openapi-swift": "workspace:*",
     "@bagatka/workspace-rules": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/incidents": "workspace:*",
+    "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/signals": "workspace:*",
+    "@cluenori/today": "workspace:*",
     "@cluenori/worker": "workspace:*",
     "@effect/platform-bun": "catalog:",
     "effect": "catalog:"

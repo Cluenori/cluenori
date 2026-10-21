@@ -1,4 +1,4 @@
-import { ComponentKey, EnvelopeName, EnvironmentKey, Uuidv7 } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, Uuidv7 } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import { MonitorId, MonitorUrl } from "./monitor.ts"
@@ -33,7 +33,7 @@ export const Evidence = Schema.Union([
     failures: Count,
     /** What was wrong with the last: `HTTP 503`, `No answer in 10 s`. */
     problem: Schema.String,
-  }),
+  }).annotate({ identifier: "DownEvidence" }),
   Schema.TaggedStruct("failing", {
     operation: EnvelopeName,
     /** How many failed, and ran, in the 15 minutes looked at. */
@@ -41,15 +41,15 @@ export const Evidence = Schema.Union([
     count: Count,
     /** Its error rate over the 7 days before; 0 when it never failed then, or didn't run. */
     usualRate: Rate,
-  }),
+  }).annotate({ identifier: "FailingEvidence" }),
   Schema.TaggedStruct("stopped", {
     operation: EnvelopeName,
     /** The start of the last minute it ran in. */
-    lastRanAt: Schema.DateTimeUtcFromString,
+    lastRanAt: Instant,
     /** Its usual gap between runs. */
     usualGapMs: Milliseconds,
-  }),
-])
+  }).annotate({ identifier: "StoppedEvidence" }),
+]).annotate({ identifier: "Evidence" })
 export type Evidence = typeof Evidence.Type
 
 /**
@@ -70,11 +70,11 @@ export class Incident extends Schema.Class<Incident>("Incident")({
    */
   title: Schema.String,
   evidence: Evidence,
-  openedAt: Schema.DateTimeUtcFromString,
+  openedAt: Instant,
   /** Absent while it is open. */
-  resolvedAt: Schema.optionalKey(Schema.DateTimeUtcFromString),
+  resolvedAt: Schema.optionalKey(Instant),
   /** When someone said they are on it, which stops its notifications; absent until then. */
-  acknowledgedAt: Schema.optionalKey(Schema.DateTimeUtcFromString),
+  acknowledgedAt: Schema.optionalKey(Instant),
 }) {}
 
 /**
@@ -85,8 +85,8 @@ export class Incident extends Schema.Class<Incident>("Incident")({
 export const IncidentList = Schema.Struct({
   open: Schema.Array(Incident),
   resolved: Schema.Array(Incident),
-  checkedAt: Schema.optionalKey(Schema.DateTimeUtcFromString),
-})
+  checkedAt: Schema.optionalKey(Instant),
+}).annotate({ identifier: "IncidentList" })
 export type IncidentList = typeof IncidentList.Type
 
 /** The project has no incident with this ID. */

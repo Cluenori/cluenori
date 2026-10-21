@@ -10,12 +10,14 @@ import { CluenoriApi } from "./cluenori-api.ts"
 import { IncidentsHandlers } from "./incidents-handlers.ts"
 import { memberAuthorizationLayer } from "./member-authorization-layer.ts"
 import { OtlpLogs, OtlpMetrics, OtlpTraces } from "./otlp-ingest.ts"
+import { PairingHandlers, PhonesHandlers } from "./phones-handlers.ts"
 import { ProjectObjects } from "./project-objects.ts"
 import { ProjectsHandlers } from "./projects-handlers.ts"
 import { SignInHandlers } from "./sign-in-handlers.ts"
 import { SignalsHandlers } from "./signals-handlers.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 import { SystemHandlers } from "./system-handlers.ts"
+import { TodayHandlers } from "./today-handlers.ts"
 import { WorkspaceObjects } from "./workspace-objects.ts"
 
 // A self-hosted deployment has one workspace.
@@ -53,6 +55,9 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
   Layer.provide(ProjectsHandlers),
   Layer.provide(SignalsHandlers),
   Layer.provide(IncidentsHandlers),
+  Layer.provide(PairingHandlers),
+  Layer.provide(PhonesHandlers),
+  Layer.provide(TodayHandlers),
   Layer.provide(memberAuthorizationLayer),
   Layer.provideMerge(
     Layer.unwrap(

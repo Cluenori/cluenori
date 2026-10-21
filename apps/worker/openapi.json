@@ -38,7 +38,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -49,16 +49,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "token": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "token"
-                ],
-                "additionalProperties": false
+                "$ref": "#/components/schemas/SignIn"
               }
             }
           },
@@ -91,31 +82,19 @@
         "parameters": [],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "ProjectList",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "projects": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/ProjectEncoded"
-                      }
-                    }
-                  },
-                  "required": [
-                    "projects"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/ProjectList"
                 }
               }
             }
@@ -125,7 +104,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -141,10 +120,10 @@
         "parameters": [],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
@@ -153,7 +132,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectEncoded"
+                  "$ref": "#/components/schemas/Project"
                 }
               }
             }
@@ -163,7 +142,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -173,7 +152,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectExistsEncoded"
+                  "$ref": "#/components/schemas/ProjectExists"
                 }
               }
             }
@@ -184,24 +163,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "key": {
-                    "type": "string",
-                    "maxLength": 40
-                  },
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 100,
-                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-                  }
-                },
-                "required": [
-                  "key",
-                  "name"
-                ],
-                "additionalProperties": false
+                "$ref": "#/components/schemas/CreateProject"
               }
             }
           },
@@ -228,35 +190,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "ProjectDetail",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "project": {
-                      "$ref": "#/components/schemas/ProjectEncoded"
-                    },
-                    "components": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/ComponentEncoded"
-                      }
-                    }
-                  },
-                  "required": [
-                    "project",
-                    "components"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/ProjectDetail"
                 }
               }
             }
@@ -266,7 +212,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -276,7 +222,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -304,32 +250,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "201": {
-            "description": "Success",
+            "description": "AddedComponentResponse",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "component": {
-                      "$ref": "#/components/schemas/ComponentEncoded"
-                    },
-                    "ingestKey": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "component",
-                    "ingestKey"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/AddedComponentResponse"
                 }
               }
             }
@@ -339,7 +272,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -349,7 +282,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -359,7 +292,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ComponentExistsEncoded"
+                  "$ref": "#/components/schemas/ComponentExists"
                 }
               }
             }
@@ -370,24 +303,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "key": {
-                    "type": "string",
-                    "maxLength": 40
-                  },
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 100,
-                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-                  }
-                },
-                "required": [
-                  "key",
-                  "name"
-                ],
-                "additionalProperties": false
+                "$ref": "#/components/schemas/AddComponent"
               }
             }
           },
@@ -415,7 +331,8 @@
             "name": "from",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -423,7 +340,8 @@
             "name": "to",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -464,112 +382,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "OperationTable",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "covered": {
-                      "$ref": "#/components/schemas/PeriodEncoded"
-                    },
-                    "rows": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "component": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "environment": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "operation": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                            "allOf": [
-                              {
-                                "pattern": "^\\P{Cc}*$"
-                              }
-                            ]
-                          },
-                          "count": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "errors": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "averageMs": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "p50Ms": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "p80Ms": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "p95Ms": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "p99Ms": {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        },
-                        "required": [
-                          "component",
-                          "operation",
-                          "count",
-                          "errors",
-                          "averageMs",
-                          "p50Ms",
-                          "p80Ms",
-                          "p95Ms",
-                          "p99Ms"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "count": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991
-                    },
-                    "errors": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991
-                    },
-                    "dataUntil": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "rows",
-                    "count",
-                    "errors"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/OperationTable"
                 }
               }
             }
@@ -579,7 +404,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -589,7 +414,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -618,7 +443,8 @@
             "name": "from",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -626,7 +452,8 @@
             "name": "to",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -668,98 +495,26 @@
             "name": "step",
             "in": "query",
             "schema": {
-              "type": "string",
-              "enum": [
-                "1m",
-                "5m",
-                "1h",
-                "1d"
-              ]
+              "$ref": "#/components/schemas/SeriesStep"
             },
             "required": true
           }
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "LoadSeries",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "covered": {
-                      "$ref": "#/components/schemas/PeriodEncoded"
-                    },
-                    "step": {
-                      "type": "string",
-                      "enum": [
-                        "1m",
-                        "5m",
-                        "1h",
-                        "1d"
-                      ]
-                    },
-                    "points": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "start": {
-                            "type": "string"
-                          },
-                          "count": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "errors": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "p50Ms": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "p80Ms": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "p95Ms": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "p99Ms": {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        },
-                        "required": [
-                          "start",
-                          "count",
-                          "errors",
-                          "p50Ms",
-                          "p80Ms",
-                          "p95Ms",
-                          "p99Ms"
-                        ],
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "required": [
-                    "step",
-                    "points"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/LoadSeries"
                 }
               }
             }
@@ -769,7 +524,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -779,7 +534,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -808,7 +563,8 @@
             "name": "from",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -816,7 +572,8 @@
             "name": "to",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -857,137 +614,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "KeptTraces",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "covered": {
-                      "$ref": "#/components/schemas/PeriodEncoded"
-                    },
-                    "slowest": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "trace": {
-                            "type": "string"
-                          },
-                          "operation": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                            "allOf": [
-                              {
-                                "pattern": "^\\P{Cc}*$"
-                              }
-                            ]
-                          },
-                          "environment": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "start": {
-                            "type": "string"
-                          },
-                          "durationMs": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "failed": {
-                            "type": "boolean"
-                          },
-                          "status": {
-                            "type": "integer",
-                            "minimum": 100,
-                            "maximum": 599
-                          },
-                          "component": {
-                            "type": "string",
-                            "maxLength": 40
-                          }
-                        },
-                        "required": [
-                          "trace",
-                          "operation",
-                          "start",
-                          "durationMs",
-                          "failed",
-                          "component"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "failed": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "trace": {
-                            "type": "string"
-                          },
-                          "operation": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                            "allOf": [
-                              {
-                                "pattern": "^\\P{Cc}*$"
-                              }
-                            ]
-                          },
-                          "environment": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "start": {
-                            "type": "string"
-                          },
-                          "durationMs": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "failed": {
-                            "type": "boolean"
-                          },
-                          "status": {
-                            "type": "integer",
-                            "minimum": 100,
-                            "maximum": 599
-                          },
-                          "component": {
-                            "type": "string",
-                            "maxLength": 40
-                          }
-                        },
-                        "required": [
-                          "trace",
-                          "operation",
-                          "start",
-                          "durationMs",
-                          "failed",
-                          "component"
-                        ],
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "required": [
-                    "slowest",
-                    "failed"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/KeptTraces"
                 }
               }
             }
@@ -997,7 +636,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -1007,7 +646,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -1036,7 +675,8 @@
             "name": "from",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -1044,7 +684,8 @@
             "name": "to",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -1085,92 +726,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "ErrorTable",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "covered": {
-                      "$ref": "#/components/schemas/PeriodEncoded"
-                    },
-                    "groups": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "kind": {
-                            "type": "string",
-                            "enum": [
-                              "exception",
-                              "log"
-                            ]
-                          },
-                          "title": {
-                            "type": "string"
-                          },
-                          "culprit": {
-                            "type": "string"
-                          },
-                          "occurrences": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "firstSeen": {
-                            "type": "string"
-                          },
-                          "lastSeen": {
-                            "type": "string"
-                          },
-                          "lastComponent": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "lastEnvironment": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "lastRelease": {
-                            "type": "string",
-                            "maxLength": 64
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "kind",
-                          "title",
-                          "culprit",
-                          "occurrences",
-                          "firstSeen",
-                          "lastSeen",
-                          "lastComponent"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "occurrences": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991
-                    }
-                  },
-                  "required": [
-                    "groups",
-                    "occurrences"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/ErrorTable"
                 }
               }
             }
@@ -1180,7 +748,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -1190,7 +758,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -1227,7 +795,8 @@
             "name": "from",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -1235,7 +804,8 @@
             "name": "to",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -1276,170 +846,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "ErrorDetail",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "group": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string"
-                        },
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "exception",
-                            "log"
-                          ]
-                        },
-                        "title": {
-                          "type": "string"
-                        },
-                        "culprit": {
-                          "type": "string"
-                        },
-                        "occurrences": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "firstSeen": {
-                          "type": "string"
-                        },
-                        "lastSeen": {
-                          "type": "string"
-                        },
-                        "lastComponent": {
-                          "type": "string",
-                          "maxLength": 40
-                        },
-                        "lastEnvironment": {
-                          "type": "string",
-                          "maxLength": 40
-                        },
-                        "lastRelease": {
-                          "type": "string",
-                          "maxLength": 64
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "kind",
-                        "title",
-                        "culprit",
-                        "occurrences",
-                        "firstSeen",
-                        "lastSeen",
-                        "lastComponent"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "latest": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "integer",
-                            "minimum": -9007199254740991,
-                            "maximum": 9007199254740991
-                          },
-                          "component": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "time": {
-                            "type": "string"
-                          },
-                          "level": {
-                            "type": "string",
-                            "enum": [
-                              "trace",
-                              "debug",
-                              "info",
-                              "warn",
-                              "error",
-                              "fatal"
-                            ]
-                          },
-                          "category": {
-                            "type": "string"
-                          },
-                          "message": {
-                            "type": "string"
-                          },
-                          "template": {
-                            "type": "string"
-                          },
-                          "environment": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "release": {
-                            "type": "string",
-                            "maxLength": 64
-                          },
-                          "trace": {
-                            "type": "string"
-                          },
-                          "span": {
-                            "type": "string"
-                          },
-                          "exception": {
-                            "type": "object",
-                            "properties": {
-                              "type": {
-                                "type": "string"
-                              },
-                              "message": {
-                                "type": "string"
-                              },
-                              "stack": {
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "type",
-                              "message"
-                            ],
-                            "additionalProperties": false
-                          },
-                          "error": {
-                            "type": "string"
-                          },
-                          "attributes": {
-                            "type": "object"
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "component",
-                          "time",
-                          "level",
-                          "category",
-                          "message",
-                          "attributes"
-                        ],
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "required": [
-                    "group",
-                    "latest"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/ErrorDetail"
                 }
               }
             }
@@ -1449,7 +868,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -1461,10 +880,10 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                      "$ref": "#/components/schemas/ProjectNotFound"
                     },
                     {
-                      "$ref": "#/components/schemas/ErrorGroupNotFoundEncoded"
+                      "$ref": "#/components/schemas/ErrorGroupNotFound"
                     }
                   ]
                 }
@@ -1495,7 +914,8 @@
             "name": "from",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -1503,7 +923,8 @@
             "name": "to",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -1529,12 +950,7 @@
             "name": "level",
             "in": "query",
             "schema": {
-              "type": "string",
-              "enum": [
-                "warn",
-                "error",
-                "fatal"
-              ]
+              "$ref": "#/components/schemas/IndexedLevel"
             },
             "required": false
           },
@@ -1584,122 +1000,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "LogPage",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "covered": {
-                      "$ref": "#/components/schemas/PeriodEncoded"
-                    },
-                    "lines": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "integer",
-                            "minimum": -9007199254740991,
-                            "maximum": 9007199254740991
-                          },
-                          "component": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "time": {
-                            "type": "string"
-                          },
-                          "level": {
-                            "type": "string",
-                            "enum": [
-                              "trace",
-                              "debug",
-                              "info",
-                              "warn",
-                              "error",
-                              "fatal"
-                            ]
-                          },
-                          "category": {
-                            "type": "string"
-                          },
-                          "message": {
-                            "type": "string"
-                          },
-                          "template": {
-                            "type": "string"
-                          },
-                          "environment": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "release": {
-                            "type": "string",
-                            "maxLength": 64
-                          },
-                          "trace": {
-                            "type": "string"
-                          },
-                          "span": {
-                            "type": "string"
-                          },
-                          "exception": {
-                            "type": "object",
-                            "properties": {
-                              "type": {
-                                "type": "string"
-                              },
-                              "message": {
-                                "type": "string"
-                              },
-                              "stack": {
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "type",
-                              "message"
-                            ],
-                            "additionalProperties": false
-                          },
-                          "error": {
-                            "type": "string"
-                          },
-                          "attributes": {
-                            "type": "object"
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "component",
-                          "time",
-                          "level",
-                          "category",
-                          "message",
-                          "attributes"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "next": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    }
-                  },
-                  "required": [
-                    "lines"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/LogPage"
                 }
               }
             }
@@ -1709,7 +1022,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -1719,7 +1032,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -1748,7 +1061,8 @@
             "name": "from",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -1756,7 +1070,8 @@
             "name": "to",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": true
           },
@@ -1782,13 +1097,7 @@
             "name": "step",
             "in": "query",
             "schema": {
-              "type": "string",
-              "enum": [
-                "1m",
-                "5m",
-                "1h",
-                "1d"
-              ]
+              "$ref": "#/components/schemas/SeriesStep"
             },
             "required": true
           },
@@ -1796,12 +1105,7 @@
             "name": "by",
             "in": "query",
             "schema": {
-              "type": "string",
-              "enum": [
-                "level",
-                "component",
-                "error"
-              ]
+              "$ref": "#/components/schemas/LogCountsBy"
             },
             "required": true
           },
@@ -1809,12 +1113,7 @@
             "name": "level",
             "in": "query",
             "schema": {
-              "type": "string",
-              "enum": [
-                "warn",
-                "error",
-                "fatal"
-              ]
+              "$ref": "#/components/schemas/IndexedLevel"
             },
             "required": false
           },
@@ -1829,81 +1128,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "LogCounts",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "covered": {
-                      "$ref": "#/components/schemas/PeriodEncoded"
-                    },
-                    "step": {
-                      "type": "string",
-                      "enum": [
-                        "1m",
-                        "5m",
-                        "1h",
-                        "1d"
-                      ]
-                    },
-                    "series": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "key": {
-                            "type": "string"
-                          },
-                          "total": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "points": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "start": {
-                                  "type": "string"
-                                },
-                                "count": {
-                                  "type": "integer",
-                                  "minimum": 0,
-                                  "maximum": 9007199254740991
-                                }
-                              },
-                              "required": [
-                                "start",
-                                "count"
-                              ],
-                              "additionalProperties": false
-                            }
-                          }
-                        },
-                        "required": [
-                          "key",
-                          "total",
-                          "points"
-                        ],
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "required": [
-                    "step",
-                    "series"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/LogCounts"
                 }
               }
             }
@@ -1913,7 +1150,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -1923,7 +1160,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -1960,232 +1197,27 @@
             "name": "around",
             "in": "query",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "date-time"
             },
             "required": false
           }
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "TraceView",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "trace": {
-                      "type": "string"
-                    },
-                    "searched": {
-                      "$ref": "#/components/schemas/PeriodEncoded"
-                    },
-                    "spans": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "span": {
-                            "type": "string"
-                          },
-                          "parent": {
-                            "type": "string"
-                          },
-                          "depth": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "kind": {
-                            "type": "string",
-                            "enum": [
-                              "unspecified",
-                              "internal",
-                              "server",
-                              "client",
-                              "producer",
-                              "consumer"
-                            ]
-                          },
-                          "component": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "start": {
-                            "type": "string"
-                          },
-                          "durationMs": {
-                            "type": "number"
-                          },
-                          "failed": {
-                            "type": "boolean"
-                          },
-                          "statusMessage": {
-                            "type": "string"
-                          },
-                          "attributes": {
-                            "type": "object"
-                          },
-                          "events": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "name": {
-                                  "type": "string"
-                                },
-                                "time": {
-                                  "type": "string"
-                                },
-                                "attributes": {
-                                  "type": "object"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "time",
-                                "attributes"
-                              ],
-                              "additionalProperties": false
-                            }
-                          }
-                        },
-                        "required": [
-                          "span",
-                          "depth",
-                          "name",
-                          "kind",
-                          "component",
-                          "start",
-                          "durationMs",
-                          "failed",
-                          "attributes",
-                          "events"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "logs": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "time": {
-                            "type": "string"
-                          },
-                          "level": {
-                            "type": "string",
-                            "enum": [
-                              "trace",
-                              "debug",
-                              "info",
-                              "warn",
-                              "error",
-                              "fatal"
-                            ]
-                          },
-                          "category": {
-                            "type": "string"
-                          },
-                          "message": {
-                            "type": "string"
-                          },
-                          "template": {
-                            "type": "string"
-                          },
-                          "environment": {
-                            "type": "string",
-                            "maxLength": 40
-                          },
-                          "release": {
-                            "type": "string",
-                            "maxLength": 64
-                          },
-                          "trace": {
-                            "type": "string"
-                          },
-                          "span": {
-                            "type": "string"
-                          },
-                          "exception": {
-                            "type": "object",
-                            "properties": {
-                              "type": {
-                                "type": "string"
-                              },
-                              "message": {
-                                "type": "string"
-                              },
-                              "stack": {
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "type",
-                              "message"
-                            ],
-                            "additionalProperties": false
-                          },
-                          "error": {
-                            "type": "string"
-                          },
-                          "attributes": {
-                            "type": "object"
-                          },
-                          "component": {
-                            "type": "string",
-                            "maxLength": 40
-                          }
-                        },
-                        "required": [
-                          "time",
-                          "category",
-                          "message",
-                          "attributes",
-                          "component"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "files": {
-                      "type": "object",
-                      "properties": {
-                        "read": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "unread": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        }
-                      },
-                      "required": [
-                        "read",
-                        "unread"
-                      ],
-                      "additionalProperties": false
-                    }
-                  },
-                  "required": [
-                    "trace",
-                    "searched",
-                    "spans",
-                    "logs",
-                    "files"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/TraceView"
                 }
               }
             }
@@ -2195,7 +1227,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -2205,7 +1237,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -2215,7 +1247,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArchiveUnavailableEncoded"
+                  "$ref": "#/components/schemas/ArchiveUnavailable"
                 }
               }
             }
@@ -2243,41 +1275,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "IncidentList",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "open": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/IncidentEncoded"
-                      }
-                    },
-                    "resolved": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/IncidentEncoded"
-                      }
-                    },
-                    "checkedAt": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "open",
-                    "resolved"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/IncidentList"
                 }
               }
             }
@@ -2287,7 +1297,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -2297,7 +1307,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -2333,10 +1343,10 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
@@ -2345,7 +1355,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IncidentEncoded"
+                  "$ref": "#/components/schemas/Incident"
                 }
               }
             }
@@ -2355,7 +1365,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -2367,10 +1377,10 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                      "$ref": "#/components/schemas/ProjectNotFound"
                     },
                     {
-                      "$ref": "#/components/schemas/IncidentNotFoundEncoded"
+                      "$ref": "#/components/schemas/IncidentNotFound"
                     }
                   ]
                 }
@@ -2400,55 +1410,19 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "MonitorList",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "monitors": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "monitor": {
-                            "$ref": "#/components/schemas/MonitorEncoded"
-                          },
-                          "lastCheck": {
-                            "type": "object",
-                            "properties": {
-                              "at": {
-                                "type": "string"
-                              },
-                              "problem": {
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "at"
-                            ],
-                            "additionalProperties": false
-                          }
-                        },
-                        "required": [
-                          "monitor"
-                        ],
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "required": [
-                    "monitors"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/MonitorList"
                 }
               }
             }
@@ -2458,7 +1432,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -2468,7 +1442,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                  "$ref": "#/components/schemas/ProjectNotFound"
                 }
               }
             }
@@ -2494,10 +1468,10 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
@@ -2506,7 +1480,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MonitorEncoded"
+                  "$ref": "#/components/schemas/Monitor"
                 }
               }
             }
@@ -2516,7 +1490,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -2528,10 +1502,10 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                      "$ref": "#/components/schemas/ProjectNotFound"
                     },
                     {
-                      "$ref": "#/components/schemas/ComponentNotFoundEncoded"
+                      "$ref": "#/components/schemas/ComponentNotFound"
                     }
                   ]
                 }
@@ -2545,10 +1519,10 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/MonitorExistsEncoded"
+                      "$ref": "#/components/schemas/MonitorExists"
                     },
                     {
-                      "$ref": "#/components/schemas/MonitorLimitReachedEncoded"
+                      "$ref": "#/components/schemas/MonitorLimitReached"
                     }
                   ]
                 }
@@ -2561,22 +1535,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "component": {
-                    "type": "string",
-                    "maxLength": 40
-                  },
-                  "url": {
-                    "type": "string",
-                    "maxLength": 2048
-                  }
-                },
-                "required": [
-                  "component",
-                  "url"
-                ],
-                "additionalProperties": false
+                "$ref": "#/components/schemas/AddMonitor"
               }
             }
           },
@@ -2611,10 +1570,10 @@
         ],
         "security": [
           {
-            "bearer": []
+            "signIn": []
           },
           {
-            "signIn": []
+            "bearer": []
           }
         ],
         "responses": {
@@ -2626,7 +1585,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }
@@ -2638,10 +1597,10 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                      "$ref": "#/components/schemas/ProjectNotFound"
                     },
                     {
-                      "$ref": "#/components/schemas/MonitorNotFoundEncoded"
+                      "$ref": "#/components/schemas/MonitorNotFound"
                     }
                   ]
                 }
@@ -2651,11 +1610,224 @@
         },
         "description": "Removes a monitor, and resolves its open incident, if any."
       }
+    },
+    "/api/phones": {
+      "post": {
+        "tags": [
+          "pairing"
+        ],
+        "operationId": "pairing.pair",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "PairedPhone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairedPhone"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "PairingCodeRejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairingCodeRejected"
+                }
+              }
+            }
+          }
+        },
+        "description": "Pairs a phone with a code from a pairing link, and answers with its key, shown only this once: the phone calls the API with it as its bearer token, acting for whoever started the pairing, and sends `User-Agent: Cluenori/<app version> iOS/<iOS version>` so the deployment keeps its versions. A code that is wrong, used, or expired answers 403.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairPhone"
+              }
+            }
+          },
+          "required": true
+        }
+      },
+      "get": {
+        "tags": [
+          "phones"
+        ],
+        "operationId": "phones.phones",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PhoneList",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          }
+        },
+        "description": "The phones paired with the deployment, the latest paired first, each with its model, iOS and app versions, and when, from which address and country, it last called."
+      }
+    },
+    "/api/phones/pairings": {
+      "post": {
+        "tags": [
+          "phones"
+        ],
+        "operationId": "phones.startPairing",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Pairing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pairing"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          }
+        },
+        "description": "Starts pairing a phone for whoever calls: the link a phone opens to pair, shown as a QR code, `cluenori://pair?url=<deployment>&code=<pairing code>`, good once for 10 minutes. At most 5 are good at once; another drops the oldest."
+      }
+    },
+    "/api/phones/{phone}": {
+      "delete": {
+        "tags": [
+          "phones"
+        ],
+        "operationId": "phones.removePhone",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PhoneNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Removes a phone: its key stops working at once."
+      }
+    },
+    "/api/today": {
+      "get": {
+        "tags": [
+          "today"
+        ],
+        "operationId": "today.today",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TodayList",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          }
+        },
+        "description": "What needs attention now across every project, the most urgent first: open incidents not acknowledged, errors happening now (seen in the last 15 minutes), acknowledged incidents, new errors (first seen in the last day), operations whose p95 over the last day is at least 1.5 times and 100 ms more than over the 7 days before, and projects with components that sent nothing in the last day. Each item has its evidence and its project; `projects` names every project asked; a project that didn't answer is in `unanswered`, its items missing."
+      }
     }
   },
   "components": {
     "schemas": {
-      "UnauthorizedEncoded": {
+      "Unauthorized": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -2674,7 +1846,610 @@
         ],
         "additionalProperties": false
       },
-      "MonitorNotFoundEncoded": {
+      "TodayList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodayItem"
+            }
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            }
+          },
+          "unanswered": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "items",
+          "projects",
+          "unanswered",
+          "at"
+        ],
+        "additionalProperties": false
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "TodayItem": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/IncidentItem"
+          },
+          {
+            "$ref": "#/components/schemas/ErrorItem"
+          },
+          {
+            "$ref": "#/components/schemas/SlowerItem"
+          },
+          {
+            "$ref": "#/components/schemas/SilentItem"
+          }
+        ]
+      },
+      "SilentItem": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "silent"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastDataAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "_tag",
+          "project"
+        ],
+        "additionalProperties": false
+      },
+      "SlowerItem": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "slower"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "p95Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "usualP95Ms": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "_tag",
+          "project",
+          "component",
+          "operation",
+          "p95Ms",
+          "usualP95Ms"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorItem": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "error"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "error": {
+            "$ref": "#/components/schemas/ErrorGroup"
+          },
+          "isNew": {
+            "type": "boolean"
+          },
+          "ongoing": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "_tag",
+          "project",
+          "error",
+          "isNew",
+          "ongoing"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ErrorKind"
+          },
+          "title": {
+            "type": "string"
+          },
+          "culprit": {
+            "type": "string"
+          },
+          "occurrences": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastComponent": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastEnvironment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastRelease": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "culprit",
+          "occurrences",
+          "firstSeen",
+          "lastSeen",
+          "lastComponent"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorKind": {
+        "type": "string",
+        "enum": [
+          "exception",
+          "log"
+        ]
+      },
+      "IncidentItem": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "incident"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "incident": {
+            "$ref": "#/components/schemas/Incident"
+          }
+        },
+        "required": [
+          "_tag",
+          "project",
+          "incident"
+        ],
+        "additionalProperties": false
+      },
+      "Incident": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "subject": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/Evidence"
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acknowledgedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "subject",
+          "title",
+          "evidence",
+          "openedAt"
+        ],
+        "additionalProperties": false
+      },
+      "Evidence": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/DownEvidence"
+          },
+          {
+            "$ref": "#/components/schemas/FailingEvidence"
+          },
+          {
+            "$ref": "#/components/schemas/StoppedEvidence"
+          }
+        ]
+      },
+      "StoppedEvidence": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "stopped"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "lastRanAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "usualGapMs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "_tag",
+          "operation",
+          "lastRanAt",
+          "usualGapMs"
+        ],
+        "additionalProperties": false
+      },
+      "FailingEvidence": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "failing"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "usualRate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "_tag",
+          "operation",
+          "failed",
+          "count",
+          "usualRate"
+        ],
+        "additionalProperties": false
+      },
+      "DownEvidence": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "down"
+            ]
+          },
+          "monitor": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "failures": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "problem": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "monitor",
+          "url",
+          "failures",
+          "problem"
+        ],
+        "additionalProperties": false
+      },
+      "PhoneNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PhoneNotFound"
+            ]
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "phone"
+        ],
+        "additionalProperties": false
+      },
+      "Pairing": {
+        "type": "object",
+        "properties": {
+          "link": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "link",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "PhoneList": {
+        "type": "object",
+        "properties": {
+          "phones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Phone"
+            }
+          }
+        },
+        "required": [
+          "phones"
+        ],
+        "additionalProperties": false
+      },
+      "Phone": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "systemVersion": {
+            "type": "string"
+          },
+          "appVersion": {
+            "type": "string"
+          },
+          "pairedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeen": {
+            "$ref": "#/components/schemas/LastSeen"
+          }
+        },
+        "required": [
+          "id",
+          "model",
+          "modelName",
+          "systemVersion",
+          "appVersion",
+          "pairedAt"
+        ],
+        "additionalProperties": false
+      },
+      "LastSeen": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "address": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "additionalProperties": false
+      },
+      "PairingCodeRejected": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PairingCodeRejected"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
+      "PairedPhone": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "$ref": "#/components/schemas/Phone"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone",
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "PairPhone": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "systemVersion": {
+            "type": "string"
+          },
+          "appVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "model",
+          "systemVersion",
+          "appVersion"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorNotFound": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -2693,7 +2468,7 @@
         ],
         "additionalProperties": false
       },
-      "ProjectNotFoundEncoded": {
+      "ProjectNotFound": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -2713,7 +2488,7 @@
         ],
         "additionalProperties": false
       },
-      "MonitorLimitReachedEncoded": {
+      "MonitorLimitReached": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -2734,7 +2509,7 @@
         ],
         "additionalProperties": false
       },
-      "MonitorExistsEncoded": {
+      "MonitorExists": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -2759,7 +2534,7 @@
         ],
         "additionalProperties": false
       },
-      "ComponentNotFoundEncoded": {
+      "ComponentNotFound": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -2779,7 +2554,7 @@
         ],
         "additionalProperties": false
       },
-      "MonitorEncoded": {
+      "Monitor": {
         "type": "object",
         "properties": {
           "id": {
@@ -2794,7 +2569,8 @@
             "maxLength": 2048
           },
           "addedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -2805,7 +2581,71 @@
         ],
         "additionalProperties": false
       },
-      "IncidentNotFoundEncoded": {
+      "AddMonitor": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "component",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorList": {
+        "type": "object",
+        "properties": {
+          "monitors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonitorState"
+            }
+          }
+        },
+        "required": [
+          "monitors"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorState": {
+        "type": "object",
+        "properties": {
+          "monitor": {
+            "$ref": "#/components/schemas/Monitor"
+          },
+          "lastCheck": {
+            "$ref": "#/components/schemas/MonitorCheck"
+          }
+        },
+        "required": [
+          "monitor"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorCheck": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "problem": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "additionalProperties": false
+      },
+      "IncidentNotFound": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -2824,166 +2664,33 @@
         ],
         "additionalProperties": false
       },
-      "IncidentEncoded": {
+      "IncidentList": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
+          "open": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Incident"
+            }
           },
-          "component": {
+          "resolved": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Incident"
+            }
+          },
+          "checkedAt": {
             "type": "string",
-            "maxLength": 40
-          },
-          "environment": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "subject": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "evidence": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "_tag": {
-                    "type": "string",
-                    "enum": [
-                      "down"
-                    ]
-                  },
-                  "monitor": {
-                    "type": "string"
-                  },
-                  "url": {
-                    "type": "string",
-                    "maxLength": 2048
-                  },
-                  "failures": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "problem": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "_tag",
-                  "monitor",
-                  "url",
-                  "failures",
-                  "problem"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "_tag": {
-                    "type": "string",
-                    "enum": [
-                      "failing"
-                    ]
-                  },
-                  "operation": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256,
-                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                    "allOf": [
-                      {
-                        "pattern": "^\\P{Cc}*$"
-                      }
-                    ]
-                  },
-                  "failed": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "count": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "usualRate": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  }
-                },
-                "required": [
-                  "_tag",
-                  "operation",
-                  "failed",
-                  "count",
-                  "usualRate"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "_tag": {
-                    "type": "string",
-                    "enum": [
-                      "stopped"
-                    ]
-                  },
-                  "operation": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256,
-                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                    "allOf": [
-                      {
-                        "pattern": "^\\P{Cc}*$"
-                      }
-                    ]
-                  },
-                  "lastRanAt": {
-                    "type": "string"
-                  },
-                  "usualGapMs": {
-                    "type": "number",
-                    "minimum": 0
-                  }
-                },
-                "required": [
-                  "_tag",
-                  "operation",
-                  "lastRanAt",
-                  "usualGapMs"
-                ],
-                "additionalProperties": false
-              }
-            ]
-          },
-          "openedAt": {
-            "type": "string"
-          },
-          "resolvedAt": {
-            "type": "string"
-          },
-          "acknowledgedAt": {
-            "type": "string"
+            "format": "date-time"
           }
         },
         "required": [
-          "id",
-          "component",
-          "subject",
-          "title",
-          "evidence",
-          "openedAt"
+          "open",
+          "resolved"
         ],
         "additionalProperties": false
       },
-      "ArchiveUnavailableEncoded": {
+      "ArchiveUnavailable": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -3002,14 +2709,249 @@
         ],
         "additionalProperties": false
       },
-      "PeriodEncoded": {
+      "TraceView": {
+        "type": "object",
+        "properties": {
+          "trace": {
+            "type": "string"
+          },
+          "searched": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceSpan"
+            }
+          },
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceLog"
+            }
+          },
+          "files": {
+            "$ref": "#/components/schemas/SearchedFiles"
+          }
+        },
+        "required": [
+          "trace",
+          "searched",
+          "spans",
+          "logs",
+          "files"
+        ],
+        "additionalProperties": false
+      },
+      "SearchedFiles": {
+        "type": "object",
+        "properties": {
+          "read": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "unread": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "read",
+          "unread"
+        ],
+        "additionalProperties": false
+      },
+      "TraceLog": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "level": {
+            "$ref": "#/components/schemas/LogLevel"
+          },
+          "category": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "trace": {
+            "type": "string"
+          },
+          "span": {
+            "type": "string"
+          },
+          "exception": {
+            "$ref": "#/components/schemas/LogException"
+          },
+          "error": {
+            "type": "string"
+          },
+          "attributes": {
+            "type": "object"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "time",
+          "category",
+          "message",
+          "attributes",
+          "component"
+        ],
+        "additionalProperties": false
+      },
+      "LogException": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "stack": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "LogLevel": {
+        "type": "string",
+        "enum": [
+          "trace",
+          "debug",
+          "info",
+          "warn",
+          "error",
+          "fatal"
+        ]
+      },
+      "TraceSpan": {
+        "type": "object",
+        "properties": {
+          "span": {
+            "type": "string"
+          },
+          "parent": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SpanKind"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationMs": {
+            "type": "number"
+          },
+          "failed": {
+            "type": "boolean"
+          },
+          "statusMessage": {
+            "type": "string"
+          },
+          "attributes": {
+            "type": "object"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpanEvent"
+            }
+          }
+        },
+        "required": [
+          "span",
+          "depth",
+          "name",
+          "kind",
+          "component",
+          "start",
+          "durationMs",
+          "failed",
+          "attributes",
+          "events"
+        ],
+        "additionalProperties": false
+      },
+      "SpanEvent": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "attributes": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "time",
+          "attributes"
+        ],
+        "additionalProperties": false
+      },
+      "SpanKind": {
+        "type": "string",
+        "enum": [
+          "unspecified",
+          "internal",
+          "server",
+          "client",
+          "producer",
+          "consumer"
+        ]
+      },
+      "Period": {
         "type": "object",
         "properties": {
           "from": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "to": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -3018,7 +2960,184 @@
         ],
         "additionalProperties": false
       },
-      "ErrorGroupNotFoundEncoded": {
+      "LogCounts": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "step": {
+            "$ref": "#/components/schemas/SeriesStep"
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogCountSeries"
+            }
+          }
+        },
+        "required": [
+          "step",
+          "series"
+        ],
+        "additionalProperties": false
+      },
+      "LogCountSeries": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogCountPoint"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "total",
+          "points"
+        ],
+        "additionalProperties": false
+      },
+      "LogCountPoint": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "start",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "SeriesStep": {
+        "type": "string",
+        "enum": [
+          "1m",
+          "5m",
+          "1h",
+          "1d"
+        ]
+      },
+      "IndexedLevel": {
+        "type": "string",
+        "enum": [
+          "warn",
+          "error",
+          "fatal"
+        ]
+      },
+      "LogCountsBy": {
+        "type": "string",
+        "enum": [
+          "level",
+          "component",
+          "error"
+        ]
+      },
+      "LogPage": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            }
+          },
+          "next": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "lines"
+        ],
+        "additionalProperties": false
+      },
+      "LogLine": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "level": {
+            "$ref": "#/components/schemas/LogLevel"
+          },
+          "category": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "trace": {
+            "type": "string"
+          },
+          "span": {
+            "type": "string"
+          },
+          "exception": {
+            "$ref": "#/components/schemas/LogException"
+          },
+          "error": {
+            "type": "string"
+          },
+          "attributes": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "time",
+          "level",
+          "category",
+          "message",
+          "attributes"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorGroupNotFound": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -3037,7 +3156,294 @@
         ],
         "additionalProperties": false
       },
-      "ComponentExistsEncoded": {
+      "ErrorDetail": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/ErrorGroup"
+          },
+          "latest": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            }
+          }
+        },
+        "required": [
+          "group",
+          "latest"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorTable": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorGroup"
+            }
+          },
+          "occurrences": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "groups",
+          "occurrences"
+        ],
+        "additionalProperties": false
+      },
+      "KeptTraces": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "slowest": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeptTraceRow"
+            }
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeptTraceRow"
+            }
+          }
+        },
+        "required": [
+          "slowest",
+          "failed"
+        ],
+        "additionalProperties": false
+      },
+      "KeptTraceRow": {
+        "type": "object",
+        "properties": {
+          "trace": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "trace",
+          "operation",
+          "start",
+          "durationMs",
+          "failed",
+          "component"
+        ],
+        "additionalProperties": false
+      },
+      "LoadSeries": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "step": {
+            "$ref": "#/components/schemas/SeriesStep"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LoadPoint"
+            }
+          }
+        },
+        "required": [
+          "step",
+          "points"
+        ],
+        "additionalProperties": false
+      },
+      "LoadPoint": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "p50Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p80Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p95Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p99Ms": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "start",
+          "count",
+          "errors",
+          "p50Ms",
+          "p80Ms",
+          "p95Ms",
+          "p99Ms"
+        ],
+        "additionalProperties": false
+      },
+      "OperationTable": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationRow"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "dataUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "rows",
+          "count",
+          "errors"
+        ],
+        "additionalProperties": false
+      },
+      "OperationRow": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "averageMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p50Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p80Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p95Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p99Ms": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "component",
+          "operation",
+          "count",
+          "errors",
+          "averageMs",
+          "p50Ms",
+          "p80Ms",
+          "p95Ms",
+          "p99Ms"
+        ],
+        "additionalProperties": false
+      },
+      "ComponentExists": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -3057,7 +3463,23 @@
         ],
         "additionalProperties": false
       },
-      "ComponentEncoded": {
+      "AddedComponentResponse": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "$ref": "#/components/schemas/Component"
+          },
+          "ingestKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "component",
+          "ingestKey"
+        ],
+        "additionalProperties": false
+      },
+      "Component": {
         "type": "object",
         "properties": {
           "key": {
@@ -3071,7 +3493,8 @@
             "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -3081,7 +3504,27 @@
         ],
         "additionalProperties": false
       },
-      "ProjectExistsEncoded": {
+      "AddComponent": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "ProjectExists": {
         "type": "object",
         "properties": {
           "_tag": {
@@ -3101,7 +3544,7 @@
         ],
         "additionalProperties": false
       },
-      "ProjectEncoded": {
+      "CreateProject": {
         "type": "object",
         "properties": {
           "key": {
@@ -3113,28 +3556,70 @@
             "minLength": 1,
             "maxLength": 100,
             "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-          },
-          "createdAt": {
-            "type": "string"
           }
         },
         "required": [
           "key",
-          "name",
-          "createdAt"
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "ProjectDetail": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Component"
+            }
+          }
+        },
+        "required": [
+          "project",
+          "components"
+        ],
+        "additionalProperties": false
+      },
+      "ProjectList": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            }
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "additionalProperties": false
+      },
+      "SignIn": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
         ],
         "additionalProperties": false
       }
     },
     "securitySchemes": {
-      "bearer": {
-        "type": "http",
-        "scheme": "Bearer"
-      },
       "signIn": {
         "type": "apiKey",
         "name": "cluenori_sign_in",
         "in": "cookie"
+      },
+      "bearer": {
+        "type": "http",
+        "scheme": "Bearer"
       }
     }
   },
@@ -3154,6 +3639,15 @@
     },
     {
       "name": "incidents"
+    },
+    {
+      "name": "pairing"
+    },
+    {
+      "name": "phones"
+    },
+    {
+      "name": "today"
     }
   ]
 }

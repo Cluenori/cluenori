@@ -1,13 +1,16 @@
 import { Command } from "effect/cli"
 
+import { appleModels } from "./apple-models.ts"
 import { check } from "./check.ts"
 import { error, errors, logs, trace } from "./errors-commands.ts"
 import { generate } from "./generate.ts"
 import { acknowledge, incidents, monitor, monitors } from "./incidents-commands.ts"
 import { load, operation, operations } from "./operations-commands.ts"
+import { phone, phones } from "./phones-commands.ts"
 import { component, project } from "./projects-commands.ts"
 import { run } from "./run.ts"
 import { setup } from "./setup.ts"
+import { today } from "./today-command.ts"
 import { update } from "./update.ts"
 
 /**
@@ -22,6 +25,7 @@ export const cluenori = Command.make("cluenori").pipe(
     run,
     setup,
     update,
+    today,
     project,
     component,
     operations,
@@ -35,7 +39,10 @@ export const cluenori = Command.make("cluenori").pipe(
     acknowledge,
     monitors,
     monitor,
+    phones,
+    phone,
     check,
     generate,
+    appleModels,
   ]),
 )

@@ -15,8 +15,10 @@
     "@bagatka/web-crypto": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/incidents": "workspace:*",
+    "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/signals": "workspace:*",
+    "@cluenori/today": "workspace:*",
     "@effect/sql-sqlite-do": "catalog:",
     "effect": "catalog:"
   },

@@ -1,4 +1,5 @@
 import type { ProjectKey } from "@cluenori/foundation"
+import { errorStatusOf, operationKeyOf, slowerOperations } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -21,12 +22,9 @@ import {
   colorOf,
   columnTimesOf,
   endOf,
-  operationKeyOf,
   logColumnsOf,
   periodWords,
   loadColumnsOf,
-  slowerOperations,
-  statusOf,
   sumOf,
   ticksOf,
 } from "@/project-facts"
@@ -144,7 +142,8 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
           <Loaded result={AsyncResult.all({ errors, detail })}>
             {({ errors: table, detail: { components } }) => {
               const now = endOf(table)
-              const fresh = now === undefined ? 0 : table.groups.filter((group) => statusOf(group, now).isNew).length
+              const fresh =
+                now === undefined ? 0 : table.groups.filter((group) => errorStatusOf(group, now).isNew).length
               const keys = components.map((component) => component.key)
               return (
                 <>

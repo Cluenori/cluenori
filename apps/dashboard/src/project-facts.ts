@@ -6,9 +6,9 @@
 import type { Period, ProjectKey } from "@cluenori/foundation"
 import type { Incident, IncidentList } from "@cluenori/incidents"
 import type {
+  Compared,
   OperationRow,
   OperationTable,
-  ErrorGroup,
   ErrorGroupId,
   ErrorTable,
   KeptTraces,
@@ -17,11 +17,12 @@ import type {
   LoadPoint,
   LoadSeries,
   SeriesStep,
+  Slower,
   SpanId,
   TraceSpan,
   TraceView,
 } from "@cluenori/signals"
-import { stepMillis } from "@cluenori/signals"
+import { errorStatusOf, operationKeyOf, slowerOperations, slowerRule, stepMillis } from "@cluenori/signals"
 import { DateTime } from "effect"
 
 import { componentColor } from "@/lib/colors"
@@ -30,7 +31,6 @@ import type { PeriodKey } from "@/project-data"
 import { periodMillis } from "@/project-data"
 import type { Attention } from "@/views/attention-list"
 import { titleParts } from "@/views/error-group"
-import type { Slower } from "@/views/operation-table"
 
 export const sumOf = (values: ReadonlyArray<number>) => values.reduce((sum, value) => sum + value, 0)
 
@@ -138,49 +138,8 @@ export const ticksOf = (columns: Columns) => {
 
 // ---- Slower than usual -----------------------------------------------------------------------------
 
-// An operation got slower when its p95 over the last day is at least this many times its usual p95,
-// over the 7 days before, and at least this much more. The second keeps a fast operation going from
-// 2 ms to 4 ms from counting.
-const slowerTimes = 1.5
-const slowerByMs = 100
-
 /** What "slower" means, for the pages that mark it. */
-export const slowerMeaning = `Slower: p95 over the last day at least ${slowerTimes} times its p95 over the 7 days before, and at least ${duration(slowerByMs)} more.`
-
-/** Whether something timed got slower; absent when it didn't, or is too new to have a usual p95. */
-export const slowerOf = (row: { readonly lastDayP95Ms: number; readonly usualP95Ms?: number }): Slower | undefined => {
-  const usual = row.usualP95Ms
-  if (usual === undefined || row.lastDayP95Ms < usual * slowerTimes || row.lastDayP95Ms - usual < slowerByMs) {
-    return undefined
-  }
-  return { p95Ms: row.lastDayP95Ms, usualP95Ms: usual }
-}
-
-/** An operation row's identity: its component, environment, and name. */
-export const operationKeyOf = (row: Pick<OperationRow, "component" | "environment" | "operation">) =>
-  [row.component, row.environment ?? "", row.operation].join("\u0000")
-
-/** The operations over the last day and over the 7 days before: what "slower" compares. */
-export type Compared = { readonly lastDay: OperationTable; readonly usual: OperationTable }
-
-/** An operation's p95 over the last day, and its usual p95 when it ran in the 7 days before. */
-export const usualOf = (compared: Compared, key: string) => {
-  const lastDay = compared.lastDay.rows.find((row) => operationKeyOf(row) === key)
-  const usual = compared.usual.rows.find((row) => operationKeyOf(row) === key)
-  return lastDay === undefined
-    ? undefined
-    : { lastDayP95Ms: lastDay.p95Ms, ...(usual === undefined ? {} : { usualP95Ms: usual.p95Ms }) }
-}
-
-/** Which operations got slower, by `operationKeyOf`. An operation new this week has no verdict. */
-export const slowerOperations = (compared: Compared): ReadonlyMap<string, Slower> =>
-  new Map(
-    compared.lastDay.rows.flatMap((row) => {
-      const timed = usualOf(compared, operationKeyOf(row))
-      const slower = timed === undefined ? undefined : slowerOf(timed)
-      return slower === undefined ? [] : [[operationKeyOf(row), slower] as const]
-    }),
-  )
+export const slowerMeaning = `Slower: p95 over the last day at least ${slowerRule.times} times its p95 over the 7 days before, and at least ${duration(slowerRule.byMs)} more.`
 
 /** A table's operations, each with whether it got slower, as the operation table shows them. */
 export const operationRowsOf = (
@@ -211,16 +170,6 @@ export const keptOverOf = (answer: KeptTraces, period: PeriodKey) => {
 }
 
 // ---- Errors ----------------------------------------------------------------------------------------
-
-// An error group is new while its first occurrence is under a day old, and ongoing while its last
-// is under 15 minutes old.
-const recently = 15 * 60_000
-
-/** New: first seen within the day before `now`. Ongoing: seen in the 15 minutes before it. */
-export const statusOf = (group: ErrorGroup, now: number) => ({
-  isNew: now - DateTime.toEpochMillis(group.firstSeen) < 86_400_000,
-  ongoing: now - DateTime.toEpochMillis(group.lastSeen) < recently,
-})
 
 /** A frame of a stack: the function, where in the source when known, and whether it is the app's own. */
 export type StackFrame = { readonly method: string; readonly place?: string; readonly ours: boolean }
@@ -356,7 +305,7 @@ export const attentionOf = (facts: {
       ? []
       : facts.errors.groups.map((group) => ({
           group,
-          ...statusOf(group, now),
+          ...errorStatusOf(group, now),
           firstSeen: ago(DateTime.toEpochMillis(group.firstSeen), now),
           lastSeen: ago(DateTime.toEpochMillis(group.lastSeen), now),
         }))

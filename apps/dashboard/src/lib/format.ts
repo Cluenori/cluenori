@@ -27,6 +27,7 @@ const dayAndClock = new Intl.DateTimeFormat(locale, {
   minute: "2-digit",
 })
 const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "long" })
+const regions = new Intl.DisplayNames([locale], { type: "region" })
 // Axes are narrow, so their times use a 24-hour clock in every locale: 06:00, 18:30.
 const axisClock = new Intl.DateTimeFormat(locale, { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
 
@@ -91,6 +92,15 @@ export const ago = (epochMillis: number, now: number) => {
     return relative.format(Math.round(elapsed / hour), "hour")
   }
   return relative.format(Math.round(elapsed / dayMillis), "day")
+}
+
+/** "Poland" for `PL`: a country by its two letters, as Cloudflare places an address; the code if unknown. */
+export const countryName = (code: string) => {
+  try {
+    return regions.of(code) ?? code
+  } catch {
+    return code
+  }
 }
 
 /** The viewer's time zone, for saying which one times are in. */

@@ -373,8 +373,8 @@ export class FeatureKeyTaken extends Schema.TaggedError<FeatureKeyTaken>()("Feat
 
 - **One clock.** Read time with `DateTime.now` or `Clock.currentTimeMillis`. `Date.now()` and
   `new Date()` are errors (`globalDate`).
-- **Instants are `DateTime.Utc` in code** and ISO 8601 UTC strings on the wire and in storage
-  (`Schema.DateTimeUtcFromString`). Durations are `Duration`. Calendar dates are `YYYY-MM-DD`
+- **Instants are `DateTime.Utc` in code** and ISO 8601 UTC strings on the wire and in storage:
+  Foundation's `Instant`, which the OpenAPI document marks `format: date-time`. Durations are `Duration`. Calendar dates are `YYYY-MM-DD`
   strings with their own Schema.
 - **A person's time zone is data:** an IANA ID stored with them, applied with `DateTime` zone
   functions only when formatting for that person.
@@ -509,7 +509,12 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
 - **Clients derive from the definition.** The dashboard and the CLI build typed clients from
   `CluenoriApi`; nobody writes request types by hand.
 - **The OpenAPI document is generated and committed,** and a check fails when it is stale, so every
-  API change shows in review. The Swift and Kotlin SDKs use it.
+  API change shows in review. So is the iOS app's Swift client of it
+  (`apps/ios/CluenoriApp/Sources/CluenoriClient/CluenoriAPI.swift`); the Kotlin SDK will be too.
+- **Every Schema the API carries has a name,** the one it is exported as: a `Schema.Class`, or
+  `.annotate({ identifier: "PhoneList" })` on a struct, union, or literals. The document and the Swift
+  client use the code's names, and `bun run generate` refuses an unnamed object or enum, since
+  another language needs a name for its type. Dates are Foundation's `Instant` (entry 10).
 - **Routes** are plural kebab-case resources with IDs as segments. A state change that isn't a plain
   update is a sub-resource: `POST /releases/:id/rollback`.
 - **Each engine or module defines its group in its contract;** the host adds the group to
@@ -755,7 +760,34 @@ language.
   (`"sideEffects": false`), and keeps an API's schemas apart from server code, so only the
   definitions reach the bundle (`trace-view.ts` and `read-archived-trace.ts` in Signals).
 
-## 24. Recipes
+## 24. The iPhone app
+
+`apps/ios` is Swift, and the same principles hold in Swift's own idiom (its README is its map).
+
+- **Four layers, each only the one beneath.** The Xcode target holds what needs the app itself:
+  `@main`, the Keychain, the phone's details, signing, the URL scheme. `CluenoriViews` is SwiftUI
+  alone; `CluenoriScreens` holds each screen's state and actions as `@Observable` models;
+  `CluenoriClient` talks to the API. The last two import Foundation and Observation alone, so they
+  build on Linux (`apps/ios/check` fails otherwise).
+- **Apple's guidance first.** Xcode 27.2's agent skills (`xcrun agent skills export`) are the
+  reference for SwiftUI, Swift Testing, and security settings, over what we remember.
+- **Screens say what happened; views say it in words.** A model exposes typed states and problems
+  (`PairingModel.Problem.codeRejected`), never text; each view puts it in words, with
+  `bundle: #bundle` and a translator's comment (`PairScreen.swift`). Models are `@Observable` on the
+  main actor, with `Equatable` properties; rows take only the fields they show.
+- **One way to ask, typed failures.** Every screen's question is an `Answer` (`Answer.swift`):
+  shown at once from what the phone kept, asked through the generated `CluenoriAPI`, whose methods
+  run off the main actor and throw `APIError`. `.unreachable` keeps what was shown and says as of
+  when; `.unauthorized` unpairs. Screens open by `Route`, their models made once by
+  `DeploymentModels` and kept while recently used.
+- **Credentials live in the Keychain,** after first unlock and this device only
+  (`Cluenori/KeychainStore.swift`); never in defaults, files, or logs.
+- **Tests are Swift Testing,** sentence-named, through the models' contracts with a fake transport
+  and store (`CluenoriApp/Tests/CluenoriScreensTests`).
+- **Strict by default:** Swift 6 with warnings as errors, Enhanced Security, `swift format` with
+  `apps/ios/.swift-format`; `bun run check:ios` runs it all.
+
+## 25. Recipes
 
 These become `cluenori add` commands once there are a few examples to generate from.
 

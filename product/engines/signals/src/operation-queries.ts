@@ -1,4 +1,4 @@
-import { ComponentKey, EnvelopeName, EnvironmentKey, Period } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, Period } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import { KeptTrace } from "./operation-counts.ts"
@@ -19,7 +19,7 @@ export const OperationQuery = Schema.Struct({
 export type OperationQuery = typeof OperationQuery.Type
 
 /** How wide each point of a series is. */
-export const SeriesStep = Schema.Literals(["1m", "5m", "1h", "1d"])
+export const SeriesStep = Schema.Literals(["1m", "5m", "1h", "1d"]).annotate({ identifier: "SeriesStep" })
 export type SeriesStep = typeof SeriesStep.Type
 
 /** Each step's width in milliseconds. */
@@ -48,7 +48,7 @@ export const OperationRow = Schema.Struct({
   p80Ms: Milliseconds,
   p95Ms: Milliseconds,
   p99Ms: Milliseconds,
-})
+}).annotate({ identifier: "OperationRow" })
 export type OperationRow = typeof OperationRow.Type
 
 /**
@@ -65,20 +65,20 @@ export const OperationTable = Schema.Struct({
   count: Count,
   errors: Count,
   /** The end of the newest bucket with anything counted in it; absent when there is none. */
-  dataUntil: Schema.optionalKey(Schema.DateTimeUtcFromString),
-})
+  dataUntil: Schema.optionalKey(Instant),
+}).annotate({ identifier: "OperationTable" })
 export type OperationTable = typeof OperationTable.Type
 
 /** What started in one step of a series, with how long it took, as an operation's row says. */
 export const LoadPoint = Schema.Struct({
-  start: Schema.DateTimeUtcFromString,
+  start: Instant,
   count: Count,
   errors: Count,
   p50Ms: Milliseconds,
   p80Ms: Milliseconds,
   p95Ms: Milliseconds,
   p99Ms: Milliseconds,
-})
+}).annotate({ identifier: "LoadPoint" })
 export type LoadPoint = typeof LoadPoint.Type
 
 /**
@@ -90,11 +90,13 @@ export const LoadSeries = Schema.Struct({
   /** The step used: the one asked for, or an hour when that is finer than the counts' buckets. */
   step: SeriesStep,
   points: Schema.Array(LoadPoint),
-})
+}).annotate({ identifier: "LoadSeries" })
 export type LoadSeries = typeof LoadSeries.Type
 
 /** A kept trace, and the component whose operation it is. */
-export const KeptTraceRow = Schema.Struct({ ...KeptTrace.fields, component: ComponentKey })
+export const KeptTraceRow = Schema.Struct({ ...KeptTrace.fields, component: ComponentKey }).annotate({
+  identifier: "KeptTraceRow",
+})
 export type KeptTraceRow = typeof KeptTraceRow.Type
 
 /**
@@ -108,7 +110,7 @@ export const KeptTraces = Schema.Struct({
   slowest: Schema.Array(KeptTraceRow),
   /** The failed, newest first: at most 20. */
   failed: Schema.Array(KeptTraceRow),
-})
+}).annotate({ identifier: "KeptTraces" })
 export type KeptTraces = typeof KeptTraces.Type
 
 /**
@@ -120,6 +122,6 @@ export const MinutesRan = Schema.Struct({
   /** Absent when the component didn't say. */
   environment: Schema.optionalKey(EnvironmentKey),
   operation: EnvelopeName,
-  minutes: Schema.Array(Schema.DateTimeUtcFromString),
+  minutes: Schema.Array(Instant),
 })
 export type MinutesRan = typeof MinutesRan.Type

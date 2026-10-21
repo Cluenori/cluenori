@@ -1,5 +1,6 @@
 import type { ComponentKey, ProjectKey, TraceId } from "@cluenori/foundation"
 import type { ErrorGroupId, LogLine, TraceSpan } from "@cluenori/signals"
+import { errorStatusOf } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { cn } from "cn"
 import { DateTime } from "effect"
@@ -27,7 +28,6 @@ import {
   logColumnsOf,
   periodWords,
   operationSpanOf,
-  statusOf,
   ticksOf,
   zoneOf,
 } from "@/project-facts"
@@ -295,7 +295,7 @@ export function ErrorPage({
       <Loaded result={AsyncResult.all({ detail, counts })}>
         {({ detail: { group: shown, latest }, counts: answer }) => {
           const now = endOf(answer) ?? DateTime.toEpochMillis(shown.lastSeen)
-          const marks = statusOf(shown, now)
+          const marks = errorStatusOf(shown, now)
           const at = Math.min(position, Math.max(0, latest.length - 1))
           const occurrence = latest[at]
           const columns = logColumnsOf(answer, ["error", "fatal"])

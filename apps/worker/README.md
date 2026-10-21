@@ -16,11 +16,13 @@ yield* client.health()
 const table = yield* client.signals.operations({ params: { project }, query: { from, to } })
 ```
 
-Every group but the system's and sign-in's needs the deployment's API token, which a client sends
+Every group but the system's, sign-in's and pairing's needs the deployment's API token, which a client sends
 through `HttpApiMiddleware.layerClient(MemberAuthorization, ...)`; a missing or wrong token answers
 401. A browser signs in instead: `POST /api/sign-in` with the token sets an HttpOnly, Secure,
 SameSite=Strict cookie for `/api`, kept 30 days, which the API accepts in its place;
-`POST /api/sign-out` removes it.
+`POST /api/sign-out` removes it. A paired phone sends its own key as the bearer token,
+`cluenori.phone.<phone ID>.<secret>`, and acts for whoever paired it; a removed phone's key answers
+401, saying to pair it again.
 Services send traces, logs and metrics to `POST /otlp/v1/traces`, `/v1/logs` and `/v1/metrics` with
 a component's ingest key: `Authorization: Bearer cluenori.<project>.<component>.<secret>`. An
 export the archive can't take is answered 503, so the exporter sends it again.
@@ -33,7 +35,9 @@ export the archive can't take is answered 503, so the exporter sends it again.
   `MemberAuthorization`, the endpoints about the deployment itself (`GET /api/health`), and signing
   a browser in and out.
 - **The API token's rule,** `src/api-token.ts`: whose a presented token is, for a bearer token and
-  for signing in alike; `src/member-authorization-layer.ts` lets a call through with either. How
+  for signing in alike; `src/member-authorization-layer.ts` lets a call through with either, or
+  with a phone's key, which the workspace's object checks. Where a call came from, for a phone's
+  last seen, is Cloudflare's headers (`src/caller.ts`). How
   clients import the definitions is an open decision in ARCHITECTURE.md: "How clients import the
   API definition".
 - **OTLP ingest,** `src/otlp-ingest.ts`: checks each export's form and key, reads it where it arrives,
@@ -44,7 +48,7 @@ export the archive can't take is answered 503, so the exporter sends it again.
   engines' layers built once per object, and one served call per operation (`src/project-calls.ts`).
   An object builds no database before its project is created.
 - **The workspace's Durable Object,** `src/workspace-object.ts`, named `<workspace>`: the index of
-  its projects (`src/workspace-calls.ts`). Both kinds of object are called the same way
+  its projects and its phones (`src/workspace-calls.ts`). Both kinds of object are called the same way
   (`src/object-calls.ts`).
 - **Serving the dashboard,** from `wrangler.jsonc`'s `assets`: its built files, and any other path,
   so a page's address opens it; `/api/*` and `/otlp/*` always reach the Worker.

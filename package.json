@@ -60,11 +60,13 @@
   "scripts": {
     "postinstall": "effect-tsgo patch && bun run --cwd apps/worker types && bun run --cwd apps/dashboard browsers",
     "check": "bun run typecheck && bun run lint && oxfmt --check && bun apps/cli/src/main.ts check && bun run --cwd apps/dashboard build",
+    "check:ios": "apps/ios/check",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "oxlint",
     "test": "TZ=Pacific/Chatham LANG=tr_TR.UTF-8 vitest run",
     "format": "oxfmt",
-    "generate": "bun apps/cli/src/main.ts generate"
+    "generate": "bun apps/cli/src/main.ts generate",
+    "generate:apple-models": "bun apps/cli/src/main.ts apple-models"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",

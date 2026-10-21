@@ -16,11 +16,14 @@
     "apps/cli": {
       "name": "@cluenori/cli",
       "dependencies": {
+        "@bagatka/openapi-swift": "workspace:*",
         "@bagatka/workspace-rules": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/signals": "workspace:*",
+        "@cluenori/today": "workspace:*",
         "@cluenori/worker": "workspace:*",
         "@effect/platform-bun": "catalog:",
         "effect": "catalog:",
@@ -29,9 +32,11 @@
     "apps/dashboard": {
       "name": "@cluenori/dashboard",
       "dependencies": {
+        "@bagatka/qr-code": "workspace:*",
         "@base-ui/react": "catalog:",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/worker": "workspace:*",
@@ -77,8 +82,10 @@
         "@bagatka/web-crypto": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/signals": "workspace:*",
+        "@cluenori/today": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "effect": "catalog:",
       },
@@ -86,8 +93,28 @@
         "wrangler": "catalog:",
       },
     },
+    "packages/openapi-swift": {
+      "name": "@bagatka/openapi-swift",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/otlp": {
       "name": "@bagatka/otlp",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/qr-code": {
+      "name": "@bagatka/qr-code",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -154,6 +181,21 @@
         "wrangler": "catalog:",
       },
     },
+    "product/engines/phones": {
+      "name": "@cluenori/phones",
+      "dependencies": {
+        "@cluenori/foundation": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
     "product/engines/projects": {
       "name": "@cluenori/projects",
       "dependencies": {
@@ -188,6 +230,25 @@
         "wrangler": "catalog:",
       },
     },
+    "product/engines/today": {
+      "name": "@cluenori/today",
+      "dependencies": {
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/incidents": "workspace:*",
+        "@cluenori/projects": "workspace:*",
+        "@cluenori/signals": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@bagatka/quantile-sketch": "workspace:*",
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
     "product/foundation": {
       "name": "@cluenori/foundation",
       "dependencies": {
@@ -208,6 +269,7 @@
         "@cloudflare/vitest-plugin": "catalog:",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/worker": "workspace:*",
         "@effect/vitest": "catalog:",
@@ -264,7 +326,11 @@
   "packages": {
     "@babel/runtime": ["@babel/runtime@8.0.7", "", {}, "sha512-k0hagDDq/6w4v+0Sp4wFvIz/yswH5O7Va6aRTnD7N62Tnborp4X+YB+H3XUcWVSR4aE47WPEXiIIZchBs0GmYg=="],
 
+    "@bagatka/openapi-swift": ["@bagatka/openapi-swift@workspace:packages/openapi-swift"],
+
     "@bagatka/otlp": ["@bagatka/otlp@workspace:packages/otlp"],
+
+    "@bagatka/qr-code": ["@bagatka/qr-code@workspace:packages/qr-code"],
 
     "@bagatka/quantile-sketch": ["@bagatka/quantile-sketch@workspace:packages/quantile-sketch"],
 
@@ -306,9 +372,13 @@
 
     "@cluenori/journeys": ["@cluenori/journeys@workspace:tests/journeys"],
 
+    "@cluenori/phones": ["@cluenori/phones@workspace:product/engines/phones"],
+
     "@cluenori/projects": ["@cluenori/projects@workspace:product/engines/projects"],
 
     "@cluenori/signals": ["@cluenori/signals@workspace:product/engines/signals"],
+
+    "@cluenori/today": ["@cluenori/today@workspace:product/engines/today"],
 
     "@cluenori/worker": ["@cluenori/worker@workspace:apps/worker"],
 

@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { Actor } from "./actor.ts"
 import { FeatureKey } from "./feature-key.ts"
 import { AccountId, EnvelopeId, InstallationId, PersonId, SessionId } from "./ids.ts"
+import { Instant } from "./instant.ts"
 import { namePattern, sourcePattern, sourceRule } from "./patterns.ts"
 import { ReleaseVersion } from "./release-version.ts"
 import { ComponentKey, EnvironmentKey, ProjectKey, WorkspaceKey } from "./scope-keys.ts"
@@ -70,7 +71,7 @@ export type Source = typeof Source.Type
 export class Envelope extends Schema.Class<Envelope>("Envelope")({
   id: EnvelopeId,
   /** When it happened. */
-  ts: Schema.DateTimeUtcFromString,
+  ts: Instant,
   kind: EnvelopeKind,
   name: EnvelopeName,
   workspace: WorkspaceKey,

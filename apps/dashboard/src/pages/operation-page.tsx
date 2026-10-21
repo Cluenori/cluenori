@@ -1,5 +1,6 @@
 import type { ComponentKey, EnvelopeName, ProjectKey } from "@cluenori/foundation"
 import type { KeptTraceRow } from "@cluenori/signals"
+import { operationKeyOf, slowerOf, usualOf } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { ActivityIcon, ArrowLeftIcon, CircleXIcon, GaugeIcon, SearchXIcon, TimerIcon } from "lucide-react"
@@ -16,19 +17,7 @@ import {
   useComponentKeys,
   usualOperationsAtom,
 } from "@/project-data"
-import {
-  colorOf,
-  columnTimesOf,
-  operationKeyOf,
-  keptOverOf,
-  periodWords,
-  loadColumnsOf,
-  slowerOf,
-  sumOf,
-  ticksOf,
-  usualOf,
-  zoneOf,
-} from "@/project-facts"
+import { colorOf, columnTimesOf, keptOverOf, periodWords, loadColumnsOf, sumOf, ticksOf, zoneOf } from "@/project-facts"
 import type { Route } from "@/router"
 import { Link } from "@/router"
 import { BarRows, largestOf } from "@/views/bar-rows"

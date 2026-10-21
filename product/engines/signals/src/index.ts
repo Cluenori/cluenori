@@ -54,3 +54,13 @@ export {
 export { Signals } from "./signals.ts"
 export type { SignalsSettings } from "./signals.ts"
 export { TraceLog, TraceSpan, TraceView } from "./trace-view.ts"
+export type { Compared, Slower } from "./verdicts.ts"
+export {
+  errorRule,
+  errorStatusOf,
+  operationKeyOf,
+  slowerOf,
+  slowerOperations,
+  slowerRule,
+  usualOf,
+} from "./verdicts.ts"

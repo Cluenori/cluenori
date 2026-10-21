@@ -1,4 +1,4 @@
-import { ComponentKey, Uuidv7 } from "@cluenori/foundation"
+import { ComponentKey, Instant, Uuidv7 } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 /** A monitor's ID. */
@@ -26,25 +26,31 @@ export class Monitor extends Schema.Class<Monitor>("Monitor")({
   id: MonitorId,
   component: ComponentKey,
   url: MonitorUrl,
-  addedAt: Schema.DateTimeUtcFromString,
+  addedAt: Instant,
 }) {}
 
 /** The last check of a monitor: when, and what was wrong, absent when it passed. */
 export const MonitorCheck = Schema.Struct({
-  at: Schema.DateTimeUtcFromString,
+  at: Instant,
   problem: Schema.optionalKey(Schema.String),
-})
+}).annotate({ identifier: "MonitorCheck" })
 export type MonitorCheck = typeof MonitorCheck.Type
 
 /** A monitor and its last check, absent until its first. */
-export const MonitorState = Schema.Struct({ monitor: Monitor, lastCheck: Schema.optionalKey(MonitorCheck) })
+export const MonitorState = Schema.Struct({ monitor: Monitor, lastCheck: Schema.optionalKey(MonitorCheck) }).annotate({
+  identifier: "MonitorState",
+})
 export type MonitorState = typeof MonitorState.Type
 
 /** The project's monitors, oldest first. */
-export const MonitorList = Schema.Struct({ monitors: Schema.Array(MonitorState) })
+export const MonitorList = Schema.Struct({ monitors: Schema.Array(MonitorState) }).annotate({
+  identifier: "MonitorList",
+})
 export type MonitorList = typeof MonitorList.Type
 
-export const AddMonitor = Schema.Struct({ component: ComponentKey, url: MonitorUrl })
+export const AddMonitor = Schema.Struct({ component: ComponentKey, url: MonitorUrl }).annotate({
+  identifier: "AddMonitor",
+})
 export type AddMonitor = typeof AddMonitor.Type
 
 /** The project has no monitor with this ID. */

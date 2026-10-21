@@ -29,10 +29,12 @@ Pages, each with a permanent URL (`src/router.tsx`):
 /notes/errors/<id>                               one error: its exception chain, every frame, its operation, its log record
 /notes/logs                                      warnings and errors over time, and every line, searchable
 /notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
+/phones                                          the paired phones, removing one, and adding one by its QR code
 /kit                                             every view in the theme, to review the design; opens signed out too
 ```
 
-An address with a key that isn't one, such as `/Notes!`, opens a page that says so.
+An address with a key that isn't one, such as `/Notes!`, opens a page that says so. `/phones` and
+`/kit` are the deployment's own, so a project with either key has no pages.
 
 ## Owns
 
@@ -46,9 +48,10 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
 - **What the pages say about the answers,** `src/project-facts.ts`: what needs attention, when
   failures jumped, which errors are new or happening now, and which operations got slower. A step a
   series has no point for is unknown, never zero; "now" is the time an answer covers up to.
-- **What "slower" means,** `src/project-facts.ts`: an operation got slower when its p95 over the
-  last day is 1.5 times its p95 over the 7 days before, and 100 ms more. There is no fixed limit and
-  no setting: an operation slow by nature, such as an export, is not news; one that got worse is.
+- **Showing what "slower", "new" and "happening now" mean:** the rules are Signals'
+  (`slowerOf`, `errorStatusOf` in `@cluenori/signals`), which Today on the server uses too; the
+  pages mark them and say them in words. There is no fixed limit and no setting: an operation slow
+  by nature, such as an export, is not news; one that got worse is.
 - **What a color means,** `src/lib/colors.ts`: each component keeps one color everywhere; red is
   failure, yellow a warning.
 - **The panel** every question is answered in, `src/views/panel.tsx`, an answer's three states,
@@ -56,6 +59,9 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
   for how long operations take.
 - **How people read numbers and times,** `src/lib/format.ts`: in the viewer's locale and time zone,
   passed to `Intl` explicitly.
+- **Adding a phone,** `src/pages/phones-page.tsx`: the pairing link as a QR code
+  (`src/views/qr-code.tsx`, from `@bagatka/qr-code`), counted down to its expiry, and the phones
+  asked for every 3 seconds while it shows, so the page says which phone paired.
 - **Pages and their URLs,** `src/router.tsx`, which decodes an address's keys with the API's own
   schemas.
 
@@ -69,7 +75,9 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
 ## Depends on
 
 - The public API's definition, `CluenoriApi` from `@cluenori/worker`, and the Schemas of its answers
-  from `@cluenori/foundation`, `@cluenori/projects`, and `@cluenori/signals`. Their packages are
+  from `@cluenori/foundation`, `@cluenori/projects`, `@cluenori/signals`, `@cluenori/incidents`, and
+  `@cluenori/phones`.
+- `@bagatka/qr-code`, to draw a pairing link as a QR code. Their packages are
   side-effect free and keep schemas apart from server code, so only the definitions reach the
   bundle.
 - `effect`: its HTTP API client derived from that definition, Schema, and `effect/reactivity`'s

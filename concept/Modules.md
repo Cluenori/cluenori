@@ -211,7 +211,7 @@ When a push cannot be delivered, Cluenori tries again, then shows the failure on
 
 The app shows nearly everything the web shows: Today, each project's overview, its load and the latency of every operation at p50, p80, p95 and p99, errors with their stacks, logs, incidents and monitors. A trace's steps open on the web. It opens instantly with what it last saw, says when that was, and keeps it when the network drops.
 
-A phone joins by scanning a code the web shows for 10 minutes, and gets its own key; the API token stays on my computer. The web lists every phone: its name, its model as people call it (iPhone 17 Pro), its iOS and app versions, the address and country it last called from, and when. I can remove any one of them.
+A phone joins by scanning a code the web shows for 10 minutes, and gets its own key; the API token stays on my computer. The web lists every phone: its model as people call it (iPhone 17 Pro), its iOS and app versions, the address and country it last called from, and when. I can remove any one of them.
 
 The app is private: I install it from my own TestFlight, never the App Store. It needs iOS 27. A deployment sends with its owner's APNs key to the owner's own build of the app.
 

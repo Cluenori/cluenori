@@ -26,6 +26,11 @@ describe("routeOf", () => {
     }
   })
 
+  it("reads the deployment's pages, which no project's address names", () => {
+    assert.deepStrictEqual(readBack({ page: "phones" }), { page: "phones" })
+    assert.deepStrictEqual(readBack({ page: "kit" }), { page: "kit" })
+  })
+
   it("opens a page that says so for an address with a key that isn't one", () => {
     assert.deepStrictEqual(routeOf("/Folio!/errors", ""), { page: "missing" })
     assert.deepStrictEqual(routeOf("/folio/errors/not-an-id", ""), { page: "missing" })

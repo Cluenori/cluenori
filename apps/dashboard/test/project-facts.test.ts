@@ -6,16 +6,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
 import { axisTime, dayOf } from "@/lib/format"
-import {
-  attentionOf,
-  columnTimesOf,
-  exceptionsOf,
-  logColumnsOf,
-  loadColumnsOf,
-  operationSpanOf,
-  slowerOf,
-  statusOf,
-} from "@/project-facts"
+import { attentionOf, columnTimesOf, exceptionsOf, logColumnsOf, loadColumnsOf, operationSpanOf } from "@/project-facts"
 
 const minute = 60_000
 const hour = 60 * minute
@@ -23,24 +14,6 @@ const now = Date.UTC(2026, 9, 20, 9, 40)
 const at = (epochMillis: number) => DateTime.makeUnsafe(epochMillis)
 const project = ProjectKey.make("notes")
 const api = ComponentKey.make("notes-api")
-
-describe("slowerOf", () => {
-  it("says an operation got slower when its p95 is 1.5 times its usual and 100 ms more", () => {
-    assert.deepStrictEqual(slowerOf({ lastDayP95Ms: 420, usualP95Ms: 180 }), { p95Ms: 420, usualP95Ms: 180 })
-  })
-
-  it("leaves a fast operation alone when it doubles by a few milliseconds", () => {
-    assert.isUndefined(slowerOf({ lastDayP95Ms: 4, usualP95Ms: 2 }))
-  })
-
-  it("leaves an operation alone under 1.5 times its usual", () => {
-    assert.isUndefined(slowerOf({ lastDayP95Ms: 1_400, usualP95Ms: 1_000 }))
-  })
-
-  it("has no verdict for an operation new this week", () => {
-    assert.isUndefined(slowerOf({ lastDayP95Ms: 900 }))
-  })
-})
 
 // Ten minutes of load, 100 a minute, with these failed; `undefined` for a minute nothing reported.
 const series = (failed: ReadonlyArray<number | undefined>): LoadSeries => ({
@@ -84,19 +57,6 @@ const group = (fields: Partial<ErrorGroup>): ErrorGroup => ({
   lastSeen: at(now - hour),
   lastComponent: api,
   ...fields,
-})
-
-describe("statusOf", () => {
-  it("calls a group new for its first day and ongoing for 15 minutes after it was last seen", () => {
-    assert.deepStrictEqual(statusOf(group({ firstSeen: at(now - 23 * hour), lastSeen: at(now - 14 * minute) }), now), {
-      isNew: true,
-      ongoing: true,
-    })
-    assert.deepStrictEqual(statusOf(group({ firstSeen: at(now - 25 * hour), lastSeen: at(now - 16 * minute) }), now), {
-      isNew: false,
-      ongoing: false,
-    })
-  })
 })
 
 describe("exceptionsOf", () => {

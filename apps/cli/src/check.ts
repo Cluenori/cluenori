@@ -4,7 +4,7 @@ import { Command } from "effect/cli"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 
 import { dependencyRules } from "./dependency-rules.ts"
-import { openApiDocument, openApiPath } from "./openapi.ts"
+import { generatedFiles } from "./generated-files.ts"
 
 /** `bun run check` found problems, and printed them. */
 export class CheckFailed extends Schema.TaggedError<CheckFailed>()("CheckFailed", { problems: Schema.Int }) {}
@@ -21,15 +21,19 @@ const findSuppressions = Effect.gen(function* () {
     .pipe(Effect.orDie)
 })
 
-const openApiIsCurrent = Effect.gen(function* () {
+// The generated files whose committed text isn't what generating them writes now.
+const staleFiles = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
-  const expected = yield* openApiDocument
-  const exists = yield* fs.exists(openApiPath).pipe(Effect.orDie)
-  if (!exists) {
-    return false
+  const stale: Array<string> = []
+  for (const file of generatedFiles) {
+    const expected = yield* file.text
+    const exists = yield* fs.exists(file.path).pipe(Effect.orDie)
+    const committed = exists ? yield* fs.readFileString(file.path).pipe(Effect.orDie) : undefined
+    if (committed !== expected) {
+      stale.push(file.path)
+    }
   }
-  const committed = yield* fs.readFileString(openApiPath).pipe(Effect.orDie)
-  return committed === expected
+  return stale
 })
 
 /** What the compiler and the linter can't check: dependency rules, suppressions, and generated files. */
@@ -43,12 +47,12 @@ export const check = Command.make("check", {}, () =>
     for (const line of suppressions) {
       yield* Console.error(`${line}: silences a check. Fix the code, or change the rule in its configuration file.`)
     }
-    const openApiCurrent = yield* openApiIsCurrent
-    if (!openApiCurrent) {
-      yield* Console.error(`${openApiPath}: is out of date with the API definition. Run \`bun run generate\`.`)
+    const stale = yield* staleFiles
+    for (const path of stale) {
+      yield* Console.error(`${path}: is out of date with the API definition. Run \`bun run generate\`.`)
     }
 
-    const problems = violations.length + suppressions.length + (openApiCurrent ? 0 : 1)
+    const problems = violations.length + suppressions.length + stale.length
     if (problems > 0) {
       yield* Console.error(`\n${problems === 1 ? "1 problem" : `${problems} problems`}.`)
       return yield* new CheckFailed({ problems })

@@ -501,9 +501,9 @@ conflict.
   it: services send OpenTelemetry traces, logs and metrics with a component's ingest key; every
   export is archived 90 days, scrubbed, in R2; the Projects and Signals engines count operations and
   keep warnings, errors and error groups in each project's Durable Object; the Incidents engine's
-  detectors look every minute at monitors and counts and open incidents; and the public API
-  (behind an API token) and `./cluenori` show operations, their load, errors, logs, any trace,
-  incidents and monitors. The dashboard (`apps/dashboard`), served by the Worker and signed in with
+  detectors look every minute at monitors and counts and open incidents; phones pair by a QR code
+  and call the API with keys of their own; and the public API (behind an API token) and
+  `./cluenori` show operations, their load, errors, logs, any trace, incidents and monitors. The dashboard (`apps/dashboard`), served by the Worker and signed in with
   the API token, shows the same through the public API. No module exists yet.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
@@ -522,7 +522,8 @@ conflict.
   - All tests: `bun run test`; one package's or journey's: `bun run test <path>`, such as
     `bun run test tests/journeys/test/deployment-journey.test.ts`
   - Format: `bun run format`
-  - Rewrite generated files (the OpenAPI document): `bun run generate`
+  - Rewrite generated files (the OpenAPI document, and the iOS app's Swift client of it):
+    `bun run generate`
 - **System map:** `ARCHITECTURE.md`
 - **Pattern registry:** `PATTERNS.md`
 - **Glossary:** `GLOSSARY.md`; product terms are defined in `concept/` until code owns them

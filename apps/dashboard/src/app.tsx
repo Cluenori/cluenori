@@ -37,6 +37,9 @@ const errorPage = import("@/pages/error-page")
 const ErrorPage = lazy(() => errorPage.then((module) => ({ default: module.ErrorPage })))
 const tracePage = import("@/pages/trace-page")
 const TracePage = lazy(() => tracePage.then((module) => ({ default: module.TracePage })))
+// Phones, with the QR code encoder, are a page of the deployment, opened now and then.
+const phonesPage = import("@/pages/phones-page")
+const PhonesPage = lazy(() => phonesPage.then((module) => ({ default: module.PhonesPage })))
 
 // While a page that loads after start isn't there yet, on a visit that opens on it.
 const opening = <div className="p-8 text-sm text-muted-foreground">Opening the page…</div>
@@ -148,6 +151,12 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
             trace={route.trace}
             {...(route.around === undefined ? {} : { around: route.around })}
           />
+        </Suspense>
+      )
+    case "phones":
+      return (
+        <Suspense fallback={opening}>
+          <PhonesPage />
         </Suspense>
       )
     case "kit":

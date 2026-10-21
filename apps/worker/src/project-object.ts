@@ -3,6 +3,7 @@ import { ActivityLog, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
 import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
 import { Signals } from "@cluenori/signals"
+import { Today } from "@cluenori/today"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
 import { Clock, Duration, Effect, Exit, Layer, ManagedRuntime, Redacted, Schema } from "effect"
@@ -15,7 +16,7 @@ import { projectCalls } from "./project-calls.ts"
 import { r2ArchiveLayer } from "./r2-archive.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 
-type ProjectServices = Projects | Signals | Incidents
+type ProjectServices = Projects | Signals | Incidents | Today
 
 // How often the detectors look: the object's alarm runs `Incidents.check` this often.
 const checkEvery = Duration.toMillis(Duration.minutes(1))
@@ -220,6 +221,15 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
       }),
     new ProjectNotFound({ project }),
   ),
+  today: served(
+    projectCalls.today,
+    () =>
+      Effect.gen(function* () {
+        const today = yield* Today
+        return yield* today.items
+      }),
+    new ProjectNotFound({ project }),
+  ),
 })
 
 /**
@@ -241,7 +251,8 @@ export class ProjectObject extends DurableObject<Env> {
     this.#storage = ctx.storage
     this.#calls = servedCalls(project)
     this.#runtime = ManagedRuntime.make(
-      Incidents.layer.pipe(
+      Today.layer.pipe(
+        Layer.provideMerge(Incidents.layer),
         Layer.provideMerge(Layer.mergeAll(Projects.layer({ project }), Signals.layer({ workspace, project }))),
         Layer.provideMerge(ActivityLog.layer({ workspace, project })),
         Layer.provide(webCryptoLayer(crypto)),

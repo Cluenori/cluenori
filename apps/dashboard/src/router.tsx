@@ -1,4 +1,4 @@
-import { ComponentKey, EnvelopeName, ProjectKey, TraceId } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, Instant, ProjectKey, TraceId } from "@cluenori/foundation"
 import { ErrorGroupId } from "@cluenori/signals"
 import { DateTime, Option, Schema } from "effect"
 import type { ComponentProps, MouseEvent } from "react"
@@ -36,6 +36,7 @@ export type Route =
     }
   | { readonly page: "logs"; readonly project: ProjectKey; readonly component?: ComponentKey }
   | { readonly page: "trace"; readonly project: ProjectKey; readonly trace: TraceId; readonly around?: DateTime.Utc }
+  | { readonly page: "phones" }
   | { readonly page: "kit" }
 
 // An operation's name often holds slashes (`GET /api/notes/{id}`). An address keeps them as its own:
@@ -70,6 +71,8 @@ export const hrefOf = (route: Route): string => {
       return route.around === undefined
         ? `/${route.project}/traces/${route.trace}`
         : `/${route.project}/traces/${route.trace}?around=${encodeURIComponent(DateTime.formatIso(route.around))}`
+    case "phones":
+      return "/phones"
     case "kit":
       return "/kit"
   }
@@ -97,8 +100,13 @@ export const routeOf = (path: string, search: string): Route => {
   if (first === undefined) {
     return { page: "start" }
   }
+  // Not handled: a project whose key is `kit` or `phones` opens these pages instead of its own;
+  // reserving the two at project creation would take an error in Projects.
   if (first === "kit") {
     return { page: "kit" }
+  }
+  if (first === "phones") {
+    return { page: "phones" }
   }
   const project = projectKey(first)
   const named = query.get("component") ?? undefined
@@ -135,7 +143,7 @@ export const routeOf = (path: string, search: string): Route => {
   }
   if (page === "traces") {
     const trace = keyOf(TraceId, id)
-    const around = keyOf(Schema.DateTimeUtcFromString, query.get("around") ?? undefined)
+    const around = keyOf(Instant, query.get("around") ?? undefined)
     return Option.isSome(trace)
       ? {
           page: "trace",

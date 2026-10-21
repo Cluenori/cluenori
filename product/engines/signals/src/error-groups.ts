@@ -1,4 +1,4 @@
-import { ComponentKey, EnvironmentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import { ComponentKey, EnvironmentKey, Instant, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import type { LogLevel } from "./log-entry.ts"
@@ -7,22 +7,24 @@ import { SeriesStep } from "./operation-queries.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
+/** How an error group is grouped: `exception` by type and stack, `log` by logger and message. */
+const ErrorKind = Schema.Literals(["exception", "log"]).annotate({ identifier: "ErrorKind" })
+
 /** One error, as it shows in a list: what it is, where it happens, and how often. */
 export const ErrorGroup = Schema.Struct({
   id: ErrorGroupId,
-  /** `exception` when grouped by type and stack, `log` when by logger and message. */
-  kind: Schema.Literals(["exception", "log"]),
+  kind: ErrorKind,
   title: Schema.String,
   /** Where it happens: the top frame of its stack, or the logger. */
   culprit: Schema.String,
   /** How often it happened in the period asked about. */
   occurrences: Count,
-  firstSeen: Schema.DateTimeUtcFromString,
-  lastSeen: Schema.DateTimeUtcFromString,
+  firstSeen: Instant,
+  lastSeen: Instant,
   lastComponent: ComponentKey,
   lastEnvironment: Schema.optionalKey(EnvironmentKey),
   lastRelease: Schema.optionalKey(ReleaseVersion),
-})
+}).annotate({ identifier: "ErrorGroup" })
 export type ErrorGroup = typeof ErrorGroup.Type
 
 /** Which errors to show: those that happened in `period`, optionally of one environment or component. */
@@ -41,14 +43,14 @@ export const ErrorTable = Schema.Struct({
   covered: Schema.optionalKey(Period),
   groups: Schema.Array(ErrorGroup),
   occurrences: Count,
-})
+}).annotate({ identifier: "ErrorTable" })
 export type ErrorTable = typeof ErrorTable.Type
 
 /** One error, and its latest occurrences in the period, newest first: at most 10. */
 export const ErrorDetail = Schema.Struct({
   group: ErrorGroup,
   latest: Schema.Array(LogLine),
-})
+}).annotate({ identifier: "ErrorDetail" })
 export type ErrorDetail = typeof ErrorDetail.Type
 
 /** The project has no error with this ID. */
@@ -57,7 +59,7 @@ export class ErrorGroupNotFound extends Schema.TaggedError<ErrorGroupNotFound>()
 }) {}
 
 /** The levels a search of warnings and errors can start from. */
-export const IndexedLevel = Schema.Literals(["warn", "error", "fatal"])
+export const IndexedLevel = Schema.Literals(["warn", "error", "fatal"]).annotate({ identifier: "IndexedLevel" })
 export type IndexedLevel = typeof IndexedLevel.Type
 
 /**
@@ -86,11 +88,11 @@ export const LogPage = Schema.Struct({
   covered: Schema.optionalKey(Period),
   lines: Schema.Array(LogLine),
   next: Schema.optionalKey(Schema.Int),
-})
+}).annotate({ identifier: "LogPage" })
 export type LogPage = typeof LogPage.Type
 
 /** What warnings and errors are counted by: their level, their component, or their error group. */
-export const LogCountsBy = Schema.Literals(["level", "component", "error"])
+export const LogCountsBy = Schema.Literals(["level", "component", "error"]).annotate({ identifier: "LogCountsBy" })
 export type LogCountsBy = typeof LogCountsBy.Type
 
 /**
@@ -109,14 +111,18 @@ export const LogCountQuery = Schema.Struct({
 export type LogCountQuery = typeof LogCountQuery.Type
 
 /** How many warnings and errors there were in one step. */
-export const LogCountPoint = Schema.Struct({ start: Schema.DateTimeUtcFromString, count: Count })
+export const LogCountPoint = Schema.Struct({ start: Instant, count: Count }).annotate({ identifier: "LogCountPoint" })
 export type LogCountPoint = typeof LogCountPoint.Type
 
 /**
  * One value's counts: a level (`warn`, `error`, or `fatal`), a component's key, or an error group's
  * ID, as `by` says; with its total, and a point for each step that had any, oldest first.
  */
-export const LogCountSeries = Schema.Struct({ key: Schema.String, total: Count, points: Schema.Array(LogCountPoint) })
+export const LogCountSeries = Schema.Struct({
+  key: Schema.String,
+  total: Count,
+  points: Schema.Array(LogCountPoint),
+}).annotate({ identifier: "LogCountSeries" })
 export type LogCountSeries = typeof LogCountSeries.Type
 
 /**
@@ -128,7 +134,7 @@ export const LogCounts = Schema.Struct({
   covered: Schema.optionalKey(Period),
   step: SeriesStep,
   series: Schema.Array(LogCountSeries),
-})
+}).annotate({ identifier: "LogCounts" })
 export type LogCounts = typeof LogCounts.Type
 
 export const levelsFrom: Readonly<Record<IndexedLevel, ReadonlyArray<LogLevel>>> = {

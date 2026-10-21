@@ -1,10 +1,30 @@
+import { Actor } from "@cluenori/foundation"
+import {
+  Caller,
+  PairedPhone,
+  Pairing,
+  PairingCodeRejected,
+  PairPhone,
+  PhoneId,
+  PhoneKey,
+  PhoneKeyRejected,
+  PhoneList,
+  PhoneNotFound,
+} from "@cluenori/phones"
 import { Project, ProjectList } from "@cluenori/projects"
 import { Schema } from "effect"
 
 import type { ObjectCall, PlainSchema } from "./object-calls.ts"
 import { objectCall } from "./object-calls.ts"
 
-export type WorkspaceCallName = "recordProject" | "projects"
+export type WorkspaceCallName =
+  | "recordProject"
+  | "projects"
+  | "phones"
+  | "startPairing"
+  | "pair"
+  | "authenticatePhone"
+  | "removePhone"
 
 /** One thing the Worker asks the workspace's Durable Object: its input, its answer, and how it fails. */
 export type WorkspaceCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> = ObjectCall<
@@ -14,18 +34,36 @@ export type WorkspaceCall<I extends PlainSchema, S extends PlainSchema, F extend
   F
 >
 
+const workspaceCall = <I extends PlainSchema, S extends PlainSchema, F extends PlainSchema>(
+  name: WorkspaceCallName,
+  input: I,
+  success: S,
+  error: F,
+): WorkspaceCall<I, S, F> => objectCall(name, input, success, error)
+
 /** What the Worker asks the workspace's Durable Object, one entry per call. */
 export const workspaceCalls = {
-  recordProject: objectCall<WorkspaceCallName, typeof Project, typeof Schema.Void, typeof Schema.Never>(
-    "recordProject",
-    Project,
-    Schema.Void,
+  recordProject: workspaceCall("recordProject", Project, Schema.Void, Schema.Never),
+  projects: workspaceCall("projects", Schema.Void, ProjectList, Schema.Never),
+  phones: workspaceCall("phones", Schema.Void, PhoneList, Schema.Never),
+  startPairing: workspaceCall(
+    "startPairing",
+    Schema.Struct({ actor: Actor, deployment: Schema.String }),
+    Pairing,
     Schema.Never,
   ),
-  projects: objectCall<WorkspaceCallName, typeof Schema.Void, typeof ProjectList, typeof Schema.Never>(
-    "projects",
+  // The phone's new key crosses to the Worker only in the answer, and then to the phone.
+  pair: workspaceCall("pair", Schema.Struct({ phone: PairPhone, caller: Caller }), PairedPhone, PairingCodeRejected),
+  authenticatePhone: workspaceCall(
+    "authenticatePhone",
+    Schema.Struct({ key: PhoneKey, caller: Caller }),
+    Actor,
+    PhoneKeyRejected,
+  ),
+  removePhone: workspaceCall(
+    "removePhone",
+    Schema.Struct({ actor: Actor, phone: PhoneId }),
     Schema.Void,
-    ProjectList,
-    Schema.Never,
+    PhoneNotFound,
   ),
 }

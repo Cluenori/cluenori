@@ -1,8 +1,10 @@
-import { ComponentKey, EnvironmentKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import { ComponentKey, EnvironmentKey, Instant, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 /** How serious a log record is, from OTLP's severity: trace, debug, info, warn, error, fatal. */
-export const LogLevel = Schema.Literals(["trace", "debug", "info", "warn", "error", "fatal"])
+export const LogLevel = Schema.Literals(["trace", "debug", "info", "warn", "error", "fatal"]).annotate({
+  identifier: "LogLevel",
+})
 export type LogLevel = typeof LogLevel.Type
 
 /** One operation of a trace: 16 lowercase hex digits, as OpenTelemetry sends it. */
@@ -22,7 +24,7 @@ export const LogException = Schema.Struct({
   type: Schema.String,
   message: Schema.String,
   stack: Schema.optionalKey(Schema.String),
-})
+}).annotate({ identifier: "LogException" })
 export type LogException = typeof LogException.Type
 
 /**
@@ -30,7 +32,7 @@ export type LogException = typeof LogException.Type
  * is, the logger that wrote it (its category), and what it said.
  */
 export const LogEntry = Schema.Struct({
-  time: Schema.DateTimeUtcFromString,
+  time: Instant,
   level: LogLevel,
   category: Schema.String,
   message: Schema.String,
@@ -53,5 +55,5 @@ export const LogLine = Schema.Struct({
   id: Schema.Int,
   component: ComponentKey,
   ...LogEntry.fields,
-})
+}).annotate({ identifier: "LogLine" })
 export type LogLine = typeof LogLine.Type

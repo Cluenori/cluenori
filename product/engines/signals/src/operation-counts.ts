@@ -1,5 +1,5 @@
 import { QuantileSketch } from "@bagatka/quantile-sketch"
-import { EnvelopeName, EnvironmentKey, TraceId } from "@cluenori/foundation"
+import { EnvelopeName, EnvironmentKey, Instant, TraceId } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -8,7 +8,7 @@ const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 /** How many times one operation ran in one environment and minute, and how long it took. */
 export const OperationCounts = Schema.Struct({
   /** The start of the minute they started in. */
-  bucket: Schema.DateTimeUtcFromString,
+  bucket: Instant,
   /** The operation's name in its component, such as `GET /api/notes/{id}`. */
   operation: EnvelopeName,
   /** Absent when the component didn't say. */
@@ -41,7 +41,7 @@ export const KeptTrace = Schema.Struct({
   operation: EnvelopeName,
   /** Absent when the component didn't say. */
   environment: Schema.optionalKey(EnvironmentKey),
-  start: Schema.DateTimeUtcFromString,
+  start: Instant,
   durationMs: Milliseconds,
   /** Its status was an error, as a failure is counted. */
   failed: Schema.Boolean,

@@ -1,4 +1,4 @@
-import { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey, TraceId } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, ProjectKey, TraceId } from "@cluenori/foundation"
 import { ProjectNotFound } from "@cluenori/projects"
 import { DateTime, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
@@ -18,8 +18,8 @@ import { OperationTable, KeptTraces, LoadSeries, SeriesStep } from "./operation-
 import { TraceView } from "./trace-view.ts"
 
 const filters = {
-  from: Schema.DateTimeUtcFromString,
-  to: Schema.DateTimeUtcFromString,
+  from: Instant,
+  to: Instant,
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
 }
@@ -62,7 +62,7 @@ export const LogCountFilters = Schema.Struct({
  * When the trace happened, ISO 8601 UTC, when it is known: of a trace with more files than are read,
  * those nearest to `around` are read first, else the newest.
  */
-export const TraceFilters = Schema.Struct({ around: Schema.optionalKey(Schema.DateTimeUtcFromString) })
+export const TraceFilters = Schema.Struct({ around: Schema.optionalKey(Instant) })
 
 /** The signals of a project's services: the public API's part for this engine. */
 export class SignalsGroup extends HttpApiGroup.make("signals")

@@ -1,5 +1,7 @@
+import { slowerOf } from "@cluenori/signals"
+
 import { KitCard, KitColumn, KitGroup } from "@/pages/kit-section"
-import { colorOf, slowerMeaning, slowerOf } from "@/project-facts"
+import { colorOf, slowerMeaning } from "@/project-facts"
 import {
   operationTable,
   errorGroups,
