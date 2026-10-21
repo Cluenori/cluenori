@@ -6,24 +6,27 @@ import SwiftUI
 /// Every error group of a project over the period, the most frequent first.
 struct ErrorsScreen: View {
     let errors: ErrorsModel
+    @Bindable var navigation: Navigation
 
     var body: some View {
-        Group {
+        List {
+            PeriodSection(period: $navigation.period)
+            if let table = errors.table.value {
+                ForEach(table.groups, id: \.id) { group in
+                    NavigationLink(value: Route.error(project: errors.project, id: group.id)) {
+                        ErrorGroupRow(title: group.title, culprit: group.culprit, occurrences: group.occurrences)
+                    }
+                }
+            }
+        }
+        .overlay {
             if let table = errors.table.value {
                 if table.groups.isEmpty {
-                    ContentUnavailableView {
-                        Label {
-                            Text("No errors", bundle: #bundle, comment: "A project had no errors.")
-                        } icon: {
-                            Image(systemName: "checkmark.circle")
-                        }
-                    }
-                } else {
-                    List(table.groups, id: \.id) { group in
-                        NavigationLink(value: Route.error(project: errors.project, id: group.id)) {
-                            ErrorGroupRow(title: group.title, culprit: group.culprit, occurrences: group.occurrences)
-                        }
-                    }
+                    NothingInPeriod(
+                        title: Text("No errors", bundle: #bundle, comment: "A project had no errors."),
+                        systemImage: "checkmark.circle",
+                        period: $navigation.period
+                    )
                 }
             } else {
                 AnswerPlaceholder(problem: errors.table.problem)
@@ -65,9 +68,11 @@ struct ErrorGroupRow: View {
 /// One error group: what it said, where it happens, how often, and its latest occurrences.
 struct ErrorScreen: View {
     let error: ErrorModel
+    @Bindable var navigation: Navigation
 
     var body: some View {
         List {
+            PeriodSection(period: $navigation.period)
             if let detail = error.detail.value {
                 Section {
                     ErrorSummary(
@@ -92,8 +97,23 @@ struct ErrorScreen: View {
                 } header: {
                     Text("Latest", bundle: #bundle, comment: "Section of an error's latest occurrences.")
                 }
-            } else {
-                AnswerPlaceholder(problem: error.detail.problem)
+            }
+        }
+        .overlay {
+            if error.detail.value == nil {
+                if error.detail.problem == .missing {
+                    NothingInPeriod(
+                        title: Text(
+                            "This error didn't happen",
+                            bundle: #bundle,
+                            comment: "An error the period doesn't have."
+                        ),
+                        systemImage: "checkmark.circle",
+                        period: $navigation.period
+                    )
+                } else {
+                    AnswerPlaceholder(problem: error.detail.problem)
+                }
             }
         }
         .navigationTitle(Text("Error", bundle: #bundle, comment: "Title of one error."))

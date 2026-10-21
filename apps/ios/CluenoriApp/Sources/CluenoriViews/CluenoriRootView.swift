@@ -81,16 +81,22 @@ struct RouteScreen: View {
                     await models.projects.load()
                 }
             }
+        // Each of these looks over one period: a new one is another screen, with its own state.
         case .operations(let project):
-            OperationsScreen(operations: models.operations(project, period: navigation.period))
+            OperationsScreen(operations: models.operations(project, period: navigation.period), navigation: navigation)
+                .id(navigation.period)
         case .operation(let operation):
-            OperationScreen(operation: models.operation(operation, period: navigation.period))
+            OperationScreen(operation: models.operation(operation, period: navigation.period), navigation: navigation)
+                .id(navigation.period)
         case .errors(let project):
-            ErrorsScreen(errors: models.errors(project, period: navigation.period))
+            ErrorsScreen(errors: models.errors(project, period: navigation.period), navigation: navigation)
+                .id(navigation.period)
         case .error(let project, let id):
-            ErrorScreen(error: models.error(project, id: id, period: navigation.period))
+            ErrorScreen(error: models.error(project, id: id, period: navigation.period), navigation: navigation)
+                .id(navigation.period)
         case .logs(let project):
-            LogsScreen(logs: models.logs(project, period: navigation.period))
+            LogsScreen(logs: models.logs(project, period: navigation.period), navigation: navigation)
+                .id(navigation.period)
         }
     }
 }

@@ -12,15 +12,11 @@ struct ProjectScreen: View {
 
     var body: some View {
         List {
-            Section {
-                PeriodPicker(period: $navigation.period)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-            }
+            PeriodSection(period: $navigation.period)
             IncidentsSection(incidents: project.incidents)
             LoadSection(project: project.key, load: project.load, operations: project.operations)
-            ErrorsSection(project: project.key, errors: project.errors)
-            LogsSection(project: project.key, logs: project.logs)
+            ErrorsSection(project: project.key, errors: project.errors, period: project.period)
+            LogsSection(project: project.key, logs: project.logs, period: project.period)
         }
         .navigationTitle(name)
         .refreshable { await project.refresh() }
@@ -143,13 +139,18 @@ struct LoadStats: View {
 struct ErrorsSection: View {
     let project: String
     let errors: Answer<ErrorTable>
+    let period: PeriodKey
 
     var body: some View {
         Section {
             if let table = errors.value {
                 if table.groups.isEmpty {
-                    Text("No errors in this period.", bundle: #bundle, comment: "A project had no errors.")
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "No errors in \(periodPhrase(period)).",
+                        bundle: #bundle,
+                        comment: "A project had no errors. The variable is a period, such as the last hour."
+                    )
+                    .foregroundStyle(.secondary)
                 }
                 ForEach(table.groups.prefix(4), id: \.id) { group in
                     NavigationLink(value: Route.error(project: project, id: group.id)) {
@@ -171,13 +172,18 @@ struct ErrorsSection: View {
 struct LogsSection: View {
     let project: String
     let logs: Answer<LogPage>
+    let period: PeriodKey
 
     var body: some View {
         Section {
             if let page = logs.value {
                 if page.lines.isEmpty {
-                    Text("No warnings or errors in this period.", bundle: #bundle, comment: "A project logged none.")
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "No warnings or errors in \(periodPhrase(period)).",
+                        bundle: #bundle,
+                        comment: "A project logged no warnings or errors. The variable is a period."
+                    )
+                    .foregroundStyle(.secondary)
                 }
                 ForEach(page.lines.prefix(4), id: \.id) { line in
                     LogLineRow(time: line.time, level: line.level, component: line.component, message: line.message)

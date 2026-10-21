@@ -18,6 +18,13 @@ public enum PeriodKey: String, CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// The next longer period, to look further back; nil for the longest.
+    public var longer: PeriodKey? {
+        let all = Self.allCases
+        guard let index = all.firstIndex(of: self), index + 1 < all.count else { return nil }
+        return all[index + 1]
+    }
+
     /// How wide a chart's bars are: about 30 to 300 of them, as fine as counts are kept.
     public var step: SeriesStep {
         switch self {

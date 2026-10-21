@@ -6,46 +6,43 @@ import SwiftUI
 /// Every operation of a project over the period, the slowest first by the percentile chosen.
 struct OperationsScreen: View {
     @Bindable var operations: OperationsModel
+    @Bindable var navigation: Navigation
 
     var body: some View {
-        Group {
+        List {
+            PeriodSection(period: $navigation.period)
             if let table = operations.table.value {
-                if table.rows.isEmpty {
-                    ContentUnavailableView {
-                        Label {
-                            Text("No operations", bundle: #bundle, comment: "A project ran nothing in the period.")
-                        } icon: {
-                            Image(systemName: "chart.bar")
-                        }
-                    } description: {
-                        Text(
-                            "Nothing was reported in this period.",
-                            bundle: #bundle,
-                            comment: "Below No operations: missing data isn't zero."
+                ForEach(operations.order.sorted(table.rows), id: \.self) { row in
+                    NavigationLink(
+                        value: Route.operation(
+                            OperationRef(
+                                project: operations.project,
+                                component: row.component,
+                                environment: row.environment,
+                                name: row.operation
+                            )
+                        )
+                    ) {
+                        OperationRowView(
+                            name: row.operation,
+                            component: row.component,
+                            count: row.count,
+                            errors: row.errors,
+                            shownMs: shownMs(row),
+                            order: operations.order
                         )
                     }
-                } else {
-                    List(operations.order.sorted(table.rows), id: \.self) { row in
-                        NavigationLink(
-                            value: Route.operation(
-                                OperationRef(
-                                    project: operations.project,
-                                    component: row.component,
-                                    environment: row.environment,
-                                    name: row.operation
-                                )
-                            )
-                        ) {
-                            OperationRowView(
-                                name: row.operation,
-                                component: row.component,
-                                count: row.count,
-                                errors: row.errors,
-                                shownMs: shownMs(row),
-                                order: operations.order
-                            )
-                        }
-                    }
+                }
+            }
+        }
+        .overlay {
+            if let table = operations.table.value {
+                if table.rows.isEmpty {
+                    NothingInPeriod(
+                        title: Text("No operations", bundle: #bundle, comment: "A project ran nothing in the period."),
+                        systemImage: "chart.bar",
+                        period: $navigation.period
+                    )
                 }
             } else {
                 AnswerPlaceholder(problem: operations.table.problem)
@@ -123,9 +120,11 @@ struct OperationRowView: View {
 /// One operation over the period: its load, its p50, p95 and p99 over time, and its percentiles.
 struct OperationScreen: View {
     let operation: OperationModel
+    @Bindable var navigation: Navigation
 
     var body: some View {
         List {
+            PeriodSection(period: $navigation.period)
             Section {
                 if let series = operation.load.value {
                     LoadChart(points: series.points, step: series.step)
@@ -140,6 +139,15 @@ struct OperationScreen: View {
                 if let series = operation.load.value {
                     LatencyChart(points: series.points)
                         .padding(.vertical, 8)
+                }
+                if let table = operation.table.value, table.rows.isEmpty {
+                    Text(
+                        "It didn't run in \(periodPhrase(navigation.period)).",
+                        bundle: #bundle,
+                        comment: "An operation that didn't run in the period. The variable is a period."
+                    )
+                    .foregroundStyle(.secondary)
+                    LookFurtherBack(period: $navigation.period)
                 }
                 if let row = operation.table.value?.rows.first {
                     PercentilesGrid(

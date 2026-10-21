@@ -18,6 +18,70 @@ struct PeriodPicker: View {
     }
 }
 
+/// The period switch at the top of a list, on the list's background.
+struct PeriodSection: View {
+    @Binding var period: PeriodKey
+
+    var body: some View {
+        Section {
+            PeriodPicker(period: $period)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+        }
+    }
+}
+
+/// The period as words inside a sentence: "the last hour", "the last 24 hours".
+func periodPhrase(_ period: PeriodKey) -> Text {
+    switch period {
+    case .hour: Text("the last hour", bundle: #bundle, comment: "A period, inside a sentence.")
+    case .day: Text("the last 24 hours", bundle: #bundle, comment: "A period, inside a sentence.")
+    case .week: Text("the last 7 days", bundle: #bundle, comment: "A period, inside a sentence.")
+    case .month: Text("the last 30 days", bundle: #bundle, comment: "A period, inside a sentence.")
+    }
+}
+
+/// The button that looks further back: to the next longer period; nothing past the longest.
+struct LookFurtherBack: View {
+    @Binding var period: PeriodKey
+
+    var body: some View {
+        if let longer = period.longer {
+            Button {
+                period = longer
+            } label: {
+                Text(
+                    "Show \(periodPhrase(longer))",
+                    bundle: #bundle,
+                    comment: "Widens the period. The variable is a period, such as the last 24 hours."
+                )
+            }
+            .buttonStyle(.glass)
+        }
+    }
+}
+
+/// A screen's empty answer: what there was none of, over which period, and a way to look further.
+struct NothingInPeriod: View {
+    let title: Text
+    let systemImage: String
+    @Binding var period: PeriodKey
+
+    var body: some View {
+        ContentUnavailableView {
+            Label {
+                title
+            } icon: {
+                Image(systemName: systemImage)
+            }
+        } description: {
+            Text("In \(periodPhrase(period)).", bundle: #bundle, comment: "Below an empty screen: over which period.")
+        } actions: {
+            LookFurtherBack(period: $period)
+        }
+    }
+}
+
 /// Over the bottom of a screen, why what shows may be out of date: asking again failed.
 struct AnswerBanner: View {
     let problem: AnswerProblem?
@@ -45,7 +109,7 @@ struct AnswerBanner: View {
                     comment: "Banner when the deployment's answer couldn't be read."
                 )
             }
-        case nil:
+        case .missing, nil:
             EmptyView()
         }
     }
@@ -56,7 +120,15 @@ struct AnswerPlaceholder: View {
     let problem: AnswerProblem?
 
     var body: some View {
-        if problem != nil {
+        if problem == .missing {
+            ContentUnavailableView {
+                Label {
+                    Text("Not found", bundle: #bundle, comment: "The deployment has no such thing.")
+                } icon: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        } else if problem != nil {
             ContentUnavailableView {
                 Label {
                     Text("Nothing to show yet", bundle: #bundle, comment: "A screen never loaded.")

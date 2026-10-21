@@ -7,27 +7,26 @@ import SwiftUI
 /// text, older ones added as the list reaches its end.
 struct LogsScreen: View {
     let logs: LogsModel
+    @Bindable var navigation: Navigation
     @State private var level: IndexedLevel?
     @State private var search: String
 
-    init(logs: LogsModel) {
+    init(logs: LogsModel, navigation: Navigation) {
         self.logs = logs
+        self.navigation = navigation
         level = logs.level
         search = logs.search
     }
 
     var body: some View {
         List {
+            PeriodSection(period: $navigation.period)
             Section {
                 LevelPicker(level: $level)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
             }
             if let page = logs.page.value {
-                if page.lines.isEmpty {
-                    Text("Nothing in this period.", bundle: #bundle, comment: "No log lines matched.")
-                        .foregroundStyle(.secondary)
-                }
                 ForEach(page.lines + logs.older, id: \.id) { line in
                     NavigationLink {
                         LogLineScreen(line: line)
@@ -39,6 +38,19 @@ struct LogsScreen: View {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                         .task { await logs.loadOlder() }
+                }
+            }
+        }
+        .overlay {
+            if let page = logs.page.value {
+                if page.lines.isEmpty {
+                    NothingInPeriod(
+                        title: logs.search.isEmpty && logs.level == nil
+                            ? Text("No warnings or errors", bundle: #bundle, comment: "No log lines in the period.")
+                            : Text("Nothing matches", bundle: #bundle, comment: "No log lines matched the filter."),
+                        systemImage: "text.page.slash",
+                        period: $navigation.period
+                    )
                 }
             } else {
                 AnswerPlaceholder(problem: logs.page.problem)

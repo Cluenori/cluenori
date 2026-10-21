@@ -125,3 +125,27 @@ struct LogsModelTests {
         #expect(logs.search == "timeout")
     }
 }
+
+struct MissingTests {
+    @Test func `says an error didn't happen in the period, rather than that the answer can't be read`() async throws {
+        let deployment = FakeDeployment()
+        deployment.answer(
+            "GET /api/projects/notes/errors/4f1c9a2e7b3d5068",
+            404,
+            #"{"_tag":"ErrorGroupNotFound","error":"4f1c9a2e7b3d5068"}"#
+        )
+        let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
+        let error = try #require(pairing.models).error("notes", id: "4f1c9a2e7b3d5068", period: .hour)
+
+        await error.detail.load()
+
+        #expect(error.detail.problem == .missing)
+        #expect(pairing.state == .paired)
+    }
+
+    @Test func `looks further back one period at a time, and no further than 30 days`() {
+        #expect(PeriodKey.hour.longer == .day)
+        #expect(PeriodKey.week.longer == .month)
+        #expect(PeriodKey.month.longer == nil)
+    }
+}
