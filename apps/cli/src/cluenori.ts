@@ -4,7 +4,7 @@ import { check } from "./check.ts"
 import { error, errors, logs, trace } from "./errors-commands.ts"
 import { generate } from "./generate.ts"
 import { component, project } from "./projects-commands.ts"
-import { endpoints, requests } from "./requests-commands.ts"
+import { endpoint, endpoints, requests } from "./requests-commands.ts"
 import { run } from "./run.ts"
 import { setup } from "./setup.ts"
 import { update } from "./update.ts"
@@ -24,6 +24,7 @@ export const cluenori = Command.make("cluenori").pipe(
     project,
     component,
     endpoints,
+    endpoint,
     requests,
     errors,
     error,

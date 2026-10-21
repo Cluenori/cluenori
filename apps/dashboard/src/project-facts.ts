@@ -10,6 +10,7 @@ import type {
   ErrorGroup,
   ErrorGroupId,
   ErrorTable,
+  KeptRequests,
   LogCounts,
   LogException,
   RequestPoint,
@@ -25,6 +26,7 @@ import { DateTime } from "effect"
 import { componentColor } from "@/lib/colors"
 import { ago, axisTime, count, dayOf, duration, share, viewerTimeZone } from "@/lib/format"
 import type { PeriodKey } from "@/project-data"
+import { periodMillis } from "@/project-data"
 import type { Attention } from "@/views/attention-list"
 import type { Slower } from "@/views/endpoint-table"
 import { titleParts } from "@/views/error-group"
@@ -189,6 +191,22 @@ export const endpointRowsOf = (
     const found = slower.get(endpointKeyOf(row))
     return found === undefined ? row : { ...row, slower: found }
   })
+}
+
+// ---- Kept requests ---------------------------------------------------------------------------------
+
+/**
+ * What a list of kept requests answers for, in words: the page's period, or, of a period longer than
+ * requests are kept, the days its answer covers, such as "last 14 days".
+ */
+export const keptOverOf = (answer: KeptRequests, period: PeriodKey) => {
+  const asked = periodWords[period].toLowerCase()
+  if (answer.covered === undefined) {
+    return asked
+  }
+  const covered = DateTime.toEpochMillis(answer.covered.to) - DateTime.toEpochMillis(answer.covered.from)
+  // A covered period is in whole minutes, so only one cut to what is kept is a minute or more shorter.
+  return covered < periodMillis[period] - 60_000 ? `last ${count(Math.round(covered / 86_400_000))} days` : asked
 }
 
 // ---- Errors ----------------------------------------------------------------------------------------

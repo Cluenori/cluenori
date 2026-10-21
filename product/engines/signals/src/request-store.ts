@@ -1,18 +1,34 @@
 import type { QuantileSketch as Sketch } from "@bagatka/quantile-sketch"
 import { mergeSketches, Quantile, QuantileSketch, quantileOf } from "@bagatka/quantile-sketch"
-import { ComponentKey, EnvelopeName, EnvironmentKey, Period } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Period, TraceId } from "@cluenori/foundation"
 import { DateTime, Duration, Effect, Option, Order, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 
 import { requestRetention } from "./read-traces.ts"
-import type { RequestCounts } from "./request-counts.ts"
-import type { EndpointRow, EndpointTable, RequestQuery, RequestSeries, SeriesStep } from "./request-queries.ts"
+import type { KeptRequest, RequestCounts } from "./request-counts.ts"
+import { HttpStatus, keptPerHour } from "./request-counts.ts"
+import type {
+  EndpointRow,
+  EndpointTable,
+  KeptRequestRow,
+  KeptRequests,
+  RequestQuery,
+  RequestSeries,
+  SeriesStep,
+} from "./request-queries.ts"
 import { otherEndpoints, stepMillis } from "./request-queries.ts"
 
 /** How long hourly counts are kept: 15 months, so a year compares with the one before. */
 export const hourlyRetention = Duration.days(455)
 
 const maxEndpointsPerComponent = 500
+
+// How many kept requests a question answers in each list.
+const keptListed = 20
+
+// Which list a request is kept for: the slowest, or the slowest that failed.
+const KeptFor = Schema.Literals(["slowest", "failed"])
+type KeptFor = typeof KeptFor.Type
 
 // Questions about this long or shorter read minutes; longer ones read hours.
 const longestByMinute = Duration.days(2)
@@ -43,6 +59,28 @@ const CountsRow = Schema.Struct({
   durations: Schema.fromJsonString(QuantileSketch),
 })
 type CountsRow = typeof CountsRow.Type
+
+const KeptRow = Schema.Struct({
+  component: ComponentKey,
+  endpoint: EnvelopeName,
+  environment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
+  trace: TraceId,
+  start: Schema.Int,
+  durationMs: Schema.Finite,
+  failed: Schema.BooleanFromBit,
+  status: Schema.NullOr(HttpStatus),
+})
+
+const keptRowOf = (row: typeof KeptRow.Type): KeptRequestRow => ({
+  trace: row.trace,
+  component: row.component,
+  endpoint: row.endpoint,
+  ...(row.environment === "" ? {} : { environment: row.environment }),
+  start: DateTime.makeUnsafe(row.start),
+  durationMs: row.durationMs,
+  failed: row.failed,
+  ...(row.status === null ? {} : { status: row.status }),
+})
 
 const byRequestsThenName = Order.combineAll<EndpointRow>([
   Order.mapInput(Order.flip(Order.Number), (row) => row.requests),
@@ -97,7 +135,8 @@ const hoursOf = (counts: ReadonlyArray<RequestCounts>): ReadonlyArray<RequestCou
 
 /**
  * The project's requests, counted by endpoint and environment, by the minute for 14 days and by the
- * hour for 15 months. Part of Signals, which owns the transaction each write runs in.
+ * hour for 15 months, and the requests kept so they can be opened, 14 days. Part of Signals, which
+ * owns the transaction each write runs in.
  */
 export const requestStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
@@ -140,6 +179,34 @@ export const requestStore = Effect.gen(function* () {
           ...(request.endpoint === undefined ? [] : [sql`e.name = ${request.endpoint}`]),
         ])}`,
     })
+
+  const findKept = SqlSchema.findAll({
+    Request: Schema.Struct({
+      keptFor: KeptFor,
+      from: Schema.Int,
+      to: Schema.Int,
+      environment: Schema.optionalKey(EnvironmentKey),
+      component: Schema.optionalKey(ComponentKey),
+      endpoint: Schema.optionalKey(EnvelopeName),
+    }),
+    Result: KeptRow,
+    execute: (request) => sql`
+      SELECT e.component, e.name AS endpoint, k.environment, k.trace, k.start,
+        k.duration_ms AS "durationMs", k.failed, k.status
+      FROM signals_kept_requests k JOIN signals_endpoints e ON e.id = k.endpoint
+      WHERE ${sql.and([
+        sql`k.kept_for = ${request.keptFor}`,
+        sql`k.hour >= ${floorTo(request.from, byHour.width)}`,
+        sql`k.hour < ${request.to}`,
+        sql`k.start >= ${request.from}`,
+        sql`k.start < ${request.to}`,
+        ...(request.environment === undefined ? [] : [sql`k.environment = ${request.environment}`]),
+        ...(request.component === undefined ? [] : [sql`e.component = ${request.component}`]),
+        ...(request.endpoint === undefined ? [] : [sql`e.name = ${request.endpoint}`]),
+      ])}
+      ORDER BY ${request.keptFor === "slowest" ? sql`k.duration_ms DESC` : sql`k.start DESC`}
+      LIMIT ${keptListed}`,
+  })
 
   // The endpoint's row ID, adding the endpoint when it is new; past the limit, `(other endpoints)`.
   const endpointIdOf = Effect.fn("RequestStore.endpointIdOf")(function* (
@@ -193,8 +260,56 @@ export const requestStore = Effect.gen(function* () {
         durations = excluded.durations`
   })
 
-  // Adds a batch's counts by the minute and by the hour. Runs inside the caller's transaction.
-  const add = Effect.fn("RequestStore.add")(function* (component: ComponentKey, batch: ReadonlyArray<RequestCounts>) {
+  // Keeps a batch's requests with those kept before, in the list or lists each is kept for, then
+  // keeps of each endpoint, environment, hour and list only the slowest `keptPerHour`.
+  const keep = Effect.fn("RequestStore.keep")(function* (
+    component: ComponentKey,
+    kept: ReadonlyArray<KeptRequest>,
+    known: Map<string, number>,
+  ) {
+    const lists = new Map<
+      string,
+      { readonly endpoint: number; readonly environment: string; readonly hour: number; readonly keptFor: KeptFor }
+    >()
+    for (const request of kept) {
+      const endpoint = yield* endpointIdOf(component, request.endpoint, known)
+      const start = DateTime.toEpochMillis(request.start)
+      const hour = floorTo(start, byHour.width)
+      const environment = request.environment ?? ""
+      const keptFor: ReadonlyArray<KeptFor> = request.failed ? ["slowest", "failed"] : ["slowest"]
+      for (const list of keptFor) {
+        yield* sql`INSERT INTO signals_kept_requests ${sql.insert({
+          endpoint,
+          environment,
+          hour,
+          kept_for: list,
+          trace: request.trace,
+          start,
+          duration_ms: request.durationMs,
+          failed: request.failed ? 1 : 0,
+          ...(request.status === undefined ? {} : { status: request.status }),
+        })}`
+        lists.set([endpoint, environment, hour, list].join("\u0000"), { endpoint, environment, hour, keptFor: list })
+      }
+    }
+    for (const list of lists.values()) {
+      yield* sql`
+        DELETE FROM signals_kept_requests WHERE id IN (
+          SELECT id FROM signals_kept_requests
+          WHERE endpoint = ${list.endpoint} AND kept_for = ${list.keptFor} AND hour = ${list.hour}
+            AND environment = ${list.environment}
+          ORDER BY duration_ms DESC, id
+          LIMIT -1 OFFSET ${keptPerHour})`
+    }
+  })
+
+  // Adds a batch's counts by the minute and by the hour, and keeps its requests worth opening. Runs
+  // inside the caller's transaction.
+  const add = Effect.fn("RequestStore.add")(function* (
+    component: ComponentKey,
+    batch: ReadonlyArray<RequestCounts>,
+    kept: ReadonlyArray<KeptRequest>,
+  ) {
     const endpoints = yield* findEndpoints(component)
     const known = new Map(endpoints.map((endpoint) => [endpoint.name, endpoint.id] as const))
     for (const counts of batch) {
@@ -205,11 +320,13 @@ export const requestStore = Effect.gen(function* () {
       const endpoint = yield* endpointIdOf(component, counts.endpoint, known)
       yield* addTo(byHour, endpoint, counts)
     }
+    yield* keep(component, kept, known)
   })
 
-  // Removes minutes older than 14 days and hours older than 15 months.
+  // Removes minutes and kept requests older than 14 days, and hours older than 15 months.
   const cleanUp = Effect.fn("RequestStore.cleanUp")(function* (now: number) {
     yield* sql`DELETE FROM signals_minute_counts WHERE bucket < ${now - Duration.toMillis(byMinute.kept)}`
+    yield* sql`DELETE FROM signals_kept_requests WHERE hour < ${now - Duration.toMillis(byMinute.kept)}`
     yield* sql`DELETE FROM signals_hour_counts WHERE bucket < ${now - Duration.toMillis(byHour.kept)}`
   })
 
@@ -307,5 +424,31 @@ export const requestStore = Effect.gen(function* () {
     return series
   })
 
-  return { add, cleanUp, endpoints, requestsOverTime }
+  // The slowest and the failed of the requests kept in the query's period, cut to the 14 days they
+  // are kept, as minutes are.
+  const keptRequests = Effect.fn("RequestStore.keptRequests")(function* (query: RequestQuery) {
+    const current = yield* DateTime.now
+    const covered = coveredOf(query.period, byMinute, DateTime.toEpochMillis(current))
+    if (covered._tag === "None") {
+      const none: KeptRequests = { slowest: [], failed: [] }
+      return none
+    }
+    const asked = {
+      from: covered.value.from,
+      to: covered.value.to,
+      ...(query.environment === undefined ? {} : { environment: query.environment }),
+      ...(query.component === undefined ? {} : { component: query.component }),
+      ...(query.endpoint === undefined ? {} : { endpoint: query.endpoint }),
+    }
+    const slowest = yield* findKept({ keptFor: "slowest", ...asked }).pipe(Effect.orDie)
+    const failed = yield* findKept({ keptFor: "failed", ...asked }).pipe(Effect.orDie)
+    const answer: KeptRequests = {
+      covered: new Period({ from: DateTime.makeUnsafe(covered.value.from), to: DateTime.makeUnsafe(covered.value.to) }),
+      slowest: slowest.map(keptRowOf),
+      failed: failed.map(keptRowOf),
+    }
+    return answer
+  })
+
+  return { add, cleanUp, endpoints, requestsOverTime, keptRequests }
 })

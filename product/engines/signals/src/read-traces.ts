@@ -7,8 +7,8 @@ import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Hex } from "effect/encoding"
 
 import type { TraceExport } from "./exports.ts"
-import type { RequestCounts } from "./request-counts.ts"
-import { BatchDigest } from "./request-counts.ts"
+import type { KeptRequest, RequestCounts } from "./request-counts.ts"
+import { BatchDigest, HttpStatus, keptPerHour } from "./request-counts.ts"
 import { scrubbedTraces } from "./scrubbed.ts"
 
 /** How long requests are counted for: older ones are refused at ingest and removed after. */
@@ -16,6 +16,9 @@ export const requestRetention = Duration.days(14)
 
 /** Requests are counted in buckets of one minute, by when they started. */
 export const bucketMillis = 60_000
+
+// Requests are kept by the hour they started in.
+const hourMillis = 3_600_000
 
 // A request may start this far in the future, for a sender whose clock runs ahead.
 const clockSkew = Duration.hours(1)
@@ -66,6 +69,24 @@ const problemOf = (span: Span, now: number): string | undefined => {
   return undefined
 }
 
+// The HTTP status a server span answered with, under its current name or the older one.
+const statusOf = (span: Span): HttpStatus | undefined => {
+  const reported = span.attributes.get("http.response.status_code") ?? span.attributes.get("http.status_code")
+  return Schema.is(HttpStatus)(reported) ? reported : undefined
+}
+
+// Of each hour's requests of one endpoint and environment, those that may be kept: the slowest, and
+// the slowest that failed. The project's object keeps them against those it kept before.
+const toKeep = (requests: ReadonlyArray<KeptRequest>) => {
+  const slowestFirst = requests.toSorted((left, right) => right.durationMs - left.durationMs)
+  return [
+    ...new Set([
+      ...slowestFirst.slice(0, keptPerHour),
+      ...slowestFirst.filter((request) => request.failed).slice(0, keptPerHour),
+    ]),
+  ]
+}
+
 interface Group {
   readonly bucket: number
   readonly endpoint: EnvelopeName
@@ -78,10 +99,10 @@ interface Group {
 
 /**
  * Reads the body of an OTLP/HTTP protobuf trace export: removes credentials and personal data,
- * writes the file the archive keeps, and adds its requests up by endpoint, environment, and minute.
- * A request is a server or consumer span, named by the span's name (`GET /api/notes/{id}`); it
- * failed when its status is an error. Pure apart from the clock and the digest; runs where the
- * export arrives, so a project's object only stores.
+ * writes the file the archive keeps, adds its requests up by endpoint, environment, and minute, and
+ * picks those that may be kept. A request is a server or consumer span, named by the span's name
+ * (`GET /api/notes/{id}`); it failed when its status is an error. Pure apart from the clock and the
+ * digest; runs where the export arrives, so a project's object only stores.
  */
 export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   const crypto = yield* Crypto.Crypto
@@ -92,6 +113,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   const nowMillis = DateTime.toEpochMillis(now)
 
   const groups = new Map<string, Group>()
+  const hours = new Map<string, Array<KeptRequest>>()
   let rejectedCount = 0
   let firstProblem: string | undefined
   for (const { resource, scopeSpans } of resourceSpans) {
@@ -120,11 +142,27 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
             durations: [],
           }
           const durationMs = Number(span.endTimeUnixNano - span.startTimeUnixNano) / 1_000_000
+          const failed = span.status.code === "error"
           group.requests += 1
-          group.errors += span.status.code === "error" ? 1 : 0
+          group.errors += failed ? 1 : 0
           group.totalMs += durationMs
           group.durations.push(SketchValueSchema.make(durationMs))
           groups.set(key, group)
+          if (Schema.is(TraceId)(span.traceId)) {
+            const status = statusOf(span)
+            const hourKey = [start - (start % hourMillis), endpoint, environment ?? ""].join("\u0000")
+            const inHour = hours.get(hourKey) ?? []
+            inHour.push({
+              trace: span.traceId,
+              endpoint,
+              ...(environment === undefined ? {} : { environment }),
+              start: DateTime.makeUnsafe(start),
+              durationMs,
+              failed,
+              ...(status === undefined ? {} : { status }),
+            })
+            hours.set(hourKey, inHour)
+          }
         }
       }
     }
@@ -154,6 +192,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
       to: DateTime.makeUnsafe(spans.length === 0 ? nowMillis : latest),
       spans: spans.length,
       counts,
+      kept: [...hours.values()].flatMap(toKeep),
       traces: [...traces],
     },
     rejected: firstProblem === undefined ? undefined : { count: rejectedCount, problem: firstProblem },

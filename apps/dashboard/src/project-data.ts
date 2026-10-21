@@ -26,7 +26,8 @@ export const periods: ReadonlyArray<{ readonly key: PeriodKey; readonly label: s
 const hour = 3_600_000
 const day = 24 * hour
 
-const periodMillis: Readonly<Record<PeriodKey, number>> = {
+/** How long each period is: it ends when its question is asked. */
+export const periodMillis: Readonly<Record<PeriodKey, number>> = {
   "1h": hour,
   "24h": day,
   "7d": 7 * day,
@@ -115,6 +116,22 @@ export const endpointsAtom = Atom.family((scope: Scope) =>
         const client = yield* CluenoriClient
         const period = yield* lastOf(periodMillis[get(periodAtom)])
         return yield* client.signals.endpoints({
+          params: { project: scope.project },
+          query: { ...period, ...filtersOf(scope) },
+        })
+      }),
+    ),
+  ),
+)
+
+/** The slowest and the failed of the requests kept over the period, of one endpoint or every one. */
+export const keptRequestsAtom = Atom.family((scope: Scope) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastOf(periodMillis[get(periodAtom)])
+        return yield* client.signals.keptRequests({
           params: { project: scope.project },
           query: { ...period, ...filtersOf(scope) },
         })

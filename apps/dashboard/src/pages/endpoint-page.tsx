@@ -1,16 +1,26 @@
 import type { ComponentKey, EnvelopeName, ProjectKey } from "@cluenori/foundation"
+import type { KeptRequestRow } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { ActivityIcon, ArrowLeftIcon, GaugeIcon, SearchXIcon } from "lucide-react"
+import { ActivityIcon, ArrowLeftIcon, CircleXIcon, GaugeIcon, SearchXIcon, TimerIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { failureColor } from "@/lib/colors"
 import { count, duration, moment, share } from "@/lib/format"
-import { endpointsAtom, periodAtom, requestsAtom, useComponentKeys, usualEndpointsAtom } from "@/project-data"
+import type { Scope } from "@/project-data"
+import {
+  endpointsAtom,
+  keptRequestsAtom,
+  periodAtom,
+  requestsAtom,
+  useComponentKeys,
+  usualEndpointsAtom,
+} from "@/project-data"
 import {
   colorOf,
   columnTimesOf,
   endpointKeyOf,
+  keptOverOf,
   periodWords,
   requestColumnsOf,
   slowerOf,
@@ -26,6 +36,7 @@ import { EndpointName } from "@/views/endpoint-name"
 import { Loaded } from "@/views/loaded"
 import { Panel, PanelStats } from "@/views/panel"
 import { PeriodSwitch } from "@/views/period-switch"
+import { RequestList } from "@/views/request-list"
 import { SinceUsual } from "@/views/since-usual"
 import { buttonVariants } from "@/views/ui/button"
 
@@ -51,9 +62,61 @@ function EndpointHeader({ back, children }: { readonly back: Route; readonly chi
   )
 }
 
+/** A list of requests, or what it would show when it has none. */
+function KeptList({
+  project,
+  rows,
+  slowAfterMs,
+  none,
+}: {
+  readonly project: ProjectKey
+  readonly rows: ReadonlyArray<KeptRequestRow>
+  readonly slowAfterMs?: number
+  readonly none: string
+}) {
+  return rows.length === 0 ? (
+    <p className="px-5 py-6 text-sm text-muted-foreground">{none}</p>
+  ) : (
+    <RequestList project={project} rows={rows} {...(slowAfterMs === undefined ? {} : { slowAfterMs })} />
+  )
+}
+
+/**
+ * The endpoint's slowest requests and its failed ones over the period, each a click from its trace:
+ * of each hour, the five slowest and the five slowest failed are kept, 14 days. A duration over the
+ * period's p95 is yellow.
+ */
+function KeptRequestPanels({ scope, p95Ms }: { readonly scope: Scope; readonly p95Ms: number }) {
+  const period = useAtomValue(periodAtom)
+  const kept = useAtomValue(keptRequestsAtom(scope))
+  return (
+    <Loaded result={kept}>
+      {(answer) => {
+        const over = keptOverOf(answer, period)
+        return (
+          <div className="flex flex-col gap-4">
+            <Panel icon={TimerIcon} title="Slowest requests" subtitle={`Slowest first, ${over}`}>
+              <KeptList
+                project={scope.project}
+                rows={answer.slowest}
+                slowAfterMs={p95Ms}
+                none={`No request of the ${over} is kept. Of each hour, the five slowest are kept 14 days.`}
+              />
+            </Panel>
+            <Panel icon={CircleXIcon} title="Failed requests" subtitle={`Newest first, ${over}`}>
+              <KeptList project={scope.project} rows={answer.failed} none={`No request failed in the ${over}.`} />
+            </Panel>
+          </div>
+        )
+      }}
+    </Loaded>
+  )
+}
+
 /**
  * One endpoint full screen: its requests and failures over the period, then its p95 over the same
- * steps, under them, with how the last day compares with its usual p95, and its percentiles.
+ * steps, under them, with how the last day compares with its usual p95, and its percentiles; then
+ * its slowest and failed requests, each opening its trace.
  */
 export function EndpointPage({
   project,
@@ -208,6 +271,8 @@ export function EndpointPage({
                   ]}
                 />
               </Panel>
+
+              <KeptRequestPanels scope={scope} p95Ms={row.p95Ms} />
             </div>
           )
         }}

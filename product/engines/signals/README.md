@@ -1,8 +1,9 @@
 # @cluenori/signals
 
 Signals from a project's services: OpenTelemetry exports read where they arrive, every export kept
-in the archive for 90 days, and, in the project's Durable Object, their requests counted, their
-warnings and errors kept and grouped, and any request's trace and logs read back from the archive.
+in the archive for 90 days, and, in the project's Durable Object, their requests counted, the
+slowest and failed of them kept to open, their warnings and errors kept and grouped, and any
+request's trace and logs read back from the archive by its ID.
 
 ## Use it
 
@@ -22,6 +23,10 @@ const detail = yield* signals.error(table.groups[0].id, { period }) // latest oc
 const view = yield* signals.trace(detail.latest[0].trace, detail.latest[0].time) // the time is optional
 // view.spans: the request's spans as a tree; view.logs: its logs at every level, from the archive
 
+// Requests worth opening, though they logged nothing: one endpoint's slowest, and its failed.
+const kept = yield* signals.keptRequests({ period, endpoint: EnvelopeName.make("GET /api/feed") })
+// slowest: [{ trace: "26f47ed8…", start, durationMs: 1712, status: 200, failed: false, ... }, ...]
+
 // One endpoint over time, with its percentiles in each step.
 const series = yield* signals.requestsOverTime({ period, endpoint: EnvelopeName.make("GET /api/feed") }, "1h")
 // points: [{ start, requests: 940, errors: 3, p50Ms: 85, p80Ms: 160, p95Ms: 420, p99Ms: 1210 }, ...]
@@ -37,15 +42,18 @@ again. An unknown error ID fails with `ErrorGroupNotFound`.
 
 ## Owns
 
-- **Rules:** what a request is (a server or consumer span), its endpoint and whether it failed; a
-  log record's level; which records are indexed (warnings and up); which errors are the same error
-  (exception type and the top five frames of the app's own code in its stack, those with a source
-  location, and, when it was thrown outside that code, its message without numbers and IDs; or
-  logger and message template); and how each question's period is cut to what is kept.
+- **Rules:** what a request is (a server or consumer span), its endpoint, whether it failed, and its
+  HTTP status; which requests are kept to open (of each endpoint, environment and hour, the five
+  slowest and the five slowest failed); a log record's level; which records are indexed (warnings
+  and up); which errors are the same error (exception type and the top five frames of the app's own
+  code in its stack, those with a source location, and, when it was thrown outside that code, its
+  message without numbers and IDs; or logger and message template); and how each question's period
+  is cut to what is kept.
 - **Data,** in each project's database:
   - requests counted by endpoint and environment, by the minute (`signals_minute_counts`, 14 days)
     and by the hour (`signals_hour_counts`, 15 months), each component's endpoints, at most 500
     (`signals_endpoints`);
+  - the requests kept to open, with their trace IDs (`signals_kept_requests`, 14 days);
   - warnings and errors (`signals_logs`, 90 days) and error groups (`signals_error_groups`, 15
     months after last seen);
   - which archive file holds each export, by time (`signals_archive`), and the last hour's export
@@ -91,6 +99,11 @@ in the project's object; `SignalsGroup` is the API's part.
   `trace` says how many of its files it read, and how many it didn't. Exports archived before the
   index (October 2026) aren't in it.
 - **Counted once.** An export's SHA-256 digest is kept an hour, so an exporter's retry is skipped.
+- **Kept requests are bounded where they arrive and where they are kept.** Ingest picks each
+  export's five slowest and five slowest failed of each endpoint, environment and hour; the object
+  keeps them against those it kept before, so each holds at most ten rows however busy it is. The
+  slowest of a period are the slowest of these, so a period's list is exact unless one hour had more
+  than five of its slowest twenty. Their traces stay in the archive 90 days, beyond the 14 days.
 - **Percentiles are within 2% of the true value,** by nearest rank.
 - **An answer's schemas live apart from the code that makes them** (`trace-view.ts` from
   `read-archived-trace.ts`, `request-queries.ts` from `request-store.ts`), and the package is

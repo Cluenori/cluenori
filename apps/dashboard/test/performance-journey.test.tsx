@@ -35,6 +35,36 @@ describe("performance journey", () => {
         expect.element(screen.getByText(/over the last day, 4 s over the 7 days before/)).toBeVisible(),
       )
       yield* expectAccessible()
+
+      // Its slowest requests, and the one that failed, each a click from its trace.
+      const slowest = screen.getByRole("region", { name: "Slowest requests" })
+      yield* Effect.promise(() => expect.element(slowest.getByRole("link")).toHaveLength(2))
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("region", { name: "Failed requests" }).getByText("500")).toBeVisible(),
+      )
+      yield* expectAccessible()
+      yield* Effect.promise(() => slowest.getByRole("link").first().click())
+      yield* Effect.promise(() => expect.element(screen.getByText("INSERT exports")).toBeVisible())
+    }),
+  )
+
+  it.effect("says over which days it keeps requests when the period is longer", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi())
+      window.history.pushState(null, "", "/notes/endpoints/GET%20/api/notes")
+      const screen = yield* Effect.promise(() => render(<App />))
+
+      yield* Effect.promise(() => screen.getByRole("button", { name: "30d" }).click())
+      yield* Effect.promise(() => expect.element(screen.getByText("Slowest first, last 14 days")).toBeVisible())
+      yield* Effect.promise(() =>
+        expect
+          .element(
+            screen.getByText(
+              "No request of the last 14 days is kept. Of each hour, the five slowest are kept 14 days.",
+            ),
+          )
+          .toBeVisible(),
+      )
     }),
   )
 

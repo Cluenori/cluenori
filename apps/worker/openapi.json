@@ -788,6 +788,234 @@
         "description": "Requests and errors over a period, one point per step that has requests, with their p50, p80, p95 and p99 durations: the load on a project's services, or on one endpoint with `endpoint`. A step without a point had no requests reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used."
       }
     },
+    "/api/projects/{project}/requests/kept": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.keptRequests",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "endpoint",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "allOf": [
+                {
+                  "pattern": "^\\P{Cc}*$"
+                }
+              ]
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "signIn": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "covered": {
+                      "$ref": "#/components/schemas/PeriodEncoded"
+                    },
+                    "slowest": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "trace": {
+                            "type": "string"
+                          },
+                          "endpoint": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "allOf": [
+                              {
+                                "pattern": "^\\P{Cc}*$"
+                              }
+                            ]
+                          },
+                          "environment": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "start": {
+                            "type": "string"
+                          },
+                          "durationMs": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "failed": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "integer",
+                            "minimum": 100,
+                            "maximum": 599
+                          },
+                          "component": {
+                            "type": "string",
+                            "maxLength": 40
+                          }
+                        },
+                        "required": [
+                          "trace",
+                          "endpoint",
+                          "start",
+                          "durationMs",
+                          "failed",
+                          "component"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "failed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "trace": {
+                            "type": "string"
+                          },
+                          "endpoint": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                            "allOf": [
+                              {
+                                "pattern": "^\\P{Cc}*$"
+                              }
+                            ]
+                          },
+                          "environment": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "start": {
+                            "type": "string"
+                          },
+                          "durationMs": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "failed": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "integer",
+                            "minimum": 100,
+                            "maximum": 599
+                          },
+                          "component": {
+                            "type": "string",
+                            "maxLength": 40
+                          }
+                        },
+                        "required": [
+                          "trace",
+                          "endpoint",
+                          "start",
+                          "durationMs",
+                          "failed",
+                          "component"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "slowest",
+                    "failed"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requests worth opening in a period, or one endpoint's with `endpoint`: the slowest, slowest first, and the failed, newest first, at most 20 of each, each with its trace ID, which opens it with the traces endpoint. Of each endpoint, environment and hour, the five slowest requests and the five slowest failed ones are kept, 14 days; `covered` says which part of the period that covers."
+      }
+    },
     "/api/projects/{project}/errors": {
       "get": {
         "tags": [

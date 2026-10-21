@@ -30,6 +30,7 @@ its exact rule.
 | API token | The credential that lets someone use a deployment's public API | `CLUENORI_API_TOKEN`, `MemberAuthorization` in `apps/worker` | API key, password |
 | Endpoint | A request's name in its component, its server span's name: `GET /api/notes/{id}` | `endpoint`, `@cluenori/signals` | route (the template inside it), URL, path |
 | Counts | Requests added up by endpoint and environment, by the minute and by the hour, with a sketch of their durations | `RequestCounts`, `Signals`, `@cluenori/signals` | metrics (a separate signal, later), counters |
+| Kept request | A single request Cluenori keeps so it can be opened: of each endpoint, environment and hour, the five slowest and the five slowest failed, 14 days | `KeptRequest`, `KeptRequests`, `@cluenori/signals` | sample (it isn't random), exemplar, slow request |
 | Covered period | The part of an asked-for period that counts answer for: no earlier than they are kept, no later than now | `covered` | — |
 | Archive | Every export Cluenori received, scrubbed, kept 90 days: the source every view is derived from | `ArchiveStore`, `@cluenori/signals` | lake (the planned SQL over it), backup, logs |
 | Error group | Errors that are the same error: one exception type and stack top, or one logger and message template | `ErrorGroup`, `ErrorGroupId` | issue (a record people track), exception, crash |

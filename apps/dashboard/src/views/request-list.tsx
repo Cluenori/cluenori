@@ -1,69 +1,68 @@
 import type { ProjectKey } from "@cluenori/foundation"
+import type { KeptRequestRow } from "@cluenori/signals"
 import { cn } from "cn"
+import { DateTime } from "effect"
 
 import { duration, moment } from "@/lib/format"
 import { Link } from "@/router"
-import type { RequestRow } from "@/sample/sample-project"
-import { EndpointName } from "@/views/endpoint-name"
-
-/** A request worth opening; `slow` when it took longer than its endpoint's p95 that day. */
-export type KeptRequest = RequestRow & { readonly slow: boolean }
-
-// What a request list will show once the API keeps single requests: until then the design kit shows
-// it on sample data.
 
 /**
- * Single requests, each a row that opens its trace: when, the endpoint, the app that started it
- * (Other when none did), how long it took (yellow when slow for its endpoint), and its status (red
- * when it failed). On one endpoint's page, `withEndpoint` is false, so every row doesn't repeat it.
+ * One endpoint's single requests, each a row that opens its trace: when, the environment, how long
+ * it took, as a bar against the slowest in the list with a tick at `slowAfterMs`, its endpoint's p95
+ * (yellow past it), and its status (red when it failed).
  */
 export function RequestList({
   project,
   rows,
-  colorOf,
-  withEndpoint = true,
+  slowAfterMs,
 }: {
   readonly project: ProjectKey
-  readonly rows: ReadonlyArray<KeptRequest>
-  readonly colorOf: (component: string) => string
-  readonly withEndpoint?: boolean
+  readonly rows: ReadonlyArray<KeptRequestRow>
+  readonly slowAfterMs?: number
 }) {
-  const grid = withEndpoint
-    ? "grid-cols-[minmax(0,1fr)_4.5rem_3rem] md:grid-cols-[9rem_minmax(0,1fr)_7rem_5rem_3rem]"
-    : "grid-cols-[minmax(0,1fr)_4.5rem_3rem] md:grid-cols-[9rem_minmax(0,1fr)_5rem_3rem]"
+  const longest = Math.max(1, ...rows.map((row) => row.durationMs))
+  const tick = slowAfterMs !== undefined && slowAfterMs < longest ? (slowAfterMs / longest) * 100 : undefined
   return (
     <ul className="divide-y">
-      {rows.map((row) => (
-        <li key={row.trace}>
-          <Link
-            to={{ page: "trace", project, trace: row.trace }}
-            className={cn("grid items-center gap-x-5 px-5 py-3 hover:bg-accent/60", grid)}
-          >
-            <span className={cn("font-mono text-[13px] text-muted-foreground", withEndpoint && "hidden md:block")}>
-              {moment(row.time)}
-            </span>
-            {withEndpoint && <EndpointName endpoint={row.endpoint} className="text-[15px]" />}
-            <span className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
-              <span
-                className="size-2"
-                style={{ backgroundColor: row.origin === undefined ? "var(--muted-foreground)" : colorOf(row.origin) }}
-              />
-              {row.origin ?? "Other"}
-            </span>
-            <span className={cn("text-right font-mono text-[13px]", row.slow && "text-yellow")}>
-              {duration(row.durationMs)}
-            </span>
-            <span
-              className={cn(
-                "text-right font-mono text-[13px]",
-                row.status >= 500 ? "text-failure" : "text-muted-foreground",
-              )}
+      {rows.map((row, index) => {
+        const slow = slowAfterMs !== undefined && row.durationMs > slowAfterMs
+        return (
+          // A trace can hold two requests to one endpoint, so its ID alone isn't a key.
+          <li key={`${row.trace} ${index}`}>
+            <Link
+              to={{ page: "trace", project, trace: row.trace, around: row.start }}
+              className="grid grid-cols-[minmax(0,1fr)_4.5rem_3.5rem] items-center gap-x-5 px-5 py-3 hover:bg-accent/60 md:grid-cols-[9rem_9rem_minmax(0,1fr)_5rem_3.5rem]"
             >
-              {row.status}
-            </span>
-          </Link>
-        </li>
-      ))}
+              <span className="font-mono text-[13px] text-muted-foreground">
+                {moment(DateTime.toEpochMillis(row.start))}
+              </span>
+              <span className="hidden truncate text-sm text-muted-foreground md:block">
+                {row.environment ?? "No environment"}
+              </span>
+              <span aria-hidden className="relative hidden h-2 bg-muted md:block">
+                <span
+                  className={cn("block h-full bg-muted-foreground/40", slow && "bg-yellow", row.failed && "bg-failure")}
+                  style={{ width: `max(2px, ${(row.durationMs / longest) * 100}%)` }}
+                />
+                {tick !== undefined && (
+                  <span className="absolute -inset-y-1 w-px bg-foreground/50" style={{ left: `${tick}%` }} />
+                )}
+              </span>
+              <span className={cn("text-right font-mono text-[13px]", slow && "text-yellow")}>
+                {duration(row.durationMs)}
+              </span>
+              <span
+                className={cn(
+                  "text-right font-mono text-[13px]",
+                  row.failed ? "text-failure" : "text-muted-foreground",
+                )}
+              >
+                {row.status ?? (row.failed ? "failed" : "")}
+              </span>
+            </Link>
+          </li>
+        )
+      })}
     </ul>
   )
 }

@@ -12,6 +12,7 @@ asks about their requests, and checks this repository.
 ./cluenori project create <key> --name <name>
 ./cluenori component add <project> <key> --name <name>     prints the component's ingest key, once
 ./cluenori endpoints <project> [--last 1h|6h|24h|7d|14d|30d|90d] [--environment <key>] [--component <key>]
+./cluenori endpoint <project> "<endpoint>" [--last ...]  its counts, and its slowest and failed requests with their traces
 ./cluenori requests <project> [--last ...] [--step 1m|5m|1h|1d]
 ./cluenori errors <project> [--last ...]                  errors grouped by type and stack
 ./cluenori error <project> <id> [--last ...]              its stack, latest occurrences, and how to open its request

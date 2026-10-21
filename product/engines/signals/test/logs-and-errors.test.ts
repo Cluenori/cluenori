@@ -433,6 +433,7 @@ describe("Signals' traces", () => {
         to: DateTime.makeUnsafe(capturedAt),
         spans: 1,
         counts: [],
+        kept: [],
         traces: [TraceId.make((index + 1).toString(16).padStart(32, "a"))],
       }))
       const view = yield* inProject(

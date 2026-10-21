@@ -1,11 +1,11 @@
 import { SketchValue, sketchOf } from "@bagatka/quantile-sketch"
-import { ComponentKey, EnvelopeName, EnvironmentKey, Period } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Period, TraceId } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Duration, Effect } from "effect"
 import { Base64 } from "effect/encoding"
 import { TestClock } from "effect/testing"
 
-import type { RequestCounts, TraceExport } from "../src/index.ts"
+import type { KeptRequest, RequestCounts, TraceExport } from "../src/index.ts"
 import { BatchDigest, readTraces, Signals } from "../src/index.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
 import { inProject, WebCrypto } from "./in-object.ts"
@@ -37,15 +37,33 @@ const counts = (endpoint: string, requests: number, overrides: Partial<RequestCo
   ...overrides,
 })
 
-const batchOf = (digit: string, entries: ReadonlyArray<RequestCounts>): TraceExport => ({
+const batchOf = (
+  digit: string,
+  entries: ReadonlyArray<RequestCounts>,
+  kept: ReadonlyArray<KeptRequest> = [],
+): TraceExport => ({
   digest: BatchDigest.make(digit.repeat(64)),
   archive: new Uint8Array(0),
   from: DateTime.makeUnsafe(capturedAt),
   to: DateTime.makeUnsafe(capturedAt),
   spans: entries.length,
   counts: entries,
+  kept,
   traces: [],
 })
+
+// A request an export brings to keep: to GET /a, `ago` milliseconds before the fixture's, its trace
+// ID made of its duration.
+const keptOf = (durationMs: number, ago: number, failed = false): KeptRequest => ({
+  trace: TraceId.make(durationMs.toString(16).padStart(32, "c")),
+  endpoint: EnvelopeName.make("GET /a"),
+  environment: EnvironmentKey.make("prod"),
+  start: DateTime.makeUnsafe(capturedAt - ago),
+  durationMs,
+  failed,
+  status: failed ? 500 : 200,
+})
+const lastDay = new Period({ from: DateTime.makeUnsafe(now - days(1)), to: DateTime.makeUnsafe(now) })
 
 describe("readTraces", () => {
   it.effect("counts a .NET export's server spans by endpoint, and skips its client spans", () =>
@@ -66,6 +84,28 @@ describe("readTraces", () => {
       })
       assert.isTrue(batch.counts.every((entry) => entry.environment === "production"))
       assert.match(batch.digest, /^[0-9a-f]{64}$/)
+    }),
+  )
+
+  it.effect("picks the requests to keep, each with its trace, duration, status, and whether it failed", () =>
+    Effect.gen(function* () {
+      const { export: batch } = yield* readFixtureAt(now)
+      const slowest = batch.kept.toSorted((left, right) => right.durationMs - left.durationMs)[0]
+      const failed = batch.kept.filter((request) => request.failed)
+
+      // No endpoint had more than five requests that hour, so each may be kept.
+      assert.lengthOf(batch.kept, 16)
+      assert.strictEqual(slowest?.trace, "782b83a9114f7ebce1fce192e59a0f7f")
+      assert.strictEqual(slowest?.endpoint, "POST /api/export")
+      assert.closeTo(slowest?.durationMs ?? 0, 56.817, 0.001)
+      assert.strictEqual(slowest?.status, 200)
+      assert.deepStrictEqual(
+        failed.map((request) => [request.endpoint, request.status]),
+        [
+          [EnvelopeName.make("GET /api/fail"), 500],
+          [EnvelopeName.make("GET /api/fail"), 500],
+        ],
+      )
     }),
   )
 
@@ -331,6 +371,121 @@ describe("Signals", () => {
           ["GET /slow"],
         )
         assert.strictEqual(table.requests, 100)
+      }),
+    ),
+  )
+
+  it.effect("answers the slowest requests and the failed ones, each opening with its trace", () =>
+    Effect.gen(function* () {
+      const { export: batch } = yield* readFixtureAt(now)
+      const { all, ofEndpoint } = yield* inProject(
+        "kept-requests",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordTraces(api, batch)
+          return {
+            all: yield* signals.keptRequests({ period: lastHour }),
+            ofEndpoint: yield* signals.keptRequests({
+              period: lastHour,
+              endpoint: EnvelopeName.make("GET /api/notes/{id}"),
+            }),
+          }
+        }),
+      )
+
+      assert.deepStrictEqual(
+        all.slowest.slice(0, 3).map((request) => [request.endpoint, request.trace.slice(0, 8)]),
+        [
+          [EnvelopeName.make("POST /api/export"), "782b83a9"],
+          [EnvelopeName.make("POST /api/export"), "4d09b0a9"],
+          [EnvelopeName.make("GET /api/notes/{id}"), "3d4a2030"],
+        ],
+      )
+      assert.strictEqual(all.slowest[0]?.component, "notes-api")
+      assert.strictEqual(all.slowest[0]?.environment, "production")
+      assert.deepStrictEqual(
+        all.failed.map((request) => [request.endpoint, request.status, request.failed]),
+        [
+          [EnvelopeName.make("GET /api/fail"), 500, true],
+          [EnvelopeName.make("GET /api/fail"), 500, true],
+        ],
+      )
+      assert.isTrue(
+        DateTime.toEpochMillis(all.failed[0]?.start ?? DateTime.makeUnsafe(0)) >=
+          DateTime.toEpochMillis(all.failed[1]?.start ?? DateTime.makeUnsafe(0)),
+      )
+      assert.deepStrictEqual(
+        ofEndpoint.slowest.map((request) => request.trace.slice(0, 8)),
+        ["3d4a2030", "2f510b73", "b509b1d4", "b0c967e9", "bad0eef1"],
+      )
+      assert.isEmpty(ofEndpoint.failed)
+    }),
+  )
+
+  it.effect("keeps of each endpoint and hour the five slowest, and the five slowest failed, across exports", () =>
+    inProject(
+      "kept-five",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const minute = 60_000
+        yield* signals.recordTraces(
+          api,
+          batchOf("1", [], [keptOf(10, minute), keptOf(20, minute), keptOf(30, minute), keptOf(40, minute, true)]),
+        )
+        yield* signals.recordTraces(
+          api,
+          batchOf(
+            "2",
+            [],
+            [
+              keptOf(5, 2 * minute),
+              keptOf(50, 2 * minute),
+              keptOf(60, 2 * minute),
+              keptOf(70, 2 * minute),
+              keptOf(80, 3 * minute, true),
+              keptOf(15, 4 * minute, true),
+              keptOf(25, 5 * minute, true),
+              keptOf(35, 6 * minute, true),
+              keptOf(45, 7 * minute, true),
+            ],
+          ),
+        )
+        // Another hour's requests are kept apart from these.
+        yield* signals.recordTraces(api, batchOf("3", [], [keptOf(1, 2 * 3_600_000)]))
+        const kept = yield* signals.keptRequests({ period: lastDay })
+
+        assert.deepStrictEqual(
+          kept.slowest.map((request) => request.durationMs),
+          [80, 70, 60, 50, 45, 1],
+        )
+        // The newest first: the five slowest failed of that hour, 15 not among them.
+        assert.deepStrictEqual(
+          kept.failed.map((request) => request.durationMs),
+          [40, 80, 25, 35, 45],
+        )
+      }),
+    ),
+  )
+
+  it.effect("says which part of a period its kept requests cover: no further back than 14 days", () =>
+    inProject(
+      "kept-covered",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const month = new Period({ from: DateTime.makeUnsafe(now - days(30)), to: DateTime.makeUnsafe(now) })
+        const kept = yield* signals.keptRequests({ period: month })
+        const before = new Period({
+          from: DateTime.makeUnsafe(now - days(20)),
+          to: DateTime.makeUnsafe(now - days(15)),
+        })
+        const older = yield* signals.keptRequests({ period: before })
+
+        assert.isAtLeast(DateTime.toEpochMillis(kept.covered?.from ?? DateTime.makeUnsafe(0)), now - days(14))
+        assert.isUndefined(older.covered)
+        assert.deepStrictEqual([older.slowest, older.failed], [[], []])
       }),
     ),
   )

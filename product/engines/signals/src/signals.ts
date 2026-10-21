@@ -23,7 +23,7 @@ import type { ErrorGroupId } from "./log-entry.ts"
 import { logStore } from "./log-store.ts"
 import { traceViewOf } from "./read-archived-trace.ts"
 import { BatchDigest } from "./request-counts.ts"
-import type { EndpointTable, RequestQuery, RequestSeries, SeriesStep } from "./request-queries.ts"
+import type { EndpointTable, KeptRequests, RequestQuery, RequestSeries, SeriesStep } from "./request-queries.ts"
 import { requestStore } from "./request-store.ts"
 import { migrateSignals } from "./signals-migrations.ts"
 import type { TraceView } from "./trace-view.ts"
@@ -49,9 +49,10 @@ export class Signals extends Context.Service<
   Signals,
   {
     /**
-     * Archives a trace export and adds its requests to the counts of `component`, once: an export
-     * whose digest arrived in the last hour, an exporter's retry, is skipped. Fails with
-     * `ArchiveUnavailable` when it can't be archived, having counted nothing, so the exporter
+     * Archives a trace export, adds its requests to the counts of `component`, and keeps those of
+     * its requests that are now among the slowest or the slowest failed of their endpoint and hour,
+     * once: an export whose digest arrived in the last hour, an exporter's retry, is skipped. Fails
+     * with `ArchiveUnavailable` when it can't be archived, having counted nothing, so the exporter
      * should send it again.
      */
     readonly recordTraces: (
@@ -79,6 +80,12 @@ export class Signals extends Context.Service<
      * says which step it used. Reads only.
      */
     readonly requestsOverTime: (query: RequestQuery, step: SeriesStep) => Effect.Effect<RequestSeries>
+    /**
+     * Requests worth opening in the query's period: the slowest, slowest first, and the failed,
+     * newest first, at most 20 of each, from those kept of each endpoint, environment and hour (the
+     * five slowest and the five slowest failed, 14 days). Reads only.
+     */
+    readonly keptRequests: (query: RequestQuery) => Effect.Effect<KeptRequests>
     /** The errors of the query's period, most frequent first. Reads only. */
     readonly errors: (query: ErrorQuery) => Effect.Effect<ErrorTable>
     /** One error and its latest occurrences in the query's period. Reads only. */
@@ -184,7 +191,13 @@ export class Signals extends Context.Service<
           component: ComponentKey,
           exported: TraceExport,
         ) {
-          return yield* store("traces", component, exported, exported.traces, requests.add(component, exported.counts))
+          return yield* store(
+            "traces",
+            component,
+            exported,
+            exported.traces,
+            requests.add(component, exported.counts, exported.kept),
+          )
         })
 
         const recordLogs = Effect.fn("Signals.recordLogs")(function* (component: ComponentKey, exported: LogExport) {
@@ -257,6 +270,7 @@ export class Signals extends Context.Service<
           recordMetrics,
           endpoints: requests.endpoints,
           requestsOverTime: requests.requestsOverTime,
+          keptRequests: requests.keptRequests,
           errors,
           error,
           logs: searchLogs,

@@ -39,7 +39,10 @@ const keyValue = (field: number, key: string, value: string) =>
 
 const attribute = (key: string, value: string) => keyValue(1, key, value)
 
-/** One span of an export: a server span is a request; a client span is not. With `trace`, its trace ID. */
+/**
+ * One span of an export: a server span is a request; a client span is not. With `trace`, its trace
+ * ID; with `status`, the HTTP status it answered with.
+ */
 export interface ExportedSpan {
   readonly name: string
   readonly kind: "server" | "client"
@@ -48,6 +51,7 @@ export interface ExportedSpan {
   readonly failed?: boolean
   readonly trace?: string
   readonly parent?: number
+  readonly status?: number
 }
 
 const kinds = { server: 2, client: 3 } as const
@@ -69,6 +73,10 @@ export const traceExport = (
       ...varintField(6, kinds[span.kind]),
       ...fixed64Field(7, start),
       ...fixed64Field(8, end),
+      // KeyValue { key = 1; value = 2 { int_value = 3 } }, in the span's attributes, field 9.
+      ...(span.status === undefined
+        ? []
+        : bytesField(9, [...textField(1, "http.response.status_code"), ...bytesField(2, varintField(3, span.status))])),
       ...(span.failed === true ? bytesField(15, varintField(3, 2)) : []),
     ])
   })

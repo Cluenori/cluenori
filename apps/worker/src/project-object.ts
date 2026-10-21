@@ -116,6 +116,15 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
       }),
     new ProjectNotFound({ project }),
   ),
+  keptRequests: served(
+    projectCalls.keptRequests,
+    (query) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.keptRequests(query)
+      }),
+    new ProjectNotFound({ project }),
+  ),
   errors: served(
     projectCalls.errors,
     (query) =>

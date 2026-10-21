@@ -14,7 +14,7 @@ import {
   LogPage,
 } from "./error-groups.ts"
 import { ErrorGroupId } from "./log-entry.ts"
-import { EndpointTable, RequestSeries, SeriesStep } from "./request-queries.ts"
+import { EndpointTable, KeptRequests, RequestSeries, SeriesStep } from "./request-queries.ts"
 import { TraceView } from "./trace-view.ts"
 
 const filters = {
@@ -86,6 +86,17 @@ export class SignalsGroup extends HttpApiGroup.make("signals")
     }).annotate(
       OpenApi.Description,
       "Requests and errors over a period, one point per step that has requests, with their p50, p80, p95 and p99 durations: the load on a project's services, or on one endpoint with `endpoint`. A step without a point had no requests reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("keptRequests", "/projects/:project/requests/kept", {
+      params: { project: ProjectKey },
+      query: RequestFilters,
+      success: KeptRequests,
+      error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
+    }).annotate(
+      OpenApi.Description,
+      "Requests worth opening in a period, or one endpoint's with `endpoint`: the slowest, slowest first, and the failed, newest first, at most 20 of each, each with its trace ID, which opens it with the traces endpoint. Of each endpoint, environment and hour, the five slowest requests and the five slowest failed ones are kept, 14 days; `covered` says which part of the period that covers.",
     ),
   )
   .add(

@@ -19,6 +19,7 @@ import {
   ErrorGroupNotFound,
   ErrorQuery,
   ErrorTable,
+  KeptRequests,
   LogCountQuery,
   LogCounts,
   LogExport,
@@ -45,6 +46,7 @@ export type ProjectCallName =
   | "ingestMetrics"
   | "endpoints"
   | "requestsOverTime"
+  | "keptRequests"
   | "errors"
   | "error"
   | "logs"
@@ -109,6 +111,7 @@ export const projectCalls = {
     RequestSeries,
     ProjectNotFound,
   ),
+  keptRequests: projectCall("keptRequests", RequestQuery, KeptRequests, ProjectNotFound),
   errors: projectCall("errors", ErrorQuery, ErrorTable, ProjectNotFound),
   error: projectCall(
     "error",

@@ -1,4 +1,4 @@
-import { ComponentKey, ProjectKey, TraceId } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, ProjectKey, TraceId } from "@cluenori/foundation"
 import { ComponentName, ProjectName } from "@cluenori/projects"
 import { assert, layer } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
@@ -130,6 +130,93 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it)
       // The same request from its trace ID alone, as one pasted from another tool.
       const byId = yield* client.signals.trace({ params: { project, trace: TraceId.make(failedTrace) }, query: {} })
       assert.deepStrictEqual(byId.spans, trace.spans)
+    }),
+  )
+
+  it.effect("a request that logged nothing opens from its endpoint's slowest or failed requests", () =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const project = ProjectKey.make("kept-requests")
+      yield* client.projects.createProject({ payload: { key: project, name: ProjectName.make("Notes") } })
+      const { ingestKey } = yield* client.projects.addComponent({
+        params: { project },
+        payload: { key: ComponentKey.make("notes-api"), name: ComponentName.make("Notes API") },
+      })
+
+      // Three requests to one endpoint, none of which logs anything: a quick one, a slow one whose
+      // query took the time, and one that failed.
+      const quick = "1b2c3d4e5f60718293a4b5c6d7e8f901"
+      const slow = "2c3d4e5f60718293a4b5c6d7e8f90112"
+      const failed = "3d4e5f60718293a4b5c6d7e8f9011223"
+      const now = yield* DateTime.now
+      const start = DateTime.toEpochMillis(now) - 5_000
+      const traces = traceExport(service, [
+        {
+          name: "GET /api/notes/{id}",
+          kind: "server",
+          startMillis: start,
+          durationMillis: 12,
+          trace: quick,
+          status: 200,
+        },
+        {
+          name: "GET /api/notes/{id}",
+          kind: "server",
+          startMillis: start + 100,
+          durationMillis: 1_840,
+          trace: slow,
+          status: 200,
+        },
+        {
+          name: "SELECT notes",
+          kind: "client",
+          startMillis: start + 120,
+          durationMillis: 1_800,
+          trace: slow,
+          parent: 1,
+        },
+        {
+          name: "GET /api/notes/{id}",
+          kind: "server",
+          startMillis: start + 200,
+          durationMillis: 30,
+          failed: true,
+          trace: failed,
+          status: 503,
+        },
+      ])
+      assert.strictEqual(yield* sendTo("traces", ingestKey, traces), 200)
+
+      // The endpoint's slowest requests, and its failed ones, each with its trace.
+      const period = { from: DateTime.subtract(now, { hours: 1 }), to: DateTime.add(now, { minutes: 1 }) }
+      const endpoint = EnvelopeName.make("GET /api/notes/{id}")
+      const kept = yield* client.signals.keptRequests({ params: { project }, query: { ...period, endpoint } })
+      assert.deepStrictEqual(
+        kept.slowest.map((request) => [request.trace, request.durationMs, request.status, request.failed]),
+        [
+          [TraceId.make(slow), 1_840, 200, false],
+          [TraceId.make(failed), 30, 503, true],
+          [TraceId.make(quick), 12, 200, false],
+        ],
+      )
+      assert.deepStrictEqual(
+        kept.failed.map((request) => request.trace),
+        [TraceId.make(failed)],
+      )
+
+      // The slowest opens by its trace ID: its query took the time.
+      const [slowest] = kept.slowest
+      const trace = yield* client.signals.trace({
+        params: { project, trace: TraceId.make(slow) },
+        query: slowest === undefined ? {} : { around: slowest.start },
+      })
+      assert.deepStrictEqual(
+        trace.spans.map((span) => [span.depth, span.name, span.durationMs]),
+        [
+          [0, "GET /api/notes/{id}", 1_840],
+          [1, "SELECT notes", 1_800],
+        ],
+      )
     }),
   )
 

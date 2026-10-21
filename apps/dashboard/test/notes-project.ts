@@ -1,4 +1,12 @@
-import { ComponentKey, EnvelopeName, Period, ProjectKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import {
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  Period,
+  ProjectKey,
+  ReleaseVersion,
+  TraceId,
+} from "@cluenori/foundation"
 import { Component, ComponentName, Project, ProjectDetail, ProjectList, ProjectName } from "@cluenori/projects"
 import type { EndpointRow, ErrorGroup, LogLine, SeriesStep } from "@cluenori/signals"
 import {
@@ -7,6 +15,7 @@ import {
   ErrorGroupId,
   ErrorGroupNotFound,
   ErrorTable,
+  KeptRequests,
   LogCounts,
   LogPage,
   RequestSeries,
@@ -143,6 +152,31 @@ const requests = ({ asked, period }: Question) =>
       })),
     })
   })
+
+// The export's requests kept: its slowest, which failed, and the next slowest. Kept 14 days.
+const keptRequests = ({ asked, period, now }: Question) => {
+  const kept = (trace: TraceId, ago: number, durationMs: number, status: number) => ({
+    trace,
+    component: api,
+    environment: EnvironmentKey.make("production"),
+    endpoint: EnvelopeName.make("POST /api/export"),
+    start: DateTime.makeUnsafe(now - ago),
+    durationMs,
+    failed: status >= 500,
+    status,
+  })
+  const failed = kept(exportTrace, 40 * minute, 4_210, 500)
+  const slow = kept(TraceId.make("9c41e07b2d5af6831e0c7d2b4a9f6e15"), 3 * hour, 2_870, 200)
+  const ofExport = asked.endpoint === undefined || asked.endpoint === "POST /api/export"
+  return reply(KeptRequests, {
+    covered: new Period({
+      from: DateTime.makeUnsafe(Math.max(DateTime.toEpochMillis(period.from), now - 14 * day)),
+      to: period.to,
+    }),
+    slowest: ofExport ? [failed, slow] : [],
+    failed: ofExport ? [failed] : [],
+  })
+}
 
 // Happening now, and seen for days; and new today.
 const groupsOf = (period: Period): ReadonlyArray<ErrorGroup> => {
@@ -381,7 +415,7 @@ export const notesApi = ({
         return yield* endpoints(question)
       }
       if (area === "requests") {
-        return yield* requests(question)
+        return yield* id === "kept" ? keptRequests(question) : requests(question)
       }
       if (area === "errors") {
         return yield* id === undefined ? errors(question) : error(question, id)

@@ -1,6 +1,8 @@
 import { ComponentKey, EnvelopeName, EnvironmentKey, Period } from "@cluenori/foundation"
 import { Schema } from "effect"
 
+import { KeptRequest } from "./request-counts.ts"
+
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 
@@ -90,3 +92,21 @@ export const RequestSeries = Schema.Struct({
   points: Schema.Array(RequestPoint),
 })
 export type RequestSeries = typeof RequestSeries.Type
+
+/** A kept request, and the component that answered it. */
+export const KeptRequestRow = Schema.Struct({ ...KeptRequest.fields, component: ComponentKey })
+export type KeptRequestRow = typeof KeptRequestRow.Type
+
+/**
+ * Requests worth opening, from those kept: of each endpoint, environment and hour, the five slowest
+ * and the five slowest that failed, 14 days. Each opens with its trace ID. `covered` is the period
+ * cut to the 14 days and to now; absent when nothing of it is kept.
+ */
+export const KeptRequests = Schema.Struct({
+  covered: Covered,
+  /** The slowest, slowest first: at most 20. */
+  slowest: Schema.Array(KeptRequestRow),
+  /** The failed, newest first: at most 20. */
+  failed: Schema.Array(KeptRequestRow),
+})
+export type KeptRequests = typeof KeptRequests.Type

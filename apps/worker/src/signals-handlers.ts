@@ -63,6 +63,12 @@ export const SignalsHandlers = HttpApiBuilder.group(CluenoriApi, "signals", (han
         })
       }),
     )
+    .handle("keptRequests", ({ params, query }) =>
+      Effect.gen(function* () {
+        const objects = yield* ProjectObjects
+        return yield* objects.call(params.project, projectCalls.keptRequests, requestQueryOf(query))
+      }),
+    )
     .handle("errors", ({ params, query }) =>
       Effect.gen(function* () {
         const objects = yield* ProjectObjects

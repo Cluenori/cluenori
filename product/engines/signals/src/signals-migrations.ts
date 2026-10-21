@@ -89,5 +89,25 @@ export const migrateSignals = Migrator.make({})({
       yield* sql`CREATE INDEX signals_trace_files_file ON signals_trace_files (file)`
       yield* sql`DROP INDEX signals_archive_time`
     }),
+    // Requests kept so they can be opened: of each endpoint, environment ('' when unknown) and hour,
+    // the five slowest (`kept_for` 'slowest') and the five slowest that failed ('failed'), each in the
+    // set it is kept for, so a slow failed request may be in both. Kept 14 days, as minutes are.
+    "0004_kept_requests": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE signals_kept_requests (
+        id INTEGER PRIMARY KEY,
+        endpoint INTEGER NOT NULL,
+        environment TEXT NOT NULL,
+        hour INTEGER NOT NULL,
+        kept_for TEXT NOT NULL,
+        trace TEXT NOT NULL,
+        start INTEGER NOT NULL,
+        duration_ms REAL NOT NULL,
+        failed INTEGER NOT NULL,
+        status INTEGER
+      )`
+      yield* sql`CREATE INDEX signals_kept_requests_endpoint ON signals_kept_requests (endpoint, kept_for, hour)`
+      yield* sql`CREATE INDEX signals_kept_requests_hour ON signals_kept_requests (hour)`
+    }),
   }),
 })
