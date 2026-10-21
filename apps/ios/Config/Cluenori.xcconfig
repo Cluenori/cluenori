@@ -4,6 +4,10 @@
 
 CLUENORI_BUNDLE_ID = com.example.cluenori
 CLUENORI_TEAM =
+// The domain of the deployment this app's passkeys sign in to, such as cluenori.example: it must
+// serve /.well-known/apple-app-site-association naming this app, as a deployment with push set up
+// does. Empty, the app pairs by links alone.
+CLUENORI_PASSKEY_DOMAIN =
 
 // Two apps on one iPhone: Release builds are Cluenori, which pairs with the deployment ./setup
 // made; Debug builds are Cluenori Local, beside it, which pairs with the one ./run serves. Each has

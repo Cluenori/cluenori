@@ -27,5 +27,5 @@ export {
   SystemVersion,
 } from "./phone.ts"
 export { PhonePaired, PhoneRemoved, PhoneUpdated } from "./phones-activity.ts"
-export { PairingGroup, PhonePushGroup, PhonesGroup } from "./phones-api.ts"
+export { PairedPhoneAnswer, PairingGroup, PhonePushGroup, PhonesGroup } from "./phones-api.ts"
 export { Phones } from "./phones.ts"

@@ -2367,6 +2367,49 @@
         "description": "The phones paired with the deployment, the latest paired first, each with its model, iOS and app versions, and when, from which address and country, it last called."
       }
     },
+    "/api/phones/passkey": {
+      "post": {
+        "tags": [
+          "phoneSignIn"
+        ],
+        "operationId": "phoneSignIn.pairWithPasskey",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "PairedPhone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairedPhone"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "PasskeyRejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyRejected"
+                }
+              }
+            }
+          }
+        },
+        "description": "Pairs a phone with a passkey answering /sign-in/passkey/options, acting for its member, and answers with its key, shown only this once, as pairing with a code does. The phone's passkey request names this site, which must list the app in /.well-known/apple-app-site-association. A passkey the deployment doesn't know, or an answer that doesn't hold, answers 401.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairWithPasskey"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/phones/pairings": {
       "post": {
         "tags": [
@@ -3297,13 +3340,13 @@
         ],
         "additionalProperties": false
       },
-      "PairingCodeRejected": {
+      "PasskeyRejected": {
         "type": "object",
         "properties": {
           "_tag": {
             "type": "string",
             "enum": [
-              "PairingCodeRejected"
+              "PasskeyRejected"
             ]
           }
         },
@@ -3325,6 +3368,88 @@
         "required": [
           "phone",
           "key"
+        ],
+        "additionalProperties": false
+      },
+      "PairWithPasskey": {
+        "type": "object",
+        "properties": {
+          "assertion": {
+            "$ref": "#/components/schemas/PasskeyAssertion"
+          },
+          "model": {
+            "type": "string"
+          },
+          "systemVersion": {
+            "type": "string"
+          },
+          "appVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assertion",
+          "model",
+          "systemVersion",
+          "appVersion"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyAssertion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/components/schemas/PasskeySignature"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "response"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeySignature": {
+        "type": "object",
+        "properties": {
+          "clientDataJSON": {
+            "type": "string"
+          },
+          "authenticatorData": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "userHandle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientDataJSON",
+          "authenticatorData",
+          "signature"
+        ],
+        "additionalProperties": false
+      },
+      "PairingCodeRejected": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PairingCodeRejected"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
         ],
         "additionalProperties": false
       },
@@ -4743,21 +4868,6 @@
         ],
         "additionalProperties": false
       },
-      "PasskeyRejected": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": [
-              "PasskeyRejected"
-            ]
-          }
-        },
-        "required": [
-          "_tag"
-        ],
-        "additionalProperties": false
-      },
       "PasskeyRegistration": {
         "type": "object",
         "properties": {
@@ -4939,49 +5049,6 @@
         ],
         "additionalProperties": false
       },
-      "PasskeyAssertion": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string"
-          },
-          "response": {
-            "$ref": "#/components/schemas/PasskeySignature"
-          }
-        },
-        "required": [
-          "id",
-          "type",
-          "response"
-        ],
-        "additionalProperties": false
-      },
-      "PasskeySignature": {
-        "type": "object",
-        "properties": {
-          "clientDataJSON": {
-            "type": "string"
-          },
-          "authenticatorData": {
-            "type": "string"
-          },
-          "signature": {
-            "type": "string"
-          },
-          "userHandle": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "clientDataJSON",
-          "authenticatorData",
-          "signature"
-        ],
-        "additionalProperties": false
-      },
       "PasskeyRequestOptions": {
         "type": "object",
         "properties": {
@@ -5108,6 +5175,9 @@
     },
     {
       "name": "pairing"
+    },
+    {
+      "name": "phoneSignIn"
     },
     {
       "name": "phones"

@@ -28,6 +28,21 @@ public final class PairingModel {
         case unreadable
         /// The phone's key couldn't be kept or read in the Keychain.
         case keychain
+        /// No passkey was used: the person cancelled, or let the request time out.
+        case passkeyNotUsed
+        /// The deployment refused the passkey: it doesn't know it, or its answer didn't hold.
+        case passkeyRejected
+        /// This phone can't use the deployment's passkeys: the app isn't associated with its site,
+        /// or it holds none of them.
+        case passkeysUnavailable
+    }
+
+    /// Why the phone's passkey request gave no passkey, as the app tells it.
+    public enum PasskeyRefusal: Error, Sendable {
+        /// The person cancelled, or let it time out.
+        case cancelled
+        /// The phone can't use the site's passkeys.
+        case unavailable
     }
 
     public private(set) var state = State.unpaired
@@ -42,6 +57,9 @@ public final class PairingModel {
     public private(set) var models: DeploymentModels? = nil
     /// Which tab shows, and the screens opened in each.
     public let navigation = Navigation()
+    /// The deployment this app's passkeys sign in to, by the site it is built for; nil when it is
+    /// built for none, and pairs by links alone.
+    public let passkeyDeployment: URL?
 
     @ObservationIgnored private let store: any PairingStore
     @ObservationIgnored private let details: PhoneDetails
@@ -61,13 +79,15 @@ public final class PairingModel {
         details: PhoneDetails,
         transport: CluenoriAPI.Transport? = nil,
         cacheDirectory: URL? = nil,
-        alertSystem: (any AlertSystem)? = nil
+        alertSystem: (any AlertSystem)? = nil,
+        passkeyDeployment: URL? = nil
     ) {
         self.store = store
         self.details = details
         self.transport = transport
         self.cacheDirectory = cacheDirectory
         self.alertSystem = alertSystem
+        self.passkeyDeployment = passkeyDeployment
         do {
             if let deployment = try store.load() {
                 become(deployment)
@@ -118,6 +138,51 @@ public final class PairingModel {
                 canRetry = true
             default:
                 problem = .unreadable
+            }
+        }
+    }
+
+    /// Pairs with `passkeyDeployment` by one of its passkeys, which `askForPasskey` asks the person
+    /// for with the deployment's options, in place of a pairing link. A phone paired before stays
+    /// paired when it fails, and `problem` says why.
+    public func signInWithPasskey(
+        _ askForPasskey: (PasskeyRequestOptions) async throws(PasskeyRefusal) -> PasskeyAssertion
+    ) async {
+        guard let deployment = passkeyDeployment else { return }
+        let before = state
+        state = .pairing
+        problem = nil
+        canRetry = false
+        do throws(APIError) {
+            let options = try await PairedDeployment.passkeyOptions(at: deployment, as: details, transport: transport)
+            let assertion: PasskeyAssertion
+            do throws(PasskeyRefusal) {
+                assertion = try await askForPasskey(options)
+            } catch {
+                state = before
+                switch error {
+                case .cancelled: problem = .passkeyNotUsed
+                case .unavailable: problem = .passkeysUnavailable
+                }
+                return
+            }
+            let paired = try await PairedDeployment.pair(
+                at: deployment, with: assertion, as: details, transport: transport)
+            do {
+                try store.save(paired)
+            } catch {
+                state = before
+                problem = .keychain
+                return
+            }
+            become(paired)
+            await registerPushToken()
+        } catch {
+            state = before
+            switch error {
+            case .passkeyRejected: problem = .passkeyRejected
+            case .unreachable: problem = .unreachable
+            default: problem = .unreadable
             }
         }
     }

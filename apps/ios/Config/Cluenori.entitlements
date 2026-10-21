@@ -19,5 +19,10 @@
 	<string>development</string>
 	<key>com.apple.developer.usernotifications.time-sensitive</key>
 	<true/>
+	<!-- Passkeys of the deployment's site, which lists this app in its association file. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:$(CLUENORI_PASSKEY_DOMAIN)</string>
+	</array>
 </dict>
 </plist>

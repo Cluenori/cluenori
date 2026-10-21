@@ -20,6 +20,9 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- The deployment this build's passkeys sign in to; empty when it has none. -->
+	<key>CluenoriPasskeyDomain</key>
+	<string>$(CLUENORI_PASSKEY_DOMAIN)</string>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>Cluenori rings like an alarm clock when a project is down or failing, even in silent mode.</string>
 	<key>NSLocalNetworkUsageDescription</key>

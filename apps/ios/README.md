@@ -15,7 +15,7 @@ bun run generate                      from the root: rewrites CluenoriAPI.swift 
 ```
 
 To run it on an iPhone, copy `Config/Local.example.xcconfig` to `Config/Local.xcconfig` with your
-App ID's bundle ID and your team. The scheme Cluenori builds the app for your deployment; Cluenori
+App ID's bundle ID and your team, and your deployment's domain for signing in with a passkey. The scheme Cluenori builds the app for your deployment; Cluenori
 Local builds a second app beside it, `<bundle ID>.local`, for the one `./run` serves, which shows
 everything but alerts: `./run` can't reach APNs. To pair with `./run`, which listens on this Mac alone, start the
 Worker for the local network instead (`bun run wrangler dev --ip 0.0.0.0` in `apps/worker`), and
@@ -33,6 +33,11 @@ make the pairing link at the Mac's address; the first call asks for Local Networ
   every alert push. An alarm less than 10 minutes old rings as an AlarmKit alarm, in the app's
   red; a later push about the incident (recovered, or acknowledged anywhere) stops it. Without
   alarm permission, the notification makes a sound instead.
+- **Signing in with a passkey** (`CluenoriViews/PasskeySignIn.swift`, `PairingModel`): in place of
+  a pairing link, the app asks the deployment it is built for (`CLUENORI_PASSKEY_DOMAIN`) for
+  passkey options, the system shows the person's passkeys for that site, and the answer pairs the
+  phone for the passkey's member. The entitlement `webcredentials:<domain>` and the deployment's
+  `/.well-known/apple-app-site-association` let the app use them.
 - **Alarms** (`Alarms/`, in both targets): the alarm, under its incident's ID, and its Acknowledge
   button, an intent the system runs in the app, which stops it and acknowledges the incident.
 - **Screens** (`CluenoriApp/Sources/CluenoriViews`): SwiftUI alone, in Liquid Glass; its strings in
@@ -77,6 +82,9 @@ ActivityKit and App Intents. No third-party code.
 - **One pairing per app,** made at launch (`Cluenori/CluenoriApp.swift`): the window, the delegate
   and the Acknowledge intent share it, and the intent finds it through `AppDependencyManager`,
   registered in `App.init()`, since the system can wake the app for it without a window.
+- **Passkeys need the real site:** iOS gives an app a site's passkeys only when the site, over HTTPS
+  through Apple's CDN, lists the app; a deployment does once `./cluenori push setup` names it. So
+  passkeys work with a deployment, not with `./run`, and with the Release app, which the site lists.
 - **Which APNs:** a build Xcode installs carries its provisioning profile, which says
   `development`; a TestFlight build has none, and is production.
 - **One unchecked `Sendable`:** the extension hands the system's content handler to the task that

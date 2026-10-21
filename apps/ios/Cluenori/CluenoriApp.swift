@@ -10,8 +10,19 @@ import SwiftUI
     store: KeychainStore(),
     details: .thisPhone,
     cacheDirectory: .cachesDirectory,
-    alertSystem: AlertsOnThisPhone()
+    alertSystem: AlertsOnThisPhone(),
+    passkeyDeployment: passkeyDeployment
 )
+
+/// The deployment this build's passkeys sign in to, from Info.plist; nil when it is built for none.
+private var passkeyDeployment: URL? {
+    guard let domain = Bundle.main.object(forInfoDictionaryKey: "CluenoriPasskeyDomain") as? String,
+        !domain.isEmpty
+    else {
+        return nil
+    }
+    return URL(string: "https://\(domain)")
+}
 
 /// The app: its one window, the pairing links the system opens it with, and the system's calls
 /// about alerts.

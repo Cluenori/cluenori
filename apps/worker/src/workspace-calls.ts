@@ -29,6 +29,7 @@ import {
   PhoneKey,
   PhoneKeyRejected,
   PhoneList,
+  PhoneDetails,
   PhoneNotFound,
   RegisterPush,
 } from "@cluenori/phones"
@@ -64,6 +65,7 @@ export type WorkspaceCallName =
   | "signIn"
   | "passkeyOptions"
   | "addPasskey"
+  | "pairWithPasskey"
 
 /** One thing the Worker asks the workspace's Durable Object: its input, its answer, and how it fails. */
 export type WorkspaceCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> = ObjectCall<
@@ -183,6 +185,14 @@ export const workspaceCalls = {
     Schema.Struct({ actor: Actor, site: Site }),
     CreationOptions,
     NotAllowed,
+  ),
+  // The passkey's member, then a phone acting for them: its key crosses to the Worker only in the
+  // answer, and then to the phone.
+  pairWithPasskey: workspaceCall(
+    "pairWithPasskey",
+    Schema.Struct({ assertion: AssertionResponse, phone: PhoneDetails, site: Site, caller: Caller }),
+    PairedPhone,
+    PasskeyRejected,
   ),
   addPasskey: workspaceCall(
     "addPasskey",

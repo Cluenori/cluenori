@@ -36,11 +36,17 @@ export class PhonesGroup extends HttpApiGroup.make("phones")
     }).annotate(OpenApi.Description, "Removes a phone: its key stops working at once."),
   ) {}
 
+/**
+ * A phone just paired, with its key, as a pairing call answers it: 201. One schema for every way to
+ * pair, so the API's document names it once.
+ */
+export const PairedPhoneAnswer = PairedPhone.pipe(HttpApiSchema.status(201))
+
 /** A phone pairing itself, with the code it was shown: the one call that needs no credential. */
 export class PairingGroup extends HttpApiGroup.make("pairing").add(
   HttpApiEndpoint.post("pair", "/phones", {
     payload: PairPhone,
-    success: PairedPhone.pipe(HttpApiSchema.status(201)),
+    success: PairedPhoneAnswer,
     error: PairingCodeRejected.pipe(HttpApiSchema.status(403)),
   }).annotate(
     OpenApi.Description,

@@ -7,12 +7,19 @@ import { HttpApiBuilder } from "effect/http-api"
 
 import { activityOf } from "./activity-queue.ts"
 import { ApiToken } from "./api-token.ts"
+import { AppleAppSiteAssociation } from "./apple-app-site.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
 import { IncidentsHandlers } from "./incidents-handlers.ts"
 import { memberAuthorizationLayer } from "./member-authorization-layer.ts"
 import { MemberProjects } from "./member-projects.ts"
 import { OtlpLogs, OtlpMetrics, OtlpTraces } from "./otlp-ingest.ts"
-import { NotificationsHandlers, PairingHandlers, PhonePushHandlers, PhonesHandlers } from "./phones-handlers.ts"
+import {
+  NotificationsHandlers,
+  PairingHandlers,
+  PhonePushHandlers,
+  PhoneSignInHandlers,
+  PhonesHandlers,
+} from "./phones-handlers.ts"
 import { ProjectObjects } from "./project-objects.ts"
 import { ProjectsHandlers } from "./projects-handlers.ts"
 import { MembersHandlers, PasskeysHandlers, SignInHandlers } from "./sign-in-handlers.ts"
@@ -61,6 +68,7 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
   Layer.provide(SignalsHandlers),
   Layer.provide(IncidentsHandlers),
   Layer.provide(PairingHandlers),
+  Layer.provide(PhoneSignInHandlers),
   Layer.provide(PhonesHandlers),
   Layer.provide(PhonePushHandlers),
   Layer.provide(NotificationsHandlers),
@@ -82,7 +90,7 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
 // Built once per isolate, at module scope, and reused for every request (PATTERNS.md, "The Worker
 // entry"). Building does no I/O, which Workers don't allow outside a request.
 const app = HttpRouter.toWebHandler(
-  Layer.mergeAll(ApiRoutes, OtlpTraces, OtlpLogs, OtlpMetrics).pipe(
+  Layer.mergeAll(ApiRoutes, OtlpTraces, OtlpLogs, OtlpMetrics, AppleAppSiteAssociation).pipe(
     // The OTLP route asks for these per request, so they are outputs of the app's layer.
     Layer.provideMerge(Projects),
     Layer.provideMerge(Workspace),

@@ -140,10 +140,44 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("members", (it) => {
         ],
       )
 
-      // The owner removes Ada: Ada's browsers and phone stop working at once.
+      // Another phone signs in with Ada's passkey, synced to it, in place of a pairing code: it acts
+      // for Ada, and sees what Ada sees.
+      const phoneOptions = yield* fromBrowser("POST", "/sign-in/passkey/options", "").pipe(
+        Effect.flatMap(decoded(RequestOptions)),
+      )
+      const signedOnPhone = yield* fromBrowser("POST", "/phones/passkey", "", {
+        assertion: yield* device.sign({ ...site, challenge: phoneOptions.challenge }),
+        model: "iPhone19,3",
+        systemVersion: "27.0",
+        appVersion: "1.0 (1)",
+      })
+      assert.strictEqual(signedOnPhone.status, 201)
+      const secondPhone = yield* decoded(PairedPhone)(signedOnPhone)
+      assert.strictEqual(secondPhone.phone.member, joinedAs.id)
+      const fromSecondPhone = (path: string) =>
+        http
+          .execute(HttpClientRequest.get(`${baseUrl}/api${path}`).pipe(HttpClientRequest.bearerToken(secondPhone.key)))
+          .pipe(Effect.orDie)
+      assert.strictEqual((yield* fromSecondPhone(`/projects/${shared}`)).status, 200)
+      assert.strictEqual((yield* fromSecondPhone(`/projects/${secret}`)).status, 404)
+      // A passkey the deployment doesn't know pairs nothing.
+      const stranger = yield* softwareAuthenticator(crypto)
+      const strangerOptions = yield* fromBrowser("POST", "/sign-in/passkey/options", "").pipe(
+        Effect.flatMap(decoded(RequestOptions)),
+      )
+      const refused = yield* fromBrowser("POST", "/phones/passkey", "", {
+        assertion: yield* stranger.sign({ ...site, challenge: strangerOptions.challenge }),
+        model: "iPhone19,3",
+        systemVersion: "27.0",
+        appVersion: "1.0 (1)",
+      })
+      assert.strictEqual(refused.status, 401)
+
+      // The owner removes Ada: Ada's browsers and phones stop working at once.
       yield* client.members.removeMember({ params: { member: joinedAs.id } })
       assert.strictEqual((yield* fromBrowser("GET", "/projects", cookie)).status, 401)
       assert.strictEqual((yield* fromPhone(`/projects/${shared}`)).status, 401)
+      assert.strictEqual((yield* fromSecondPhone(`/projects/${shared}`)).status, 401)
       const members = yield* client.members.members()
       assert.isUndefined(members.members.find((each) => each.id === joinedAs.id))
     }),

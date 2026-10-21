@@ -213,6 +213,15 @@ const servedCalls: Readonly<
       return yield* members.startAddingPasskey(actor, site)
     }),
   ),
+  pairWithPasskey: serve(workspaceCalls.pairWithPasskey, ({ assertion, phone, site, caller }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      const phones = yield* Phones
+      const member = yield* members.verifyPasskey(assertion, site)
+      const paired = yield* phones.pairFor({ _tag: "Member", id: member.id }, phone, caller)
+      return { phone: paired.phone, key: Redacted.value(paired.key) }
+    }),
+  ),
   addPasskey: serve(workspaceCalls.addPasskey, ({ actor, registration, site }) =>
     Effect.gen(function* () {
       const members = yield* Members

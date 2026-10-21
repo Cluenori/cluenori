@@ -1,7 +1,8 @@
+import { AssertionResponse } from "@bagatka/webauthn"
 import { IncidentsGroup } from "@cluenori/incidents"
-import { MembersGroup, PasskeysGroup } from "@cluenori/members"
+import { MembersGroup, PasskeyRejected, PasskeysGroup } from "@cluenori/members"
 import { NotificationsGroup } from "@cluenori/notifications"
-import { PairingGroup, PhonePushGroup, PhonesGroup } from "@cluenori/phones"
+import { PairedPhoneAnswer, PairingGroup, PhoneDetails, PhonePushGroup, PhonesGroup } from "@cluenori/phones"
 import { ProjectsGroup } from "@cluenori/projects"
 import { SignalsGroup } from "@cluenori/signals"
 import { TodayGroup } from "@cluenori/today"
@@ -42,10 +43,30 @@ export class SignInGroup extends HttpApiGroup.make("signIn", { topLevel: true })
     ),
   ) {}
 
+/** A phone's passkey answer, and what the phone says about itself. */
+export const PairWithPasskey = Schema.Struct({ assertion: AssertionResponse, ...PhoneDetails.fields }).annotate({
+  identifier: "PairWithPasskey",
+})
+
+/**
+ * A phone signing in with its owner's passkey, in place of a pairing code: it pairs, acting for the
+ * passkey's member. Needs no credential but the passkey.
+ */
+export class PhoneSignInGroup extends HttpApiGroup.make("phoneSignIn").add(
+  HttpApiEndpoint.post("pairWithPasskey", "/phones/passkey", {
+    payload: PairWithPasskey,
+    success: PairedPhoneAnswer,
+    error: PasskeyRejected.pipe(HttpApiSchema.status(401)),
+  }).annotate(
+    OpenApi.Description,
+    "Pairs a phone with a passkey answering /sign-in/passkey/options, acting for its member, and answers with its key, shown only this once, as pairing with a code does. The phone's passkey request names this site, which must list the app in /.well-known/apple-app-site-association. A passkey the deployment doesn't know, or an answer that doesn't hold, answers 401.",
+  ),
+) {}
+
 /**
  * The public API: one definition for the dashboard, the CLI, MCP clients, and agents. Served under
  * `/api`, with its OpenAPI document at `/api/openapi.json`. Everything but the system, sign-in,
- * pairing and phone push groups needs a member's credential: the deployment's API token as a bearer
+ * passkeys, pairing, phone sign-in and phone push groups needs a member's credential: the deployment's API token as a bearer
  * token or the sign-in cookie, or a paired phone's key as a bearer token. A phone registers its push
  * token with its own key only.
  */
@@ -58,6 +79,7 @@ export class CluenoriApi extends HttpApi.make("cluenori")
   .add(SignalsGroup.middleware(MemberAuthorization))
   .add(IncidentsGroup.middleware(MemberAuthorization))
   .add(PairingGroup)
+  .add(PhoneSignInGroup)
   .add(PhonesGroup.middleware(MemberAuthorization))
   .add(PhonePushGroup)
   .add(NotificationsGroup.middleware(MemberAuthorization))

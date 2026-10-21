@@ -503,6 +503,18 @@ public struct CluenoriAPI: Sendable {
         return try Self.decoded(PhoneList.self, from: answer)
     }
 
+    /// Pairs a phone with a passkey answering /sign-in/passkey/options, acting for its member, and
+    /// answers with its key, shown only this once, as pairing with a code does. The phone's passkey
+    /// request names this site, which must list the app in /.well-known/apple-app-site-association.
+    /// A passkey the deployment doesn't know, or an answer that doesn't hold, answers 401.
+    ///
+    /// Fails with `.passkeyRejected`, or as any call can.
+    @concurrent
+    public func pairWithPasskey(_ body: PairWithPasskey) async throws(APIError) -> PairedPhone {
+        let answer = try await self.send("POST", "/api/phones/passkey", body: try Self.encoded(body))
+        return try Self.decoded(PairedPhone.self, from: answer)
+    }
+
     /// Starts pairing a phone for whoever calls: the link a phone opens to pair, shown as a QR
     /// code, `cluenori://pair?url=<deployment>&code=<pairing code>`, good once for 10 minutes. At
     /// most 5 are good at once; another drops the oldest.
@@ -1392,6 +1404,25 @@ public struct PairPhone: Codable, Hashable, Sendable {
 
     public init(code: String, model: String, systemVersion: String, appVersion: String) {
         self.code = code
+        self.model = model
+        self.systemVersion = systemVersion
+        self.appVersion = appVersion
+    }
+}
+
+public struct PairWithPasskey: Codable, Hashable, Sendable {
+    public let assertion: PasskeyAssertion
+    public let model: String
+    public let systemVersion: String
+    public let appVersion: String
+
+    public init(
+        assertion: PasskeyAssertion,
+        model: String,
+        systemVersion: String,
+        appVersion: String,
+    ) {
+        self.assertion = assertion
         self.model = model
         self.systemVersion = systemVersion
         self.appVersion = appVersion

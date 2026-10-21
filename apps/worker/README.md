@@ -41,6 +41,9 @@ export the archive can't take is answered 503, so the exporter sends it again.
   for signing in alike; `src/member-authorization-layer.ts` lets a call through with it, with a
   phone's key, or with a browser's passkey sign-in, which the workspace's object checks, and gives
   handlers who calls and what they see (`CurrentMember`).
+- **The iPhone app's association,** `src/apple-app-site.ts`: `/.well-known/apple-app-site-association`
+  names the app (its team and bundle ID, from push setup) whose passkeys this site's are, so a phone
+  can pair with a passkey (`POST /api/phones/passkey`, in `src/cluenori-api.ts`).
 - **Access,** `src/member-projects.ts`: the public API's only way to a project's object, keeping to
   the projects the member sees; a lint rule (`.oxlintrc.json`) keeps handlers from reaching around
   it. Listing projects, Today and phones filter the same way. Where a call came from, for a phone's

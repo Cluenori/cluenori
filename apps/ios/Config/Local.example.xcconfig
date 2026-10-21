@@ -2,3 +2,5 @@
 // ID, and your team's ID from developer.apple.com, Membership.
 CLUENORI_BUNDLE_ID = com.example.cluenori
 CLUENORI_TEAM = ABCDE12345
+// The domain of your deployment, for signing in with a passkey; leave it out to pair by links alone.
+CLUENORI_PASSKEY_DOMAIN = cluenori.example

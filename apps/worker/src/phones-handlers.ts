@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 
-import { callerOf } from "./caller.ts"
+import { callerOf, siteOf } from "./caller.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
 import { CurrentMember } from "./member-authorization.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
@@ -78,6 +78,23 @@ export const NotificationsHandlers = HttpApiBuilder.group(CluenoriApi, "notifica
       const { actor, access } = yield* CurrentMember
       const workspace = yield* WorkspaceObjects
       yield* workspace.call(workspaceCalls.testAlert, { actor, access, phone: params.phone })
+    }),
+  ),
+)
+
+/** Serves a phone signing in with a passkey: it pairs, acting for the passkey's member. */
+export const PhoneSignInHandlers = HttpApiBuilder.group(CluenoriApi, "phoneSignIn", (handlers) =>
+  handlers.handle("pairWithPasskey", ({ payload }) =>
+    Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const workspace = yield* WorkspaceObjects
+      const { assertion, ...phone } = payload
+      return yield* workspace.call(workspaceCalls.pairWithPasskey, {
+        assertion,
+        phone,
+        site: siteOf(request),
+        caller: callerOf(request),
+      })
     }),
   ),
 )

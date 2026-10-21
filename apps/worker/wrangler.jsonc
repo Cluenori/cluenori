@@ -7,11 +7,12 @@
   // Served at https://cluenori.<your subdomain>.workers.dev until you add a route.
   "workers_dev": true,
   // The dashboard's files, which ./run, ./setup, and ./update build first. Every other path is the
-  // dashboard's too, so a page's address opens it; the API and ingest always reach the Worker.
+  // dashboard's too, so a page's address opens it; the API, ingest and the files at /.well-known (the
+  // iPhone app's association, for passkeys) always reach the Worker.
   "assets": {
     "directory": "../dashboard/dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/otlp/*"],
+    "run_worker_first": ["/api/*", "/otlp/*", "/.well-known/*"],
   },
   // One Durable Object per project, named `<workspace>/<project>`, holding its database; and the
   // workspace's own, named `<workspace>`, holding what belongs to the whole workspace.
@@ -50,7 +51,7 @@
       "assets": {
         "directory": "../dashboard/dist",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/api/*", "/otlp/*"],
+        "run_worker_first": ["/api/*", "/otlp/*", "/.well-known/*"],
       },
       "durable_objects": {
         "bindings": [

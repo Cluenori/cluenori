@@ -115,6 +115,9 @@ struct PairFooter: View {
                 .controlSize(.large)
             } else {
                 ScanPairingCodeButton(isRequested: $isScanRequested)
+                if pairing.passkeyDeployment != nil {
+                    PasskeySignInButton(pairing: pairing)
+                }
                 VStack(spacing: 8) {
                     Text(
                         "Or copy the link on the web, and paste it here.",
@@ -177,6 +180,24 @@ struct PairingProblemText: View {
                 "This iPhone couldn't keep its key. Try again.",
                 bundle: #bundle,
                 comment: "The Keychain refused to store or read the phone's key."
+            )
+        case .passkeyNotUsed:
+            Text(
+                "No passkey was used. Try again when you're ready.",
+                bundle: #bundle,
+                comment: "The person cancelled the passkey request."
+            )
+        case .passkeyRejected:
+            Text(
+                "That passkey didn't work here: it may be another deployment's. Try another, or scan a code.",
+                bundle: #bundle,
+                comment: "The deployment refused the passkey."
+            )
+        case .passkeysUnavailable:
+            Text(
+                "This iPhone has no passkey for Cluenori yet. Make one with your invitation, or scan a code.",
+                bundle: #bundle,
+                comment: "The phone can't use the deployment's passkeys, or has none."
             )
         }
     }

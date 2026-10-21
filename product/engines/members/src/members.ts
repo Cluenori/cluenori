@@ -149,6 +149,12 @@ export class Members extends Context.Service<
       caller: Caller,
     ) => Effect.Effect<SignedIn, PasskeyRejected>
     /**
+     * The member a passkey answering `startSignIn`'s options belongs to, for a caller that keeps
+     * its own credential afterwards, such as a phone that pairs. No browser sign-in is made.
+     * `PasskeyRejected` as for `signIn`.
+     */
+    readonly verifyPasskey: (assertion: AssertionResponse, site: Site) => Effect.Effect<Member, PasskeyRejected>
+    /**
      * Who a browser's sign-in is for, and what they see. `SignInRejected`, the same way whatever is
      * wrong, for a token that isn't a sign-in, that signed out, that is older than 30 days, or whose
      * member is removed. Records when and where from it called, at most once a minute from one
@@ -556,11 +562,7 @@ export class Members extends Context.Service<
           return requestOptions({ rpId: site.rpId, challenge })
         })
 
-        const signIn = Effect.fn("Members.signIn")(function* (
-          assertion: AssertionResponse,
-          site: Site,
-          caller: Caller,
-        ) {
+        const verifyPasskey = Effect.fn("Members.verifyPasskey")(function* (assertion: AssertionResponse, site: Site) {
           const taken = yield* takeChallenge(assertion.response.clientDataJSON, "sign-in", site)
           const found = yield* findPasskey({ id: assertion.id, rpId: site.rpId }).pipe(Effect.orDie)
           if (Option.isNone(taken) || Option.isNone(found)) {
@@ -575,12 +577,18 @@ export class Members extends Context.Service<
           yield* sql`UPDATE members_passkeys SET sign_count = ${checked.signCount} WHERE id = ${passkey.id}`.pipe(
             Effect.orDie,
           )
-          const signedIn: SignedIn = {
-            member: yield* member(passkey.member).pipe(
-              Effect.catchTag("MemberNotFound", () => Effect.fail(new PasskeyRejected())),
-            ),
-            signIn: yield* newSignIn(passkey.member, caller),
-          }
+          return yield* member(passkey.member).pipe(
+            Effect.catchTag("MemberNotFound", () => Effect.fail(new PasskeyRejected())),
+          )
+        })
+
+        const signIn = Effect.fn("Members.signIn")(function* (
+          assertion: AssertionResponse,
+          site: Site,
+          caller: Caller,
+        ) {
+          const signedInMember = yield* verifyPasskey(assertion, site)
+          const signedIn: SignedIn = { member: signedInMember, signIn: yield* newSignIn(signedInMember.id, caller) }
           return signedIn
         })
 
@@ -762,6 +770,7 @@ export class Members extends Context.Service<
           join,
           startSignIn,
           signIn,
+          verifyPasskey,
           signedIn,
           signOut,
           signIns,

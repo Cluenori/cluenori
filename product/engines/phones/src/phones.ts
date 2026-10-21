@@ -3,9 +3,10 @@ import { ActivityLog, Actor, Instant, Source } from "@cluenori/foundation"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Base64Url, Hex } from "effect/encoding"
 import { SqlClient, SqlSchema } from "effect/sql"
+import type { SqlError } from "effect/sql"
 
 import { appleModels } from "./apple-models.ts"
-import type { Pairing, PairPhone, PhoneList, RegisterPush } from "./phone.ts"
+import type { Pairing, PairPhone, PhoneDetails, PhoneList, RegisterPush } from "./phone.ts"
 import {
   AppVersion,
   ModelIdentifier,
@@ -107,6 +108,15 @@ export class Phones extends Context.Service<
       input: PairPhone,
       caller: Caller,
     ) => Effect.Effect<{ readonly phone: Phone; readonly key: Redacted.Redacted<PhoneKey> }, PairingCodeRejected>
+    /**
+     * Pairs a phone for `actor`, whom the caller has checked otherwise, such as by their passkey, with
+     * `phone.paired`, and makes its key: returned here only, once, as by `pair`.
+     */
+    readonly pairFor: (
+      actor: Actor,
+      phone: PhoneDetails,
+      caller: Caller,
+    ) => Effect.Effect<{ readonly phone: Phone; readonly key: Redacted.Redacted<PhoneKey> }>
     /**
      * Who a phone's key acts for: whoever paired it. Records when and where it called, at most once
      * a minute from one address, and the versions its User-Agent says when they changed, with
@@ -218,16 +228,16 @@ export class Phones extends Context.Service<
         return pairing
       })
 
-      // The key and its digest are made before the commit, whose write holds only SQL.
-      const pair = Effect.fn("Phones.pair")(function* (input: PairPhone, caller: Caller) {
+      // A new phone for `actor`, with its key, made before the commit, whose write holds only SQL;
+      // `alsoWrite` commits with it, as using up a code.
+      const newPhone = Effect.fn("Phones.newPhone")(function* (
+        actor: Actor,
+        input: PhoneDetails,
+        caller: Caller,
+        alsoWrite: Effect.Effect<unknown, SqlError.SqlError>,
+      ) {
         const now = yield* DateTime.now
         const millis = DateTime.toEpochMillis(now)
-        const codeDigest = yield* digestOf(input.code)
-        const found = yield* findPairing({ digest: codeDigest, now: millis }).pipe(Effect.orDie)
-        if (Option.isNone(found)) {
-          return yield* new PairingCodeRejected()
-        }
-        const { actor } = found.value
         const id = PhoneId.make(yield* crypto.randomUUIDv7().pipe(Effect.orDie))
         const key = PhoneKey.make(`${keyPrefix}${id}.${yield* secret}`)
         const keyDigest = yield* digestOf(key)
@@ -236,7 +246,7 @@ export class Phones extends Context.Service<
           source,
           actor,
           write: Effect.gen(function* () {
-            yield* sql`DELETE FROM phones_pairings WHERE code_digest = ${codeDigest}`
+            yield* alsoWrite
             yield* sql`INSERT INTO phones_phones ${sql.insert({
               id,
               model: input.model,
@@ -262,6 +272,21 @@ export class Phones extends Context.Service<
           actor,
         })
         return { phone, key: Redacted.make(key) }
+      })
+
+      const pair = Effect.fn("Phones.pair")(function* (input: PairPhone, caller: Caller) {
+        const codeDigest = yield* digestOf(input.code)
+        const now = DateTime.toEpochMillis(yield* DateTime.now)
+        const found = yield* findPairing({ digest: codeDigest, now }).pipe(Effect.orDie)
+        if (Option.isNone(found)) {
+          return yield* new PairingCodeRejected()
+        }
+        const usedUp = sql`DELETE FROM phones_pairings WHERE code_digest = ${codeDigest}`
+        return yield* newPhone(found.value.actor, input, caller, usedUp)
+      })
+
+      const pairFor = Effect.fn("Phones.pairFor")(function* (actor: Actor, input: PhoneDetails, caller: Caller) {
+        return yield* newPhone(actor, input, caller, Effect.void)
       })
 
       const findPushTargets = SqlSchema.findAll({
@@ -377,6 +402,7 @@ export class Phones extends Context.Service<
       return Phones.of({
         startPairing,
         pair,
+        pairFor,
         authenticate,
         phones,
         remove,

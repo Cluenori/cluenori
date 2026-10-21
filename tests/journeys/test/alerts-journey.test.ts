@@ -98,6 +98,19 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("alerts", (it) => {
       assert.strictEqual(yield* registerPush("journey-api-token"), 401)
       assert.strictEqual(yield* registerPush(key), 204)
 
+      // The site names the app its passkeys sign in to, for iOS, by the app's ID push was set up with.
+      const association = yield* http
+        .execute(HttpClientRequest.get(`${baseUrl}/.well-known/apple-app-site-association`))
+        .pipe(
+          Effect.flatMap(
+            HttpClientResponse.schemaBodyJson(
+              Schema.Struct({ webcredentials: Schema.Struct({ apps: Schema.Array(Schema.String) }) }),
+            ),
+          ),
+          Effect.orDie,
+        )
+      assert.deepStrictEqual(association.webcredentials.apps, ["JOURNEYTEA.com.example.cluenori"])
+
       // Its owner rings it with a test alarm.
       yield* client.notifications.testAlert({ params: { phone: phone.id } })
       const [test] = yield* receivedPushes(1)
