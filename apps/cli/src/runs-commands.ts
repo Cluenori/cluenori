@@ -55,7 +55,9 @@ export const operations = Command.make("operations", filters, (input) =>
     ])
     yield* Console.log(lines.join("\n"))
     const until = table.dataUntil === undefined ? "" : `, data until ${utcMinute(table.dataUntil)}`
-    yield* Console.log(`\n${count(table.runs)} runs, ${share(table.errors, table.runs)} failed${until}.`)
+    yield* Console.log(
+      `\n${count(table.runs)} ${table.runs === 1 ? "run" : "runs"}, ${share(table.errors, table.runs)} failed${until}.`,
+    )
     yield* Console.log("Percentiles are within 2% of the true value.")
   }),
 ).pipe(Command.withDescription("Every operation's runs: how many, how many failed, and how long they took."))
@@ -111,7 +113,7 @@ export const operation = Command.make(
       for (const row of table.rows) {
         yield* Console.log(`${row.operation}  ${row.component}  ${row.environment ?? "unknown environment"}`)
         yield* Console.log(
-          `  ${count(row.runs)} runs, ${share(row.errors, row.runs)} failed; avg ${milliseconds(row.averageMs)}, p50 ${milliseconds(row.p50Ms)}, p95 ${milliseconds(row.p95Ms)}, p99 ${milliseconds(row.p99Ms)}`,
+          `  ${count(row.runs)} ${row.runs === 1 ? "run" : "runs"}, ${share(row.errors, row.runs)} failed; avg ${milliseconds(row.averageMs)}, p50 ${milliseconds(row.p50Ms)}, p95 ${milliseconds(row.p95Ms)}, p99 ${milliseconds(row.p99Ms)}`,
         )
       }
       const since = kept.covered === undefined ? "" : ` since ${utcMinute(kept.covered.from)}`

@@ -57,7 +57,9 @@ export const errors = Command.make("errors", filters, (input) =>
       ...table.groups.map((group) => [group.title, count(group.occurrences), utcMinute(group.lastSeen), group.id]),
     ])
     yield* Console.log(lines.join("\n"))
-    yield* Console.log(`\n${count(table.occurrences)} errors in ${count(table.groups.length)} groups.`)
+    yield* Console.log(
+      `\n${count(table.occurrences)} ${table.occurrences === 1 ? "error" : "errors"} in ${count(table.groups.length)} ${table.groups.length === 1 ? "group" : "groups"}.`,
+    )
     yield* Console.log(`See one, with its stack and its trace: ./cluenori error ${project} <ID>`)
   }),
 ).pipe(Command.withDescription("The errors of a period, most frequent first, grouped by what makes them the same."))
@@ -86,7 +88,7 @@ export const error = Command.make(
       yield* Console.log(group.title)
       yield* Console.log(`  at ${group.culprit}`)
       yield* Console.log(
-        `${count(group.occurrences)} times in this period; first seen ${utcMinute(group.firstSeen)}, last ${utcMinute(group.lastSeen)} in ${where.join(" ")}\n`,
+        `${group.occurrences === 1 ? "Once" : `${count(group.occurrences)} times`} in this period; first seen ${utcMinute(group.firstSeen)}, last ${utcMinute(group.lastSeen)} in ${where.join(" ")}\n`,
       )
       const [latest, ...earlier] = detail.latest
       if (latest === undefined) {
@@ -228,7 +230,7 @@ export const trace = Command.make(
           }),
         )
       yield* Console.log(
-        `Trace ${traceId}, from ${utcSecond(view.searched.from)} to ${utcSecond(view.searched.to)}, read from ${count(view.files.read)} archive files\n`,
+        `Trace ${traceId}, from ${utcSecond(view.searched.from)} to ${utcSecond(view.searched.to)}, read from ${count(view.files.read)} archive ${view.files.read === 1 ? "file" : "files"}\n`,
       )
       if (view.spans.length === 0 && view.logs.length === 0) {
         return yield* Console.log(
@@ -238,7 +240,7 @@ export const trace = Command.make(
       yield* Console.log(traceLines(view).join("\n"))
       if (view.files.unread > 0) {
         yield* Console.log(
-          `\n${count(view.files.unread)} more of its archive files weren't read; give the time it happened with --at to read those nearest it first.`,
+          `\n${count(view.files.unread)} more of its archive ${view.files.unread === 1 ? "file wasn't" : "files weren't"} read; give the time it happened with --at to read those nearest it first.`,
         )
       }
     }),
