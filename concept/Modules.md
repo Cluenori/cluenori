@@ -201,7 +201,7 @@ Alerts reach the Cluenori iOS app through APNs, at three levels:
 | Time sensitive | Breaks through a Focus I allow it in, and follows the silent switch | Stopped, a reopened incident |
 | Quiet | A normal notification | Recovered |
 
-An alarm needs Apple's Critical Alerts entitlement, which Apple grants on request for health, safety and security, or AlarmKit, if a push can start one. Until one of them works, alarms are time sensitive.
+An alarm is an AlarmKit alarm: the push wakes the app's notification extension, which starts one, and it rings through a locked phone, silent mode and Do Not Disturb. It needs no entitlement from Apple. It says what is down, rings our own siren in the app's red, and has an Acknowledge button that acknowledges the incident and stops it.
 
 A push names the project, the detector and what it saw: "notes · Failing: POST /api/export, 18% failed, usually 0.1%". Acknowledge is one press on the notification itself.
 
@@ -213,7 +213,7 @@ The app shows nearly everything the web shows: Today, each project's overview, i
 
 A phone joins by scanning a code the web shows for 10 minutes, and gets its own key; the API token stays on my computer. The web lists every phone: its name, its model as people call it (iPhone 17 Pro), its iOS and app versions, the address and country it last called from, and when. I can remove any one of them.
 
-The app is private: I install it from my own TestFlight, never the App Store. A deployment sends with its owner's APNs key to the owner's own build of the app.
+The app is private: I install it from my own TestFlight, never the App Store. It needs iOS 27. A deployment sends with its owner's APNs key to the owner's own build of the app.
 
 ## Releases, versions, changelog, flags and issues
 
