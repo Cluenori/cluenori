@@ -127,5 +127,19 @@ export const migrateSignals = Migrator.make({})({
       yield* sql`CREATE INDEX signals_kept_runs_operation ON signals_kept_runs (operation, kept_for, hour)`
       yield* sql`CREATE INDEX signals_kept_runs_hour ON signals_kept_runs (hour)`
     }),
+    // An operation is counted, without a word for each time it ran, and the slowest and failed are
+    // kept as the traces they open: a run is no longer a concept. As in 0005, only the schema
+    // changes, and each index is made again under its new name.
+    "0006_counts_kept_traces": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      for (const table of ["signals_minute_counts", "signals_hour_counts"]) {
+        yield* sql`ALTER TABLE ${sql(table)} RENAME COLUMN runs TO count`
+      }
+      yield* sql`ALTER TABLE signals_kept_runs RENAME TO signals_kept_traces`
+      yield* sql`DROP INDEX signals_kept_runs_operation`
+      yield* sql`DROP INDEX signals_kept_runs_hour`
+      yield* sql`CREATE INDEX signals_kept_traces_operation ON signals_kept_traces (operation, kept_for, hour)`
+      yield* sql`CREATE INDEX signals_kept_traces_hour ON signals_kept_traces (hour)`
+    }),
   }),
 })

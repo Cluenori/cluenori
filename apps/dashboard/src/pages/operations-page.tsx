@@ -62,7 +62,7 @@ export function OperationsPage({
       <Panel
         icon={GaugeIcon}
         title={AsyncResult.isSuccess(operations) ? `${count(operations.value.rows.length)} operations` : "Operations"}
-        subtitle="Open one for its runs and latency over time"
+        subtitle="Open one for its load and latency over time"
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-5 py-3">
           <label className="flex h-9 min-w-48 flex-1 items-center gap-2 border bg-card px-3 focus-within:border-ring sm:max-w-96">
@@ -101,7 +101,7 @@ export function OperationsPage({
                 {shown.length === 0 ? (
                   <p className="py-4 text-sm text-muted-foreground">
                     {rows.length === 0
-                      ? `${shownComponent} had no runs over the ${periodText}.`
+                      ? `${shownComponent} reported nothing over the ${periodText}.`
                       : `No operation matches “${search.trim()}”.`}
                   </p>
                 ) : (
@@ -123,7 +123,7 @@ export function OperationsPage({
                 </p>
                 {rows.some((row) => row.operation === otherOperations) && (
                   <p className="mt-2 text-sm text-muted-foreground">
-                    {otherOperations} counts the runs past a component&apos;s first 500 operation names. That many names
+                    {otherOperations} counts what ran past a component&apos;s first 500 operation names. That many names
                     usually means the app reports raw paths, such as <span className="font-mono">/api/notes/123</span>,
                     instead of routes, such as <span className="font-mono">/api/notes/{"{id}"}</span>.
                   </p>

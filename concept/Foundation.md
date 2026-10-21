@@ -25,7 +25,7 @@ Twelve keys place every record. Each module uses the same keys, so one filter ba
 | Installation | One app on one device | The iPhone of a person, on notes-ios 2.3 | Holds the push token, permission, OS version, locale, time zone and last-seen release. Version audiences use installations. |
 | Account | The group that pays, for B2B apps | A team or a company | Optional |
 | Session | One visit or app session, with device context | iPhone 15, iOS 18.4, Germany, German | Stored once; events refer to it |
-| Trace | One run and what it caused, across services | A W3C trace ID | Links spans, logs and errors |
+| Trace | One operation and what it caused, across services | A W3C trace ID | Links spans, logs and errors |
 
 Each record always has a workspace, a source and a time, and a project unless it is a workspace record. The other keys are attached when they are known. An unknown key stays empty and shows as "unknown", never as a guess.
 
@@ -72,7 +72,7 @@ Each write to a record emits activity. Activity feeds the customer timeline, Tod
 
 The data classes of the Vision map to these shapes. Business facts are records or exact counts: payments, ledger lines with their currency and exchange rate, and core value events, which Durable Objects count exactly. Operational measurements are counters. Diagnostic evidence is sampled signals. A change is activity.
 
-Signals and activity use one envelope: an ID, a time, a kind (`event`, `run`, `span`, `log`, `error`, `activity`, `cost`, `money`, or a module kind such as `uptime.check`), a name, the scope keys that are known, the source, and the payload. An activity entry also carries its actor. The envelope is defined in code, in `product/foundation/src/envelope.ts`, which owns its exact fields and rules.
+Signals and activity use one envelope: an ID, a time, a kind (`event`, `operation`, `span`, `log`, `error`, `activity`, `cost`, `money`, or a module kind such as `uptime.check`), a name, the scope keys that are known, the source, and the payload. An activity entry also carries its actor. The envelope is defined in code, in `product/foundation/src/envelope.ts`, which owns its exact fields and rules.
 
 ## Shared engines
 
@@ -84,7 +84,7 @@ Twelve engines do the work that many modules need. A module uses an engine; it n
 | Manifest | One cached response that the SDK reads at start and on resume: version policy, flags, config, messages to show, unread changelog entries, survey and feedback settings | Update gate, flags, announcements, What's new, surveys |
 | Channels | One adapter for each way to reach a person: APNs, FCM, Web Push, email providers, the in-app inbox, webhooks. APNs and FCM take one device for each request, so large sends fan out through Queues. | Campaigns, journeys, workflows |
 | Content | Templates, languages, the brand of each project (name, icon, colors, sending domain), and media in R2 | Email, push, changelog, public pages, update screen |
-| Workflows | Durable steps: trigger, wait, condition, send, change a record, call a URL, ask for approval, start an agent. Runs for each person (journeys) or one time (operations). Journey enrollment lives in the database of the project, because finished instances are kept for 30 days. | Journeys, release announcements, notify voters, incident response |
+| Workflows | Durable steps: trigger, wait, condition, send, change a record, call a URL, ask for approval, start an agent. Runs for each person (journeys) or one time (processes). Journey enrollment lives in the database of the project, because finished instances are kept for 30 days. | Journeys, release announcements, notify voters, incident response |
 | Experiments | Stable assignment by hash, holdout groups, exposure records, goal metrics | Flags, campaigns, journeys, paywalls |
 | Ledger | Money in and out as lines with a source, a precision label and attribution to project, component, feature and person. Stored exactly in the database of the project, with the currency and the exchange rate of the day. | Revenue, spend, portfolio, cost per customer and feature |
 | Actions and policy | Each change is an action with an actor, a class, a target, the values before and after, a reason, a result and an undo. Policy decides what needs approval. | All modules, agents, workflows, the audit log |

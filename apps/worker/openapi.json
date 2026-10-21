@@ -505,7 +505,7 @@
                               }
                             ]
                           },
-                          "runs": {
+                          "count": {
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
@@ -539,7 +539,7 @@
                         "required": [
                           "component",
                           "operation",
-                          "runs",
+                          "count",
                           "errors",
                           "averageMs",
                           "p50Ms",
@@ -550,7 +550,7 @@
                         "additionalProperties": false
                       }
                     },
-                    "runs": {
+                    "count": {
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 9007199254740991
@@ -566,7 +566,7 @@
                   },
                   "required": [
                     "rows",
-                    "runs",
+                    "count",
                     "errors"
                   ],
                   "additionalProperties": false
@@ -595,15 +595,15 @@
             }
           }
         },
-        "description": "Every operation's runs in a period, the most runs first, or one operation's with `operation`: how many, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover."
+        "description": "Every operation in a period, the most counted first, or one with `operation`: how many times it ran, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover."
       }
     },
-    "/api/projects/{project}/runs": {
+    "/api/projects/{project}/load": {
       "get": {
         "tags": [
           "signals"
         ],
-        "operationId": "signals.runs",
+        "operationId": "signals.load",
         "parameters": [
           {
             "name": "project",
@@ -715,7 +715,7 @@
                           "start": {
                             "type": "string"
                           },
-                          "runs": {
+                          "count": {
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
@@ -744,7 +744,7 @@
                         },
                         "required": [
                           "start",
-                          "runs",
+                          "count",
                           "errors",
                           "p50Ms",
                           "p80Ms",
@@ -785,15 +785,15 @@
             }
           }
         },
-        "description": "Runs and errors over a period, one point per step that has runs, with their p50, p80, p95 and p99 durations: the load on a project's services, or on one operation with `operation`. A step without a point had no runs reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used."
+        "description": "The load over a period: how many operations ran and failed, one point per step that had any, with their p50, p80, p95 and p99 durations, on a project's services, or on one operation with `operation`. A step without a point had nothing reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used."
       }
     },
-    "/api/projects/{project}/runs/kept": {
+    "/api/projects/{project}/kept-traces": {
       "get": {
         "tags": [
           "signals"
         ],
-        "operationId": "signals.keptRuns",
+        "operationId": "signals.keptTraces",
         "parameters": [
           {
             "name": "project",
@@ -1013,7 +1013,7 @@
             }
           }
         },
-        "description": "Runs worth opening in a period, or one operation's with `operation`: the slowest, slowest first, and the failed, newest first, at most 20 of each, each with its trace ID, which opens it with the traces endpoint. Of each operation, environment and hour, the five slowest runs and the five slowest failed ones are kept, 14 days; `covered` says which part of the period that covers."
+        "description": "Traces worth opening in a period, or one operation's with `operation`: the slowest, slowest first, and the failed, newest first, at most 20 of each, each with its ID, which opens it with the traces endpoint. Of each operation, environment and hour, the five slowest traces and the five slowest failed ones are kept, 14 days; `covered` says which part of the period that covers."
       }
     },
     "/api/projects/{project}/errors": {

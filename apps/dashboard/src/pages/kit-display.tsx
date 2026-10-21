@@ -86,7 +86,7 @@ const releases = [
     version: "2.14.0+412",
     component: "folio-api",
     shipped: sampleNow - 164 * minute,
-    runs: 48_210,
+    count: 48_210,
     failed: 214,
     p95Ms: 64,
   },
@@ -94,7 +94,7 @@ const releases = [
     version: "2.14.0+412",
     component: "folio-ios",
     shipped: sampleNow - 20 * hour,
-    runs: 23_410,
+    count: 23_410,
     failed: 31,
     p95Ms: 180,
   },
@@ -102,7 +102,7 @@ const releases = [
     version: "2.13.2+398",
     component: "folio-api",
     shipped: sampleNow - 3 * day,
-    runs: 302_118,
+    count: 302_118,
     failed: 905,
     p95Ms: 58,
   },
@@ -110,7 +110,7 @@ const releases = [
     version: "2.13.1+390",
     component: "folio-web",
     shipped: sampleNow - 6 * day,
-    runs: 96_402,
+    count: 96_402,
     failed: 12,
     p95Ms: 120,
   },
@@ -137,10 +137,10 @@ const people = [
 
 const faq = [
   {
-    value: "run",
-    question: "What counts as a run?",
+    value: "operation",
+    question: "What counts as an operation?",
     answer:
-      "One unit of work in a service: an HTTP request it answers, a message it processes, or a job it starts. Each is kept as one row, with how long it took and whether it failed.",
+      "What a service does, by name: an HTTP route it answers, a message it processes, or a job it starts. Each time it runs is counted, with how long it took and whether it failed.",
   },
   {
     value: "exports",
@@ -203,7 +203,7 @@ function CarouselSample() {
               <span className="text-xs text-muted-foreground">{release.component}</span>
               <span className="text-lg font-semibold tracking-tight">{release.version}</span>
               <span className="text-sm text-muted-foreground tabular-nums">
-                Shipped {ago(release.shipped, sampleNow)}, {count(release.runs)} runs since.
+                Shipped {ago(release.shipped, sampleNow)}, {count(release.count)} operations since.
               </span>
             </div>
           </CarouselItem>
@@ -453,7 +453,7 @@ export function KitDisplay() {
           description="More words that open in place."
           files={["accordion.tsx", "collapsible.tsx"]}
         >
-          <Accordion defaultValue={["run"]}>
+          <Accordion defaultValue={["operation"]}>
             {faq.map((entry) => (
               <AccordionItem key={entry.value} value={entry.value}>
                 <AccordionTrigger>{entry.question}</AccordionTrigger>
@@ -483,7 +483,7 @@ export function KitDisplay() {
               <TableHead>Release</TableHead>
               <TableHead>Component</TableHead>
               <TableHead>Shipped</TableHead>
-              <TableHead className="text-right">Runs</TableHead>
+              <TableHead className="text-right">Count</TableHead>
               <TableHead className="text-right">Failed</TableHead>
               <TableHead className="text-right">p95</TableHead>
             </TableRow>
@@ -494,8 +494,8 @@ export function KitDisplay() {
                 <TableCell className="font-medium">{release.version}</TableCell>
                 <TableCell className="text-muted-foreground">{release.component}</TableCell>
                 <TableCell className="text-muted-foreground">{ago(release.shipped, sampleNow)}</TableCell>
-                <TableCell className="text-right tabular-nums">{count(release.runs)}</TableCell>
-                <TableCell className="text-right tabular-nums">{share(release.failed, release.runs)}</TableCell>
+                <TableCell className="text-right tabular-nums">{count(release.count)}</TableCell>
+                <TableCell className="text-right tabular-nums">{share(release.failed, release.count)}</TableCell>
                 <TableCell className="text-right tabular-nums">{duration(release.p95Ms)}</TableCell>
               </TableRow>
             ))}
@@ -513,7 +513,7 @@ export function KitDisplay() {
             <ProgressValue>{(_formatted, value) => (value === null ? "Unknown" : share(value, 100))}</ProgressValue>
           </Progress>
           <Progress value={null}>
-            <ProgressLabel>Counting runs</ProgressLabel>
+            <ProgressLabel>Counting operations</ProgressLabel>
           </Progress>
           <KitSample label="Skeleton">
             <div className="flex w-full items-center gap-3">
@@ -540,16 +540,16 @@ export function KitDisplay() {
             <Tabs defaultValue="overview" className="w-full">
               <TabsList>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="runs">Runs</TabsTrigger>
+                <TabsTrigger value="load">Load</TabsTrigger>
                 <TabsTrigger value="errors">Errors</TabsTrigger>
                 <TabsTrigger value="settings" disabled>
                   Settings
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="overview" className="text-muted-foreground">
-                folio-api had {count(141_211)} runs today.
+                folio-api ran {count(141_211)} operations today.
               </TabsContent>
-              <TabsContent value="runs" className="text-muted-foreground">
+              <TabsContent value="load" className="text-muted-foreground">
                 The busiest operation is {"GET /api/notes/{id}"}.
               </TabsContent>
               <TabsContent value="errors" className="text-muted-foreground">

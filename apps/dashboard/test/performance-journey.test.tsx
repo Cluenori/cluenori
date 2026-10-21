@@ -16,7 +16,7 @@ describe("performance journey", () => {
       window.history.pushState(null, "", "/notes/performance")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      yield* Effect.promise(() => expect.element(screen.getByText("Runs of every component")).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByText("Load on every component")).toBeVisible())
       // The operation that got slower comes first, marked.
       yield* Effect.promise(() => expect.element(screen.getByText("slower").first()).toBeVisible())
       yield* expectAccessible()
@@ -30,17 +30,17 @@ describe("performance journey", () => {
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: /\/api\/export$/ })).toBeVisible(),
       )
-      yield* Effect.promise(() => expect.element(screen.getByText("p95 of each step's runs")).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByText("p95 of each step")).toBeVisible())
       yield* Effect.promise(() =>
         expect.element(screen.getByText(/over the last day, 4 s over the 7 days before/)).toBeVisible(),
       )
       yield* expectAccessible()
 
-      // Its slowest runs, and the one that failed, each a click from its trace.
-      const slowest = screen.getByRole("region", { name: "Slowest runs" })
+      // Its slowest traces, and the one that failed, each one click to open.
+      const slowest = screen.getByRole("region", { name: "Slowest traces" })
       yield* Effect.promise(() => expect.element(slowest.getByRole("link")).toHaveLength(2))
       yield* Effect.promise(() =>
-        expect.element(screen.getByRole("region", { name: "Failed runs" }).getByText("500")).toBeVisible(),
+        expect.element(screen.getByRole("region", { name: "Failed traces" }).getByText("500")).toBeVisible(),
       )
       yield* expectAccessible()
       yield* Effect.promise(() => slowest.getByRole("link").first().click())
@@ -48,7 +48,7 @@ describe("performance journey", () => {
     }),
   )
 
-  it.effect("says over which days it keeps runs when the period is longer", () =>
+  it.effect("says over which days it keeps traces when the period is longer", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
       window.history.pushState(null, "", "/notes/operations/GET%20/api/notes")
@@ -59,7 +59,7 @@ describe("performance journey", () => {
       yield* Effect.promise(() =>
         expect
           .element(
-            screen.getByText("No run of the last 14 days is kept. Of each hour, the five slowest are kept 14 days."),
+            screen.getByText("No trace of the last 14 days is kept. Of each hour, the five slowest are kept 14 days."),
           )
           .toBeVisible(),
       )

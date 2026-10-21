@@ -107,21 +107,21 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
       }),
     new ProjectNotFound({ project }),
   ),
-  runsOverTime: served(
-    projectCalls.runsOverTime,
+  loadOverTime: served(
+    projectCalls.loadOverTime,
     ({ query, step }) =>
       Effect.gen(function* () {
         const signals = yield* Signals
-        return yield* signals.runsOverTime(query, step)
+        return yield* signals.loadOverTime(query, step)
       }),
     new ProjectNotFound({ project }),
   ),
-  keptRuns: served(
-    projectCalls.keptRuns,
+  keptTraces: served(
+    projectCalls.keptTraces,
     (query) =>
       Effect.gen(function* () {
         const signals = yield* Signals
-        return yield* signals.keptRuns(query)
+        return yield* signals.keptTraces(query)
       }),
     new ProjectNotFound({ project }),
   ),

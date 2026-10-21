@@ -20,7 +20,7 @@ The sidebar shows each module by name, as in PostHog. Above the sidebar are a wo
 | Product | Surveys | Ask users questions | Surveys, NPS, cancellation reasons | v3 |
 | Engineering | Errors | Find crashes and exceptions | Error groups, readable stack traces, affected customers | v1 |
 | Engineering | Logs | See what your apps report as wrong | Errors and warnings with how often each occurs, search, the logs of one trace | v1 |
-| Engineering | Performance | See the load, and what got slower: each operation, screen and query against its usual | Runs over time, operations, database queries, external calls, screens, the trace of one run | v1 |
+| Engineering | Performance | See the load, and what got slower: each operation, screen and query against its usual | The load over time, operations, database queries, external calls, screens, the trace of one operation | v1 |
 | Engineering | Uptime | Make sure that apps are available and jobs run | Monitors, cron check-ins, certificates | v2 |
 | Engineering | Issues | Track bugs and tasks | List, statuses, links | v2 |
 | Delivery | Releases | See what you shipped, who updated, and what changed | Releases, store rollout, impact | v1 |
@@ -37,7 +37,7 @@ The sidebar shows each module by name, as in PostHog. Above the sidebar are a wo
 | Automation | Incidents | Follow each anomaly to a verified recovery | Open incidents, evidence, timeline | v2 |
 | Automation | Agent runs | See what agents investigated, changed and spent | Runs, actions, outcomes, cost | v2 |
 | Automation | Policies | Set what agents can do | Authority by action class, budgets, release policy | v2 |
-| Automation | Workflows | Run operations step by step | Release announcements, notify voters, incident steps | v2 |
+| Automation | Workflows | Run processes step by step | Release announcements, notify voters, incident steps | v2 |
 | Public | Pages | Give each project its public pages | Changelog, ideas board, status, privacy, terms, support, download link | v2 |
 
 Settings are at the bottom of the sidebar: projects and components, blueprints, the feature catalog, members, integrations, SDK keys, data and privacy, and the usage of Cluenori itself.
@@ -86,7 +86,7 @@ I and the agents use these pages most: the customer page, the feature scorecard 
 ### Customer page
 
 - **Header:** plan, MRR, lifetime revenue, margin, health score, acquisition source, platforms and app version.
-- **Timeline:** one list of all customer activity: events, sessions, errors, slow runs, payments, failed charges, plan changes, flag exposures, messages, feedback, survey answers and support messages.
+- **Timeline:** one list of all customer activity: events, sessions, errors, slow traces, payments, failed charges, plan changes, flag exposures, messages, feedback, survey answers and support messages.
 - **Session trail:** the screens and actions before an error. This is a list of events, not a video.
 - **Cost to serve:** the AI tokens, emails, storage and requests of this month, compared with what the customer pays.
 - **Other projects:** my other projects linked to this person by a verified link, with the purposes that the person agreed to.
@@ -124,23 +124,23 @@ The feature catalog lists each feature with its key, stage and tagging rules. Fo
 
 ## Performance, errors and logs
 
-Three engineering modules answer three questions. Each module links to the other two. They read three kinds of data: product events (what people did), runs (what your services did) and errors (what broke).
+Three engineering modules answer three questions. Each module links to the other two. They read three kinds of data: product events (what people did), operations (what your services did) and errors (what broke).
 
 | Module | Question | Views |
 | --- | --- | --- |
-| Performance | How much load is there, and is each operation, screen and query fast? | Runs over time; operations, database queries, external calls, screens and web vitals; the trace of one run |
+| Performance | How much load is there, and is each operation, screen and query fast? | The load over time; operations, database queries, external calls, screens and web vitals; the trace of one operation |
 | Errors | What broke, and whom did it affect? | Error groups, readable stack traces, affected customers |
 | Logs | What did the apps report as wrong? | Errors and warnings with how often each occurs, search, and the logs of one trace |
 
-There is no separate page to search traces. The trace of a run opens from an error, from a slow point on a chart, or from a customer timeline. It is a waterfall of the steps, with their queries, external calls, logs and error. This is the evidence that an agent gets to find a root cause.
+There is no separate page to search traces. The trace of an operation opens from an error, from a slow point on a chart, or from a customer timeline. It is a waterfall of the steps, with their queries, external calls, logs and error. This is the evidence that an agent gets to find a root cause.
 
-Metrics (CPU, memory, queue depth and custom counters) comes later, when a need shows. Hosts such as Cloudflare report their own runtime metrics, and a custom counter is a product event or a field of a run. Live tail and log patterns also come later.
+Metrics (CPU, memory, queue depth and custom counters) comes later, when a need shows. Hosts such as Cloudflare report their own runtime metrics, and a custom counter is a product event or a field of an operation. Live tail and log patterns also come later.
 
 ### Performance in detail
 
-- **Load:** runs per minute over time, for the project, one component or one operation.
-- **Operations:** one row for each operation with runs, average, p50, p80, p95, p99, error rate and total time (runs × average). Sort by total time to find the operation that uses the most time in total, not only the slowest one.
-- **Database queries:** queries in groups by shape, without values. Each group shows calls, total time, p95, rows returned and the operations that use it. A warning shows N+1 patterns: one run that repeats the same query many times.
+- **Load:** operations per minute over time, for the project, one component or one operation.
+- **Operations:** one row for each operation with its count, average, p50, p80, p95, p99, error rate and total time (count × average). Sort by total time to find the operation that uses the most time in total, not only the slowest one.
+- **Database queries:** queries in groups by shape, without values. Each group shows calls, total time, p95, rows returned and the operations that use it. A warning shows N+1 patterns: an operation that repeats the same query many times in one trace.
 - **External calls:** third-party APIs, for example Stripe, OpenAI or email providers, with latency and error rate. This shows which provider has the outage.
 - **Screens:** screen load time and app start time on mobile, and Core Web Vitals on the web.
 
@@ -150,16 +150,16 @@ Each row shows whether it got slower than usual, the change from the previous re
 
 Backends send standard OpenTelemetry traces and logs. Web frameworks, HTTP clients and database drivers send them without more code, for example ASP.NET Core and Entity Framework Core in .NET. The mobile and web SDKs add screens and web vitals. Cluenori keeps OpenTelemetry metrics in its archive but does not show them yet.
 
-A run is one unit of work in a service: an HTTP request it answers, a message it processes, or a job it starts. Its operation is its name, such as a normalized route. When its trace arrives, Cluenori turns it into one row: operation, status, duration, database time, query count, slowest query, external calls, error, person, feature and release. The charts come from these rows: run counts, error counts and latency distributions for each operation, environment and release. Counts are exact, and percentiles are within 2% of the true value, which the charts say.
+An operation is what a service does, by name, such as a normalized route: an HTTP request it answers, a message it processes, or a job it starts. When its trace arrives, Cluenori turns each time it ran into one row: operation, status, duration, database time, query count, slowest query, external calls, error, person, feature and release. The charts come from these rows: operation counts, error counts and latency distributions for each operation, environment and release. Counts are exact, and percentiles are within 2% of the true value, which the charts say.
 
-Cluenori keeps every export it receives in an archive for 90 days, with emails, tokens and card numbers removed. Thus the full trace and every log line of any run, failed or not, can be opened for 90 days, and new views can be built from data that arrived before them.
+Cluenori keeps every export it receives in an archive for 90 days, with emails, tokens and card numbers removed. Thus the full trace and every log line of any trace, failed or not, can be opened for 90 days, and new views can be built from data that arrived before them.
 
 | Data | Kept for |
 | --- | --- |
 | Product events | 5 years |
 | Every export: traces, logs and metrics, in the archive | 90 days |
 | Warnings and errors, searchable | 90 days |
-| Counts (runs by operation) | By the minute for 14 days, and by the hour for 15 months, in the database of each project |
+| Counts (by operation) | By the minute for 14 days, and by the hour for 15 months, in the database of each project |
 | Error groups | 15 months after they were last seen |
 | Other records | Until you delete them |
 
@@ -298,7 +298,7 @@ Each project has a brand: name, icon, colors, sending domain and footer. Templat
 
 ## Workflows
 
-Workflows run operations step by step, with one run for each event on a record. Journeys use the same engine, with one enrollment for each person. Each step is an action, so it follows the policy and goes to the audit log.
+Workflows run processes step by step, with one instance for each event on a record. Journeys use the same engine, with one enrollment for each person. Each step is an action, so it follows the policy and goes to the audit log.
 
 | Trigger | Steps |
 | --- | --- |

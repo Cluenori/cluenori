@@ -26,7 +26,7 @@ import {
   exceptionsOf,
   logColumnsOf,
   periodWords,
-  runOf,
+  operationSpanOf,
   statusOf,
   ticksOf,
   zoneOf,
@@ -62,27 +62,27 @@ function Facts({ rows }: { readonly rows: ReadonlyArray<{ readonly label: string
   )
 }
 
-/** The run an occurrence was logged in, in a few facts, one click from its whole trace. */
-function RunSummary({
+/** The operation an occurrence was logged in, in a few facts, one click from its whole trace. */
+function OperationSummary({
   project,
   line,
   trace,
-  run,
+  operation,
 }: {
   readonly project: ProjectKey
   readonly line: LogLine
   readonly trace: TraceId
-  readonly run: TraceSpan | undefined
+  readonly operation: TraceSpan | undefined
 }) {
-  if (run === undefined) {
+  if (operation === undefined) {
     return <p className="text-sm text-muted-foreground">The archive has none of its steps from around then.</p>
   }
-  const status = run.attributes["http.response.status_code"]
-  const path = textOf(run.attributes["url.path"])
-  const client = textOf(run.attributes["user_agent.original"])
+  const status = operation.attributes["http.response.status_code"]
+  const path = textOf(operation.attributes["url.path"])
+  const client = textOf(operation.attributes["user_agent.original"])
   return (
     <div className="flex h-full flex-col gap-4">
-      <OperationName name={run.name} wrap className="text-[15px]" />
+      <OperationName name={operation.name} wrap className="text-[15px]" />
       <Facts
         rows={[
           ...(typeof status === "number"
@@ -93,7 +93,7 @@ function RunSummary({
                 },
               ]
             : []),
-          { label: "Took", value: <span className="font-mono">{duration(run.durationMs)}</span> },
+          { label: "Took", value: <span className="font-mono">{duration(operation.durationMs)}</span> },
           ...(path === undefined
             ? []
             : [{ label: "Path", value: <span className="font-mono text-[13px] wrap-anywhere">{path}</span> }]),
@@ -102,7 +102,7 @@ function RunSummary({
             label: "Component",
             value: (
               <>
-                {run.component}
+                {operation.component}
                 {line.release !== undefined && <span className="font-mono text-muted-foreground"> {line.release}</span>}
               </>
             ),
@@ -110,7 +110,7 @@ function RunSummary({
           ...(line.environment === undefined ? [] : [{ label: "Environment", value: line.environment }]),
           {
             label: "Started",
-            value: <span className="font-mono">{preciseTime(DateTime.toEpochMillis(run.start))}</span>,
+            value: <span className="font-mono">{preciseTime(DateTime.toEpochMillis(operation.start))}</span>,
           },
         ]}
       />
@@ -124,8 +124,8 @@ function RunSummary({
   )
 }
 
-/** Everything an occurrence was sent with: its log record's fields and attributes, and its run's. */
-function SentWith({ line, run }: { readonly line: LogLine; readonly run: TraceSpan | undefined }) {
+/** Everything an occurrence was sent with: its log record's fields and attributes, and its operation's. */
+function SentWith({ line, operation }: { readonly line: LogLine; readonly operation: TraceSpan | undefined }) {
   return (
     <div className="grid gap-x-6 gap-y-5 p-5 lg:grid-cols-2">
       <section aria-label="The log record" className="flex min-w-0 flex-col gap-3">
@@ -146,28 +146,28 @@ function SentWith({ line, run }: { readonly line: LogLine; readonly run: TraceSp
         />
         <AttributeList attributes={line.attributes} empty="It carried nothing else." />
       </section>
-      <section aria-label="The run" className="flex min-w-0 flex-col gap-3">
-        <span className="text-sm text-muted-foreground">The run</span>
-        {run === undefined ? (
-          <p className="text-sm text-muted-foreground">There is no run to show.</p>
+      <section aria-label="The operation" className="flex min-w-0 flex-col gap-3">
+        <span className="text-sm text-muted-foreground">The operation</span>
+        {operation === undefined ? (
+          <p className="text-sm text-muted-foreground">There is no operation to show.</p>
         ) : (
-          <AttributeList attributes={run.attributes} empty="It sent no details." />
+          <AttributeList attributes={operation.attributes} empty="It sent no details." />
         )}
       </section>
     </div>
   )
 }
 
-/** An occurrence: its exception beside its run, then everything it was sent with. */
+/** An occurrence: its exception beside its operation, then everything it was sent with. */
 function OccurrenceDetail({
   project,
   line,
-  run,
+  operation,
 }: {
   readonly project: ProjectKey
   readonly line: LogLine
-  /** The run it happened in, once its trace is read; absent when it was logged outside one. */
-  readonly run: { readonly trace: TraceId; readonly found: TraceSpan | undefined } | undefined
+  /** The operation it happened in, once its trace is read; absent when it was logged outside one. */
+  readonly operation: { readonly trace: TraceId; readonly found: TraceSpan | undefined } | undefined
 }) {
   return (
     <>
@@ -188,26 +188,26 @@ function OccurrenceDetail({
             </div>
           </Panel>
         )}
-        <Panel icon={WaypointsIcon} title="Run" subtitle="The run it happened in" className="xl:col-span-4">
+        <Panel icon={WaypointsIcon} title="Operation" subtitle="The operation it happened in" className="xl:col-span-4">
           <div className="flex-1 px-5 py-5">
-            {run === undefined ? (
+            {operation === undefined ? (
               <p className="text-sm text-muted-foreground">
-                It was logged outside a run, such as while its service started.
+                It was logged outside any operation, such as while its service started.
               </p>
             ) : (
-              <RunSummary project={project} line={line} trace={run.trace} run={run.found} />
+              <OperationSummary project={project} line={line} trace={operation.trace} operation={operation.found} />
             )}
           </div>
         </Panel>
       </div>
-      <Panel icon={FileTextIcon} title="Sent with" subtitle="Everything the log record and its run carried">
-        <SentWith line={line} run={run?.found} />
+      <Panel icon={FileTextIcon} title="Sent with" subtitle="Everything the log record and its operation carried">
+        <SentWith line={line} operation={operation?.found} />
       </Panel>
     </>
   )
 }
 
-/** An occurrence logged in a run: its trace is read first, from the archive around then. */
+/** An occurrence logged in an operation: its trace is read first, from the archive around then. */
 function TracedOccurrence({
   project,
   line,
@@ -222,7 +222,11 @@ function TracedOccurrence({
     <Loaded result={view}>
       {(answer) => (
         <div className="flex flex-col gap-4">
-          <OccurrenceDetail project={project} line={line} run={{ trace, found: runOf(answer, line.span) }} />
+          <OccurrenceDetail
+            project={project}
+            line={line}
+            operation={{ trace, found: operationSpanOf(answer, line.span) }}
+          />
         </div>
       )}
     </Loaded>
@@ -232,7 +236,7 @@ function TracedOccurrence({
 /**
  * One error full screen: how often it happened over the period; then one of its latest occurrences,
  * the newest first, stepped through with one click: the exception as it was thrown, with every
- * exception inside it and every frame, beside the run it happened in, and everything it was sent
+ * exception inside it and every frame, beside the operation it happened in, and everything it was sent
  * with.
  */
 export function ErrorPage({
@@ -361,7 +365,7 @@ export function ErrorPage({
                     </span>
                   </div>
                   {occurrence.trace === undefined ? (
-                    <OccurrenceDetail project={project} line={occurrence} run={undefined} />
+                    <OccurrenceDetail project={project} line={occurrence} operation={undefined} />
                   ) : (
                     <TracedOccurrence
                       key={occurrence.id}

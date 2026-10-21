@@ -49,32 +49,32 @@ export const incident = { from: sampleNow - 160 * minute, to: sampleNow - 120 * 
 
 const inIncident = (start: number, step: number) => start + step > incident.from && start < incident.to
 
-export type RunPoint = {
+export type LoadPoint = {
   readonly start: number
-  readonly runs: number
+  readonly count: number
   readonly errors: number
   /** The step's p95 latency. Not in the API yet: its counts keep a sketch per bucket. */
   readonly p95Ms: number
 }
 
-/** Runs and errors over the period, one point per step that had runs, oldest first. */
-export type RunSeries = {
+/** The load over the period: one point per step that had anything counted, oldest first. */
+export type LoadSeries = {
   readonly step: number
   readonly from: number
   readonly to: number
-  readonly points: ReadonlyArray<RunPoint>
+  readonly points: ReadonlyArray<LoadPoint>
 }
 
-// Runs each step at the busiest hour, by step width.
+// The count each step at the busiest hour, by step width.
 const peakPerMinute = 90
 
-export const runSeries = (period: PeriodKey): RunSeries => {
+export const loadSeries = (period: PeriodKey): LoadSeries => {
   const random = seeded(11)
   const step = stepOf[period]
   const millis = periods.find((entry) => entry.key === period)?.millis ?? day
   const to = Math.floor(sampleNow / step) * step
   const from = to - millis
-  const points: Array<RunPoint> = []
+  const points: Array<LoadPoint> = []
   for (let start = from; start < to; start += step) {
     // A sender that was silent for a while: the counts have no point there, which isn't zero.
     const silent = period === "7d" && start > sampleNow - 4 * day - 5 * hour && start < sampleNow - 4 * day
@@ -82,14 +82,14 @@ export const runSeries = (period: PeriodKey): RunSeries => {
       continue
     }
     const shape = step >= day ? 0.55 : dailyShape(start)
-    const runs = Math.round(peakPerMinute * (step / minute) * shape * (0.85 + 0.3 * random()))
+    const total = Math.round(peakPerMinute * (step / minute) * shape * (0.85 + 0.3 * random()))
     // A day holds the 40-minute incident without being slow or failing all day.
     const incidentStep = inIncident(start, step) && step <= hour
     const failing = incidentStep ? 0.09 : 0.004
-    const errors = Math.round(runs * failing * (0.5 + random()))
+    const errors = Math.round(total * failing * (0.5 + random()))
     // Busier is slower; the incident's exports waited on a slow thumbnail service.
     const p95Ms = incidentStep ? 1900 + 600 * random() : 38 + 330 * shape ** 2.2 * (0.85 + 0.3 * random())
-    points.push({ start, runs, errors, p95Ms })
+    points.push({ start, count: total, errors, p95Ms })
   }
   return { step, from, to, points }
 }
@@ -110,12 +110,12 @@ const originShapes: ReadonlyArray<{
   { share: 0.12, shape: (hourOfDay) => 0.45 + 0.25 * Math.sin((Math.PI * hourOfDay) / 6) },
 ]
 
-/** Runs by operation, with how long they took: one row of the operation table. */
+/** How many times one operation ran, and how long it took: one row of the operation table. */
 export type OperationRow = {
   readonly component: string
   readonly environment?: string
   readonly operation: string
-  readonly runs: number
+  readonly count: number
   readonly errors: number
   readonly averageMs: number
   readonly p50Ms: number
@@ -132,7 +132,7 @@ export type OperationRow = {
 
 export type OperationTable = {
   readonly rows: ReadonlyArray<OperationRow>
-  readonly runs: number
+  readonly count: number
   readonly errors: number
   readonly dataUntil: number
 }
@@ -169,7 +169,7 @@ const dayOfOperations: ReadonlyArray<OperationRow> = [
 
 function row(
   operation: string,
-  runs: number,
+  count: number,
   errors: number,
   averageMs: number,
   p50Ms: number,
@@ -182,7 +182,7 @@ function row(
     component: "folio-api",
     environment: "production",
     operation,
-    runs,
+    count,
     errors,
     averageMs,
     p50Ms,
@@ -199,12 +199,12 @@ export const operationTable = (period: PeriodKey): OperationTable => {
   const scale = millis / day
   const rows = dayOfOperations.map((entry) => ({
     ...entry,
-    runs: Math.max(1, Math.round(entry.runs * scale)),
+    count: Math.max(1, Math.round(entry.count * scale)),
     errors: Math.round(entry.errors * scale),
   }))
   return {
     rows,
-    runs: rows.reduce((sum, entry) => sum + entry.runs, 0),
+    count: rows.reduce((sum, entry) => sum + entry.count, 0),
     errors: rows.reduce((sum, entry) => sum + entry.errors, 0),
     dataUntil: sampleNow - minute,
   }
@@ -219,7 +219,7 @@ export type ErrorGroup = {
   readonly title: string
   readonly culprit: string
   readonly occurrences: number
-  /** The people it happened to; an app always knows, a backend only when its runs name a person. */
+  /** The people it happened to; an app always knows, a backend only when its operations name a person. */
   readonly people?: number
   readonly firstSeen: number
   readonly lastSeen: number
@@ -901,7 +901,7 @@ export const networkCalls = (component: string, period: PeriodKey): ReadonlyArra
     .map((entry) => ({
       component,
       endpoint: entry.operation,
-      calls: Math.max(1, Math.round(entry.runs * share * (0.8 + 0.4 * random()))),
+      calls: Math.max(1, Math.round(entry.count * share * (0.8 + 0.4 * random()))),
       p95Ms: entry.p95Ms + overhead * (0.8 + 0.5 * random()),
     }))
     .toSorted((left, right) => right.calls - left.calls)

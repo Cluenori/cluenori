@@ -19,15 +19,15 @@ import {
   ErrorGroupNotFound,
   ErrorQuery,
   ErrorTable,
-  KeptRuns,
+  KeptTraces,
   LogCountQuery,
   LogCounts,
   LogExport,
   LogPage,
   LogQuery,
   MetricsExport,
-  RunQuery,
-  RunSeries,
+  OperationQuery,
+  LoadSeries,
   SeriesStep,
   TraceExport,
   TraceView,
@@ -45,8 +45,8 @@ export type ProjectCallName =
   | "ingestLogs"
   | "ingestMetrics"
   | "operations"
-  | "runsOverTime"
-  | "keptRuns"
+  | "loadOverTime"
+  | "keptTraces"
   | "errors"
   | "error"
   | "logs"
@@ -104,14 +104,14 @@ export const projectCalls = {
     recorded,
     ingestFailure,
   ),
-  operations: projectCall("operations", RunQuery, OperationTable, ProjectNotFound),
-  runsOverTime: projectCall(
-    "runsOverTime",
-    Schema.Struct({ query: RunQuery, step: SeriesStep }),
-    RunSeries,
+  operations: projectCall("operations", OperationQuery, OperationTable, ProjectNotFound),
+  loadOverTime: projectCall(
+    "loadOverTime",
+    Schema.Struct({ query: OperationQuery, step: SeriesStep }),
+    LoadSeries,
     ProjectNotFound,
   ),
-  keptRuns: projectCall("keptRuns", RunQuery, KeptRuns, ProjectNotFound),
+  keptTraces: projectCall("keptTraces", OperationQuery, KeptTraces, ProjectNotFound),
   errors: projectCall("errors", ErrorQuery, ErrorTable, ProjectNotFound),
   error: projectCall(
     "error",

@@ -23,7 +23,7 @@ describe("errors journey", () => {
       yield* expectAccessible()
       yield* Effect.promise(() => screen.getByRole("link", { name: "Open the error" }).first().click())
 
-      // The error's page: what it said, every frame, the library ones folded, and its run.
+      // The error's page: what it said, every frame, the library ones folded, and the operation it happened in.
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "NpgsqlException" })).toBeVisible(),
       )

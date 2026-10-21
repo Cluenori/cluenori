@@ -19,14 +19,14 @@ export type Latency = {
 export type Slower = { readonly p95Ms: number; readonly usualP95Ms: number }
 
 /**
- * One operation's row: its name, component, environment when the sender gave one, runs,
+ * One operation's row: its name, component, environment when the sender gave one, count,
  * failures, average, and latency percentiles, and whether it got slower.
  */
 export type OperationLatency = Latency & {
   readonly operation: string
   readonly component: string
   readonly environment?: string
-  readonly runs: number
+  readonly count: number
   readonly errors: number
   readonly averageMs: number
   readonly slower?: Slower
@@ -70,8 +70,8 @@ export function SlowerTag({ slower }: { readonly slower: Slower }) {
   )
 }
 
-/** What operations can be sorted by; `time` is time in total, runs times their average. */
-export type SortKey = "time" | "operation" | "p50" | "p80" | "p95" | "p99" | "errors" | "runs"
+/** What operations can be sorted by; `time` is time in total, the count times the average. */
+export type SortKey = "time" | "operation" | "p50" | "p80" | "p95" | "p99" | "errors" | "count"
 export type Sort = { readonly key: SortKey; readonly descending: boolean }
 export const byTimeInTotal: Sort = { key: "time", descending: true }
 
@@ -87,12 +87,12 @@ export const percentiles: ReadonlyArray<{
   { key: "p99", always: false, of: (latency) => latency.p99Ms },
 ]
 
-const errorRateOf = (row: OperationLatency) => (row.runs === 0 ? 0 : row.errors / row.runs)
+const errorRateOf = (row: OperationLatency) => (row.count === 0 ? 0 : row.errors / row.count)
 
 const valueOf = (row: OperationLatency, key: Exclude<SortKey, "operation">) => {
   switch (key) {
     case "time":
-      return row.runs * row.averageMs
+      return row.count * row.averageMs
     case "p50":
       return row.p50Ms
     case "p80":
@@ -103,8 +103,8 @@ const valueOf = (row: OperationLatency, key: Exclude<SortKey, "operation">) => {
       return row.p99Ms
     case "errors":
       return errorRateOf(row)
-    case "runs":
-      return row.runs
+    case "count":
+      return row.count
   }
 }
 
@@ -128,7 +128,7 @@ export const sortOperations = <Row extends OperationLatency>(
 
 /**
  * Operations by latency: p50, p80, p95, and p99, each a value beside a cell filled as high as it is
- * on a log scale from 1 ms to 10 s; then the error rate and the runs. An operation that got
+ * on a log scale from 1 ms to 10 s; then the error rate and the count. An operation that got
  * slower says so beside its name, and so does its environment when the rows are of more than one.
  * Every row opens its operation. With `onSort`, a click on a column's name sorts by it.
  */
@@ -188,7 +188,7 @@ export function OperationTable<Row extends OperationLatency>({
           </span>
         ))}
         <span className="hidden justify-self-end sm:block">{header("errors", "Errors")}</span>
-        <span className="hidden justify-self-end sm:block">{header("runs", "Runs")}</span>
+        <span className="hidden justify-self-end sm:block">{header("count", "Count")}</span>
       </div>
       {rows.map((row) => {
         const errorRate = errorRateOf(row)
@@ -221,13 +221,13 @@ export function OperationTable<Row extends OperationLatency>({
                 errorRate >= 0.01 ? "text-failure" : "text-muted-foreground",
               )}
             >
-              {row.errors === 0 ? "none" : share(row.errors, row.runs)}
+              {row.errors === 0 ? "none" : share(row.errors, row.count)}
             </span>
             <span
               className="hidden text-right font-mono text-[13px] text-muted-foreground sm:block"
-              title={`${count(row.runs)} runs`}
+              title={`${count(row.count)} counted`}
             >
-              {row.runs >= 10_000 ? compact(row.runs) : count(row.runs)}
+              {row.count >= 10_000 ? compact(row.count) : count(row.count)}
             </span>
           </Link>
         )

@@ -22,11 +22,11 @@ Pages, each with a permanent URL (`src/router.tsx`):
 ```
 /                                                the first project, or how to create one; signed out, the sign-in
 /notes                                           the overview: needs attention, a summary per area, each component
-/notes/performance?component=notes-api           runs and failures over time, the operations that got slower or take the most time
+/notes/performance?component=notes-api           the load and failures over time, the operations that got slower or take the most time
 /notes/operations?component=notes-api            every operation, searchable and sortable by any percentile
-/notes/operations/GET%20/api/feed?component=…    one operation, its name as path segments: runs and p95 over time, its slowest and failed runs
+/notes/operations/GET%20/api/feed?component=…    one operation, its name as path segments: its load and p95 over time, its slowest and failed traces
 /notes/errors                                    errors over time by component, and every error group
-/notes/errors/<id>                               one error: its exception chain, every frame, its run, its log record
+/notes/errors/<id>                               one error: its exception chain, every frame, its operation, its log record
 /notes/logs                                      warnings and errors over time, and every line, searchable
 /notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
 /kit                                             every view in the theme, to review the design; opens signed out too
@@ -61,7 +61,7 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
 
 ## Does not own
 
-- **Any rule about the data:** what counts as a run, an operation, an error group, or a covered
+- **Any rule about the data:** what counts as an operation, an error group, or a covered
   period belongs to the engines behind the public API.
 - **The API token and the sign-in cookie:** the Worker checks the token and sets the cookie
   (`apps/worker`, `POST /api/sign-in`); the page's scripts never see either again.
@@ -110,7 +110,7 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
   becomes an API change only when it is right for the API's other clients too.
 - **Not in the API yet, so not on the pages:** which components are apps and which are backends,
   and everything an app's SDK will send (its start, screens, network calls, sessions, crashes, and
-  what it did before an error); and a run's origin. Their views
+  what it did before an error); and an operation's origin. Their views
   wait in the design kit, "Ahead of the API", on sample data (`src/sample/`), which nothing else
   reads.
 - **Navigation is instant:** the pages most visits open are in the first load; one error's page and

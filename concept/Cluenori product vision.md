@@ -171,12 +171,12 @@ Cluenori keeps three classes of data, with different rules.
 | Class | Examples | Rule |
 | --- | --- | --- |
 | Business facts | Payments, expenses, value events, decisions | Durable, deduplicated and traceable |
-| Operational measurements | Run counts, error counts, latency distributions | Aggregated from the observed traffic |
+| Operational measurements | Operation counts, error counts, latency distributions | Aggregated from the observed traffic |
 | Diagnostic evidence | Traces, detailed logs | Kept by explicit sampling and retention rules |
 
 Each insight shows its population and denominator, its comparison period and cohort, the data freshness, the sampling or collection gaps, the attribution method and the remaining uncertainty. Missing data never shows as zero.
 
-Sampling is stated, not hidden. Run counts are exact and their percentiles are within 2%, and charts say so. To keep a trace because it was slow or failed, Cluenori must see the completed run before it decides (tail sampling). Thus a chart point opens retained examples. It does not promise every run behind the point.
+Sampling is stated, not hidden. Operation counts are exact and their percentiles are within 2%, and charts say so. To keep a trace because it was slow or failed, Cluenori must see the completed trace before it decides (tail sampling). Thus a chart point opens retained examples. It does not promise every trace behind the point.
 
 ## Act from the same place
 

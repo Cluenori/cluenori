@@ -193,7 +193,7 @@ function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly 
 /**
  * One trace across components: every step it took, through the services that ran it; how long
  * each ran; and every line it logged. It is found in the archive by its ID; the time the address
- * names, as links from errors, logs and runs give it, says which of its files to read first.
+ * names, as links from errors, logs and kept traces give it, says which of its files to read first.
  */
 export function TracePage({
   project,

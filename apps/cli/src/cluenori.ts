@@ -3,9 +3,9 @@ import { Command } from "effect/cli"
 import { check } from "./check.ts"
 import { error, errors, logs, trace } from "./errors-commands.ts"
 import { generate } from "./generate.ts"
+import { load, operation, operations } from "./operations-commands.ts"
 import { component, project } from "./projects-commands.ts"
 import { run } from "./run.ts"
-import { operation, operations, runs } from "./runs-commands.ts"
 import { setup } from "./setup.ts"
 import { update } from "./update.ts"
 
@@ -25,7 +25,7 @@ export const cluenori = Command.make("cluenori").pipe(
     component,
     operations,
     operation,
-    runs,
+    load,
     errors,
     error,
     logs,

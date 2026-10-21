@@ -1,5 +1,5 @@
 import type { ComponentKey, EnvelopeName, ProjectKey } from "@cluenori/foundation"
-import type { KeptRunRow } from "@cluenori/signals"
+import type { KeptTraceRow } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { ActivityIcon, ArrowLeftIcon, CircleXIcon, GaugeIcon, SearchXIcon, TimerIcon } from "lucide-react"
@@ -10,9 +10,9 @@ import { count, duration, moment, share } from "@/lib/format"
 import type { Scope } from "@/project-data"
 import {
   operationsAtom,
-  keptRunsAtom,
+  keptTracesAtom,
   periodAtom,
-  runsAtom,
+  loadAtom,
   useComponentKeys,
   usualOperationsAtom,
 } from "@/project-data"
@@ -22,7 +22,7 @@ import {
   operationKeyOf,
   keptOverOf,
   periodWords,
-  runColumnsOf,
+  loadColumnsOf,
   slowerOf,
   sumOf,
   ticksOf,
@@ -36,12 +36,12 @@ import { Loaded } from "@/views/loaded"
 import { OperationName } from "@/views/operation-name"
 import { Panel, PanelStats } from "@/views/panel"
 import { PeriodSwitch } from "@/views/period-switch"
-import { RunList } from "@/views/run-list"
 import { SinceUsual } from "@/views/since-usual"
+import { TraceList } from "@/views/trace-list"
 import { buttonVariants } from "@/views/ui/button"
 
-// The height of a chart's row. The latency chart is under the runs, on the same time axis, so a
-// step's runs and its p95 line up.
+// The height of a chart's row. The latency chart is under the load, on the same time axis, so a
+// step's count and its p95 line up.
 const rowHeight = 64
 
 /** The top of the page: back to every operation, the operation's name, its component, and the period. */
@@ -62,7 +62,7 @@ function OperationHeader({ back, children }: { readonly back: Route; readonly ch
   )
 }
 
-/** A list of runs, or what it would show when it has none. */
+/** A list of kept traces, or what it would show when it has none. */
 function KeptList({
   project,
   rows,
@@ -70,41 +70,41 @@ function KeptList({
   none,
 }: {
   readonly project: ProjectKey
-  readonly rows: ReadonlyArray<KeptRunRow>
+  readonly rows: ReadonlyArray<KeptTraceRow>
   readonly slowAfterMs?: number
   readonly none: string
 }) {
   return rows.length === 0 ? (
     <p className="px-5 py-6 text-sm text-muted-foreground">{none}</p>
   ) : (
-    <RunList project={project} rows={rows} {...(slowAfterMs === undefined ? {} : { slowAfterMs })} />
+    <TraceList project={project} rows={rows} {...(slowAfterMs === undefined ? {} : { slowAfterMs })} />
   )
 }
 
 /**
- * The operation's slowest runs and its failed ones over the period, each a click from its trace:
+ * The operation's slowest traces and its failed ones over the period, each one click to open:
  * of each hour, the five slowest and the five slowest failed are kept, 14 days. A duration over the
  * period's p95 is yellow.
  */
-function KeptRunPanels({ scope, p95Ms }: { readonly scope: Scope; readonly p95Ms: number }) {
+function KeptTracePanels({ scope, p95Ms }: { readonly scope: Scope; readonly p95Ms: number }) {
   const period = useAtomValue(periodAtom)
-  const kept = useAtomValue(keptRunsAtom(scope))
+  const kept = useAtomValue(keptTracesAtom(scope))
   return (
     <Loaded result={kept}>
       {(answer) => {
         const over = keptOverOf(answer, period)
         return (
           <div className="flex flex-col gap-4">
-            <Panel icon={TimerIcon} title="Slowest runs" subtitle={`Slowest first, ${over}`}>
+            <Panel icon={TimerIcon} title="Slowest traces" subtitle={`Slowest first, ${over}`}>
               <KeptList
                 project={scope.project}
                 rows={answer.slowest}
                 slowAfterMs={p95Ms}
-                none={`No run of the ${over} is kept. Of each hour, the five slowest are kept 14 days.`}
+                none={`No trace of the ${over} is kept. Of each hour, the five slowest are kept 14 days.`}
               />
             </Panel>
-            <Panel icon={CircleXIcon} title="Failed runs" subtitle={`Newest first, ${over}`}>
-              <KeptList project={scope.project} rows={answer.failed} none={`No run failed in the ${over}.`} />
+            <Panel icon={CircleXIcon} title="Failed traces" subtitle={`Newest first, ${over}`}>
+              <KeptList project={scope.project} rows={answer.failed} none={`Nothing failed in the ${over}.`} />
             </Panel>
           </div>
         )
@@ -114,9 +114,9 @@ function KeptRunPanels({ scope, p95Ms }: { readonly scope: Scope; readonly p95Ms
 }
 
 /**
- * One operation full screen: its runs and failures over the period, then its p95 over the same
+ * One operation full screen: its load and failures over the period, then its p95 over the same
  * steps, under them, with how the last day compares with its usual p95, and its percentiles; then
- * its slowest and failed runs, each opening its trace.
+ * its slowest and failed traces, each one click to open.
  */
 export function OperationPage({
   project,
@@ -131,7 +131,7 @@ export function OperationPage({
   const componentScope = { project, ...(component === undefined ? {} : { component }) }
   const period = useAtomValue(periodAtom)
   const components = useComponentKeys(project)
-  const runs = useAtomValue(runsAtom(scope))
+  const load = useAtomValue(loadAtom(scope))
   const operations = useAtomValue(operationsAtom(scope))
   const everyOperation = useAtomValue(operationsAtom(componentScope))
   const compared = useAtomValue(usualOperationsAtom(scope))
@@ -139,8 +139,8 @@ export function OperationPage({
   const periodText = periodWords[period].toLowerCase()
   const shownComponent = component ?? "Every component"
 
-  // Rows have the most runs first. Not handled: an operation in several environments shows the
-  // percentiles of the one with the most runs, while the charts count every environment; a page for
+  // Rows have the most counted first. Not handled: an operation in several environments shows the
+  // percentiles of the one counted most, while the charts count every environment; a page for
   // each environment would take an environment in the address and in the series.
   const verdict = AsyncResult.map(
     AsyncResult.all({ operations, compared }),
@@ -168,15 +168,15 @@ export function OperationPage({
         </p>
       </OperationHeader>
 
-      <Loaded result={AsyncResult.all({ runs, everyOperation, verdict })}>
-        {({ runs: series, everyOperation: all, verdict: { row, timed, slower, elsewhere } }) => {
+      <Loaded result={AsyncResult.all({ load, everyOperation, verdict })}>
+        {({ load: series, everyOperation: all, verdict: { row, timed, slower, elsewhere } }) => {
           if (row === undefined) {
             return (
-              <Panel icon={SearchXIcon} title="No runs of this operation" subtitle={`${shownComponent}, ${periodText}`}>
+              <Panel icon={SearchXIcon} title="Nothing of this operation" subtitle={`${shownComponent}, ${periodText}`}>
                 <div className="flex flex-col gap-4 px-5 py-6">
                   <p className="max-w-2xl text-[15px]">
-                    {shownComponent} had no runs of <span className="font-mono">{operation}</span> over the {periodText}
-                    . It may have been renamed, or the link is from another project.
+                    {shownComponent} reported no <span className="font-mono">{operation}</span> over the {periodText}.
+                    It may have been renamed, or the link is from another project.
                   </p>
                   <Link to={back} className={buttonVariants({ variant: "outline", className: "self-start" })}>
                     All operations
@@ -185,31 +185,31 @@ export function OperationPage({
               </Panel>
             )
           }
-          const asked = runColumnsOf(series, (point) => point.runs)
-          const failed = runColumnsOf(series, (point) => point.errors)
-          const p95 = runColumnsOf(series, (point) => point.p95Ms)
+          const asked = loadColumnsOf(series, (point) => point.count)
+          const failed = loadColumnsOf(series, (point) => point.errors)
+          const p95 = loadColumnsOf(series, (point) => point.p95Ms)
           const { startOf } = columnTimesOf(asked)
           const ticks = ticksOf(asked)
           const timeOf = (span: { readonly first: number }) => moment(startOf(span.first))
           const timeInTotal = sumOf(
-            all.rows.filter((entry) => entry.component === row.component).map((entry) => entry.runs * entry.averageMs),
+            all.rows.filter((entry) => entry.component === row.component).map((entry) => entry.count * entry.averageMs),
           )
           return (
             <div className="flex flex-col gap-4">
               <Panel
                 icon={ActivityIcon}
-                title="Runs"
+                title="Load"
                 subtitle={`${periodWords[period]}, and how many failed`}
                 badge={zoneOf(series)}
               >
                 <div className="p-5">
                   <BarRows
                     rowHeight={rowHeight}
-                    label={`Runs of ${operation} over the period, ${count(row.runs)} in all, with failed runs in their own row.`}
+                    label={`The load on ${operation} over the period, ${count(row.count)} in all, with those that failed in their own row.`}
                     rows={[
                       {
-                        label: "Runs",
-                        note: count(row.runs),
+                        label: "Total",
+                        note: count(row.count),
                         color: colorOf(row.component, components),
                         values: asked.values,
                       },
@@ -221,21 +221,21 @@ export function OperationPage({
                 </div>
                 <PanelStats
                   stats={[
-                    { label: "Runs", value: count(row.runs) },
+                    { label: "Total", value: count(row.count) },
                     {
                       label: "Error rate",
-                      value: share(row.errors, row.runs),
+                      value: share(row.errors, row.count),
                       ...(row.errors > 0 ? { color: failureColor } : {}),
                     },
                     {
                       label: `Share of ${row.component} time`,
-                      value: share(row.runs * row.averageMs, timeInTotal),
+                      value: share(row.count * row.averageMs, timeInTotal),
                     },
                   ]}
                 />
               </Panel>
 
-              <Panel icon={GaugeIcon} title="Latency" subtitle={`p95 of each step's runs${elsewhere}`}>
+              <Panel icon={GaugeIcon} title="Latency" subtitle={`p95 of each step${elsewhere}`}>
                 <div className="p-5">
                   <BarRows
                     rowHeight={rowHeight}
@@ -269,7 +269,7 @@ export function OperationPage({
                 />
               </Panel>
 
-              <KeptRunPanels scope={scope} p95Ms={row.p95Ms} />
+              <KeptTracePanels scope={scope} p95Ms={row.p95Ms} />
             </div>
           )
         }}

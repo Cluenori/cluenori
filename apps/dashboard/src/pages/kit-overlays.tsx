@@ -141,14 +141,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/views/ui/tooltip"
 
 const orders = [
   { value: "time", label: "Time in total" },
-  { value: "runs", label: "Runs" },
+  { value: "count", label: "Count" },
   { value: "slowest", label: "Slowest" },
 ] as const
 
 type Order = (typeof orders)[number]["value"]
 
 const exportStats = [
-  { label: "Runs", value: count(1_204) },
+  { label: "Count", value: count(1_204) },
   { label: "Failed", value: share(39, 1_204) },
   { label: "Half finished within", value: duration(900) },
   { label: "p95", value: duration(4_200) },
@@ -257,7 +257,7 @@ function DrawerSample() {
         <div className="mx-auto flex w-full max-w-md flex-col">
           <DrawerHeader>
             <DrawerTitle>Filters</DrawerTitle>
-            <DrawerDescription>Which runs every page counts.</DrawerDescription>
+            <DrawerDescription>What every page counts.</DrawerDescription>
           </DrawerHeader>
           <FieldGroup className="gap-3 p-4">
             <Field orientation="horizontal">
@@ -275,7 +275,7 @@ function DrawerSample() {
             <FieldDescription>Swipe down to close.</FieldDescription>
           </FieldGroup>
           <DrawerFooter>
-            <DrawerClose render={<Button />}>Show {count(48_210)} runs</DrawerClose>
+            <DrawerClose render={<Button />}>Show {count(48_210)} operations</DrawerClose>
             <DrawerClose render={<Button variant="outline" />}>Cancel</DrawerClose>
           </DrawerFooter>
         </div>
@@ -381,10 +381,10 @@ function DropdownMenuSample() {
         <DropdownMenuGroup>
           <DropdownMenuLabel>Show</DropdownMenuLabel>
           <DropdownMenuCheckboxItem checked={failedOnly} onCheckedChange={setFailedOnly}>
-            Failed runs only
+            Failed traces only
           </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem checked={slowOnly} onCheckedChange={setSlowOnly}>
-            Slow runs only
+            Slow traces only
           </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
@@ -454,7 +454,7 @@ function ContextMenuSample() {
           <code className="font-mono">POST /api/export</code>
           <span className="text-destructive tabular-nums">500</span>
         </span>
-        <span className="text-xs text-muted-foreground">Right-click this run to see its menu.</span>
+        <span className="text-xs text-muted-foreground">Right-click this trace to see its menu.</span>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         <ContextMenuItem>
@@ -475,7 +475,7 @@ function ContextMenuSample() {
           <ContextMenuSubContent>
             <ContextMenuItem>This operation</ContextMenuItem>
             <ContextMenuItem>This release</ContextMenuItem>
-            <ContextMenuItem>Failed runs</ContextMenuItem>
+            <ContextMenuItem>Failed traces</ContextMenuItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
         <ContextMenuSeparator />
@@ -551,7 +551,7 @@ function MenubarSample() {
           </MenubarItem>
           <MenubarItem>
             <InfoIcon />
-            What counts as a run
+            What counts as an operation
           </MenubarItem>
         </MenubarContent>
       </MenubarMenu>

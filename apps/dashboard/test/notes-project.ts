@@ -15,10 +15,10 @@ import {
   ErrorGroupId,
   ErrorGroupNotFound,
   ErrorTable,
-  KeptRuns,
+  KeptTraces,
   LogCounts,
   LogPage,
-  RunSeries,
+  LoadSeries,
   SeriesStep as SeriesStepSchema,
   SpanId,
   stepMillis,
@@ -90,13 +90,13 @@ const stepsOf = (period: Period, step: SeriesStep) => {
 
 const row = (
   operation: string,
-  runs: number,
+  count: number,
   errors: number,
   [p50Ms, p80Ms, p95Ms, p99Ms]: readonly [number, number, number, number],
 ): OperationRow => ({
   component: api,
   operation: EnvelopeName.make(operation),
-  runs,
+  count,
   errors,
   averageMs: p50Ms * 1.2,
   p50Ms,
@@ -128,22 +128,22 @@ const operations = ({ asked, period, now }: Question) => {
   return reply(OperationTable, {
     covered: period,
     rows,
-    runs: rows.reduce((sum, entry) => sum + entry.runs, 0),
+    count: rows.reduce((sum, entry) => sum + entry.count, 0),
     errors: rows.reduce((sum, entry) => sum + entry.errors, 0),
     dataUntil: period.to,
   })
 }
 
-const runs = ({ asked, period }: Question) =>
+const load = ({ asked, period }: Question) =>
   Effect.gen(function* () {
     const step = yield* stepOf(asked)
     const slow = asked.operation === "GET /api/feed"
-    return yield* reply(RunSeries, {
+    return yield* reply(LoadSeries, {
       covered: period,
       step,
       points: stepsOf(period, step).map((start, index) => ({
         start: DateTime.makeUnsafe(start),
-        runs: 40 + (index % 7) * 6,
+        count: 40 + (index % 7) * 6,
         errors: index % 9 === 0 ? 1 : 0,
         p50Ms: 60,
         p80Ms: 120,
@@ -153,8 +153,8 @@ const runs = ({ asked, period }: Question) =>
     })
   })
 
-// The export's runs kept: its slowest, which failed, and the next slowest. Kept 14 days.
-const keptRuns = ({ asked, period, now }: Question) => {
+// The export's traces kept: its slowest, which failed, and the next slowest. Kept 14 days.
+const keptTraces = ({ asked, period, now }: Question) => {
   const kept = (trace: TraceId, ago: number, durationMs: number, status: number) => ({
     trace,
     component: api,
@@ -168,7 +168,7 @@ const keptRuns = ({ asked, period, now }: Question) => {
   const failed = kept(exportTrace, 40 * minute, 4_210, 500)
   const slow = kept(TraceId.make("9c41e07b2d5af6831e0c7d2b4a9f6e15"), 3 * hour, 2_870, 200)
   const ofExport = asked.operation === undefined || asked.operation === "POST /api/export"
-  return reply(KeptRuns, {
+  return reply(KeptTraces, {
     covered: new Period({
       from: DateTime.makeUnsafe(Math.max(DateTime.toEpochMillis(period.from), now - 14 * day)),
       to: period.to,
@@ -414,8 +414,11 @@ export const notesApi = ({
       if (area === "operations") {
         return yield* operations(question)
       }
-      if (area === "runs") {
-        return yield* id === "kept" ? keptRuns(question) : runs(question)
+      if (area === "load") {
+        return yield* load(question)
+      }
+      if (area === "kept-traces") {
+        return yield* keptTraces(question)
       }
       if (area === "errors") {
         return yield* id === undefined ? errors(question) : error(question, id)

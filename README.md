@@ -2,7 +2,7 @@
 
 The control room for a software factory: one founder, many projects, running in your own Cloudflare
 account. The product is described in `concept/`; it is at its first step, so today Cluenori watches
-your services: they send OpenTelemetry traces, and Cluenori shows each operation's runs, errors,
+your services: they send OpenTelemetry traces, and Cluenori shows each operation's load, errors,
 and p50 to p99 durations.
 
 ## Run it
@@ -35,7 +35,7 @@ version later:
 ./update
 ```
 
-## See your services' runs
+## See your services' operations
 
 ```sh
 ./cluenori project create notes --name Notes
@@ -47,12 +47,12 @@ Point the service's OpenTelemetry exporter at Cluenori, over HTTP with protobuf:
 `AddOtlpExporter` with `OtlpExportProtocol.HttpProtobuf`, next to any exporter you already have. Then:
 
 ```sh
-./cluenori operations notes --last 24h  # runs, errors, avg, p50, p80, p95, p99 by operation
-./cluenori runs notes --last 24h        # the load over time
+./cluenori operations notes --last 24h  # count, errors, avg, p50, p80, p95, p99 by operation
+./cluenori load notes --last 24h        # the load over time
 ```
 
 An operation is what a service does, by name: an HTTP route it answers (`GET /api/notes/{id}`), a
-message it processes, or a job it starts. Each time one happens is a run.
+message it processes, or a job it starts. Cluenori counts each time one runs.
 
 Send its logs too, to `<your Cluenori>/otlp/v1/logs` with the same header, and investigate:
 

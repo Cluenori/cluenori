@@ -208,7 +208,7 @@ export function KitActions() {
                 <Kbd>↑</Kbd>
                 <Kbd>↓</Kbd>
               </KbdGroup>
-              and open a run with <Kbd>Enter</Kbd>.
+              and open a trace with <Kbd>Enter</Kbd>.
             </p>
           </div>
           <KitSample label="In a button">

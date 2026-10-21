@@ -1,5 +1,5 @@
 import type { ProjectKey } from "@cluenori/foundation"
-import type { KeptRunRow } from "@cluenori/signals"
+import type { KeptTraceRow } from "@cluenori/signals"
 import { cn } from "cn"
 import { DateTime } from "effect"
 
@@ -7,17 +7,17 @@ import { duration, moment } from "@/lib/format"
 import { Link } from "@/router"
 
 /**
- * One operation's single runs, each a row that opens its trace: when, the environment, how long
+ * One operation's kept traces, each a row that opens it: when, the environment, how long
  * it took, as a bar against the slowest in the list with a tick at `slowAfterMs`, its operation's p95
  * (yellow past it), and its status (red when it failed).
  */
-export function RunList({
+export function TraceList({
   project,
   rows,
   slowAfterMs,
 }: {
   readonly project: ProjectKey
-  readonly rows: ReadonlyArray<KeptRunRow>
+  readonly rows: ReadonlyArray<KeptTraceRow>
   readonly slowAfterMs?: number
 }) {
   const longest = Math.max(1, ...rows.map((row) => row.durationMs))
@@ -27,7 +27,7 @@ export function RunList({
       {rows.map((row, index) => {
         const slow = slowAfterMs !== undefined && row.durationMs > slowAfterMs
         return (
-          // A trace can hold two runs of one operation, so its ID alone isn't a key.
+          // A trace can hold one operation twice, so its ID alone isn't a key.
           <li key={`${row.trace} ${index}`}>
             <Link
               to={{ page: "trace", project, trace: row.trace, around: row.start }}

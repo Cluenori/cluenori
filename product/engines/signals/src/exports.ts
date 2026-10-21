@@ -2,7 +2,7 @@ import { TraceId } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
-import { BatchDigest, KeptRun, RunCounts } from "./run-counts.ts"
+import { BatchDigest, KeptTrace, OperationCounts } from "./operation-counts.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
@@ -16,15 +16,15 @@ const archived = {
 }
 
 /**
- * A trace export, as ingest sends it to the project's object: its archive file, its runs added up,
- * and the ones it has that may be kept.
+ * A trace export, as ingest sends it to the project's object: its archive file, its operations
+ * counted, and the traces it has that may be kept.
  */
 export const TraceExport = Schema.Struct({
   ...archived,
   spans: Count,
-  counts: Schema.Array(RunCounts),
-  /** Of each operation, environment and hour, its slowest runs and its slowest failed ones. */
-  kept: Schema.Array(KeptRun),
+  counts: Schema.Array(OperationCounts),
+  /** Of each operation, environment and hour, its slowest traces and its slowest failed ones. */
+  kept: Schema.Array(KeptTrace),
   /** The traces it holds spans of, each once: how a trace's files are found. */
   traces: Schema.Array(TraceId),
 })

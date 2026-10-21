@@ -14,7 +14,7 @@ import {
   LogPage,
 } from "./error-groups.ts"
 import { ErrorGroupId } from "./log-entry.ts"
-import { OperationTable, KeptRuns, RunSeries, SeriesStep } from "./run-queries.ts"
+import { OperationTable, KeptTraces, LoadSeries, SeriesStep } from "./operation-queries.ts"
 import { TraceView } from "./trace-view.ts"
 
 const filters = {
@@ -29,14 +29,14 @@ const fromBeforeTo = Schema.makeFilter(
   { expected: "a period whose from is before its to" },
 )
 
-// Runs can also be narrowed to one operation, by its name: `GET /api/notes/{id}`.
-const runFilters = { ...filters, operation: Schema.optionalKey(EnvelopeName) }
+// A question can also be narrowed to one operation, by its name: `GET /api/notes/{id}`.
+const operationFilters = { ...filters, operation: Schema.optionalKey(EnvelopeName) }
 
-/** The filters of a question about runs, as query parameters: `from` and `to` are ISO 8601 UTC. */
-export const RunFilters = Schema.Struct(runFilters).check(fromBeforeTo)
+/** The filters of a question about operations, as query parameters: `from` and `to` are ISO 8601 UTC. */
+export const OperationFilters = Schema.Struct(operationFilters).check(fromBeforeTo)
 
 /** The filters of a series, with how wide each point is. */
-export const SeriesFilters = Schema.Struct({ ...runFilters, step: SeriesStep }).check(fromBeforeTo)
+export const SeriesFilters = Schema.Struct({ ...operationFilters, step: SeriesStep }).check(fromBeforeTo)
 
 /** The filters of a search of warnings and errors; `before` continues an earlier answer's page. */
 export const LogFilters = Schema.Struct({
@@ -69,40 +69,40 @@ export class SignalsGroup extends HttpApiGroup.make("signals")
   .add(
     HttpApiEndpoint.get("operations", "/projects/:project/operations", {
       params: { project: ProjectKey },
-      query: RunFilters,
+      query: OperationFilters,
       success: OperationTable,
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(
       OpenApi.Description,
-      "Every operation's runs in a period, the most runs first, or one operation's with `operation`: how many, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover.",
+      "Every operation in a period, the most counted first, or one with `operation`: how many times it ran, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover.",
     ),
   )
   .add(
-    HttpApiEndpoint.get("runs", "/projects/:project/runs", {
+    HttpApiEndpoint.get("load", "/projects/:project/load", {
       params: { project: ProjectKey },
       query: SeriesFilters,
-      success: RunSeries,
+      success: LoadSeries,
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(
       OpenApi.Description,
-      "Runs and errors over a period, one point per step that has runs, with their p50, p80, p95 and p99 durations: the load on a project's services, or on one operation with `operation`. A step without a point had no runs reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used.",
+      "The load over a period: how many operations ran and failed, one point per step that had any, with their p50, p80, p95 and p99 durations, on a project's services, or on one operation with `operation`. A step without a point had nothing reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used.",
     ),
   )
   .add(
-    HttpApiEndpoint.get("keptRuns", "/projects/:project/runs/kept", {
+    HttpApiEndpoint.get("keptTraces", "/projects/:project/kept-traces", {
       params: { project: ProjectKey },
-      query: RunFilters,
-      success: KeptRuns,
+      query: OperationFilters,
+      success: KeptTraces,
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(
       OpenApi.Description,
-      "Runs worth opening in a period, or one operation's with `operation`: the slowest, slowest first, and the failed, newest first, at most 20 of each, each with its trace ID, which opens it with the traces endpoint. Of each operation, environment and hour, the five slowest runs and the five slowest failed ones are kept, 14 days; `covered` says which part of the period that covers.",
+      "Traces worth opening in a period, or one operation's with `operation`: the slowest, slowest first, and the failed, newest first, at most 20 of each, each with its ID, which opens it with the traces endpoint. Of each operation, environment and hour, the five slowest traces and the five slowest failed ones are kept, 14 days; `covered` says which part of the period that covers.",
     ),
   )
   .add(
     HttpApiEndpoint.get("errors", "/projects/:project/errors", {
       params: { project: ProjectKey },
-      query: RunFilters,
+      query: OperationFilters,
       success: ErrorTable,
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(
@@ -113,7 +113,7 @@ export class SignalsGroup extends HttpApiGroup.make("signals")
   .add(
     HttpApiEndpoint.get("error", "/projects/:project/errors/:error", {
       params: { project: ProjectKey, error: ErrorGroupId },
-      query: RunFilters,
+      query: OperationFilters,
       success: ErrorDetail,
       error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ErrorGroupNotFound.pipe(HttpApiSchema.status(404))],
     }).annotate(

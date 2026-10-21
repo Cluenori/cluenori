@@ -7,7 +7,7 @@ One name per concept, used the same way in code, APIs, storage, UI, and conversa
 - Add terms in the same change that introduces them.
 
 Product terms (project, component, origin, environment, release, feature, person, installation,
-account, session, trace, run, idea, signals, records, activity, engines, and the module catalog)
+account, session, trace, operation, idea, signals, records, activity, engines, and the module catalog)
 are defined in `concept/Foundation.md` and `concept/Modules.md`. When code implements one, its row moves here.
 
 ## Terms the code implements
@@ -28,10 +28,10 @@ its exact rule.
 | Activity log | The activity of one database, and the only way to change its records | `ActivityLog`, its `commit` | event store, outbox, journal |
 | Ingest key | The credential a component sends its telemetry with: `cluenori.<project>.<component>.<secret>` | `IngestKey`, `@cluenori/projects` | API key, API token; SDK key (the apps' key, later) |
 | API token | The credential that lets someone use a deployment's public API | `CLUENORI_API_TOKEN`, `MemberAuthorization` in `apps/worker` | API key, password |
-| Run | One unit of work in a service, which its span starts: an HTTP request it answers (a server span), a message it processes (a consumer span), or a job it starts (an internal span that starts its trace) | `RunCounts`, `KeptRun`, `@cluenori/signals` | request (an HTTP request is one kind of run), job (another), call, execution, transaction |
-| Operation | What a service does, by name: its runs' span name, such as `GET /api/notes/{id}` or `cleanup.run` | `operation`, `@cluenori/signals` | endpoint (an HTTP API's address), route (the template inside a name), URL, path |
-| Counts | Runs added up by operation and environment, by the minute and by the hour, with a sketch of their durations | `RunCounts`, `Signals`, `@cluenori/signals` | metrics (a separate signal, later), counters |
-| Kept run | A single run Cluenori keeps so it can be opened: of each operation, environment and hour, the five slowest and the five slowest failed, 14 days | `KeptRun`, `KeptRuns`, `@cluenori/signals` | sample (it isn't random), exemplar, slow run |
+| Operation | What a service does, by name: an HTTP route it answers (`GET /api/notes/{id}`), a message it processes, or a job it starts (`cleanup.run`). Each time it runs is counted from its span: a server or consumer span, or an internal span that starts its trace | `operation`, `isOperationSpan`, `@cluenori/signals` | endpoint (an HTTP API's address), route (the template inside a name), request (an HTTP request is one kind), job (another), run, transaction |
+| Counts | How many times each operation ran and failed, by environment, by the minute and by the hour, with a sketch of their durations | `OperationCounts`, `Signals`, `@cluenori/signals` | metrics (a separate signal, later), counters |
+| Load | The counts over time: how many operations ran, and how many failed, in each step | `LoadSeries`, `@cluenori/signals` | traffic, throughput |
+| Kept trace | A trace Cluenori keeps so it opens from its operation: of each operation, environment and hour, the five slowest and the five slowest failed, 14 days | `KeptTrace`, `KeptTraces`, `@cluenori/signals` | sample (it isn't random), exemplar, slow request |
 | Covered period | The part of an asked-for period that counts answer for: no earlier than they are kept, no later than now | `covered` | — |
 | Archive | Every export Cluenori received, scrubbed, kept 90 days: the source every view is derived from | `ArchiveStore`, `@cluenori/signals` | lake (the planned SQL over it), backup, logs |
 | Error group | Errors that are the same error: one exception type and stack top, or one logger and message template | `ErrorGroup`, `ErrorGroupId` | issue (a record people track), exception, crash |
@@ -54,8 +54,7 @@ keep the product meaning only.
 | Backend | A component that runs on servers, answering requests, processing messages, or running jobs, such as `notes-api` or `notes-jobs`; an app and a backend are the two roles of a component, which its platform decides | the Worker, for Cluenori's own server; a service, which is an Effect service |
 | Crash | An error that ended an app: on a phone it closed, in a browser it was not handled. Crash-free sessions are the share without one | a defect, for a bug in Cluenori |
 | Workflow | A run of the Workflows engine: durable steps on behalf of a person or a process | a Cloudflare Workflow (the runtime it uses) |
-| Run | One unit of work in a service, counted under its operation | to run, the verb; a workflow run or an agent run, named with what ran |
-| Operation | What a service does, by name, such as `GET /api/notes/{id}` | a step, for one span of a trace; a write or a read, for what code does to data |
+| Operation | What a service does, by name, such as `GET /api/notes/{id}` | a step, for one span of a trace; a write or a read, for what code does to data; a process, for what a workflow runs |
 | Query | A named read a module declares, served as an API route and an MCP tool | a SQL statement |
 | Action | A change with an actor, class, target, before and after, reason, result, and undo | a function, a handler |
 | Policy | What an actor may do, for each project and class of action | a rule, a setting |

@@ -295,7 +295,7 @@ export function KitForms() {
               <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Count staging too</FieldTitle>
-                  <FieldDescription>Its runs are added to production's.</FieldDescription>
+                  <FieldDescription>Its counts are added to production's.</FieldDescription>
                 </FieldContent>
                 <Switch id="kit-share-staging" />
               </Field>
@@ -399,7 +399,7 @@ export function KitForms() {
               max={100}
               step={5}
             />
-            <FieldDescription>Every failed run is kept, whatever this says.</FieldDescription>
+            <FieldDescription>Every failed trace is kept, whatever this says.</FieldDescription>
           </Field>
           <Field>
             <div className="flex items-center justify-between gap-4">

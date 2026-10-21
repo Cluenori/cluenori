@@ -16,8 +16,8 @@ import { ErrorGroupNotFound, levelsFrom } from "./error-groups.ts"
 import type { ErrorGroupShape } from "./exports.ts"
 import type { LogLine } from "./log-entry.ts"
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
+import { stepMillis } from "./operation-queries.ts"
 import { logRetention } from "./read-logs.ts"
-import { stepMillis } from "./run-queries.ts"
 
 // Error groups outlive their occurrences, so an error that comes back after months is known again.
 const groupRetention = Duration.days(455)

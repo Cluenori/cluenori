@@ -20,8 +20,8 @@ export type ModuleKind = typeof ModuleKind.Type
 /**
  * What an envelope holds:
  * - `event`: a product event an app tracks, such as `export.completed`.
- * - `run`: one unit of work in a service (an HTTP request it answers, a message it processes, a job
- *   it starts), from its trace.
+ * - `operation`: one unit of work in a service (an HTTP request it answers, a message it processes,
+ *   a job it starts), from its trace.
  * - `span`: one step of a trace that is kept.
  * - `log`: one log record.
  * - `error`: one error, with what is known about where it happened.
@@ -31,14 +31,14 @@ export type ModuleKind = typeof ModuleKind.Type
  * - a module's own kind, such as `uptime.check`.
  */
 export const EnvelopeKind = Schema.Union([
-  Schema.Literals(["event", "run", "span", "log", "error", "activity", "cost", "money"]),
+  Schema.Literals(["event", "operation", "span", "log", "error", "activity", "cost", "money"]),
   ModuleKind,
 ])
 export type EnvelopeKind = typeof EnvelopeKind.Type
 
 /**
  * What happened, in the words of its kind: an event's or an activity's name (`export.completed`,
- * `release.published`), a run's operation, a log's category. 1 to 256 characters, without control
+ * `release.published`), an operation's, a log's category. 1 to 256 characters, without control
  * characters or space at either end.
  */
 export const EnvelopeName = Schema.String.check(

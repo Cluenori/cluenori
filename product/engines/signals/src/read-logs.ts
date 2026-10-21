@@ -9,9 +9,9 @@ import type { ErrorShape } from "./fingerprint.ts"
 import { errorShapeOf } from "./fingerprint.ts"
 import type { LogEntry, LogException, LogLevel } from "./log-entry.ts"
 import { ErrorGroupId, SpanId } from "./log-entry.ts"
+import { BatchDigest } from "./operation-counts.ts"
 import type { Rejected } from "./read-traces.ts"
 import { environmentOf, releaseOf } from "./read-traces.ts"
-import { BatchDigest } from "./run-counts.ts"
 import { scrubbedLogs } from "./scrubbed.ts"
 
 /** How long warnings and errors are kept: older ones are refused at ingest, and removed after. */

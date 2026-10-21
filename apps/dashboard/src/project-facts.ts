@@ -10,11 +10,11 @@ import type {
   ErrorGroup,
   ErrorGroupId,
   ErrorTable,
-  KeptRuns,
+  KeptTraces,
   LogCounts,
   LogException,
-  RunPoint,
-  RunSeries,
+  LoadPoint,
+  LoadSeries,
   SeriesStep,
   SpanId,
   TraceSpan,
@@ -93,10 +93,10 @@ const columnsOf = <Point extends { readonly start: DateTime.Utc }>(
 }
 
 /**
- * Runs over time as a chart's columns, over the period they cover. A step without a point had
+ * The load over time as a chart's columns, over the period they cover. A step without a point had
  * nothing reported, which is not none (the sender may have been silent), so its column is unknown.
  */
-export const runColumnsOf = (series: RunSeries, valueOf: (point: RunPoint) => number) =>
+export const loadColumnsOf = (series: LoadSeries, valueOf: (point: LoadPoint) => number) =>
   columnsOf(series.covered, series.step, series.points, valueOf, undefined)
 
 /**
@@ -162,7 +162,7 @@ export const operationKeyOf = (row: Pick<OperationRow, "component" | "environmen
 /** The operations over the last day and over the 7 days before: what "slower" compares. */
 export type Compared = { readonly lastDay: OperationTable; readonly usual: OperationTable }
 
-/** An operation's p95 over the last day, and its usual p95 when it had runs in the 7 days before. */
+/** An operation's p95 over the last day, and its usual p95 when it ran in the 7 days before. */
 export const usualOf = (compared: Compared, key: string) => {
   const lastDay = compared.lastDay.rows.find((row) => operationKeyOf(row) === key)
   const usual = compared.usual.rows.find((row) => operationKeyOf(row) === key)
@@ -193,13 +193,13 @@ export const operationRowsOf = (
   })
 }
 
-// ---- Kept runs ---------------------------------------------------------------------------------
+// ---- Kept traces -------------------------------------------------------------------------------
 
 /**
- * What a list of kept runs answers for, in words: the page's period, or, of a period longer than
- * runs are kept, the days its answer covers, such as "last 14 days".
+ * What a list of kept traces answers for, in words: the page's period, or, of a period longer than
+ * traces are kept, the days its answer covers, such as "last 14 days".
  */
-export const keptOverOf = (answer: KeptRuns, period: PeriodKey) => {
+export const keptOverOf = (answer: KeptTraces, period: PeriodKey) => {
   const asked = periodWords[period].toLowerCase()
   if (answer.covered === undefined) {
     return asked
@@ -289,10 +289,10 @@ export const exceptionsOf = (exception: LogException): ReadonlyArray<ThrownExcep
 }
 
 /**
- * The run a log record was written in, from its trace: the server or consumer span it, or the
+ * The operation a log record was written in, from its trace: the server or consumer span it, or the
  * span it was written in, belongs to; else the trace's first span. Absent when the trace has none.
  */
-export const runOf = (view: TraceView, span: SpanId | undefined): TraceSpan | undefined => {
+export const operationSpanOf = (view: TraceView, span: SpanId | undefined): TraceSpan | undefined => {
   const byId = new Map(view.spans.map((entry) => [entry.span, entry] as const))
   let current = span === undefined ? undefined : byId.get(span)
   while (current !== undefined && current.kind !== "server" && current.kind !== "consumer") {
@@ -312,13 +312,13 @@ const knownSumOf = (values: ReadonlyArray<number | undefined>) => sumOf(values.m
  * window's error rate is at least 2% and three times the period's. A step with nothing reported
  * has no rate, so it never joins a window.
  */
-export const failureSpikeOf = (series: RunSeries) => {
-  const asked = runColumnsOf(series, (point) => point.runs)
-  const failed = runColumnsOf(series, (point) => point.errors)
+export const failureSpikeOf = (series: LoadSeries) => {
+  const asked = loadColumnsOf(series, (point) => point.count)
+  const failed = loadColumnsOf(series, (point) => point.errors)
   const rateAt = (index: number) => {
-    const runs = asked.values[index]
+    const total = asked.values[index]
     const errors = failed.values[index]
-    return runs === undefined || errors === undefined ? 0 : errors / Math.max(1, runs)
+    return total === undefined || errors === undefined ? 0 : errors / Math.max(1, total)
   }
   const peak = asked.values.reduce<number>((best, _, index) => (rateAt(index) > rateAt(best) ? index : best), 0)
   let first = peak
@@ -341,7 +341,7 @@ export const failureSpikeOf = (series: RunSeries) => {
     from: asked.from + first * asked.step,
     to: Math.min(asked.from + (last + 1) * asked.step, end),
     failed: windowFailed,
-    runs: windowAsked,
+    count: windowAsked,
   }
 }
 
@@ -361,12 +361,12 @@ const byHowMuchSlower = (left: Slower, right: Slower) => right.p95Ms / right.usu
 export const attentionOf = (facts: {
   readonly project: ProjectKey
   readonly errors: ErrorTable
-  readonly runs: RunSeries
+  readonly load: LoadSeries
   readonly compared: Compared
 }): ReadonlyArray<Attention> => {
   const { project } = facts
   const now = endOf(facts.errors)
-  const spike = failureSpikeOf(facts.runs)
+  const spike = failureSpikeOf(facts.load)
   const slowerByKey = slowerOperations(facts.compared)
   const slower = facts.compared.lastDay.rows
     .flatMap((row) => {
@@ -401,8 +401,8 @@ export const attentionOf = (facts: {
           {
             key: "spike",
             tone: "failure" as const,
-            title: `Error rate ${share(spike.failed, spike.runs)} between ${axisTime(spike.from)} and ${axisTime(spike.to)}`,
-            detail: `${count(spike.failed)} failed runs of ${count(spike.runs)}`,
+            title: `Error rate ${share(spike.failed, spike.count)} between ${axisTime(spike.from)} and ${axisTime(spike.to)}`,
+            detail: `${count(spike.failed)} of ${count(spike.count)} failed`,
             action: { label: "Open the errors", to: { page: "errors" as const, project } },
           },
         ]),

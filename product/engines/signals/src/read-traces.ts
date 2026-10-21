@@ -7,20 +7,23 @@ import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Hex } from "effect/encoding"
 
 import type { TraceExport } from "./exports.ts"
-import type { KeptRun, RunCounts } from "./run-counts.ts"
-import { BatchDigest, HttpStatus, keptPerHour } from "./run-counts.ts"
+import type { KeptTrace, OperationCounts } from "./operation-counts.ts"
+import { BatchDigest, HttpStatus, keptPerHour } from "./operation-counts.ts"
 import { scrubbedTraces } from "./scrubbed.ts"
 
-/** How long runs are counted for: older ones are refused at ingest and removed after. */
-export const runRetention = Duration.days(14)
+/**
+ * How long operations are counted by the minute: older spans are refused at ingest, and counts
+ * removed after.
+ */
+export const countRetention = Duration.days(14)
 
-/** Runs are counted in buckets of one minute, by when they started. */
+/** Operations are counted in buckets of one minute, by when they started. */
 export const bucketMillis = 60_000
 
-// Runs are kept by the hour they started in.
+// Traces are kept by the hour their operation started in.
 const hourMillis = 3_600_000
 
-// A run may start this far in the future, for a sender whose clock runs ahead.
+// A span may start this far in the future, for a sender whose clock runs ahead.
 const clockSkew = Duration.hours(1)
 
 /** Records an export held that Cluenori counted nothing for, and the first reason. */
@@ -29,7 +32,7 @@ export interface Rejected {
   readonly problem: string
 }
 
-/** A trace export, read, and the spans of runs it refused. */
+/** A trace export, read, and the spans it refused. */
 export interface ReadTraces {
   readonly export: TraceExport
   readonly rejected: Rejected | undefined
@@ -55,16 +58,16 @@ export const environmentOf = (resource: Attributes): EnvironmentKey | undefined 
 const problemOf = (span: Span, now: number): string | undefined => {
   const start = Number(span.startTimeUnixNano / 1_000_000n)
   if (!Schema.is(EnvelopeName)(span.name)) {
-    return "A run has no name of 1 to 256 characters without control characters"
+    return "A span has no name of 1 to 256 characters without control characters"
   }
   if (span.endTimeUnixNano < span.startTimeUnixNano) {
-    return "A run ends before it starts"
+    return "A span ends before it starts"
   }
-  if (start < now - Duration.toMillis(runRetention)) {
-    return "A run is older than the 14 days runs are kept"
+  if (start < now - Duration.toMillis(countRetention)) {
+    return "A span is older than the 14 days operations are counted"
   }
   if (start > now + Duration.toMillis(clockSkew)) {
-    return "A run starts more than an hour from now; check the sender's clock"
+    return "A span starts more than an hour from now; check the sender's clock"
   }
   return undefined
 }
@@ -75,25 +78,25 @@ const statusOf = (span: Span): HttpStatus | undefined => {
   return Schema.is(HttpStatus)(reported) ? reported : undefined
 }
 
-// Of each hour's runs of one operation and environment, those that may be kept: the slowest, and
+// Of each hour's traces of one operation and environment, those that may be kept: the slowest, and
 // the slowest that failed. The project's object keeps them against those it kept before.
-const toKeep = (runs: ReadonlyArray<KeptRun>) => {
-  const slowestFirst = runs.toSorted((left, right) => right.durationMs - left.durationMs)
+const toKeep = (traces: ReadonlyArray<KeptTrace>) => {
+  const slowestFirst = traces.toSorted((left, right) => right.durationMs - left.durationMs)
   return [
     ...new Set([
       ...slowestFirst.slice(0, keptPerHour),
-      ...slowestFirst.filter((run) => run.failed).slice(0, keptPerHour),
+      ...slowestFirst.filter((trace) => trace.failed).slice(0, keptPerHour),
     ]),
   ]
 }
 
 /**
- * Whether a span is a run: one unit of work in a service. A server span answers a call, a
- * consumer span a message; an internal span that starts its trace is work the service started
- * itself, such as a scheduled job. A span of unspecified kind counts as internal, as OpenTelemetry
- * says receivers may assume.
+ * Whether a span is counted under its operation, as one unit of work in a service. A server span
+ * answers a call, a consumer span a message; an internal span that starts its trace is work the
+ * service started itself, such as a scheduled job. A span of unspecified kind counts as internal,
+ * as OpenTelemetry says receivers may assume.
  */
-const isRun = (span: Span) =>
+const isOperationSpan = (span: Span) =>
   span.kind === "server" ||
   span.kind === "consumer" ||
   ((span.kind === "internal" || span.kind === "unspecified") && span.parentSpanId === undefined)
@@ -102,7 +105,7 @@ interface Group {
   readonly bucket: number
   readonly operation: EnvelopeName
   readonly environment: EnvironmentKey | undefined
-  runs: number
+  count: number
   errors: number
   totalMs: number
   readonly durations: Array<SketchValue>
@@ -110,11 +113,11 @@ interface Group {
 
 /**
  * Reads the body of an OTLP/HTTP protobuf trace export: removes credentials and personal data,
- * writes the file the archive keeps, adds its runs up by operation, environment, and minute, and
- * picks those that may be kept. A run is a server or consumer span, or an internal span that
- * starts its trace, a job (`isRun`); its operation is the span's name (`GET /api/notes/{id}`,
- * `cleanup.run`); it failed when its status is an error. Pure apart from the clock and the digest;
- * runs where the export arrives, so a project's object only stores.
+ * writes the file the archive keeps, counts its operations by name, environment, and minute, and
+ * picks the traces that may be kept. An operation's span is a server or consumer span, or an
+ * internal span that starts its trace, a job (`isOperationSpan`); its name is the operation's
+ * (`GET /api/notes/{id}`, `cleanup.run`); it failed when its status is an error. Pure apart from
+ * the clock and the digest; runs where the export arrives, so a project's object only stores.
  */
 export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   const crypto = yield* Crypto.Crypto
@@ -125,14 +128,14 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   const nowMillis = DateTime.toEpochMillis(now)
 
   const groups = new Map<string, Group>()
-  const hours = new Map<string, Array<KeptRun>>()
+  const hours = new Map<string, Array<KeptTrace>>()
   let rejectedCount = 0
   let firstProblem: string | undefined
   for (const { resource, scopeSpans } of resourceSpans) {
     const environment = environmentOf(resource)
     for (const { spans } of scopeSpans) {
       for (const span of spans) {
-        const counted = isRun(span)
+        const counted = isOperationSpan(span)
         const problem = counted ? problemOf(span, nowMillis) : undefined
         if (problem !== undefined) {
           rejectedCount += 1
@@ -148,14 +151,14 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
             bucket,
             operation,
             environment,
-            runs: 0,
+            count: 0,
             errors: 0,
             totalMs: 0,
             durations: [],
           }
           const durationMs = Number(span.endTimeUnixNano - span.startTimeUnixNano) / 1_000_000
           const failed = span.status.code === "error"
-          group.runs += 1
+          group.count += 1
           group.errors += failed ? 1 : 0
           group.totalMs += durationMs
           group.durations.push(SketchValueSchema.make(durationMs))
@@ -180,11 +183,11 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
     }
   }
 
-  const counts: ReadonlyArray<RunCounts> = Array.from(groups.values(), (group) => ({
+  const counts: ReadonlyArray<OperationCounts> = Array.from(groups.values(), (group) => ({
     bucket: DateTime.makeUnsafe(group.bucket),
     operation: group.operation,
     ...(group.environment === undefined ? {} : { environment: group.environment }),
-    runs: group.runs,
+    count: group.count,
     errors: group.errors,
     totalMs: group.totalMs,
     durations: sketchOf(group.durations),

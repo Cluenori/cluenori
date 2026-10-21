@@ -108,7 +108,7 @@ export const useComponentKeys = (project: ProjectKey): ReadonlyArray<ComponentKe
   return AsyncResult.isSuccess(detail) ? detail.value.components.map((component) => component.key) : []
 }
 
-/** Every operation's runs over the period, or one component's or operation's. */
+/** Every operation over the period, or one component's, or one operation. */
 export const operationsAtom = Atom.family((scope: Scope) =>
   kept(
     CluenoriClient.runtime.atom((get) =>
@@ -124,14 +124,14 @@ export const operationsAtom = Atom.family((scope: Scope) =>
   ),
 )
 
-/** The slowest and the failed of the runs kept over the period, of one operation or every one. */
-export const keptRunsAtom = Atom.family((scope: Scope) =>
+/** The slowest and the failed of the traces kept over the period, of one operation or every one. */
+export const keptTracesAtom = Atom.family((scope: Scope) =>
   kept(
     CluenoriClient.runtime.atom((get) =>
       Effect.gen(function* () {
         const client = yield* CluenoriClient
         const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.keptRuns({
+        return yield* client.signals.keptTraces({
           params: { project: scope.project },
           query: { ...period, ...filtersOf(scope) },
         })
@@ -161,15 +161,15 @@ export const usualOperationsAtom = Atom.family((scope: Scope) =>
   ),
 )
 
-/** Runs and errors over the period, with their percentiles, in the period's steps. */
-export const runsAtom = Atom.family((scope: Scope) =>
+/** The load over the period: how many operations ran and failed, with their percentiles, in the period's steps. */
+export const loadAtom = Atom.family((scope: Scope) =>
   kept(
     CluenoriClient.runtime.atom((get) =>
       Effect.gen(function* () {
         const client = yield* CluenoriClient
         const key = get(periodAtom)
         const period = yield* lastOf(periodMillis[key])
-        return yield* client.signals.runs({
+        return yield* client.signals.load({
           params: { project: scope.project },
           query: { ...period, ...filtersOf(scope), step: stepOf[key] },
         })

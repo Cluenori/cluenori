@@ -41,7 +41,7 @@ const lastHour = Effect.gen(function* () {
   return { from: DateTime.subtract(now, { hours: 1 }), to: DateTime.add(now, { minutes: 1 }) }
 })
 
-const runsAt = (start: number): ReadonlyArray<ExportedSpan> => [
+const spansAt = (start: number): ReadonlyArray<ExportedSpan> => [
   ...[12, 18, 25, 31, 240].map((durationMillis, index) => ({
     name: "GET /api/notes/{id}",
     kind: "server" as const,
@@ -53,17 +53,17 @@ const runsAt = (start: number): ReadonlyArray<ExportedSpan> => [
   { name: "GET", kind: "client", startMillis: start + 80, durationMillis: 9 },
 ]
 
-// Real time: the Worker counts runs by the time they started, against its own clock.
+// Real time: the Worker counts operations by the time they started, against its own clock.
 layer(CluenoriClient.layer, { excludeTestServices: true })("telemetry", (it) => {
-  it.effect("a service's runs become its project's operation table", () =>
+  it.effect("a service's spans become its project's operation table", () =>
     Effect.gen(function* () {
       const client = yield* CluenoriClient
       // Set up: a project, and its API with an ingest key.
       const { project, ingestKey } = yield* projectWithApi("notes")
 
-      // The API's exporter sends a batch: seven runs, and a client span that is no run.
+      // The API's exporter sends a batch: seven operations' spans, and a client span that is none.
       const now = yield* DateTime.now
-      const body = traceExport(notesApi, runsAt(DateTime.toEpochMillis(now) - 1_000))
+      const body = traceExport(notesApi, spansAt(DateTime.toEpochMillis(now) - 1_000))
       const sent = yield* sendExport(ingestKey, body)
       assert.deepStrictEqual(sent, { status: 200, contentType: "application/x-protobuf", answerBytes: 0 })
 
@@ -71,10 +71,10 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("telemetry", (it) => 
       const period = yield* lastHour
       const table = yield* client.signals.operations({ params: { project }, query: period })
       const [notes, fail] = table.rows
-      assert.deepStrictEqual([table.runs, table.errors], [7, 2])
+      assert.deepStrictEqual([table.count, table.errors], [7, 2])
       assert.strictEqual(notes?.operation, "GET /api/notes/{id}")
       assert.strictEqual(notes?.environment, "production")
-      assert.strictEqual(notes?.runs, 5)
+      assert.strictEqual(notes?.count, 5)
       assert.closeTo(notes?.p50Ms ?? 0, 25, 25 * 0.02)
       assert.closeTo(notes?.p99Ms ?? 0, 240, 240 * 0.02)
       assert.strictEqual(fail?.errors, 2)
@@ -83,19 +83,19 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("telemetry", (it) => 
       const retried = yield* sendExport(ingestKey, body)
       const again = yield* client.signals.operations({ params: { project }, query: period })
       assert.strictEqual(retried.status, 200)
-      assert.strictEqual(again.runs, 7)
+      assert.strictEqual(again.count, 7)
 
       // The load over time, and the environment filter.
-      const series = yield* client.signals.runs({ params: { project }, query: { ...period, step: "5m" } })
+      const series = yield* client.signals.load({ params: { project }, query: { ...period, step: "5m" } })
       const staging = yield* client.signals.operations({
         params: { project },
         query: { ...period, environment: EnvironmentKey.make("staging") },
       })
       assert.strictEqual(
-        series.points.reduce((total, point) => total + point.runs, 0),
+        series.points.reduce((total, point) => total + point.count, 0),
         7,
       )
-      assert.strictEqual(staging.runs, 0)
+      assert.strictEqual(staging.count, 0)
     }),
   )
 
@@ -103,7 +103,7 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("telemetry", (it) => 
     Effect.gen(function* () {
       const { ingestKey } = yield* projectWithApi("wrong-keys")
       const now = yield* DateTime.now
-      const body = traceExport(notesApi, runsAt(DateTime.toEpochMillis(now)))
+      const body = traceExport(notesApi, spansAt(DateTime.toEpochMillis(now)))
       const tampered = `${ingestKey.slice(0, -1)}${ingestKey.endsWith("A") ? "B" : "A"}`
       const otherProject = ingestKey.replace("cluenori.wrong-keys.", "cluenori.no-such-project.")
 

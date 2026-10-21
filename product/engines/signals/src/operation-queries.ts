@@ -1,22 +1,22 @@
 import { ComponentKey, EnvelopeName, EnvironmentKey, Period } from "@cluenori/foundation"
 import { Schema } from "effect"
 
-import { KeptRun } from "./run-counts.ts"
+import { KeptTrace } from "./operation-counts.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 
 /**
- * Which runs to count: those that started in `period`, optionally of one environment, one
+ * What to count: the operations that ran in `period`, optionally of one environment, one
  * component, or one operation.
  */
-export const RunQuery = Schema.Struct({
+export const OperationQuery = Schema.Struct({
   period: Period,
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
   operation: Schema.optionalKey(EnvelopeName),
 })
-export type RunQuery = typeof RunQuery.Type
+export type OperationQuery = typeof OperationQuery.Type
 
 /** How wide each point of a series is. */
 export const SeriesStep = Schema.Literals(["1m", "5m", "1h", "1d"])
@@ -30,17 +30,17 @@ export const stepMillis: Readonly<Record<SeriesStep, number>> = {
   "1d": 86_400_000,
 }
 
-/** Where a component's runs are counted once it has 500 operations: names past that are counted here. */
+/** Where a component's operations are counted once it has 500: names past that are counted here. */
 export const otherOperations = EnvelopeName.make("(other operations)")
 
-/** Runs by operation, with how long they took: one row of the operation table. */
+/** How many times one operation ran, and how long it took: one row of the operation table. */
 export const OperationRow = Schema.Struct({
   component: ComponentKey,
   /** Absent when the component didn't say. */
   environment: Schema.optionalKey(EnvironmentKey),
   operation: EnvelopeName,
-  runs: Count,
-  /** Runs whose status was an error. */
+  count: Count,
+  /** How many times its status was an error. */
   errors: Count,
   averageMs: Milliseconds,
   /** Percentiles of the durations by nearest rank, each within 2%: p99 of fewer than 100 is the slowest. */
@@ -58,55 +58,55 @@ export type OperationRow = typeof OperationRow.Type
  */
 const Covered = Schema.optionalKey(Period)
 
-/** Every operation's runs in a period, the most runs first. */
+/** Every operation in a period, the most counted first. */
 export const OperationTable = Schema.Struct({
   covered: Covered,
   rows: Schema.Array(OperationRow),
-  runs: Count,
+  count: Count,
   errors: Count,
-  /** The end of the newest bucket with runs in it; absent when there are none. */
+  /** The end of the newest bucket with anything counted in it; absent when there is none. */
   dataUntil: Schema.optionalKey(Schema.DateTimeUtcFromString),
 })
 export type OperationTable = typeof OperationTable.Type
 
-/** Runs that started in one step of a series, with how long they took, as an operation's row says. */
-export const RunPoint = Schema.Struct({
+/** What started in one step of a series, with how long it took, as an operation's row says. */
+export const LoadPoint = Schema.Struct({
   start: Schema.DateTimeUtcFromString,
-  runs: Count,
+  count: Count,
   errors: Count,
   p50Ms: Milliseconds,
   p80Ms: Milliseconds,
   p95Ms: Milliseconds,
   p99Ms: Milliseconds,
 })
-export type RunPoint = typeof RunPoint.Type
+export type LoadPoint = typeof LoadPoint.Type
 
 /**
- * Runs over time, one point per step that has runs, oldest first. A step without a point had no
- * runs reported, which is not the same as having none: the sender may have been silent.
+ * The load over time: one point per step that had anything counted, oldest first. A step without a
+ * point had nothing reported, which is not the same as nothing done: the sender may have been silent.
  */
-export const RunSeries = Schema.Struct({
+export const LoadSeries = Schema.Struct({
   covered: Covered,
   /** The step used: the one asked for, or an hour when that is finer than the counts' buckets. */
   step: SeriesStep,
-  points: Schema.Array(RunPoint),
+  points: Schema.Array(LoadPoint),
 })
-export type RunSeries = typeof RunSeries.Type
+export type LoadSeries = typeof LoadSeries.Type
 
-/** A kept run, and the component that ran it. */
-export const KeptRunRow = Schema.Struct({ ...KeptRun.fields, component: ComponentKey })
-export type KeptRunRow = typeof KeptRunRow.Type
+/** A kept trace, and the component whose operation it is. */
+export const KeptTraceRow = Schema.Struct({ ...KeptTrace.fields, component: ComponentKey })
+export type KeptTraceRow = typeof KeptTraceRow.Type
 
 /**
- * Runs worth opening, from those kept: of each operation, environment and hour, the five slowest
+ * Traces worth opening, from those kept: of each operation, environment and hour, the five slowest
  * and the five slowest that failed, 14 days. Each opens with its trace ID. `covered` is the period
  * cut to the 14 days and to now; absent when nothing of it is kept.
  */
-export const KeptRuns = Schema.Struct({
+export const KeptTraces = Schema.Struct({
   covered: Covered,
   /** The slowest, slowest first: at most 20. */
-  slowest: Schema.Array(KeptRunRow),
+  slowest: Schema.Array(KeptTraceRow),
   /** The failed, newest first: at most 20. */
-  failed: Schema.Array(KeptRunRow),
+  failed: Schema.Array(KeptTraceRow),
 })
-export type KeptRuns = typeof KeptRuns.Type
+export type KeptTraces = typeof KeptTraces.Type

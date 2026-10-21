@@ -5,8 +5,8 @@ import type {
   LogCountQuery,
   LogFilters,
   LogQuery,
-  RunFilters,
-  RunQuery,
+  OperationFilters,
+  OperationQuery,
 } from "@cluenori/signals"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
@@ -22,7 +22,7 @@ const queryOf = (filters: typeof LogFilters.Type | typeof LogCountFilters.Type):
   ...(filters.component === undefined ? {} : { component: filters.component }),
 })
 
-const runQueryOf = (filters: typeof RunFilters.Type): RunQuery => ({
+const operationQueryOf = (filters: typeof OperationFilters.Type): OperationQuery => ({
   ...queryOf(filters),
   ...(filters.operation === undefined ? {} : { operation: filters.operation }),
 })
@@ -51,22 +51,22 @@ export const SignalsHandlers = HttpApiBuilder.group(CluenoriApi, "signals", (han
     .handle("operations", ({ params, query }) =>
       Effect.gen(function* () {
         const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.operations, runQueryOf(query))
+        return yield* objects.call(params.project, projectCalls.operations, operationQueryOf(query))
       }),
     )
-    .handle("runs", ({ params, query }) =>
+    .handle("load", ({ params, query }) =>
       Effect.gen(function* () {
         const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.runsOverTime, {
-          query: runQueryOf(query),
+        return yield* objects.call(params.project, projectCalls.loadOverTime, {
+          query: operationQueryOf(query),
           step: query.step,
         })
       }),
     )
-    .handle("keptRuns", ({ params, query }) =>
+    .handle("keptTraces", ({ params, query }) =>
       Effect.gen(function* () {
         const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.keptRuns, runQueryOf(query))
+        return yield* objects.call(params.project, projectCalls.keptTraces, operationQueryOf(query))
       }),
     )
     .handle("errors", ({ params, query }) =>

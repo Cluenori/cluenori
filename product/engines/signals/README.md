@@ -1,9 +1,9 @@
 # @cluenori/signals
 
 Signals from a project's services: OpenTelemetry exports read where they arrive, every export kept
-in the archive for 90 days, and, in the project's Durable Object, their runs counted, the slowest
-and failed of them kept to open, their warnings and errors kept and grouped, and any trace and
-its logs read back from the archive by its ID.
+in the archive for 90 days, and, in the project's Durable Object, their operations counted, the
+traces of the slowest and failed kept to open, their warnings and errors kept and grouped, and any
+trace and its logs read back from the archive by its ID.
 
 ## Use it
 
@@ -23,13 +23,13 @@ const detail = yield* signals.error(table.groups[0].id, { period }) // latest oc
 const view = yield* signals.trace(detail.latest[0].trace, detail.latest[0].time) // the time is optional
 // view.spans: the trace's spans as a tree; view.logs: its logs at every level, from the archive
 
-// Runs worth opening, though they logged nothing: one operation's slowest, and its failed.
-const kept = yield* signals.keptRuns({ period, operation: EnvelopeName.make("GET /api/feed") })
+// Traces worth opening, though they logged nothing: one operation's slowest, and its failed.
+const kept = yield* signals.keptTraces({ period, operation: EnvelopeName.make("GET /api/feed") })
 // slowest: [{ trace: "26f47ed8…", start, durationMs: 1712, status: 200, failed: false, ... }, ...]
 
-// One operation over time, with its percentiles in each step.
-const series = yield* signals.runsOverTime({ period, operation: EnvelopeName.make("GET /api/feed") }, "1h")
-// points: [{ start, runs: 940, errors: 3, p50Ms: 85, p80Ms: 160, p95Ms: 420, p99Ms: 1210 }, ...]
+// One operation's load over time, with its percentiles in each step.
+const series = yield* signals.loadOverTime({ period, operation: EnvelopeName.make("GET /api/feed") }, "1h")
+// points: [{ start, count: 940, errors: 3, p50Ms: 85, p80Ms: 160, p95Ms: 420, p99Ms: 1210 }, ...]
 
 // Warnings and errors over time, a series per level, component, or error group.
 const counts = yield* signals.logCounts({ period, step: "1h", by: "error" })
@@ -42,19 +42,19 @@ again. An unknown error ID fails with `ErrorGroupNotFound`.
 
 ## Owns
 
-- **Rules:** what a run is (a server or consumer span, or an internal span that starts its trace:
-  a job the service started itself, such as a scheduled one), its operation, whether it failed,
-  and its HTTP status; which runs are kept to open (of each operation, environment and hour, the
-  five slowest and the five slowest failed); a log record's level; which records are indexed
+- **Rules:** which spans an operation is counted from (a server or consumer span, or an internal
+  span that starts its trace: a job the service started itself, such as a scheduled one), its
+  name, whether it failed, and its HTTP status; which traces are kept to open (of each operation,
+  environment and hour, the five slowest and the five slowest failed); a log record's level; which records are indexed
   (warnings and up); which errors are the same error (exception type and the top five frames of
   the app's own code in its stack, those with a source location, and, when it was thrown outside
   that code, its message without numbers and IDs; or logger and message template); and how each
   question's period is cut to what is kept.
 - **Data,** in each project's database:
-  - runs counted by operation and environment, by the minute (`signals_minute_counts`, 14 days)
+  - operations counted by name and environment, by the minute (`signals_minute_counts`, 14 days)
     and by the hour (`signals_hour_counts`, 15 months), each component's operations, at most 500
     (`signals_operations`);
-  - the runs kept to open, with their trace IDs (`signals_kept_runs`, 14 days);
+  - the traces kept to open from their operations (`signals_kept_traces`, 14 days);
   - warnings and errors (`signals_logs`, 90 days) and error groups (`signals_error_groups`, 15
     months after last seen);
   - which archive file holds each export, by time (`signals_archive`), and the last hour's export
@@ -90,7 +90,7 @@ in the project's object; `SignalsGroup` is the API's part.
   file no index points to, which the bucket's lifecycle removes.
 - **Scrubbed before stored,** in the archive too (PATTERNS.md, "Credentials and personal data").
   Metrics are archived as received until Cluenori reads them.
-- **Counts over time come from what is kept, in one indexed read.** A series of runs merges the
+- **Counts over time come from what is kept, in one indexed read.** A series of the load merges the
   stored percentiles of each step's buckets; counts of warnings and errors group the 90-day index
   by step and by level, component, or error group, at most 100 series, the largest first.
 - **A trace is read from its own files:** the archive's index keeps which files hold each trace's
@@ -100,14 +100,14 @@ in the project's object; `SignalsGroup` is the API's part.
   `trace` says how many of its files it read, and how many it didn't. Exports archived before the
   index (October 2026) aren't in it.
 - **Counted once.** An export's SHA-256 digest is kept an hour, so an exporter's retry is skipped.
-- **Kept runs are bounded where they arrive and where they are kept.** Ingest picks each
+- **Kept traces are bounded where they arrive and where they are kept.** Ingest picks each
   export's five slowest and five slowest failed of each operation, environment and hour; the object
   keeps them against those it kept before, so each holds at most ten rows however busy it is. The
   slowest of a period are the slowest of these, so a period's list is exact unless one hour had more
   than five of its slowest twenty. Their traces stay in the archive 90 days, beyond the 14 days.
 - **Percentiles are within 2% of the true value,** by nearest rank.
 - **An answer's schemas live apart from the code that makes them** (`trace-view.ts` from
-  `read-archived-trace.ts`, `run-queries.ts` from `run-store.ts`), and the package is
+  `read-archived-trace.ts`, `operation-queries.ts` from `operation-store.ts`), and the package is
   side-effect free, so a client of the API, such as the dashboard, bundles the schemas alone.
 - **Not yet:** errors from failed spans of services that send no logs, and the feature and release
-  of each run.
+  of each operation.

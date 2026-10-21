@@ -72,7 +72,7 @@ const typeScale = [
   { classes: "text-2xl font-semibold tracking-tight", sample: "Errors in folio" },
   { classes: "text-xl font-semibold tracking-tight", sample: "How long it takes" },
   { classes: "text-base font-medium", sample: "Operations" },
-  { classes: "text-sm", sample: "Runs, error rate, and latency percentiles for each operation." },
+  { classes: "text-sm", sample: "Load, error rate, and latency percentiles for each operation." },
   { classes: "text-sm text-muted-foreground", sample: "The ones at the top take the most time in total." },
   { classes: "text-xs text-muted-foreground", sample: "Each square is one hour of the last day." },
 ] as const

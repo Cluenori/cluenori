@@ -1,5 +1,5 @@
 import { ComponentKey, EnvelopeName, Period, ProjectKey, TraceId } from "@cluenori/foundation"
-import type { OperationRow, ErrorGroup, RunSeries } from "@cluenori/signals"
+import type { OperationRow, ErrorGroup, LoadSeries } from "@cluenori/signals"
 import { ErrorGroupId, SpanId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
@@ -11,8 +11,8 @@ import {
   exceptionsOf,
   failureSpikeOf,
   logColumnsOf,
-  runColumnsOf,
-  runOf,
+  loadColumnsOf,
+  operationSpanOf,
   slowerOf,
   statusOf,
 } from "@/project-facts"
@@ -42,20 +42,20 @@ describe("slowerOf", () => {
   })
 })
 
-// Ten minutes of runs, 100 a minute, with these failed; `undefined` for a minute nothing reported.
-const series = (failed: ReadonlyArray<number | undefined>): RunSeries => ({
+// Ten minutes of load, 100 a minute, with these failed; `undefined` for a minute nothing reported.
+const series = (failed: ReadonlyArray<number | undefined>): LoadSeries => ({
   covered: new Period({ from: at(now), to: at(now + failed.length * minute) }),
   step: "1m",
   points: failed.flatMap((errors, index) =>
     errors === undefined
       ? []
-      : [{ start: at(now + index * minute), runs: 100, errors, p50Ms: 20, p80Ms: 40, p95Ms: 90, p99Ms: 200 }],
+      : [{ start: at(now + index * minute), count: 100, errors, p50Ms: 20, p80Ms: 40, p95Ms: 90, p99Ms: 200 }],
   ),
 })
 
-describe("runColumnsOf", () => {
+describe("loadColumnsOf", () => {
   it("gives a step nothing reported an unknown column, never zero", () => {
-    assert.deepStrictEqual(runColumnsOf(series([1, undefined, 0]), (point) => point.errors).values, [1, undefined, 0])
+    assert.deepStrictEqual(loadColumnsOf(series([1, undefined, 0]), (point) => point.errors).values, [1, undefined, 0])
   })
 })
 
@@ -80,7 +80,7 @@ describe("failureSpikeOf", () => {
       from: now + 4 * minute,
       to: now + 6 * minute,
       failed: 50,
-      runs: 200,
+      count: 200,
     })
   })
 
@@ -103,7 +103,7 @@ describe("failureSpikeOf", () => {
       from: now + 3 * minute,
       to: now + 4 * minute,
       failed: 30,
-      runs: 100,
+      count: 100,
     })
   })
 })
@@ -189,7 +189,7 @@ describe("exceptionsOf", () => {
   })
 })
 
-describe("runOf", () => {
+describe("operationSpanOf", () => {
   const span = (id: string, parent: string | undefined, kind: "server" | "client") => ({
     span: SpanId.make(id),
     ...(parent === undefined ? {} : { parent: SpanId.make(parent) }),
@@ -211,13 +211,13 @@ describe("runOf", () => {
     files: { read: 1, unread: 0 },
   }
 
-  it("finds the run a record was written in, from the step it was written in", () => {
-    assert.strictEqual(runOf(view, SpanId.make("b2b2b2b2b2b2b2b2"))?.name, "POST /api/export")
+  it("finds the operation a record was written in, from the step it was written in", () => {
+    assert.strictEqual(operationSpanOf(view, SpanId.make("b2b2b2b2b2b2b2b2"))?.name, "POST /api/export")
   })
 
   it("takes the trace's first step for a record without one, and nothing from an empty trace", () => {
-    assert.strictEqual(runOf(view, undefined)?.span, "a1a1a1a1a1a1a1a1")
-    assert.isUndefined(runOf({ ...view, spans: [] }, undefined))
+    assert.strictEqual(operationSpanOf(view, undefined)?.span, "a1a1a1a1a1a1a1a1")
+    assert.isUndefined(operationSpanOf({ ...view, spans: [] }, undefined))
   })
 })
 
@@ -233,7 +233,7 @@ describe("columnTimesOf", () => {
 const operation = (name: string, p95Ms: number): OperationRow => ({
   component: api,
   operation: EnvelopeName.make(name),
-  runs: 1_000,
+  count: 1_000,
   errors: 0,
   averageMs: p95Ms / 2,
   p50Ms: p95Ms / 3,
@@ -242,7 +242,7 @@ const operation = (name: string, p95Ms: number): OperationRow => ({
   p99Ms: p95Ms * 2,
 })
 
-const table = (rows: ReadonlyArray<OperationRow>) => ({ rows, runs: 1_000, errors: 0 })
+const table = (rows: ReadonlyArray<OperationRow>) => ({ rows, count: 1_000, errors: 0 })
 
 describe("attentionOf", () => {
   const items = attentionOf({
@@ -255,7 +255,7 @@ describe("attentionOf", () => {
       ],
       occurrences: 84,
     },
-    runs: series([0, 1, 0, 0, 20, 30, 0, 0, 1, 0]),
+    load: series([0, 1, 0, 0, 20, 30, 0, 0, 1, 0]),
     compared: {
       lastDay: table([operation("GET /api/feed", 620), operation("POST /api/export", 4_200)]),
       usual: table([operation("GET /api/feed", 300), operation("POST /api/export", 4_000)]),
@@ -281,7 +281,7 @@ describe("attentionOf", () => {
         groups: [group({ firstSeen: at(now - 2 * hour), lastSeen: at(now - minute) })],
         occurrences: 42,
       },
-      runs: series([0, 0, 0]),
+      load: series([0, 0, 0]),
       compared: { lastDay: table([]), usual: table([]) },
     })
     assert.deepStrictEqual(

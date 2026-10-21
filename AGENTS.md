@@ -499,10 +499,10 @@ conflict.
 - **Status:** built so far: the toolchain, the workspace, every check, Foundation
   (`product/foundation`: scope keys, the envelope, actors, the activity log), and the first slice on
   it: services send OpenTelemetry traces, logs and metrics with a component's ingest key; every
-  export is archived 90 days, scrubbed, in R2; the Projects and Signals engines count runs and
+  export is archived 90 days, scrubbed, in R2; the Projects and Signals engines count operations and
   keep warnings, errors and error groups in each project's Durable Object; and the public API
-  (behind an API token) and `./cluenori` show operations, runs, errors, logs, and any
-  trace. The dashboard (`apps/dashboard`), served by the Worker and signed in with the API token,
+  (behind an API token) and `./cluenori` show operations, their load, errors, logs, and
+  any trace. The dashboard (`apps/dashboard`), served by the Worker and signed in with the API token,
   shows the same through the public API. No module exists yet.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the

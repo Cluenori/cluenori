@@ -7,12 +7,12 @@ import { DateTime, Duration, Effect } from "effect"
 import { Base64 } from "effect/encoding"
 import { TestClock } from "effect/testing"
 
-import type { KeptRun, RunCounts, TraceExport } from "../src/index.ts"
+import type { KeptTrace, OperationCounts, TraceExport } from "../src/index.ts"
 import { BatchDigest, readTraces, Signals } from "../src/index.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
 import { inProject, WebCrypto } from "./in-object.ts"
 
-// The fixture's runs started at 2026-10-19T22:49:43Z; the tests ask a minute later.
+// The fixture's operations started at 2026-10-19T22:49:43Z; the tests ask a minute later.
 const capturedAt = 1792442983314
 const now = capturedAt + 60_000
 const api = ComponentKey.make("notes-api")
@@ -28,18 +28,22 @@ const readFixtureAt = (time: number) =>
     return yield* readTraces(body)
   }).pipe(Effect.provide(WebCrypto))
 
-const counts = (operation: string, runs: number, overrides: Partial<RunCounts> = {}): RunCounts => ({
+const counts = (operation: string, count: number, overrides: Partial<OperationCounts> = {}): OperationCounts => ({
   bucket: DateTime.makeUnsafe(capturedAt - (capturedAt % 60_000)),
   operation: EnvelopeName.make(operation),
   environment: EnvironmentKey.make("prod"),
-  runs,
+  count,
   errors: 0,
-  totalMs: runs * 10,
-  durations: sketchOf(Array.from({ length: runs }, () => SketchValue.make(10))),
+  totalMs: count * 10,
+  durations: sketchOf(Array.from({ length: count }, () => SketchValue.make(10))),
   ...overrides,
 })
 
-const batchOf = (digit: string, entries: ReadonlyArray<RunCounts>, kept: ReadonlyArray<KeptRun> = []): TraceExport => ({
+const batchOf = (
+  digit: string,
+  entries: ReadonlyArray<OperationCounts>,
+  kept: ReadonlyArray<KeptTrace> = [],
+): TraceExport => ({
   digest: BatchDigest.make(digit.repeat(64)),
   archive: new Uint8Array(0),
   from: DateTime.makeUnsafe(capturedAt),
@@ -50,9 +54,9 @@ const batchOf = (digit: string, entries: ReadonlyArray<RunCounts>, kept: Readonl
   traces: [],
 })
 
-// A run an export brings to keep: of GET /a, `ago` milliseconds before the fixture's, its trace
+// A trace an export brings to keep: of GET /a, `ago` milliseconds before the fixture's, its trace
 // ID made of its duration.
-const keptOf = (durationMs: number, ago: number, failed = false): KeptRun => ({
+const keptOf = (durationMs: number, ago: number, failed = false): KeptTrace => ({
   trace: TraceId.make(durationMs.toString(16).padStart(32, "c")),
   operation: EnvelopeName.make("GET /a"),
   environment: EnvironmentKey.make("prod"),
@@ -87,7 +91,9 @@ describe("readTraces", () => {
   it.effect("counts a .NET export's server spans by operation, and skips its client spans", () =>
     Effect.gen(function* () {
       const { export: batch, rejected } = yield* readFixtureAt(now)
-      const byOperation = Object.fromEntries(batch.counts.map((entry) => [entry.operation, [entry.runs, entry.errors]]))
+      const byOperation = Object.fromEntries(
+        batch.counts.map((entry) => [entry.operation, [entry.count, entry.errors]]),
+      )
 
       assert.isUndefined(rejected)
       assert.deepStrictEqual(byOperation, {
@@ -103,20 +109,20 @@ describe("readTraces", () => {
     }),
   )
 
-  it.effect("picks the runs to keep, each with its trace, duration, status, and whether it failed", () =>
+  it.effect("picks the traces to keep, each with its ID, duration, status, and whether it failed", () =>
     Effect.gen(function* () {
       const { export: batch } = yield* readFixtureAt(now)
       const slowest = batch.kept.toSorted((left, right) => right.durationMs - left.durationMs)[0]
-      const failed = batch.kept.filter((run) => run.failed)
+      const failed = batch.kept.filter((trace) => trace.failed)
 
-      // No operation had more than five runs that hour, so each may be kept.
+      // No operation ran more than five times that hour, so each may be kept.
       assert.lengthOf(batch.kept, 16)
       assert.strictEqual(slowest?.trace, "782b83a9114f7ebce1fce192e59a0f7f")
       assert.strictEqual(slowest?.operation, "POST /api/export")
       assert.closeTo(slowest?.durationMs ?? 0, 56.817, 0.001)
       assert.strictEqual(slowest?.status, 200)
       assert.deepStrictEqual(
-        failed.map((run) => [run.operation, run.status]),
+        failed.map((trace) => [trace.operation, trace.status]),
         [
           [EnvelopeName.make("GET /api/fail"), 500],
           [EnvelopeName.make("GET /api/fail"), 500],
@@ -127,7 +133,7 @@ describe("readTraces", () => {
 
   it.effect("counts a job, an internal span that starts its trace, and not the spans under it", () =>
     Effect.gen(function* () {
-      // A cleanup job's two runs, one failed, each with a step under it; a database call no run
+      // A cleanup job run twice, once failing, each with a step under it; a database call no job
       // made; and an internal span whose parent is in another service.
       const body = encodeTraces([
         {
@@ -152,11 +158,11 @@ describe("readTraces", () => {
       )
 
       assert.deepStrictEqual(
-        batch.counts.map((entry) => [entry.operation, entry.runs, entry.errors]),
+        batch.counts.map((entry) => [entry.operation, entry.count, entry.errors]),
         [[EnvelopeName.make("cleanup.run"), 2, 1]],
       )
       assert.deepStrictEqual(
-        batch.kept.map((run) => [run.trace, run.failed, run.status]),
+        batch.kept.map((trace) => [trace.trace, trace.failed, trace.status]),
         [
           [TraceId.make("a".repeat(32)), false, undefined],
           [TraceId.make("b".repeat(32)), true, undefined],
@@ -165,14 +171,14 @@ describe("readTraces", () => {
     }),
   )
 
-  it.effect("refuses runs older than the 14 days they are kept, saying why", () =>
+  it.effect("refuses spans older than the 14 days operations are counted, saying why", () =>
     Effect.gen(function* () {
       const { export: batch, rejected } = yield* readFixtureAt(now + Duration.toMillis(Duration.days(15)))
 
       assert.isEmpty(batch.counts)
       assert.deepStrictEqual(rejected, {
         count: 16,
-        problem: "A run is older than the 14 days runs are kept",
+        problem: "A span is older than the 14 days operations are counted",
       })
     }),
   )
@@ -193,12 +199,12 @@ describe("Signals", () => {
       )
       const notes = table.rows.find((row) => row.operation === "GET /api/notes/{id}")
 
-      assert.strictEqual(table.runs, 16)
+      assert.strictEqual(table.count, 16)
       assert.strictEqual(table.errors, 2)
       assert.strictEqual(table.rows[0]?.operation, "GET /api/notes/{id}")
       assert.strictEqual(notes?.component, "notes-api")
       assert.strictEqual(notes?.environment, "production")
-      assert.deepStrictEqual([notes?.runs, notes?.errors], [5, 0])
+      assert.deepStrictEqual([notes?.count, notes?.errors], [5, 0])
       // Durations 0.067, 0.082, 0.090, 0.801 and 32.111 ms: p50 is 0.090 and p99 the slowest, within 2%.
       assert.closeTo(notes?.p50Ms ?? 0, 0.09, 0.09 * 0.02)
       assert.closeTo(notes?.p99Ms ?? 0, 32.111, 32.111 * 0.02)
@@ -218,7 +224,7 @@ describe("Signals", () => {
         const table = yield* signals.operations({ period: lastHour })
 
         assert.deepStrictEqual([first, retry], ["recorded", "duplicate"])
-        assert.strictEqual(table.runs, 3)
+        assert.strictEqual(table.count, 3)
       }),
     ),
   )
@@ -233,7 +239,7 @@ describe("Signals", () => {
         yield* signals.recordTraces(api, batchOf("b", [counts("GET /api/notes/{id}", 2, { errors: 1 })]))
         const table = yield* signals.operations({ period: lastHour })
 
-        assert.deepInclude(table.rows[0], { runs: 5, errors: 1, averageMs: 10 })
+        assert.deepInclude(table.rows[0], { count: 5, errors: 1, averageMs: 10 })
         assert.strictEqual(table.rows.length, 1)
       }),
     ),
@@ -251,8 +257,8 @@ describe("Signals", () => {
         const other = table.rows.find((row) => row.operation === "(other operations)")
 
         assert.strictEqual(table.rows.length, 501)
-        assert.strictEqual(other?.runs, 3)
-        assert.strictEqual(table.runs, 503)
+        assert.strictEqual(other?.count, 3)
+        assert.strictEqual(table.count, 503)
       }),
     ),
   )
@@ -271,7 +277,7 @@ describe("Signals", () => {
         const staging = yield* signals.operations({ period: lastHour, environment: EnvironmentKey.make("staging") })
         const jobs = yield* signals.operations({ period: lastHour, component: ComponentKey.make("notes-jobs") })
 
-        assert.deepStrictEqual([staging.runs, jobs.runs], [2, 4])
+        assert.deepStrictEqual([staging.count, jobs.count], [2, 4])
       }),
     ),
   )
@@ -319,8 +325,8 @@ describe("Signals", () => {
         const recent = yield* signals.operations({ period: lastHour })
 
         // The minute counts of 20 days ago are gone; the hourly ones remain.
-        assert.strictEqual(lastMonth.runs, 5)
-        assert.strictEqual(recent.runs, 1)
+        assert.strictEqual(lastMonth.count, 5)
+        assert.strictEqual(recent.count, 1)
         assert.closeTo(lastMonth.rows[0]?.p50Ms ?? 0, 10, 10 * 0.02)
       }),
     ),
@@ -341,12 +347,12 @@ describe("Signals", () => {
             counts("GET /a", 3, { bucket: DateTime.makeUnsafe(minute) }),
           ]),
         )
-        const series = yield* signals.runsOverTime({ period: lastHour }, "1m")
+        const series = yield* signals.loadOverTime({ period: lastHour }, "1m")
         const table = yield* signals.operations({ period: lastHour })
 
         assert.strictEqual(series.step, "1m")
         assert.deepStrictEqual(
-          series.points.map((point) => point.runs),
+          series.points.map((point) => point.count),
           [1, 2, 3],
         )
         assert.strictEqual(
@@ -368,15 +374,15 @@ describe("Signals", () => {
           from: DateTime.makeUnsafe(now - Duration.toMillis(Duration.days(7))),
           to: DateTime.makeUnsafe(now),
         })
-        const series = yield* signals.runsOverTime({ period: week }, "1m")
+        const series = yield* signals.loadOverTime({ period: week }, "1m")
 
         assert.strictEqual(series.step, "1h")
-        assert.strictEqual(series.points[0]?.runs, 2)
+        assert.strictEqual(series.points[0]?.count, 2)
       }),
     ),
   )
 
-  it.effect("shows runs over time, one point per step with runs", () =>
+  it.effect("shows the load over time, one point per step with any", () =>
     inProject(
       "series",
       now,
@@ -384,40 +390,40 @@ describe("Signals", () => {
         const signals = yield* Signals
         const earlier = DateTime.makeUnsafe(capturedAt - (capturedAt % 300_000) - 600_000)
         yield* signals.recordTraces(api, batchOf("f", [counts("GET /a", 2), counts("GET /a", 3, { bucket: earlier })]))
-        const fiveMinutes = yield* signals.runsOverTime({ period: lastHour }, "5m")
-        const hours = yield* signals.runsOverTime({ period: lastHour }, "1h")
+        const fiveMinutes = yield* signals.loadOverTime({ period: lastHour }, "5m")
+        const hours = yield* signals.loadOverTime({ period: lastHour }, "1h")
 
         assert.deepStrictEqual(
-          fiveMinutes.points.map((point) => point.runs),
+          fiveMinutes.points.map((point) => point.count),
           [3, 2],
         )
         assert.strictEqual(
-          hours.points.reduce((total, point) => total + point.runs, 0),
+          hours.points.reduce((total, point) => total + point.count, 0),
           5,
         )
       }),
     ),
   )
 
-  it.effect("shows one operation's runs over time, with their percentiles in each step", () =>
+  it.effect("shows one operation's load over time, with its percentiles in each step", () =>
     inProject(
       "series-of-operation",
       now,
       Effect.gen(function* () {
         const signals = yield* Signals
-        // A hundred runs of GET /slow, taking 100 to 199 ms; four quick ones elsewhere.
+        // GET /slow a hundred times, taking 100 to 199 ms; four quick ones elsewhere.
         const slow = counts("GET /slow", 100, {
           totalMs: 14_950,
           durations: sketchOf(Array.from({ length: 100 }, (_, index) => SketchValue.make(100 + index))),
         })
         yield* signals.recordTraces(api, batchOf("e", [counts("GET /a", 4), slow]))
         const operation = EnvelopeName.make("GET /slow")
-        const series = yield* signals.runsOverTime({ period: lastHour, operation }, "5m")
+        const series = yield* signals.loadOverTime({ period: lastHour, operation }, "5m")
         const table = yield* signals.operations({ period: lastHour, operation })
         const [point] = series.points
 
         assert.strictEqual(series.points.length, 1)
-        assert.strictEqual(point?.runs, 100)
+        assert.strictEqual(point?.count, 100)
         // Nearest rank, each within 2%: the 50th of a hundred is 149, the 95th 194, the 99th 198.
         assert.closeTo(point?.p50Ms ?? 0, 149, 149 * 0.02)
         assert.closeTo(point?.p95Ms ?? 0, 194, 194 * 0.02)
@@ -426,23 +432,23 @@ describe("Signals", () => {
           table.rows.map((row) => row.operation),
           ["GET /slow"],
         )
-        assert.strictEqual(table.runs, 100)
+        assert.strictEqual(table.count, 100)
       }),
     ),
   )
 
-  it.effect("answers the slowest runs and the failed ones, each opening with its trace", () =>
+  it.effect("answers the slowest traces and the failed ones, each opening with its ID", () =>
     Effect.gen(function* () {
       const { export: batch } = yield* readFixtureAt(now)
       const { all, ofOperation } = yield* inProject(
-        "kept-runs",
+        "kept-traces",
         now,
         Effect.gen(function* () {
           const signals = yield* Signals
           yield* signals.recordTraces(api, batch)
           return {
-            all: yield* signals.keptRuns({ period: lastHour }),
-            ofOperation: yield* signals.keptRuns({
+            all: yield* signals.keptTraces({ period: lastHour }),
+            ofOperation: yield* signals.keptTraces({
               period: lastHour,
               operation: EnvelopeName.make("GET /api/notes/{id}"),
             }),
@@ -451,7 +457,7 @@ describe("Signals", () => {
       )
 
       assert.deepStrictEqual(
-        all.slowest.slice(0, 3).map((run) => [run.operation, run.trace.slice(0, 8)]),
+        all.slowest.slice(0, 3).map((trace) => [trace.operation, trace.trace.slice(0, 8)]),
         [
           [EnvelopeName.make("POST /api/export"), "782b83a9"],
           [EnvelopeName.make("POST /api/export"), "4d09b0a9"],
@@ -461,7 +467,7 @@ describe("Signals", () => {
       assert.strictEqual(all.slowest[0]?.component, "notes-api")
       assert.strictEqual(all.slowest[0]?.environment, "production")
       assert.deepStrictEqual(
-        all.failed.map((run) => [run.operation, run.status, run.failed]),
+        all.failed.map((trace) => [trace.operation, trace.status, trace.failed]),
         [
           [EnvelopeName.make("GET /api/fail"), 500, true],
           [EnvelopeName.make("GET /api/fail"), 500, true],
@@ -472,7 +478,7 @@ describe("Signals", () => {
           DateTime.toEpochMillis(all.failed[1]?.start ?? DateTime.makeUnsafe(0)),
       )
       assert.deepStrictEqual(
-        ofOperation.slowest.map((run) => run.trace.slice(0, 8)),
+        ofOperation.slowest.map((trace) => trace.trace.slice(0, 8)),
         ["3d4a2030", "2f510b73", "b509b1d4", "b0c967e9", "bad0eef1"],
       )
       assert.isEmpty(ofOperation.failed)
@@ -508,36 +514,36 @@ describe("Signals", () => {
             ],
           ),
         )
-        // Another hour's runs are kept apart from these.
+        // Another hour's traces are kept apart from these.
         yield* signals.recordTraces(api, batchOf("3", [], [keptOf(1, 2 * 3_600_000)]))
-        const kept = yield* signals.keptRuns({ period: lastDay })
+        const kept = yield* signals.keptTraces({ period: lastDay })
 
         assert.deepStrictEqual(
-          kept.slowest.map((run) => run.durationMs),
+          kept.slowest.map((trace) => trace.durationMs),
           [80, 70, 60, 50, 45, 1],
         )
         // The newest first: the five slowest failed of that hour, 15 not among them.
         assert.deepStrictEqual(
-          kept.failed.map((run) => run.durationMs),
+          kept.failed.map((trace) => trace.durationMs),
           [40, 80, 25, 35, 45],
         )
       }),
     ),
   )
 
-  it.effect("says which part of a period its kept runs cover: no further back than 14 days", () =>
+  it.effect("says which part of a period its kept traces cover: no further back than 14 days", () =>
     inProject(
       "kept-covered",
       now,
       Effect.gen(function* () {
         const signals = yield* Signals
         const month = new Period({ from: DateTime.makeUnsafe(now - days(30)), to: DateTime.makeUnsafe(now) })
-        const kept = yield* signals.keptRuns({ period: month })
+        const kept = yield* signals.keptTraces({ period: month })
         const before = new Period({
           from: DateTime.makeUnsafe(now - days(20)),
           to: DateTime.makeUnsafe(now - days(15)),
         })
-        const older = yield* signals.keptRuns({ period: before })
+        const older = yield* signals.keptTraces({ period: before })
 
         assert.isAtLeast(DateTime.toEpochMillis(kept.covered?.from ?? DateTime.makeUnsafe(0)), now - days(14))
         assert.isUndefined(older.covered)

@@ -6,13 +6,13 @@ import { ActivityIcon, GaugeIcon } from "lucide-react"
 
 import { failureColor } from "@/lib/colors"
 import { count, moment, share } from "@/lib/format"
-import { operationsAtom, periodAtom, runsAtom, useComponentKeys, usualOperationsAtom } from "@/project-data"
+import { operationsAtom, periodAtom, loadAtom, useComponentKeys, usualOperationsAtom } from "@/project-data"
 import {
   colorOf,
   columnTimesOf,
   operationRowsOf,
   periodWords,
-  runColumnsOf,
+  loadColumnsOf,
   slowerMeaning,
   ticksOf,
   zoneOf,
@@ -31,7 +31,7 @@ import { buttonVariants } from "@/views/ui/button"
 const summaryRows = 8
 
 /**
- * Runs of a project's components, or of one: how many over the period and how many failed, then
+ * The load on a project's components, or on one: how many ran over the period and how many failed, then
  * the operations that got slower or take the most time, each one click from its own page, each panel
  * the page's full width.
  */
@@ -45,7 +45,7 @@ export function PerformancePage({
   const scope = { project, ...(component === undefined ? {} : { component }) }
   const period = useAtomValue(periodAtom)
   const components = useComponentKeys(project)
-  const runs = useAtomValue(runsAtom(scope))
+  const load = useAtomValue(loadAtom(scope))
   const operations = useAtomValue(operationsAtom(scope))
   const compared = useAtomValue(usualOperationsAtom(scope))
   const color = component === undefined ? "var(--blue)" : colorOf(component, components)
@@ -76,16 +76,16 @@ export function PerformancePage({
       <div className="flex flex-col gap-4">
         <Panel
           icon={ActivityIcon}
-          title={`Runs of ${shown}`}
+          title={`Load on ${shown}`}
           subtitle={`${periodWords[period]}, and how many failed`}
-          badge={AsyncResult.isSuccess(runs) ? zoneOf(runs.value) : undefined}
+          badge={AsyncResult.isSuccess(load) ? zoneOf(load.value) : undefined}
         >
-          <Loaded result={runs}>
+          <Loaded result={load}>
             {(series) => {
-              const asked = runColumnsOf(series, (point) => point.runs)
-              const failed = runColumnsOf(series, (point) => point.errors)
+              const asked = loadColumnsOf(series, (point) => point.count)
+              const failed = loadColumnsOf(series, (point) => point.errors)
               const { startOf, whenOf } = columnTimesOf(asked)
-              const total = series.points.reduce((sum, point) => sum + point.runs, 0)
+              const total = series.points.reduce((sum, point) => sum + point.count, 0)
               const failures = series.points.reduce((sum, point) => sum + point.errors, 0)
               const peak = asked.values.reduce<number | undefined>(
                 (best, value, column) =>
@@ -97,9 +97,9 @@ export function PerformancePage({
                   <div className="p-5">
                     <BarRows
                       rowHeight={64}
-                      label={`Runs of ${shown} over the period, ${count(total)} in all, with failed runs in their own row.`}
+                      label={`The load on ${shown} over the period, ${count(total)} in all, with those that failed in their own row.`}
                       rows={[
-                        { label: "Runs", note: count(total), color, values: asked.values },
+                        { label: "Total", note: count(total), color, values: asked.values },
                         { label: "Failed", note: count(failures), color: failureColor, values: failed.values },
                       ]}
                       ticks={ticksOf(asked)}
@@ -108,7 +108,7 @@ export function PerformancePage({
                   </div>
                   <PanelStats
                     stats={[
-                      { label: "Runs", value: count(total) },
+                      { label: "Total", value: count(total) },
                       {
                         label: "Error rate",
                         value: share(failures, total),
@@ -147,7 +147,7 @@ export function PerformancePage({
               return (
                 <div className="p-5">
                   {rows.length === 0 ? (
-                    <p className="py-4 text-sm text-muted-foreground">No runs in this period.</p>
+                    <p className="py-4 text-sm text-muted-foreground">Nothing reported in this period.</p>
                   ) : (
                     <OperationTable
                       rows={rows.slice(0, summaryRows)}
@@ -162,7 +162,7 @@ export function PerformancePage({
                   )}
                   <p className="mt-4 text-sm text-muted-foreground">
                     {rows.length > summaryRows && `${count(summaryRows)} of ${count(rows.length)}. `}
-                    {slowerMeaning} Open an operation for its runs and latency over time.
+                    {slowerMeaning} Open an operation for its load and latency over time.
                   </p>
                 </div>
               )

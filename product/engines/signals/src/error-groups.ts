@@ -3,7 +3,7 @@ import { Schema } from "effect"
 
 import type { LogLevel } from "./log-entry.ts"
 import { ErrorGroupId, LogLine } from "./log-entry.ts"
-import { SeriesStep } from "./run-queries.ts"
+import { SeriesStep } from "./operation-queries.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
