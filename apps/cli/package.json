@@ -13,6 +13,7 @@
     "@cluenori/members": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
+    "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/today": "workspace:*",
     "@cluenori/worker": "workspace:*",

@@ -22,6 +22,7 @@ import {
 } from "./phones-handlers.ts"
 import { ProjectObjects } from "./project-objects.ts"
 import { ProjectsHandlers } from "./projects-handlers.ts"
+import { ReleasesHandlers } from "./releases-handlers.ts"
 import { MembersHandlers, PasskeysHandlers, SignInHandlers } from "./sign-in-handlers.ts"
 import { SignalsHandlers } from "./signals-handlers.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
@@ -73,6 +74,7 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
   Layer.provide(PhonePushHandlers),
   Layer.provide(NotificationsHandlers),
   Layer.provide(TodayHandlers),
+  Layer.provide(ReleasesHandlers),
   Layer.provide(memberAuthorizationLayer),
   // Handlers reach projects only through it, which keeps to what the member sees (.oxlintrc.json);
   // they ask for it per request, so it is an output.

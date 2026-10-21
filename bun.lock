@@ -23,6 +23,7 @@
         "@cluenori/members": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
+        "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/today": "workspace:*",
         "@cluenori/worker": "workspace:*",
@@ -41,6 +42,7 @@
         "@cluenori/members": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
+        "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/worker": "workspace:*",
         "@effect/atom-react": "catalog:",
@@ -90,6 +92,7 @@
         "@cluenori/notifications": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
+        "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/today": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
@@ -327,6 +330,25 @@
         "wrangler": "catalog:",
       },
     },
+    "product/modules/releases": {
+      "name": "@cluenori/releases",
+      "dependencies": {
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/incidents": "workspace:*",
+        "@cluenori/projects": "workspace:*",
+        "@cluenori/signals": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@bagatka/quantile-sketch": "workspace:*",
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
     "tests/journeys": {
       "name": "@cluenori/journeys",
       "devDependencies": {
@@ -338,6 +360,7 @@
         "@cluenori/notifications": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
+        "@cluenori/releases": "workspace:*",
         "@cluenori/worker": "workspace:*",
         "@effect/vitest": "catalog:",
         "effect": "catalog:",
@@ -450,6 +473,8 @@
     "@cluenori/phones": ["@cluenori/phones@workspace:product/engines/phones"],
 
     "@cluenori/projects": ["@cluenori/projects@workspace:product/engines/projects"],
+
+    "@cluenori/releases": ["@cluenori/releases@workspace:product/modules/releases"],
 
     "@cluenori/signals": ["@cluenori/signals@workspace:product/engines/signals"],
 

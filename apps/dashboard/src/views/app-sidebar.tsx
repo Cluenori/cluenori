@@ -11,6 +11,7 @@ import {
   SearchIcon,
   SmartphoneIcon,
   SunIcon,
+  TagIcon,
   UsersIcon,
 } from "lucide-react"
 import { useState } from "react"
@@ -38,15 +39,24 @@ import {
 } from "@/views/ui/sidebar"
 
 // Pages that open from an area's page, so the area stays marked on them.
-const underArea = (route: Route, area: Area) =>
-  area === "performance"
-    ? route.page === "operations" || route.page === "operation" || route.page === "trace"
-    : area === "errors" && route.page === "error"
+const underArea = (route: Route, area: Area) => {
+  switch (area) {
+    case "performance":
+      return route.page === "operations" || route.page === "operation" || route.page === "trace"
+    case "errors":
+      return route.page === "error"
+    case "logs":
+      return false
+    case "releases":
+      return route.page === "release"
+  }
+}
 
 const areas: ReadonlyArray<{ readonly area: Area; readonly label: string; readonly icon: typeof BugIcon }> = [
   { area: "performance", label: "Performance", icon: ActivityIcon },
   { area: "errors", label: "Errors", icon: BugIcon },
   { area: "logs", label: "Logs", icon: ScrollTextIcon },
+  { area: "releases", label: "Releases", icon: TagIcon },
 ]
 
 /**

@@ -56,9 +56,12 @@ export interface ExportedSpan {
 
 const kinds = { server: 2, client: 3 } as const
 
-/** A trace export of one service, with its spans in order; IDs come from their position. */
+/**
+ * A trace export of one service, with its spans in order; IDs come from their position. With
+ * `version`, the release it reports in `service.version`.
+ */
 export const traceExport = (
-  service: { readonly name: string; readonly environment: string },
+  service: { readonly name: string; readonly environment: string; readonly version?: string },
   spans: ReadonlyArray<ExportedSpan>,
 ) => {
   const encodedSpans = spans.flatMap((span, index) => {
@@ -83,6 +86,7 @@ export const traceExport = (
   const resource = bytesField(1, [
     ...attribute("deployment.environment.name", service.environment),
     ...attribute("service.name", service.name),
+    ...(service.version === undefined ? [] : attribute("service.version", service.version)),
   ])
   const scopeSpans = bytesField(2, [...bytesField(1, textField(1, "Microsoft.AspNetCore")), ...encodedSpans])
   return Uint8Array.from(bytesField(1, [...resource, ...scopeSpans]))

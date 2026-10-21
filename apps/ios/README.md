@@ -3,7 +3,7 @@
 Cluenori on the founder's iPhone, installed from TestFlight: it pairs with a deployment by the QR
 code its web shows, and shows Today, what needs attention across the deployment's projects, and
 each project over a period: its incidents, load, operations with their percentiles, errors with
-their stacks, and logs. Alerts reach it as pushes: a project that is down rings like an alarm
+their stacks, logs, and releases, each compared with the release before it. Alerts reach it as pushes: a project that is down rings like an alarm
 clock, through silent mode, with an Acknowledge button (`concept/Modules.md`).
 
 ## Use it
@@ -69,7 +69,8 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   question goes through `Answer`: shown at once from the phone, asked again, and kept when the
   network drops, in the app's caches, a folder per pairing, gone when the phone unpairs.
 - **Links to screens:** `cluenori://projects/<key>`, and under it `/operations`, `/errors`,
-  `/errors/<id>`, and `/logs`, which alerts will open.
+  `/errors/<id>`, `/logs`, `/releases`, and `/releases/<component>/<release>`, with
+  `?environment=<key>` for a component that says where it runs, which alerts will open.
 - **The client** (`CluenoriApp/Sources/CluenoriClient`): `CluenoriAPI.swift`, generated from the
   API's definition, and pairing: reading a link, and the phone's User-Agent.
 

@@ -3,8 +3,8 @@ import CluenoriScreens
 import Foundation
 import SwiftUI
 
-/// A project's overview over the period: its open incidents, its load, its errors, and its latest
-/// warnings and errors, each leading to a screen with all of them.
+/// A project's overview over the period: its open incidents, its load, its releases, its errors, and
+/// its latest warnings and errors, each leading to a screen with all of them.
 struct ProjectScreen: View {
     let project: ProjectModel
     let name: String
@@ -15,6 +15,7 @@ struct ProjectScreen: View {
             PeriodSection(period: $navigation.period)
             IncidentsSection(incidents: project.incidents)
             LoadSection(project: project.key, load: project.load, operations: project.operations)
+            ReleasesSection(project: project.key, releases: project.releases, period: project.period)
             ErrorsSection(project: project.key, errors: project.errors, period: project.period)
             LogsSection(project: project.key, logs: project.logs, period: project.period)
         }
@@ -44,7 +45,8 @@ struct IncidentsSection: View {
                     IncidentRow(
                         title: incident.title,
                         openedAt: incident.openedAt,
-                        acknowledged: incident.acknowledgedAt != nil
+                        acknowledged: incident.acknowledgedAt != nil,
+                        resolvedAt: incident.resolvedAt
                     )
                 }
             } header: {
@@ -58,22 +60,40 @@ struct IncidentRow: View {
     let title: String
     let openedAt: Date
     let acknowledged: Bool
+    /// Nil while it's open.
+    let resolvedAt: Date?
 
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                Text(
-                    "open \(Text(openedAt, style: .relative))",
-                    bundle: #bundle,
-                    comment: "How long an incident has been open. The variable is a duration."
-                )
+                Group {
+                    if let resolvedAt {
+                        Text(
+                            "opened \(openedAt, format: .dateTime.month().day().hour().minute()), resolved after \(Duration.seconds(max(resolvedAt.timeIntervalSince(openedAt), 0)), format: .units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2))",
+                            bundle: #bundle,
+                            comment:
+                                "When a resolved incident opened, and how long it was open. The variables are a date and time, and a duration."
+                        )
+                    } else {
+                        Text(
+                            "open \(Text(openedAt, style: .relative))",
+                            bundle: #bundle,
+                            comment: "How long an incident has been open. The variable is a duration."
+                        )
+                    }
+                }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             }
         } icon: {
-            Image(systemName: acknowledged ? "bell.badge.slash.fill" : "bell.badge.fill")
-                .foregroundStyle(acknowledged ? .orange : .red)
+            if resolvedAt != nil {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Image(systemName: acknowledged ? "bell.badge.slash.fill" : "bell.badge.fill")
+                    .foregroundStyle(acknowledged ? .orange : .red)
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -133,6 +153,39 @@ struct LoadStats: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The project's latest releases over the period, each with its verdict, leading to all of them.
+struct ReleasesSection: View {
+    let project: String
+    let releases: Answer<ReleaseList>
+    let period: PeriodKey
+
+    var body: some View {
+        Section {
+            if let list = releases.value {
+                if list.releases.isEmpty {
+                    Text(
+                        "No releases in \(periodPhrase(period)). A release shows once a service reports its version in `service.version`.",
+                        bundle: #bundle,
+                        comment:
+                            "A project had no releases. The variable is a period; service.version is a name, as is."
+                    )
+                    .foregroundStyle(.secondary)
+                }
+                ForEach(list.releases.prefix(3), id: \.self) { summary in
+                    ReleaseLink(project: project, summary: summary)
+                }
+            } else {
+                AnswerPlaceholder(problem: releases.problem)
+            }
+            NavigationLink(value: Route.releases(project: project)) {
+                Text("All releases", bundle: #bundle, comment: "Opens every release of a project.")
+            }
+        } header: {
+            Text("Releases", bundle: #bundle, comment: "Section of a project's releases.")
+        }
     }
 }
 

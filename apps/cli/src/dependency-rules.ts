@@ -77,7 +77,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     folders: "apps/cli",
     name: "@cluenori/cli",
     contract: false,
-    mayUse: ["packages/*", "product/foundation", "product/engines/*", "apps/worker"],
+    mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*", "apps/worker"],
     mayInstall: ["effect", "@effect/platform-bun"],
     mayInstallForDevelopment: forTests,
   },
@@ -85,7 +85,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     folders: "apps/dashboard",
     name: "@cluenori/dashboard",
     contract: false,
-    mayUse: ["packages/*", "product/foundation", "product/engines/*", "apps/worker"],
+    mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*", "apps/worker"],
     // Effect's React binding: the dashboard reads the API through atoms.
     mayInstall: ["effect", "@effect/atom-react", ...forTheBrowser],
     mayInstallForDevelopment: [
@@ -118,7 +118,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/journeys",
     contract: false,
     // Capabilities too, for what a journey plays a client with, such as a passkey's authenticator.
-    mayUse: ["packages/*", "product/foundation", "product/engines/*", "apps/worker"],
+    mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*", "apps/worker"],
     mayInstall: [],
     mayInstallForDevelopment: ["effect", "@cloudflare/vitest-plugin", "wrangler", ...forTests],
   },

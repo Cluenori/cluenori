@@ -105,6 +105,7 @@ interface Group {
   readonly bucket: number
   readonly operation: EnvelopeName
   readonly environment: EnvironmentKey | undefined
+  readonly release: ReleaseVersion | undefined
   count: number
   errors: number
   totalMs: number
@@ -113,7 +114,7 @@ interface Group {
 
 /**
  * Reads the body of an OTLP/HTTP protobuf trace export: removes credentials and personal data,
- * writes the file the archive keeps, counts its operations by name, environment, and minute, and
+ * writes the file the archive keeps, counts its operations by name, environment, release, and minute, and
  * picks the traces that may be kept. An operation's span is a server or consumer span, or an
  * internal span that starts its trace, a job (`isOperationSpan`); its name is the operation's
  * (`GET /api/notes/{id}`, `cleanup.run`); it failed when its status is an error. Pure apart from
@@ -133,6 +134,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   let firstProblem: string | undefined
   for (const { resource, scopeSpans } of resourceSpans) {
     const environment = environmentOf(resource)
+    const release = releaseOf(resource)
     for (const { spans } of scopeSpans) {
       for (const span of spans) {
         const counted = isOperationSpan(span)
@@ -146,11 +148,12 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
           const bucket = start - (start % bucketMillis)
           const operation = EnvelopeName.make(span.name)
           // Names and keys hold no control characters, so NUL separates them unambiguously.
-          const key = [bucket, operation, environment ?? ""].join("\u0000")
+          const key = [bucket, operation, environment ?? "", release ?? ""].join("\u0000")
           const group = groups.get(key) ?? {
             bucket,
             operation,
             environment,
+            release,
             count: 0,
             errors: 0,
             totalMs: 0,
@@ -171,6 +174,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
               trace: span.traceId,
               operation,
               ...(environment === undefined ? {} : { environment }),
+              ...(release === undefined ? {} : { release }),
               start: DateTime.makeUnsafe(start),
               durationMs,
               failed,
@@ -187,6 +191,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
     bucket: DateTime.makeUnsafe(group.bucket),
     operation: group.operation,
     ...(group.environment === undefined ? {} : { environment: group.environment }),
+    ...(group.release === undefined ? {} : { release: group.release }),
     count: group.count,
     errors: group.errors,
     totalMs: group.totalMs,

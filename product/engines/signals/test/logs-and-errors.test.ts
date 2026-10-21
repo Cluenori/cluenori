@@ -1,6 +1,6 @@
 import type { LogRecord, ResourceLogs } from "@bagatka/otlp"
 import { decodeLogs, encodeLogs } from "@bagatka/otlp"
-import { ComponentKey, Period, TraceId } from "@cluenori/foundation"
+import { ComponentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Duration, Effect, Layer } from "effect"
 import { Base64 } from "effect/encoding"
@@ -163,6 +163,45 @@ describe("Signals' warnings and errors", () => {
       assert.strictEqual(timeouts?.lastEnvironment, "production")
       assert.strictEqual(unhandled?.occurrences, 2)
       assert.isAbove(unhandled?.culprit.length ?? 0, 0)
+    }),
+  )
+
+  it.effect("remembers the release each error was first seen in, whatever order its occurrences arrive in", () =>
+    Effect.gen(function* () {
+      const { export: read } = yield* readAt(now, fixtureLogs)
+      const older = ReleaseVersion.make("2026.10.20-a1b2c3d")
+      const newer = ReleaseVersion.make("2026.10.21-e91f09c")
+      // The fixture's records as one release sent them, `shift` milliseconds later.
+      const fromRelease = (digit: string, release: ReleaseVersion, shift: number): LogExport => ({
+        ...read,
+        digest: BatchDigest.make(digit.repeat(64)),
+        entries: read.entries.map((entry) => ({
+          ...entry,
+          release,
+          time: DateTime.makeUnsafe(DateTime.toEpochMillis(entry.time) + shift),
+        })),
+      })
+      const table = yield* inProject(
+        "first-release",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordLogs(api, fromRelease("a", newer, 0))
+          // An exporter that was behind sends the older release's earlier occurrences after.
+          yield* signals.recordLogs(api, fromRelease("b", older, -60_000))
+          yield* signals.recordLogs(api, fromRelease("c", newer, 30_000))
+          return yield* signals.errors({ period: lastHour })
+        }),
+      )
+
+      assert.lengthOf(table.groups, 2)
+      assert.deepStrictEqual(
+        table.groups.map((group) => [group.firstRelease, group.lastRelease]),
+        [
+          [older, newer],
+          [older, newer],
+        ],
+      )
     }),
   )
 

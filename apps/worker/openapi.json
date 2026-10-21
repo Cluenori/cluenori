@@ -1053,6 +1053,15 @@
               ]
             },
             "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
           }
         ],
         "security": [
@@ -1163,6 +1172,15 @@
                   "pattern": "^\\P{Cc}*$"
                 }
               ]
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
             },
             "required": false
           },
@@ -1285,6 +1303,15 @@
               ]
             },
             "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
           }
         ],
         "security": [
@@ -1395,6 +1422,15 @@
                   "pattern": "^\\P{Cc}*$"
                 }
               ]
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
             },
             "required": false
           }
@@ -1515,6 +1551,15 @@
                   "pattern": "^\\P{Cc}*$"
                 }
               ]
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
             },
             "required": false
           }
@@ -2656,6 +2701,196 @@
         },
         "description": "What needs attention now across every project, the most urgent first: open incidents not acknowledged, errors happening now (seen in the last 15 minutes), acknowledged incidents, new errors (first seen in the last day), operations whose p95 over the last day is at least 1.5 times and 100 ms more than over the 7 days before, and projects with components that sent nothing in the last day. Each item has its evidence and its project; `projects` names every project asked; a project that didn't answer is in `unanswered`, its items missing."
       }
+    },
+    "/api/projects/{project}/releases": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.releases",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ReleaseList",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "The releases whose operations ran in a period, the latest first seen first, at most 30: each component's versions as it reports them in `service.version`, from the first minute each ran to the last, with a verdict against the release before it of the same component and environment. Worse when an operation got slower (a p95 at least 1.5 times and 100 ms more) or fails more (at least 5 failures, 2%, and three times the rate before), or an error was first seen in it; too early until it ran an hour and an operation ran 100 times in both. Operations are counted by release from October 2026."
+      }
+    },
+    "/api/projects/{project}/releases/{component}/{release}": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.release",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "release",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ReleaseDetail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ReleaseNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReleaseNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "One release compared with the one before it, in `environment`, or without it the environment it last ran in: the operations that got slower, fail more, got faster, or fail less, each the biggest change first; the operations new in it; the errors first seen in it; and the incidents that opened while it ran, of those the project keeps."
+      }
     }
   },
   "components": {
@@ -2676,6 +2911,508 @@
         "required": [
           "_tag",
           "message"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "ReleaseNotFound"
+            ]
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "_tag",
+          "component",
+          "release"
+        ],
+        "additionalProperties": false
+      },
+      "ProjectNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "ProjectNotFound"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "_tag",
+          "project"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseDetail": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/ReleaseSummary"
+          },
+          "slower": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComparedOperation"
+            }
+          },
+          "failingMore": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComparedOperation"
+            }
+          },
+          "faster": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComparedOperation"
+            }
+          },
+          "failingLess": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComparedOperation"
+            }
+          },
+          "newOperations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "allOf": [
+                {
+                  "pattern": "^\\P{Cc}*$"
+                }
+              ]
+            }
+          },
+          "newErrors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorGroup"
+            }
+          },
+          "incidents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Incident"
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "slower",
+          "failingMore",
+          "faster",
+          "failingLess",
+          "newOperations",
+          "newErrors",
+          "incidents"
+        ],
+        "additionalProperties": false
+      },
+      "Incident": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "subject": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/Evidence"
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acknowledgedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "subject",
+          "title",
+          "evidence",
+          "openedAt"
+        ],
+        "additionalProperties": false
+      },
+      "Evidence": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/DownEvidence"
+          },
+          {
+            "$ref": "#/components/schemas/FailingEvidence"
+          },
+          {
+            "$ref": "#/components/schemas/StoppedEvidence"
+          }
+        ]
+      },
+      "StoppedEvidence": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "stopped"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "lastRanAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "usualGapMs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "_tag",
+          "operation",
+          "lastRanAt",
+          "usualGapMs"
+        ],
+        "additionalProperties": false
+      },
+      "FailingEvidence": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "failing"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "usualRate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "_tag",
+          "operation",
+          "failed",
+          "count",
+          "usualRate"
+        ],
+        "additionalProperties": false
+      },
+      "DownEvidence": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "down"
+            ]
+          },
+          "monitor": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "failures": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "problem": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "monitor",
+          "url",
+          "failures",
+          "problem"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ErrorKind"
+          },
+          "title": {
+            "type": "string"
+          },
+          "culprit": {
+            "type": "string"
+          },
+          "occurrences": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "firstRelease": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastComponent": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastEnvironment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastRelease": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "culprit",
+          "occurrences",
+          "firstSeen",
+          "lastSeen",
+          "lastComponent"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorKind": {
+        "type": "string",
+        "enum": [
+          "exception",
+          "log"
+        ]
+      },
+      "ComparedOperation": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "p95Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "previousCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "previousErrors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "previousP95Ms": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "operation",
+          "count",
+          "errors",
+          "p95Ms",
+          "previousCount",
+          "previousErrors",
+          "previousP95Ms"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseSummary": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "previous": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          },
+          "slower": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "failingMore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "newErrors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "component",
+          "release",
+          "firstSeen",
+          "lastSeen",
+          "count",
+          "errors",
+          "verdict",
+          "slower",
+          "failingMore",
+          "newErrors"
+        ],
+        "additionalProperties": false
+      },
+      "Verdict": {
+        "type": "string",
+        "enum": [
+          "worse",
+          "better",
+          "same",
+          "tooEarly",
+          "first"
+        ]
+      },
+      "ReleaseList": {
+        "type": "object",
+        "properties": {
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseSummary"
+            }
+          }
+        },
+        "required": [
+          "releases"
         ],
         "additionalProperties": false
       },
@@ -2862,66 +3599,6 @@
         ],
         "additionalProperties": false
       },
-      "ErrorGroup": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/ErrorKind"
-          },
-          "title": {
-            "type": "string"
-          },
-          "culprit": {
-            "type": "string"
-          },
-          "occurrences": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "firstSeen": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lastSeen": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lastComponent": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "lastEnvironment": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "lastRelease": {
-            "type": "string",
-            "maxLength": 64
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "culprit",
-          "occurrences",
-          "firstSeen",
-          "lastSeen",
-          "lastComponent"
-        ],
-        "additionalProperties": false
-      },
-      "ErrorKind": {
-        "type": "string",
-        "enum": [
-          "exception",
-          "log"
-        ]
-      },
       "IncidentItem": {
         "type": "object",
         "properties": {
@@ -2943,181 +3620,6 @@
           "_tag",
           "project",
           "incident"
-        ],
-        "additionalProperties": false
-      },
-      "Incident": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "component": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "environment": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "subject": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "evidence": {
-            "$ref": "#/components/schemas/Evidence"
-          },
-          "openedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "resolvedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "acknowledgedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "component",
-          "subject",
-          "title",
-          "evidence",
-          "openedAt"
-        ],
-        "additionalProperties": false
-      },
-      "Evidence": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/DownEvidence"
-          },
-          {
-            "$ref": "#/components/schemas/FailingEvidence"
-          },
-          {
-            "$ref": "#/components/schemas/StoppedEvidence"
-          }
-        ]
-      },
-      "StoppedEvidence": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": [
-              "stopped"
-            ]
-          },
-          "operation": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-            "allOf": [
-              {
-                "pattern": "^\\P{Cc}*$"
-              }
-            ]
-          },
-          "lastRanAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "usualGapMs": {
-            "type": "number",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "_tag",
-          "operation",
-          "lastRanAt",
-          "usualGapMs"
-        ],
-        "additionalProperties": false
-      },
-      "FailingEvidence": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": [
-              "failing"
-            ]
-          },
-          "operation": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-            "allOf": [
-              {
-                "pattern": "^\\P{Cc}*$"
-              }
-            ]
-          },
-          "failed": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "count": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "usualRate": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          }
-        },
-        "required": [
-          "_tag",
-          "operation",
-          "failed",
-          "count",
-          "usualRate"
-        ],
-        "additionalProperties": false
-      },
-      "DownEvidence": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": [
-              "down"
-            ]
-          },
-          "monitor": {
-            "type": "string"
-          },
-          "url": {
-            "type": "string",
-            "maxLength": 2048
-          },
-          "failures": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "problem": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "_tag",
-          "monitor",
-          "url",
-          "failures",
-          "problem"
         ],
         "additionalProperties": false
       },
@@ -3493,26 +3995,6 @@
         "required": [
           "_tag",
           "monitor"
-        ],
-        "additionalProperties": false
-      },
-      "ProjectNotFound": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": [
-              "ProjectNotFound"
-            ]
-          },
-          "project": {
-            "type": "string",
-            "maxLength": 40
-          }
-        },
-        "required": [
-          "_tag",
-          "project"
         ],
         "additionalProperties": false
       },
@@ -4272,6 +4754,10 @@
           "environment": {
             "type": "string",
             "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
           },
           "start": {
             "type": "string",
@@ -5190,6 +5676,9 @@
     },
     {
       "name": "today"
+    },
+    {
+      "name": "releases"
     }
   ]
 }

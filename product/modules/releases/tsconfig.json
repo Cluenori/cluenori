@@ -1,0 +1,5 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  // The module itself sees no platform: Workers' globals are only for its tests (test/tsconfig.json).
+  "include": ["src"]
+}

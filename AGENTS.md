@@ -497,9 +497,11 @@ Local rules refine this document. Where they conflict, follow the local rule and
 conflict.
 
 - **Status:** built so far: the toolchain, the workspace, every check, Foundation
-  (`product/foundation`: scope keys, the envelope, actors, the activity log), and the first slice on
+  (`product/foundation`: scope keys, the envelope, actors, the activity log, the module contract's
+  first part), and the first slice on
   it: services send OpenTelemetry traces, logs and metrics with a component's ingest key; every
-  export is archived 90 days, scrubbed, in R2; the Projects and Signals engines count operations and
+  export is archived 90 days, scrubbed, in R2; the Projects and Signals engines count operations by
+  release and
   keep warnings, errors and error groups in each project's Durable Object; the Incidents engine's
   detectors look every minute at monitors and counts and open incidents; phones pair by a QR code
   and call the API with keys of their own; and the public API (behind an API token) and
@@ -507,7 +509,8 @@ conflict.
   the API token, shows the same through the public API; the iPhone app (`apps/ios`), paired by the
   web's QR code, shows it too, and incidents reach it as alerts through APNs, ringing like an alarm
   clock for Down and Failing; members sign in with passkeys and see only the projects an owner
-  chose for them. No module exists yet.
+  chose for them. The first module, Releases (`product/modules/releases`), compares each component's
+  release with the one before it.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository

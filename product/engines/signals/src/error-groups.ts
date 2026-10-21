@@ -20,6 +20,8 @@ export const ErrorGroup = Schema.Struct({
   /** How often it happened in the period asked about. */
   occurrences: Count,
   firstSeen: Instant,
+  /** The release it was first seen in; absent when that didn't say, or for errors first seen before October 2026. */
+  firstRelease: Schema.optionalKey(ReleaseVersion),
   lastSeen: Instant,
   lastComponent: ComponentKey,
   lastEnvironment: Schema.optionalKey(EnvironmentKey),

@@ -1,4 +1,4 @@
-import { ComponentKey, EnvelopeName, ProjectKey } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
 
 import type { Route } from "@/router"
@@ -24,6 +24,20 @@ describe("routeOf", () => {
     for (const name of ["GET /api/profile/{profileId:guid}/followers", "POST /api/profile/", "SendDigest"]) {
       assert.deepStrictEqual(readBack(operation(name)), operation(name))
     }
+  })
+
+  it("reads a release back from its address, its version's build and its environment too", () => {
+    const release: Route = {
+      page: "release",
+      project: ProjectKey.make("folio"),
+      component: ComponentKey.make("folio-ios"),
+      release: ReleaseVersion.make("2.4.0+312"),
+      environment: EnvironmentKey.make("production"),
+    }
+    assert.deepStrictEqual(readBack(release), release)
+    const { environment: _, ...anywhere } = release
+    assert.deepStrictEqual(readBack(anywhere), anywhere)
+    assert.deepStrictEqual(routeOf("/folio/releases/folio-ios", ""), { page: "missing" })
   })
 
   it("reads the deployment's pages, which no project's address names", () => {

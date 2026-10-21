@@ -9,6 +9,8 @@ import {
 } from "@cluenori/foundation"
 import { Incident, IncidentId, IncidentList } from "@cluenori/incidents"
 import { Component, ComponentName, Project, ProjectDetail, ProjectList, ProjectName } from "@cluenori/projects"
+import type { ComparedOperation, ReleaseSummary } from "@cluenori/releases"
+import { ReleaseDetail, ReleaseList, ReleaseNotFound } from "@cluenori/releases"
 import type { OperationRow, ErrorGroup, LogLine, SeriesStep } from "@cluenori/signals"
 import {
   OperationTable,
@@ -67,6 +69,7 @@ const Asked = Schema.Struct({
   step: Schema.optionalKey(SeriesStepSchema),
   around: Schema.optionalKey(Schema.DateTimeUtcFromString),
   component: Schema.optionalKey(Schema.String),
+  environment: Schema.optionalKey(Schema.String),
   operation: Schema.optionalKey(Schema.String),
   level: Schema.optionalKey(Schema.String),
   search: Schema.optionalKey(Schema.String),
@@ -344,6 +347,219 @@ const trace = (around: number, id: string) => {
   })
 }
 
+// Releases, each component's versions as its telemetry reports them. The API's latest went out 3
+// hours ago and made the feed slower and the export fail more, with a new error; the one before it
+// made things better; staging ran the latest first; the iPhone app's latest went out 40 minutes
+// ago, while phones still run the one before, the first counted.
+const production = EnvironmentKey.make("production")
+const staging = EnvironmentKey.make("staging")
+const worseRelease = ReleaseVersion.make("2026.10.21-e91f09c")
+const betterRelease = ReleaseVersion.make("2026.10.20-7b2c4d1")
+const sameRelease = ReleaseVersion.make("2026.10.17-c3d9a02")
+const firstApiRelease = ReleaseVersion.make("2026.10.14-5e8f210")
+export const appRelease = ReleaseVersion.make("1.8.2+412")
+const firstAppRelease = ReleaseVersion.make("1.8.1+398")
+
+// Counts are kept by the minute: a release runs from the start of its first to the end of its last.
+const minuteOf = (at: number) => DateTime.makeUnsafe(at - (at % minute))
+
+const release = (
+  now: number,
+  fields: Omit<ReleaseSummary, "firstSeen" | "lastSeen" | "slower" | "failingMore" | "newErrors"> & {
+    readonly ran: readonly [number, number]
+    readonly worse?: readonly [number, number, number]
+  },
+): ReleaseSummary => {
+  const { ran, worse = [0, 0, 0], ...summary } = fields
+  const [slower, failingMore, newErrors] = worse
+  return {
+    ...summary,
+    firstSeen: minuteOf(now - ran[0]),
+    lastSeen: DateTime.makeUnsafe(DateTime.toEpochMillis(minuteOf(now - ran[1])) + minute),
+    slower,
+    failingMore,
+    newErrors,
+  }
+}
+
+// Every release, the latest first seen first, as the API lists them.
+const releasesAt = (now: number): ReadonlyArray<ReleaseSummary> => [
+  release(now, {
+    component: ios,
+    environment: production,
+    release: appRelease,
+    ran: [40 * minute, 2 * minute],
+    count: 820,
+    errors: 3,
+    previous: firstAppRelease,
+    verdict: "tooEarly",
+  }),
+  release(now, {
+    component: api,
+    environment: production,
+    release: worseRelease,
+    ran: [3 * hour, minute],
+    count: 9_640,
+    errors: 51,
+    previous: betterRelease,
+    verdict: "worse",
+    worse: [1, 1, 1],
+  }),
+  release(now, {
+    component: api,
+    environment: staging,
+    release: worseRelease,
+    ran: [5 * hour, 4 * hour + 20 * minute],
+    count: 340,
+    errors: 2,
+    verdict: "first",
+  }),
+  release(now, {
+    component: api,
+    environment: production,
+    release: betterRelease,
+    ran: [27 * hour, 3 * hour],
+    count: 61_200,
+    errors: 96,
+    previous: sameRelease,
+    verdict: "better",
+  }),
+  release(now, {
+    component: api,
+    environment: production,
+    release: sameRelease,
+    ran: [4 * day + 2 * hour, 27 * hour],
+    count: 190_400,
+    errors: 410,
+    previous: firstApiRelease,
+    verdict: "same",
+  }),
+  release(now, {
+    component: ios,
+    environment: production,
+    release: firstAppRelease,
+    ran: [6 * day, 5 * minute],
+    count: 14_300,
+    errors: 21,
+    verdict: "first",
+  }),
+  release(now, {
+    component: api,
+    environment: production,
+    release: firstApiRelease,
+    ran: [8 * day, 4 * day + 2 * hour],
+    count: 88_000,
+    errors: 300,
+    verdict: "first",
+  }),
+]
+
+const releases = ({ asked, period, now }: Question) => {
+  const from = DateTime.toEpochMillis(period.from)
+  const to = DateTime.toEpochMillis(period.to)
+  return reply(ReleaseList, {
+    releases: releasesAt(now).filter(
+      (entry) =>
+        DateTime.toEpochMillis(entry.lastSeen) > from &&
+        DateTime.toEpochMillis(entry.firstSeen) < to &&
+        (asked.component === undefined || entry.component === asked.component),
+    ),
+  })
+}
+
+const compared = (
+  operation: string,
+  [count, failed, p95Ms]: readonly [number, number, number],
+  [previousCount, previousErrors, previousP95Ms]: readonly [number, number, number],
+): ComparedOperation => ({
+  operation: EnvelopeName.make(operation),
+  count,
+  errors: failed,
+  p95Ms,
+  previousCount,
+  previousErrors,
+  previousP95Ms,
+})
+
+const releaseIncident = (
+  now: number,
+  id: string,
+  title: string,
+  [opened, resolved]: readonly [number, number | undefined],
+) =>
+  new Incident({
+    id: IncidentId.make(id),
+    component: api,
+    environment: production,
+    subject: "POST /api/export",
+    title,
+    evidence: {
+      _tag: "failing",
+      operation: EnvelopeName.make("POST /api/export"),
+      failed: 10,
+      count: 50,
+      usualRate: 0.001,
+    },
+    openedAt: DateTime.makeUnsafe(now - opened),
+    ...(resolved === undefined ? {} : { resolvedAt: DateTime.makeUnsafe(now - resolved) }),
+  })
+
+// What moved in a release against the one before it, each the biggest change first: in the API's
+// latest, in production, and in the one before it; nothing in the others.
+const movedIn = (now: number, summary: ReleaseSummary) => {
+  if (summary.release === worseRelease && summary.environment === production) {
+    const ran = new Period({ from: summary.firstSeen, to: summary.lastSeen })
+    return {
+      slower: [compared("GET /api/feed", [2_400, 0, 620], [15_800, 0, 290])],
+      failingMore: [compared("POST /api/export", [410, 13, 4_300], [2_600, 10, 4_100])],
+      faster: [compared("GET /api/notes", [5_900, 6, 62], [38_000, 40, 180])],
+      newOperations: [EnvelopeName.make("POST /api/notes/{id}/share")],
+      newErrors: groupsOf(ran).filter((group) => group.id === fresh),
+      incidents: [
+        releaseIncident(now, "0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64", "POST /api/export: 20% failed, usually 0.1%", [
+          40 * minute,
+          undefined,
+        ]),
+        releaseIncident(now, "0199f74c-1b0e-7c55-9a21-3d4e8f6b2c90", "POST /api/export: 8% failed, usually 0.1%", [
+          2 * hour + 30 * minute,
+          2 * hour,
+        ]),
+      ],
+    }
+  }
+  if (summary.release === betterRelease) {
+    return {
+      faster: [compared("GET /api/notes/{id}", [24_000, 3, 140], [71_000, 12, 260])],
+      failingLess: [compared("POST /api/export", [7_100, 28, 4_000], [21_800, 410, 4_200])],
+    }
+  }
+  return {}
+}
+
+// One release against the one before it, or the API's 404 for one it never counted.
+const releaseDetail = (now: number, component: string, version: string, environment: string | undefined) => {
+  const summary = releasesAt(now).find(
+    (entry) => entry.component === component && entry.release === version && entry.environment === environment,
+  )
+  if (summary === undefined) {
+    return reply(
+      ReleaseNotFound,
+      new ReleaseNotFound({ component: ComponentKey.make(component), release: ReleaseVersion.make(version) }),
+      404,
+    )
+  }
+  const none = {
+    slower: [],
+    failingMore: [],
+    faster: [],
+    failingLess: [],
+    newOperations: [],
+    newErrors: [],
+    incidents: [],
+  }
+  return reply(ReleaseDetail, { summary, ...none, ...movedIn(now, summary) })
+}
+
 const signedOut = reply(
   Unauthorized,
   new Unauthorized({ message: "This call needs the API token: send it as a bearer token, or sign in with it." }),
@@ -433,6 +649,10 @@ export const notesApi = ({
         const now = yield* Clock.currentTimeMillis
         return yield* trace(asked.around === undefined ? now : DateTime.toEpochMillis(asked.around), id)
       }
+      if (area === "releases" && id !== undefined && more !== undefined) {
+        const now = yield* Clock.currentTimeMillis
+        return yield* releaseDetail(now, id, more, asked.environment)
+      }
       if (asked.from === undefined || asked.to === undefined) {
         return yield* Effect.die(`The dashboard asked for ${area} without a period.`)
       }
@@ -455,6 +675,9 @@ export const notesApi = ({
       }
       if (area === "logs") {
         return yield* id === "counts" && more === undefined ? logCounts(question) : logs(question)
+      }
+      if (area === "releases" && id === undefined) {
+        return yield* releases(question)
       }
       return yield* noSuchCall(call.method, call.path)
     })

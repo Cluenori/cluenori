@@ -1,10 +1,11 @@
 import type { Span } from "@bagatka/otlp"
 import { encodeTraces } from "@bagatka/otlp"
 import { SketchValue, sketchOf } from "@bagatka/quantile-sketch"
-import { ComponentKey, EnvelopeName, EnvironmentKey, Period, TraceId } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Duration, Effect } from "effect"
 import { Base64 } from "effect/encoding"
+import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 
 import type { KeptTrace, OperationCounts, TraceExport } from "../src/index.ts"
@@ -581,5 +582,222 @@ describe("Signals", () => {
         assert.deepStrictEqual([older.slowest, older.failed], [[], []])
       }),
     ),
+  )
+})
+
+// A service of `version` with one server span of trace `trace`.
+const resource = (version: string, trace: string) => ({
+  resource: new Map<string, string>([
+    ["service.name", "notes-api"],
+    ["service.version", version],
+  ]),
+  scopeSpans: [{ scope: { name: "Notes", version: "" }, spans: [span(trace, "1", "GET /a", "server", undefined)] }],
+})
+
+// The end of the minute `ago` milliseconds before the fixture's.
+const endOf = (ago: number) => DateTime.toEpochMillis(minuteOf(ago)) + 60_000
+
+describe("Signals by release", () => {
+  const older = ReleaseVersion.make("2026.10.20-a1b2c3d")
+  const newer = ReleaseVersion.make("2026.10.21-e91f09c")
+
+  it.effect("counts each release a resource reports in service.version apart, and keeps it on traces", () =>
+    Effect.gen(function* () {
+      // The same operation in the same minute from two releases, as during a rollout, and from a
+      // service whose version is no release version.
+      const body = encodeTraces([
+        resource(older, "a"),
+        resource(newer, "b"),
+        resource(newer, "c"),
+        resource("not a version", "d"),
+      ])
+      const { export: batch } = yield* TestClock.setTime(now).pipe(
+        Effect.andThen(readTraces(body)),
+        Effect.provide(WebCrypto),
+      )
+
+      assert.deepStrictEqual(
+        batch.counts.map((entry) => [entry.release, entry.count]),
+        [
+          [older, 1],
+          [newer, 2],
+          [undefined, 1],
+        ],
+      )
+      assert.deepStrictEqual(
+        batch.kept.map((trace) => trace.release),
+        [older, newer, newer, undefined],
+      )
+    }),
+  )
+
+  it.effect("answers one release's operations, and all releases' together", () =>
+    inProject(
+      "by-release",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        yield* signals.recordTraces(
+          api,
+          batchOf("a", [
+            counts("GET /a", 3, { release: older }),
+            counts("GET /a", 2, { release: newer, errors: 1 }),
+            counts("GET /a", 4),
+          ]),
+        )
+        const all = yield* signals.operations({ period: lastHour })
+        const newest = yield* signals.operations({ period: lastHour, release: newer })
+        const hourly = yield* signals.operations({
+          period: new Period({ from: DateTime.makeUnsafe(now - days(7)), to: DateTime.makeUnsafe(now) }),
+          release: older,
+        })
+
+        assert.deepStrictEqual([all.count, all.rows.length], [9, 1])
+        assert.deepStrictEqual([newest.count, newest.errors], [2, 1])
+        assert.strictEqual(hourly.count, 3)
+      }),
+    ),
+  )
+
+  it.effect("lists each release with its first and last minute, the latest first seen first", () =>
+    inProject(
+      "releases",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        yield* signals.recordTraces(
+          api,
+          batchOf("a", [
+            counts("GET /a", 1, { release: older, bucket: minuteOf(600_000) }),
+            counts("GET /a", 1, { release: older, bucket: minuteOf(300_000) }),
+          ]),
+        )
+        // A later export widens a release's span; counts without a release make none.
+        yield* signals.recordTraces(
+          api,
+          batchOf("b", [
+            counts("GET /a", 1, { release: newer, bucket: minuteOf(180_000) }),
+            counts("GET /b", 1, { release: newer, bucket: minuteOf(0) }),
+            counts("GET /b", 1, { release: older, bucket: minuteOf(240_000) }),
+            counts("GET /c", 1),
+          ]),
+        )
+        const table = yield* signals.releases({ period: lastHour })
+        const before = yield* signals.releases({
+          period: new Period({ from: DateTime.makeUnsafe(now - days(2)), to: DateTime.makeUnsafe(now - days(1)) }),
+        })
+
+        assert.deepStrictEqual(
+          table.rows.map((row) => [
+            row.release,
+            row.environment,
+            DateTime.toEpochMillis(row.firstSeen),
+            DateTime.toEpochMillis(row.lastSeen),
+          ]),
+          [
+            [newer, EnvironmentKey.make("prod"), endOf(180_000) - 60_000, endOf(0)],
+            [older, EnvironmentKey.make("prod"), endOf(600_000) - 60_000, endOf(240_000)],
+          ],
+        )
+        assert.isEmpty(before.rows)
+      }),
+    ),
+  )
+
+  it.effect("counts a minute two releases ran in once among the minutes an operation ran in", () =>
+    inProject(
+      "minutes-by-release",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        yield* signals.recordTraces(
+          api,
+          batchOf("a", [counts("cleanup.run", 1, { release: older }), counts("cleanup.run", 1, { release: newer })]),
+        )
+        const ran = yield* signals.minutesRan({ period: lastHour }, 1)
+
+        assert.deepStrictEqual(
+          ran.map((entry) => entry.minutes.map(DateTime.toEpochMillis)),
+          [[DateTime.toEpochMillis(minuteOf(0))]],
+        )
+      }),
+    ),
+  )
+
+  it.effect("answers one release's kept traces", () =>
+    inProject(
+      "kept-by-release",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        yield* signals.recordTraces(
+          api,
+          batchOf(
+            "a",
+            [counts("GET /a", 2)],
+            [
+              { ...keptOf(30, 0), release: older },
+              { ...keptOf(50, 0), release: newer },
+            ],
+          ),
+        )
+        const kept = yield* signals.keptTraces({ period: lastHour, release: newer })
+
+        assert.deepStrictEqual(
+          kept.slowest.map((trace) => [trace.durationMs, trace.release]),
+          [[50, newer]],
+        )
+      }),
+    ),
+  )
+
+  it.effect("keeps the counts from before releases were counted, as release unknown", () =>
+    Effect.gen(function* () {
+      // A database as it was before releases were counted: its counts made, then the change undone.
+      yield* inProject(
+        "before-releases",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          const sql = yield* SqlClient.SqlClient
+          yield* signals.recordTraces(api, batchOf("a", [counts("GET /a", 3)]))
+          for (const table of ["signals_minute_counts", "signals_hour_counts"]) {
+            yield* sql`CREATE TABLE ${sql(`${table}_before`)} AS SELECT bucket, operation, environment, count, errors,
+              total_ms, durations FROM ${sql(table)}`
+            yield* sql`DROP TABLE ${sql(table)}`
+            yield* sql`CREATE TABLE ${sql(table)} (
+              bucket INTEGER NOT NULL,
+              operation INTEGER NOT NULL,
+              environment TEXT NOT NULL,
+              count INTEGER NOT NULL,
+              errors INTEGER NOT NULL,
+              total_ms REAL NOT NULL,
+              durations TEXT NOT NULL,
+              PRIMARY KEY (bucket, operation, environment)
+            ) WITHOUT ROWID`
+            yield* sql`INSERT INTO ${sql(table)} SELECT * FROM ${sql(`${table}_before`)}`
+            yield* sql`DROP TABLE ${sql(`${table}_before`)}`
+          }
+          yield* sql`ALTER TABLE signals_kept_traces DROP COLUMN release`
+          yield* sql`ALTER TABLE signals_error_groups DROP COLUMN first_release`
+          yield* sql`DROP TABLE signals_releases`
+          yield* sql`DELETE FROM signals_migrations WHERE migration_id = 7`
+        }).pipe(Effect.orDie),
+      )
+      // Built again on it, the engine counts by release, and the counts from before still count.
+      const counted = yield* inProject(
+        "before-releases",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordTraces(api, batchOf("b", [counts("GET /a", 2, { release: newer })]))
+          const all = yield* signals.operations({ period: lastHour })
+          const newest = yield* signals.operations({ period: lastHour, release: newer })
+          return { all: all.count, newest: newest.count }
+        }),
+      )
+
+      assert.deepStrictEqual(counted, { all: 5, newest: 2 })
+    }),
   )
 })

@@ -68,6 +68,17 @@ public final class DeploymentModels {
         model("logs \(project) \(period)") { LogsModel(project: project, period: period, api: api, context: context) }
     }
 
+    public func releases(_ project: String, period: PeriodKey) -> ReleasesModel {
+        model("releases \(project) \(period)") {
+            ReleasesModel(project: project, period: period, api: api, context: context)
+        }
+    }
+
+    /// One release, whatever the period: its comparison is of the whole release.
+    public func release(_ release: ReleaseRef) -> ReleaseModel {
+        model("release \(release)") { ReleaseModel(release: release, api: api, context: context) }
+    }
+
     private func model<Model: AnyObject>(_ key: String, _ make: () -> Model) -> Model {
         if let model = kept[key] as? Model {
             return model

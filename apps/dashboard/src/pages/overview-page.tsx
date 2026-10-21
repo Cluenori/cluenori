@@ -3,7 +3,8 @@ import { errorStatusOf, operationKeyOf, slowerOperations } from "@cluenori/signa
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { ActivityIcon, BellIcon, BoxesIcon, BugIcon, ScrollTextIcon } from "lucide-react"
+import { ActivityIcon, BellIcon, BoxesIcon, BugIcon, ScrollTextIcon, TagIcon } from "lucide-react"
+import { lazy, Suspense } from "react"
 
 import { failureColor, warningColor } from "@/lib/colors"
 import { count, duration, share } from "@/lib/format"
@@ -15,6 +16,7 @@ import {
   periodAtom,
   projectAtom,
   loadAtom,
+  releasesAtom,
   usualOperationsAtom,
 } from "@/project-data"
 import {
@@ -25,6 +27,7 @@ import {
   logColumnsOf,
   periodWords,
   loadColumnsOf,
+  releaseRouteOf,
   sumOf,
   ticksOf,
 } from "@/project-facts"
@@ -39,7 +42,19 @@ import { PeriodSwitch } from "@/views/period-switch"
 import { ProjectHeader } from "@/views/project-header"
 import { buttonVariants } from "@/views/ui/button"
 
-const areaWords: Readonly<Record<Area, string>> = { performance: "Performance", errors: "Errors", logs: "Logs" }
+const areaWords: Readonly<Record<Area, string>> = {
+  performance: "Performance",
+  errors: "Errors",
+  logs: "Logs",
+  releases: "Releases",
+}
+
+// The list of releases loads after start, with the releases' pages, so the first load holds its budget.
+const releaseList = import("@/views/release-list")
+const ReleaseList = lazy(() => releaseList.then((module) => ({ default: module.ReleaseList })))
+
+// How many releases the summary shows, the latest first; the releases page lists every one.
+const summaryReleases = 4
 
 function OpenButton({ project, area }: { readonly project: ProjectKey; readonly area: Area }) {
   return (
@@ -58,7 +73,8 @@ const everyOther = <T,>(ticks: ReadonlyArray<T>) => ticks.filter((_, index) => i
 
 /**
  * A project's starting point: what needs attention now, a summary of each area with a way into its
- * page, and its components. Later areas, such as analytics and releases, add their summaries here.
+ * page, its latest releases, and its components. Later areas, such as analytics, add their
+ * summaries here.
  */
 export function OverviewPage({ project }: { readonly project: ProjectKey }) {
   const scope = { project }
@@ -70,6 +86,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
   const errors = useAtomValue(errorsAtom(scope))
   const incidents = useAtomValue(incidentsAtom(project))
   const logCounts = useAtomValue(logCountsAtom({ project, by: "level" }))
+  const releases = useAtomValue(releasesAtom(scope))
   const periodText = periodWords[period].toLowerCase()
 
   return (
@@ -232,6 +249,29 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
         </Panel>
       </div>
 
+      <Panel
+        icon={TagIcon}
+        title="Releases"
+        subtitle="The latest first, each against the release before it"
+        action={<OpenButton project={project} area="releases" />}
+      >
+        <Loaded result={AsyncResult.all({ releases, detail })}>
+          {({ releases: answer, detail: { components } }) => {
+            const keys = components.map((component) => component.key)
+            return (
+              <Suspense fallback={<p className="px-5 py-6 text-sm text-muted-foreground">Loading…</p>}>
+                <ReleaseList
+                  releases={answer.releases.slice(0, summaryReleases)}
+                  asOf={answer.asOf}
+                  colorOf={(of) => colorOf(of, keys)}
+                  linkOf={(release) => releaseRouteOf(project, release)}
+                />
+              </Suspense>
+            )
+          }}
+        </Loaded>
+      </Panel>
+
       <Panel icon={BoxesIcon} title="Components" subtitle={`How each part is doing, ${periodText}`}>
         <Loaded result={AsyncResult.all({ detail, operations, compared })}>
           {({ detail: { components }, operations: table, compared: usual }) => {
@@ -299,7 +339,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
                         </dl>
                       )}
                       <span className="flex flex-wrap gap-2">
-                        {(["performance", "errors", "logs"] as const).map((area) => (
+                        {(["performance", "errors", "logs", "releases"] as const).map((area) => (
                           <Link
                             to={{ page: area, project, component: component.key }}
                             key={area}

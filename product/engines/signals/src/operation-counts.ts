@@ -1,11 +1,11 @@
 import { QuantileSketch } from "@bagatka/quantile-sketch"
-import { EnvelopeName, EnvironmentKey, Instant, TraceId } from "@cluenori/foundation"
+import { EnvelopeName, EnvironmentKey, Instant, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 
-/** How many times one operation ran in one environment and minute, and how long it took. */
+/** How many times one operation ran in one environment, release and minute, and how long it took. */
 export const OperationCounts = Schema.Struct({
   /** The start of the minute they started in. */
   bucket: Instant,
@@ -13,6 +13,8 @@ export const OperationCounts = Schema.Struct({
   operation: EnvelopeName,
   /** Absent when the component didn't say. */
   environment: Schema.optionalKey(EnvironmentKey),
+  /** The release that ran it, from `service.version`; absent when the component didn't say. */
+  release: Schema.optionalKey(ReleaseVersion),
   count: Count,
   errors: Count,
   /** The sum of their durations, in milliseconds, for their average. */
@@ -41,6 +43,8 @@ export const KeptTrace = Schema.Struct({
   operation: EnvelopeName,
   /** Absent when the component didn't say. */
   environment: Schema.optionalKey(EnvironmentKey),
+  /** The release that ran it; absent when the component didn't say. */
+  release: Schema.optionalKey(ReleaseVersion),
   start: Instant,
   durationMs: Milliseconds,
   /** Its status was an error, as a failure is counted. */

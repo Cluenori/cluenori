@@ -1,4 +1,4 @@
-import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, Period } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, Period, ReleaseVersion } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import { KeptTrace } from "./operation-counts.ts"
@@ -8,15 +8,46 @@ const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 
 /**
  * What to count: the operations that ran in `period`, optionally of one environment, one
- * component, or one operation.
+ * component, one operation, or one release. Counts from before October 2026 have no release, so a
+ * release finds none of them.
  */
 export const OperationQuery = Schema.Struct({
   period: Period,
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
   operation: Schema.optionalKey(EnvelopeName),
+  release: Schema.optionalKey(ReleaseVersion),
 })
 export type OperationQuery = typeof OperationQuery.Type
+
+/** Which releases to list: those that ran in `period`, optionally of one environment or component. */
+export const ReleaseQuery = Schema.Struct({
+  period: Period,
+  environment: Schema.optionalKey(EnvironmentKey),
+  component: Schema.optionalKey(ComponentKey),
+})
+export type ReleaseQuery = typeof ReleaseQuery.Type
+
+/**
+ * One release of a component in one environment, as its operations show it: from the start of the
+ * first minute an operation of it ran in to the end of the last, over everything counted, not only
+ * the period asked about.
+ */
+export const ReleaseRow = Schema.Struct({
+  component: ComponentKey,
+  /** Absent when the component didn't say. */
+  environment: Schema.optionalKey(EnvironmentKey),
+  release: ReleaseVersion,
+  firstSeen: Instant,
+  lastSeen: Instant,
+}).annotate({ identifier: "ReleaseRow" })
+export type ReleaseRow = typeof ReleaseRow.Type
+
+/** The releases that ran in a period, the latest first seen first. */
+export const ReleaseTable = Schema.Struct({
+  rows: Schema.Array(ReleaseRow),
+}).annotate({ identifier: "ReleaseTable" })
+export type ReleaseTable = typeof ReleaseTable.Type
 
 /** How wide each point of a series is. */
 export const SeriesStep = Schema.Literals(["1m", "5m", "1h", "1d"]).annotate({ identifier: "SeriesStep" })

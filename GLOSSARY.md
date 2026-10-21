@@ -48,6 +48,8 @@ its exact rule.
 | Push token | The token iOS gives the app on one phone, by which APNs reaches it | `PushToken`, `RegisterPush`, `@cluenori/phones` | device token (Apple's word), phone key (the phone's credential) |
 | Today | What needs attention now across every project, the most urgent first: open incidents, errors new or happening now, slower operations, and projects that sent nothing | `TodayList`, `TodayItem`, `@cluenori/today` | inbox, feed, alerts (notifications about incidents), dashboard |
 | Slower | An operation whose p95 over the last day is at least 1.5 times, and 100 ms more than, its p95 over the 7 days before | `slowerOf`, `@cluenori/signals` | regression (a release's), slow (by nature, not news) |
+| Release before | The release of the same component and environment first seen latest before a release: what it is compared with | `previous`, `@cluenori/releases` | last release, prior version |
+| Verdict | How a release compares with the release before it: `worse` (an operation slower or failing more, or an error first seen in it), `better`, `same`, `tooEarly` (under an hour, or no operation ran 100 times in both), `first` | `Verdict`, `@cluenori/releases` | grade, health, status |
 | Covered period | The part of an asked-for period that counts answer for: no earlier than they are kept, no later than now | `covered` | — |
 | Archive | Every export Cluenori received, scrubbed, kept 90 days: the source every view is derived from | `ArchiveStore`, `@cluenori/signals` | lake (the planned SQL over it), backup, logs |
 | Error group | Errors that are the same error: one exception type and stack top, or one logger and message template | `ErrorGroup`, `ErrorGroupId` | issue (a record people track), exception, crash |
@@ -65,7 +67,7 @@ keep the product meaning only.
 | Module | A page in the sidebar, defined with `defineModule` | a file, a package |
 | Session | One visit or app session of a person, with device context | a sign-in |
 | Event | A product event an app tracks, such as `export.completed` (the envelope's kind `event`) | activity, for facts about changes to records |
-| Release | One version of one component | a deploy of Cluenori itself |
+| Release | One version of one component, as its telemetry reports it in `service.version` | a deploy of Cluenori itself |
 | App | A component that runs on people's devices: an iOS, Android, or web app. It has sessions, screens, and crashes | the dashboard, for Cluenori's own web app |
 | Backend | A component that runs on servers, answering requests, processing messages, or running jobs, such as `notes-api` or `notes-jobs`; an app and a backend are the two roles of a component, which its platform decides | the Worker, for Cluenori's own server; a service, which is an Effect service |
 | Crash | An error that ended an app: on a phone it closed, in a browser it was not handled. Crash-free sessions are the share without one | a defect, for a bug in Cluenori |

@@ -20,6 +20,7 @@
     "@cluenori/notifications": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
+    "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/today": "workspace:*",
     "@effect/sql-sqlite-do": "catalog:",

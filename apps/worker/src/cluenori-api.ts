@@ -4,6 +4,7 @@ import { MembersGroup, PasskeyRejected, PasskeysGroup } from "@cluenori/members"
 import { NotificationsGroup } from "@cluenori/notifications"
 import { PairedPhoneAnswer, PairingGroup, PhoneDetails, PhonePushGroup, PhonesGroup } from "@cluenori/phones"
 import { ProjectsGroup } from "@cluenori/projects"
+import { ReleasesGroup } from "@cluenori/releases"
 import { SignalsGroup } from "@cluenori/signals"
 import { TodayGroup } from "@cluenori/today"
 import { Schema } from "effect"
@@ -66,7 +67,7 @@ export class PhoneSignInGroup extends HttpApiGroup.make("phoneSignIn").add(
 /**
  * The public API: one definition for the dashboard, the CLI, MCP clients, and agents. Served under
  * `/api`, with its OpenAPI document at `/api/openapi.json`. Everything but the system, sign-in,
- * passkeys, pairing, phone sign-in and phone push groups needs a member's credential: the deployment's API token as a bearer
+ * passkeys, pairing, phone sign-in and phone push groups, engines' and modules' alike, needs a member's credential: the deployment's API token as a bearer
  * token or the sign-in cookie, or a paired phone's key as a bearer token. A phone registers its push
  * token with its own key only.
  */
@@ -84,5 +85,8 @@ export class CluenoriApi extends HttpApi.make("cluenori")
   .add(PhonePushGroup)
   .add(NotificationsGroup.middleware(MemberAuthorization))
   .add(TodayGroup.middleware(MemberAuthorization))
+  // Modules' routes, each module on a line: its group, not its definition, so clients that build on
+  // this definition don't bundle the queries it runs in projects' objects.
+  .add(ReleasesGroup.middleware(MemberAuthorization))
   .prefix("/api")
   .annotate(OpenApi.Title, "Cluenori") {}

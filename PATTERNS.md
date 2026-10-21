@@ -523,7 +523,14 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   update is a sub-resource: `POST /releases/:id/rollback`.
 - **Each engine or module defines its group in its contract;** the host adds the group to
   `CluenoriApi`, with `MemberAuthorization` on every group but the system's. Handlers get the
-  actor from `CurrentActor`.
+  actor from `CurrentActor`. `CluenoriApi` imports a module's group, never its definition, so the
+  clients built on it don't bundle the queries the module runs in projects' objects.
+- **A module is defined with `defineModule`** (`product/foundation/src/module.ts`): its ID, scope,
+  queries and routes. Each query (`moduleQuery`) has plain Schemas for its input, answer and tagged
+  errors, and a `run` that reads the engines in the project's Durable Object. The host serves every
+  query there under `<module>.<query>` from its `modules` list (`apps/worker/src/project-object.ts`),
+  and a handler per route calls it with `moduleCall(module, query)` through `MemberProjects`
+  (`apps/worker/src/releases-handlers.ts`).
 - **Canonical examples:** a group, `product/engines/projects/src/projects-api.ts`; the API,
   `apps/worker/src/cluenori-api.ts`; handlers, `apps/worker/src/projects-handlers.ts`. The MCP
   server's comes with the first module.
@@ -829,7 +836,9 @@ These become `cluenori add` commands once there are a few examples to generate f
 1. Create `product/engines/<name>/` or `product/modules/<name>/` with the standard shape and its
    README, then run `bun install` to link it into the workspace.
 2. Write its contract: records, activity, queries, actions, and their errors.
-3. Register it in `apps/worker` on one visible line.
+3. Register it in `apps/worker` on one visible line. A module: its definition in the `modules`
+   list of `project-object.ts`, its group in `cluenori-api.ts`, and a handlers file for its routes
+   provided in `worker.ts` (`product/modules/releases` is the example).
 4. Extend the journey it belongs to.
 5. Add it to the module map in `ARCHITECTURE.md` and its terms to `GLOSSARY.md`.
 6. `bun run check` and `bun run test` pass.

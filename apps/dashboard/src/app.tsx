@@ -37,6 +37,11 @@ const errorPage = import("@/pages/error-page")
 const ErrorPage = lazy(() => errorPage.then((module) => ({ default: module.ErrorPage })))
 const tracePage = import("@/pages/trace-page")
 const TracePage = lazy(() => tracePage.then((module) => ({ default: module.TracePage })))
+// Releases, and one release, load after start too, so the first load holds its budget.
+const releasesPage = import("@/pages/releases-page")
+const ReleasesPage = lazy(() => releasesPage.then((module) => ({ default: module.ReleasesPage })))
+const releasePage = import("@/pages/release-page")
+const ReleasePage = lazy(() => releasePage.then((module) => ({ default: module.ReleasePage })))
 // Phones, with the QR code encoder, are a page of the deployment, opened now and then.
 const phonesPage = import("@/pages/phones-page")
 const PhonesPage = lazy(() => phonesPage.then((module) => ({ default: module.PhonesPage })))
@@ -149,6 +154,26 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
     case "logs":
       return (
         <LogsPage project={route.project} {...(route.component === undefined ? {} : { component: route.component })} />
+      )
+    case "releases":
+      return (
+        <Suspense fallback={opening}>
+          <ReleasesPage
+            project={route.project}
+            {...(route.component === undefined ? {} : { component: route.component })}
+          />
+        </Suspense>
+      )
+    case "release":
+      return (
+        <Suspense fallback={opening}>
+          <ReleasePage
+            project={route.project}
+            component={route.component}
+            release={route.release}
+            {...(route.environment === undefined ? {} : { environment: route.environment })}
+          />
+        </Suspense>
       )
     case "trace":
       return (

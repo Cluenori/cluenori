@@ -26,6 +26,7 @@ const queryOf = (filters: typeof LogFilters.Type | typeof LogCountFilters.Type):
 const operationQueryOf = (filters: typeof OperationFilters.Type): OperationQuery => ({
   ...queryOf(filters),
   ...(filters.operation === undefined ? {} : { operation: filters.operation }),
+  ...(filters.release === undefined ? {} : { release: filters.release }),
 })
 
 const logCountQueryOf = (filters: typeof LogCountFilters.Type): LogCountQuery => ({

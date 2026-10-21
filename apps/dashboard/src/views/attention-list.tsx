@@ -7,14 +7,14 @@ import { buttonVariants } from "@/views/ui/button"
 /** Something that needs the founder now: what, a line of evidence, and one way to look closer. */
 export type Attention = {
   readonly key: string
-  /** Red for something failing, yellow for something slow or new. */
-  readonly tone: "failure" | "warning"
+  /** Red for something failing, yellow for something slow or new, gray for what is over. */
+  readonly tone: "failure" | "warning" | "over"
   readonly title: ReactNode
   readonly detail: string
   readonly action?: { readonly label: string; readonly to: Route }
 }
 
-const toneColor = { failure: "var(--failure)", warning: "var(--yellow)" } as const
+const toneColor = { failure: "var(--failure)", warning: "var(--yellow)", over: "var(--muted-foreground)" } as const
 
 /**
  * The few things that need attention, the worst first, each one click from its detail. When there

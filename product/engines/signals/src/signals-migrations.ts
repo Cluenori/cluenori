@@ -141,5 +141,41 @@ export const migrateSignals = Migrator.make({})({
       yield* sql`CREATE INDEX signals_kept_traces_operation ON signals_kept_traces (operation, kept_for, hour)`
       yield* sql`CREATE INDEX signals_kept_traces_hour ON signals_kept_traces (hour)`
     }),
+    // Operations are counted by release too, from `service.version`, so releases compare; '' is
+    // unknown, as every count and kept trace from before this is. SQLite can't change a primary key,
+    // so each count table is made again and its rows copied. Each release's first and last minute
+    // is kept in a table of its own, so listing releases reads one row each; and an error group
+    // keeps the release it was first seen in, '' for those from before.
+    "0007_by_release": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      for (const table of ["signals_minute_counts", "signals_hour_counts"]) {
+        const rebuilt = `${table}_by_release`
+        yield* sql`CREATE TABLE ${sql(rebuilt)} (
+          bucket INTEGER NOT NULL,
+          operation INTEGER NOT NULL,
+          environment TEXT NOT NULL,
+          release TEXT NOT NULL,
+          count INTEGER NOT NULL,
+          errors INTEGER NOT NULL,
+          total_ms REAL NOT NULL,
+          durations TEXT NOT NULL,
+          PRIMARY KEY (bucket, operation, environment, release)
+        ) WITHOUT ROWID`
+        yield* sql`INSERT INTO ${sql(rebuilt)} (bucket, operation, environment, release, count, errors, total_ms, durations)
+          SELECT bucket, operation, environment, '', count, errors, total_ms, durations FROM ${sql(table)}`
+        yield* sql`DROP TABLE ${sql(table)}`
+        yield* sql`ALTER TABLE ${sql(rebuilt)} RENAME TO ${sql(table)}`
+      }
+      yield* sql`ALTER TABLE signals_kept_traces ADD COLUMN release TEXT NOT NULL DEFAULT ''`
+      yield* sql`CREATE TABLE signals_releases (
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        first_seen INTEGER NOT NULL,
+        last_seen INTEGER NOT NULL,
+        PRIMARY KEY (component, environment, release)
+      ) WITHOUT ROWID`
+      yield* sql`ALTER TABLE signals_error_groups ADD COLUMN first_release TEXT NOT NULL DEFAULT ''`
+    }),
   }),
 })

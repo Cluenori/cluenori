@@ -27,6 +27,7 @@ func notesDeployment() -> FakeDeployment {
     deployment.answer("GET /api/projects/notes/operations", 200, operationsAnswer)
     deployment.answer("GET /api/projects/notes/errors", 200, errorsAnswer)
     deployment.answer("GET /api/projects/notes/logs", 200, logsAnswer(ids: 101...200, next: 101))
+    deployment.answer("GET /api/projects/notes/releases", 200, releasesAnswer)
     return deployment
 }
 
@@ -36,9 +37,28 @@ struct RouteTests {
         ("cluenori://projects/notes/errors", .errors(project: "notes")),
         ("cluenori://projects/notes/errors/4f1c9a2e7b3d5068", .error(project: "notes", id: "4f1c9a2e7b3d5068")),
         ("cluenori://projects/notes/logs", .logs(project: "notes")),
+        ("cluenori://projects/notes/releases", .releases(project: "notes")),
     ])
     func `reads the screen a link names`(_ text: String, _ route: Route) throws {
         #expect(Route(try #require(URL(string: text))) == route)
+    }
+
+    @Test func `reads the release a link names, with its environment when the link says one`() throws {
+        let production = try #require(
+            URL(string: "cluenori://projects/notes/releases/notes-api/2026.10.21-e91f09c?environment=production"))
+        #expect(
+            Route(production)
+                == .release(
+                    ReleaseRef(
+                        project: "notes", component: "notes-api", environment: "production",
+                        version: "2026.10.21-e91f09c")))
+
+        let anywhere = try #require(URL(string: "cluenori://projects/notes/releases/notes-web/2.4.0+312"))
+        #expect(
+            Route(anywhere)
+                == .release(
+                    ReleaseRef(project: "notes", component: "notes-web", environment: nil, version: "2.4.0+312"))
+        )
     }
 
     @Test func `opens a screen over the ones that lead to it, on the projects tab`() {
@@ -49,6 +69,19 @@ struct RouteTests {
             navigation.projectsPath == [
                 .project("notes"), .errors(project: "notes"), .error(project: "notes", id: "4f1c9a2e7b3d5068"),
             ])
+
+        let release = ReleaseRef(project: "notes", component: "notes-api", environment: nil, version: "1.8.0")
+        navigation.open(.release(release))
+        #expect(navigation.projectsPath == [.project("notes"), .releases(project: "notes"), .release(release)])
+    }
+
+    @Test(arguments: [
+        "cluenori://projects/notes/releases/notes-api",
+        "cluenori://projects/notes/releases/notes-api/1.8.0/extra",
+        "cluenori://projects/notes/deploys",
+    ])
+    func `reads no screen from a link that names none`(_ text: String) throws {
+        #expect(Route(try #require(URL(string: text))) == nil)
     }
 
     @Test func `opens a screen's link only while paired`() async throws {
@@ -76,11 +109,12 @@ struct ProjectModelTests {
         #expect(project.load.value?.points.count == 1)
         #expect(project.errors.value?.groups.isEmpty == true)
         #expect(project.logs.value?.lines.count == 100)
-        #expect(Set(deployment.requests).count == 5)
+        #expect(project.releases.value?.releases.first?.verdict == .worse)
+        #expect(Set(deployment.requests).count == 6)
 
         await project.choose(.week)
         #expect(project.period == .week)
-        #expect(deployment.requests.count == 10)
+        #expect(deployment.requests.count == 12)
         // The same model comes back for the same project, so going back shows it as it was.
         #expect(models.project("notes", period: .week) === project)
     }

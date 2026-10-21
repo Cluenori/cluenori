@@ -61,11 +61,14 @@ struct LookFurtherBack: View {
     }
 }
 
-/// A screen's empty answer: what there was none of, over which period, and a way to look further.
+/// A screen's empty answer: what there was none of, over which period, what would bring some, and a
+/// way to look further.
 struct NothingInPeriod: View {
     let title: Text
     let systemImage: String
     @Binding var period: PeriodKey
+    /// What makes some appear, when it isn't plain.
+    var note: Text? = nil
 
     var body: some View {
         ContentUnavailableView {
@@ -75,7 +78,14 @@ struct NothingInPeriod: View {
                 Image(systemName: systemImage)
             }
         } description: {
-            Text("In \(periodPhrase(period)).", bundle: #bundle, comment: "Below an empty screen: over which period.")
+            VStack(spacing: 8) {
+                Text(
+                    "In \(periodPhrase(period)).", bundle: #bundle, comment: "Below an empty screen: over which period."
+                )
+                if let note {
+                    note
+                }
+            }
         } actions: {
             LookFurtherBack(period: $period)
         }
@@ -154,7 +164,8 @@ struct DurationText: View {
             .monospacedDigit()
     }
 
-    private static func style(_ milliseconds: Double) -> Duration.UnitsFormatStyle {
+    /// How a duration of `milliseconds` reads, inside a sentence too.
+    static func style(_ milliseconds: Double) -> Duration.UnitsFormatStyle {
         milliseconds < 1_000
             ? .units(allowed: [.milliseconds], width: .abbreviated, fractionalPart: .hide)
             : .units(allowed: [.seconds], width: .abbreviated, fractionalPart: .show(length: 1))

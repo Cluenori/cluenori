@@ -1,8 +1,8 @@
 # @cluenori/dashboard
 
 The web app over the public API: each project opens on an overview of what needs attention and a
-summary of each area, and each area (performance, errors, logs) has a page of its own, for the whole
-project or one component. The Worker serves it, and a browser signs in with a passkey, or with the
+summary of each area, and each area (performance, errors, logs, releases) has a page of its own, for
+the whole project or one component. The Worker serves it, and a browser signs in with a passkey, or with the
 deployment's API token, an owner's way in. Owners invite members to some projects there.
 
 ## Use it
@@ -28,6 +28,10 @@ Pages, each with a permanent URL (`src/router.tsx`):
 /notes/errors                                    errors over time by component, and every error group
 /notes/errors/<id>                               one error: its exception chain, every frame, its operation, its log record
 /notes/logs                                      warnings and errors over time, and every line, searchable
+/notes/releases?component=notes-api              the releases that ran, the latest first, each against the release before it
+/notes/releases/notes-api/2.4.0+312?environment=production
+                                                 one release against the one before: what got slower or fails more, its new
+                                                 errors, the incidents while it ran, what got faster or fails less, new operations
 /notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
 /phones                                          the paired phones, removing one, and adding one by its QR code
 /browsers                                        the browsers signed in with passkeys, signing one out, and adding a passkey
@@ -56,6 +60,10 @@ those keys has no pages.
   (`slowerOf`, `errorStatusOf` in `@cluenori/signals`), which Today on the server uses too; the
   pages mark them and say them in words. There is no fixed limit and no setting: an operation slow
   by nature, such as an export, is not news; one that got worse is.
+- **Saying how a release compares:** the verdict is Releases' (`@cluenori/releases`), against the
+  release before it; the pages say it in words with what it counts ("Worse: 2 slower, 1 new
+  error"), and call a release live while it ran in the last 15 minutes, the window an error is
+  happening now in (`verdictOf`, `isLive` in `src/project-facts.ts`).
 - **What a color means,** `src/lib/colors.ts`: each component keeps one color everywhere; red is
   failure, yellow a warning.
 - **The panel** every question is answered in, `src/views/panel.tsx`, an answer's three states,
@@ -83,8 +91,8 @@ those keys has no pages.
 ## Depends on
 
 - The public API's definition, `CluenoriApi` from `@cluenori/worker`, and the Schemas of its answers
-  from `@cluenori/foundation`, `@cluenori/projects`, `@cluenori/signals`, `@cluenori/incidents`, and
-  `@cluenori/phones`.
+  from `@cluenori/foundation`, `@cluenori/projects`, `@cluenori/signals`, `@cluenori/incidents`,
+  `@cluenori/phones`, and `@cluenori/releases`, whose verdict rules the releases pages also say.
 - `@bagatka/qr-code`, to draw a pairing link as a QR code. Their packages are
   side-effect free and keep schemas apart from server code, so only the definitions reach the
   bundle.
@@ -114,8 +122,8 @@ those keys has no pages.
 - **The design,** after two looks were rejected (generic dark cards; then a speed spectrum with
   sentence filters, hover-only numbers, and a page per question):
   - A project opens on its overview, the one place to act: what needs attention, the worst first,
-    each one click from its detail, and a summary of each area. Later areas (analytics, releases)
-    add their summaries there and their pages beside performance, errors, and logs.
+    each one click from its detail, and a summary of each area, the latest releases among them.
+    Later areas (analytics) add their summaries there and their pages beside the others.
   - Each area is a page with a one-click component switch, kept in the URL and carried between
     pages.
   - Every control is one click: period and log level are visible buttons; projects are listed in
@@ -129,9 +137,9 @@ those keys has no pages.
   what it did before an error); and an operation's origin. Their views
   wait in the design kit, "Ahead of the API", on sample data (`src/sample/`), which nothing else
   reads.
-- **Navigation is instant:** the pages most visits open are in the first load; one error's page and
-  a trace load right after start, as search does, so they are there before anyone opens
-  them. An answer a page showed a moment ago is shown again at once, and refreshed in the
+- **Navigation is instant:** the pages most visits open are in the first load; one error's page, a
+  trace, the releases' pages and the overview's list of releases load right after start, as search
+  does, so they are there before anyone opens them. An answer a page showed a moment ago is shown again at once, and refreshed in the
   background when stale.
-- **The first load's budget** is 240 KB of scripts, compressed, of which the typed API client is
+- **The first load's budget** is 248 KB of scripts, compressed, of which the typed API client is
   about 75 KB; `vite.config.ts` fails a build over it.

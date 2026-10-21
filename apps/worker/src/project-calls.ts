@@ -1,3 +1,4 @@
+import type { ModuleDefinition, ModuleQueries } from "@cluenori/foundation"
 import { Actor, Instant, TraceId } from "@cluenori/foundation"
 import {
   AddMonitor,
@@ -52,7 +53,8 @@ import { Schema } from "effect"
 import type { ObjectCall, PlainSchema } from "./object-calls.ts"
 import { objectCall } from "./object-calls.ts"
 
-export type ProjectCallName =
+/** The calls an engine answers, each on a line of `projectCalls`. */
+export type EngineCallName =
   | "createProject"
   | "detail"
   | "addComponent"
@@ -74,6 +76,11 @@ export type ProjectCallName =
   | "removeMonitor"
   | "today"
 
+/** A module's query, as its object serves it: `<module>.<query>`, such as `releases.list`. */
+export type ModuleCallName = `${string}.${string}`
+
+export type ProjectCallName = EngineCallName | ModuleCallName
+
 const recorded = Schema.Literals(["recorded", "duplicate"])
 const ingestFailure = Schema.Union([IngestKeyRejected, ArchiveUnavailable])
 
@@ -86,7 +93,7 @@ export type ProjectCall<I extends PlainSchema, S extends PlainSchema, F extends 
 >
 
 const projectCall = <I extends PlainSchema, S extends PlainSchema, F extends PlainSchema>(
-  name: ProjectCallName,
+  name: EngineCallName,
   input: I,
   success: S,
   error: F,
@@ -169,4 +176,20 @@ export const projectCalls = {
     Schema.Union([ProjectNotFound, MonitorNotFound]),
   ),
   today: projectCall("today", Schema.Void, Schema.Array(TodayItem), ProjectNotFound),
+}
+
+/**
+ * The call that runs `module`'s query `name` in a project's object, under `<module>.<query>`: its
+ * failures are the query's, and `ProjectNotFound` for a project that doesn't exist.
+ */
+export const moduleCall = <Queries extends ModuleQueries<Queries>, K extends keyof Queries & string>(
+  module: ModuleDefinition<string, Queries>,
+  name: K,
+): ProjectCall<
+  Queries[K]["input"],
+  Queries[K]["success"],
+  Schema.Union<readonly [typeof ProjectNotFound, Queries[K]["error"]]>
+> => {
+  const query: Queries[K] = module.queries[name]
+  return objectCall(`${module.id}.${name}`, query.input, query.success, Schema.Union([ProjectNotFound, query.error]))
 }

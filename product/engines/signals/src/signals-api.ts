@@ -1,4 +1,12 @@
-import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, ProjectKey, TraceId } from "@cluenori/foundation"
+import {
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  Instant,
+  ProjectKey,
+  ReleaseVersion,
+  TraceId,
+} from "@cluenori/foundation"
 import { ProjectNotFound } from "@cluenori/projects"
 import { DateTime, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
@@ -29,8 +37,13 @@ const fromBeforeTo = Schema.makeFilter(
   { expected: "a period whose from is before its to" },
 )
 
-// A question can also be narrowed to one operation, by its name: `GET /api/notes/{id}`.
-const operationFilters = { ...filters, operation: Schema.optionalKey(EnvelopeName) }
+// A question can also be narrowed to one operation, by its name: `GET /api/notes/{id}`, and to one
+// release, as its component reports it in `service.version`.
+const operationFilters = {
+  ...filters,
+  operation: Schema.optionalKey(EnvelopeName),
+  release: Schema.optionalKey(ReleaseVersion),
+}
 
 /** The filters of a question about operations, as query parameters: `from` and `to` are ISO 8601 UTC. */
 export const OperationFilters = Schema.Struct(operationFilters).check(fromBeforeTo)

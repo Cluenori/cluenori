@@ -1,7 +1,8 @@
 # @cluenori/signals
 
 Signals from a project's services: OpenTelemetry exports read where they arrive, every export kept
-in the archive for 90 days, and, in the project's Durable Object, their operations counted, the
+in the archive for 90 days, and, in the project's Durable Object, their operations counted by
+environment and release, the
 traces of the slowest and failed kept to open, their warnings and errors kept and grouped, and any
 trace and its logs read back from the archive by its ID.
 
@@ -31,6 +32,11 @@ const kept = yield* signals.keptTraces({ period, operation: EnvelopeName.make("G
 const series = yield* signals.loadOverTime({ period, operation: EnvelopeName.make("GET /api/feed") }, "1h")
 // points: [{ start, count: 940, errors: 3, p50Ms: 85, p80Ms: 160, p95Ms: 420, p99Ms: 1210 }, ...]
 
+// The releases that ran in a period, each with its whole span; and one release's operations.
+const { rows } = yield* signals.releases({ period })
+// [{ component: "notes-api", environment: "production", release: "2026.10.21-e91f09c", firstSeen, lastSeen }]
+const before = yield* signals.operations({ period, release: rows[1].release })
+
 // When each sparse operation ran, the minutes it ran in: a job's schedule shows in them.
 const ran = yield* signals.minutesRan({ period }, 200) // busier operations are left out
 // [{ operation: "cleanup.run", minutes: [10:00, 11:00, 12:00, ...] }]
@@ -48,19 +54,23 @@ again. An unknown error ID fails with `ErrorGroupNotFound`.
 
 - **Rules:** which spans an operation is counted from (a server or consumer span, or an internal
   span that starts its trace: a job the service started itself, such as a scheduled one), its
-  name, whether it failed, and its HTTP status; which traces are kept to open (of each operation,
+  name, whether it failed, its HTTP status, and its release (`service.version`, when it is a release
+  version); which traces are kept to open (of each operation,
   environment and hour, the five slowest and the five slowest failed); a log record's level; which records are indexed
   (warnings and up); which errors are the same error (exception type and the top five frames of
   the app's own code in its stack, those with a source location, and, when it was thrown outside
   that code, its message without numbers and IDs; or logger and message template); and how each
   question's period is cut to what is kept.
 - **Data,** in each project's database:
-  - operations counted by name and environment, by the minute (`signals_minute_counts`, 14 days)
-    and by the hour (`signals_hour_counts`, 15 months), each component's operations, at most 500
+  - operations counted by name, environment and release (`''` unknown, as for every count from
+    before October 2026), by the minute (`signals_minute_counts`, 14 days) and by the hour
+    (`signals_hour_counts`, 15 months), each component's operations, at most 500
     (`signals_operations`);
+  - each release's span, from the first minute it ran in to the end of the last
+    (`signals_releases`, 15 months after last seen);
   - the traces kept to open from their operations (`signals_kept_traces`, 14 days);
   - warnings and errors (`signals_logs`, 90 days) and error groups (`signals_error_groups`, 15
-    months after last seen);
+    months after last seen), each with the release it was first and last seen in;
   - which archive file holds each export, by time (`signals_archive`), and the last hour's export
     digests (`signals_batches`).
 - **The archive's layout:** `<workspace>/<project>/<signal>/<day>/<component>/<digest>.otlp`, OTLP

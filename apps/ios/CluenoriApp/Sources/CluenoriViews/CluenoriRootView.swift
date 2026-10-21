@@ -100,6 +100,12 @@ struct RouteScreen: View {
         case .logs(let project):
             LogsScreen(logs: models.logs(project, period: navigation.period), navigation: navigation)
                 .id(navigation.period)
+        case .releases(let project):
+            ReleasesScreen(releases: models.releases(project, period: navigation.period), navigation: navigation)
+                .id(navigation.period)
+        // A release is compared whole, whatever the period.
+        case .release(let release):
+            ReleaseScreen(release: models.release(release))
         }
     }
 }

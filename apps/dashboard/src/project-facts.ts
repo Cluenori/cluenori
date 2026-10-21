@@ -5,6 +5,7 @@
 
 import type { Period, ProjectKey } from "@cluenori/foundation"
 import type { Incident, IncidentList } from "@cluenori/incidents"
+import type { ReleaseSummary } from "@cluenori/releases"
 import type {
   Compared,
   OperationRow,
@@ -22,13 +23,14 @@ import type {
   TraceSpan,
   TraceView,
 } from "@cluenori/signals"
-import { errorStatusOf, operationKeyOf, slowerOperations, slowerRule, stepMillis } from "@cluenori/signals"
+import { errorRule, errorStatusOf, operationKeyOf, slowerOperations, slowerRule, stepMillis } from "@cluenori/signals"
 import { DateTime } from "effect"
 
 import { componentColor } from "@/lib/colors"
 import { ago, axisTime, count, dayOf, duration, viewerTimeZone } from "@/lib/format"
 import type { PeriodKey } from "@/project-data"
 import { periodMillis } from "@/project-data"
+import type { Route } from "@/router"
 import type { Attention } from "@/views/attention-list"
 import { titleParts } from "@/views/error-group"
 
@@ -260,9 +262,11 @@ const occurrencesText = (occurrences: number) =>
 // The most slower, against its usual, first.
 const byHowMuchSlower = (left: Slower, right: Slower) => right.p95Ms / right.usualP95Ms - left.p95Ms / left.usualP95Ms
 
-// Where an incident's evidence is: its operation's page, or, for a monitor, its component's
-// performance.
-const incidentAction = (project: ProjectKey, incident: Incident) =>
+/**
+ * Where an incident's evidence is, as a link: its operation's page, or, for a monitor, its
+ * component's performance.
+ */
+export const incidentActionOf = (project: ProjectKey, incident: Incident) =>
   incident.evidence._tag === "down"
     ? { label: "Open the performance", to: { page: "performance" as const, project, component: incident.component } }
     : {
@@ -317,7 +321,7 @@ export const attentionOf = (facts: {
         tone: incident.acknowledgedAt === undefined ? ("failure" as const) : ("warning" as const),
         title: incident.title,
         detail: `Opened ${ago(opened, looked ?? opened)}${incident.acknowledgedAt === undefined ? "" : ", acknowledged"}`,
-        action: incidentAction(project, incident),
+        action: incidentActionOf(project, incident),
       }
     }),
     ...groups
@@ -350,3 +354,52 @@ export const attentionOf = (facts: {
     })),
   ]
 }
+
+// ---- Releases --------------------------------------------------------------------------------------
+
+/** A release is live while it ran in the last 15 minutes: the window an error is happening now in. */
+export const liveForMs = errorRule.ongoingForMs
+
+/** Whether a release still runs: it ran within `liveForMs` of `asOf`, the time its answer is of. */
+export const isLive = (release: ReleaseSummary, asOf: DateTime.Utc) =>
+  DateTime.toEpochMillis(asOf) - DateTime.toEpochMillis(release.lastSeen) < liveForMs
+
+/** How a verdict reads: worse is a warning, better is good news, the rest says there is no news. */
+export type VerdictTone = "warning" | "better" | "quiet"
+
+// "1 new error", "2 new errors".
+const counted = (value: number, one: string, many: string) => `${count(value)} ${value === 1 ? one : many}`
+
+/**
+ * How a release compares with the one before it, in words, with what "worse" counts:
+ * "Worse: 2 slower, 1 new error", "About the same", "Too early to tell".
+ */
+export const verdictOf = (release: ReleaseSummary): { readonly words: string; readonly tone: VerdictTone } => {
+  switch (release.verdict) {
+    case "worse": {
+      const counts = [
+        ...(release.slower > 0 ? [`${count(release.slower)} slower`] : []),
+        ...(release.failingMore > 0 ? [counted(release.failingMore, "fails more", "fail more")] : []),
+        ...(release.newErrors > 0 ? [counted(release.newErrors, "new error", "new errors")] : []),
+      ]
+      return { words: counts.length === 0 ? "Worse" : `Worse: ${counts.join(", ")}`, tone: "warning" }
+    }
+    case "better":
+      return { words: "Better", tone: "better" }
+    case "same":
+      return { words: "About the same", tone: "quiet" }
+    case "tooEarly":
+      return { words: "Too early to tell", tone: "quiet" }
+    case "first":
+      return { words: "First release counted", tone: "quiet" }
+  }
+}
+
+/** A release's own page: by its component and version, and its environment when it has one. */
+export const releaseRouteOf = (project: ProjectKey, release: ReleaseSummary): Route => ({
+  page: "release",
+  project,
+  component: release.component,
+  release: release.release,
+  ...(release.environment === undefined ? {} : { environment: release.environment }),
+})

@@ -1,6 +1,6 @@
 import type { QuantileSketch as Sketch } from "@bagatka/quantile-sketch"
 import { mergeSketches, Quantile, QuantileSketch, quantileOf } from "@bagatka/quantile-sketch"
-import { ComponentKey, EnvelopeName, EnvironmentKey, Period, TraceId } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { DateTime, Duration, Effect, Option, Order, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 
@@ -14,6 +14,9 @@ import type {
   MinutesRan,
   OperationQuery,
   LoadSeries,
+  ReleaseQuery,
+  ReleaseRow,
+  ReleaseTable,
   SeriesStep,
 } from "./operation-queries.ts"
 import { otherOperations, stepMillis } from "./operation-queries.ts"
@@ -65,11 +68,20 @@ const KeptRow = Schema.Struct({
   component: ComponentKey,
   operation: EnvelopeName,
   environment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
+  release: Schema.Union([Schema.Literal(""), ReleaseVersion]),
   trace: TraceId,
   start: Schema.Int,
   durationMs: Schema.Finite,
   failed: Schema.BooleanFromBit,
   status: Schema.NullOr(HttpStatus),
+})
+
+const ReleaseSpanRow = Schema.Struct({
+  component: ComponentKey,
+  environment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
+  release: ReleaseVersion,
+  firstSeen: Schema.Int,
+  lastSeen: Schema.Int,
 })
 
 const MinuteRow = Schema.Struct({
@@ -84,6 +96,7 @@ const keptRowOf = (row: typeof KeptRow.Type): KeptTraceRow => ({
   component: row.component,
   operation: row.operation,
   ...(row.environment === "" ? {} : { environment: row.environment }),
+  ...(row.release === "" ? {} : { release: row.release }),
   start: DateTime.makeUnsafe(row.start),
   durationMs: row.durationMs,
   failed: row.failed,
@@ -117,13 +130,13 @@ const percentile = (durations: Sketch, quantile: number) =>
     onSome: (value) => Effect.succeed(value),
   })
 
-// A batch's counts added up into hours, so each hour, operation and environment is one write.
+// A batch's counts added up into hours, so each hour, operation, environment and release is one write.
 const hoursOf = (counts: ReadonlyArray<OperationCounts>): ReadonlyArray<OperationCounts> => {
   const hours = new Map<string, OperationCounts>()
   for (const entry of counts) {
     const hour = floorTo(DateTime.toEpochMillis(entry.bucket), byHour.width)
     // Names and keys hold no control characters, so NUL separates them unambiguously.
-    const key = [hour, entry.operation, entry.environment ?? ""].join("\u0000")
+    const key = [hour, entry.operation, entry.environment ?? "", entry.release ?? ""].join("\u0000")
     const earlier = hours.get(key)
     hours.set(
       key,
@@ -142,9 +155,9 @@ const hoursOf = (counts: ReadonlyArray<OperationCounts>): ReadonlyArray<Operatio
 }
 
 /**
- * The project's operations, counted by name and environment, by the minute for 14 days and by the
- * hour for 15 months, and the traces kept so they open from them, 14 days. Part of Signals, which
- * owns the transaction each write runs in.
+ * The project's operations, counted by name, environment and release, by the minute for 14 days and
+ * by the hour for 15 months; each release's first and last minute; and the traces kept so they open
+ * from them, 14 days. Part of Signals, which owns the transaction each write runs in.
  */
 export const operationStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
@@ -159,10 +172,15 @@ export const operationStore = Effect.gen(function* () {
 
   const findDurations = (resolution: Resolution) =>
     SqlSchema.findOneOption({
-      Request: Schema.Struct({ bucket: Schema.Int, operation: Schema.Int, environment: Schema.String }),
+      Request: Schema.Struct({
+        bucket: Schema.Int,
+        operation: Schema.Int,
+        environment: Schema.String,
+        release: Schema.String,
+      }),
       Result: Schema.Struct({ durations: Schema.fromJsonString(QuantileSketch) }),
       execute: (key) =>
-        sql`SELECT durations FROM ${sql(resolution.table)} WHERE bucket = ${key.bucket} AND operation = ${key.operation} AND environment = ${key.environment}`,
+        sql`SELECT durations FROM ${sql(resolution.table)} WHERE bucket = ${key.bucket} AND operation = ${key.operation} AND environment = ${key.environment} AND release = ${key.release}`,
     })
 
   const findCounts = (resolution: Resolution) =>
@@ -173,6 +191,7 @@ export const operationStore = Effect.gen(function* () {
         environment: Schema.optionalKey(EnvironmentKey),
         component: Schema.optionalKey(ComponentKey),
         operation: Schema.optionalKey(EnvelopeName),
+        release: Schema.optionalKey(ReleaseVersion),
       }),
       Result: CountsRow,
       execute: (asked) => sql`
@@ -185,6 +204,7 @@ export const operationStore = Effect.gen(function* () {
           ...(asked.environment === undefined ? [] : [sql`c.environment = ${asked.environment}`]),
           ...(asked.component === undefined ? [] : [sql`o.component = ${asked.component}`]),
           ...(asked.operation === undefined ? [] : [sql`o.name = ${asked.operation}`]),
+          ...(asked.release === undefined ? [] : [sql`c.release = ${asked.release}`]),
         ])}`,
     })
 
@@ -196,10 +216,11 @@ export const operationStore = Effect.gen(function* () {
       environment: Schema.optionalKey(EnvironmentKey),
       component: Schema.optionalKey(ComponentKey),
       operation: Schema.optionalKey(EnvelopeName),
+      release: Schema.optionalKey(ReleaseVersion),
     }),
     Result: KeptRow,
     execute: (asked) => sql`
-      SELECT o.component, o.name AS operation, k.environment, k.trace, k.start,
+      SELECT o.component, o.name AS operation, k.environment, k.release, k.trace, k.start,
         k.duration_ms AS "durationMs", k.failed, k.status
       FROM signals_kept_traces k JOIN signals_operations o ON o.id = k.operation
       WHERE ${sql.and([
@@ -211,13 +232,15 @@ export const operationStore = Effect.gen(function* () {
         ...(asked.environment === undefined ? [] : [sql`k.environment = ${asked.environment}`]),
         ...(asked.component === undefined ? [] : [sql`o.component = ${asked.component}`]),
         ...(asked.operation === undefined ? [] : [sql`o.name = ${asked.operation}`]),
+        ...(asked.release === undefined ? [] : [sql`k.release = ${asked.release}`]),
       ])}
       ORDER BY ${asked.keptFor === "slowest" ? sql`k.duration_ms DESC` : sql`k.start DESC`}
       LIMIT ${keptListed}`,
   })
 
   // The minutes each sparse operation ran in: those of operations, by environment, that ran in at
-  // most `atMost` minutes of the period, so a busy operation never costs a row per minute.
+  // most `atMost` minutes of the period, so a busy operation never costs a row per minute. A minute
+  // two releases ran in has a row of each, and is one minute.
   const findMinutes = SqlSchema.findAll({
     Request: Schema.Struct({
       from: Schema.Int,
@@ -226,16 +249,21 @@ export const operationStore = Effect.gen(function* () {
       environment: Schema.optionalKey(EnvironmentKey),
       component: Schema.optionalKey(ComponentKey),
       operation: Schema.optionalKey(EnvelopeName),
+      release: Schema.optionalKey(ReleaseVersion),
     }),
     Result: MinuteRow,
     execute: (asked) => sql`
       WITH sparse AS (
         SELECT operation, environment FROM signals_minute_counts
-        WHERE bucket >= ${asked.from} AND bucket < ${asked.to}
+        WHERE ${sql.and([
+          sql`bucket >= ${asked.from}`,
+          sql`bucket < ${asked.to}`,
+          ...(asked.release === undefined ? [] : [sql`release = ${asked.release}`]),
+        ])}
         GROUP BY operation, environment
-        HAVING count(*) <= ${asked.atMost}
+        HAVING count(DISTINCT bucket) <= ${asked.atMost}
       )
-      SELECT o.component, o.name AS operation, c.environment, c.bucket
+      SELECT DISTINCT o.component, o.name AS operation, c.environment, c.bucket
       FROM signals_minute_counts c
         JOIN sparse s ON s.operation = c.operation AND s.environment = c.environment
         JOIN signals_operations o ON o.id = c.operation
@@ -245,8 +273,30 @@ export const operationStore = Effect.gen(function* () {
         ...(asked.environment === undefined ? [] : [sql`c.environment = ${asked.environment}`]),
         ...(asked.component === undefined ? [] : [sql`o.component = ${asked.component}`]),
         ...(asked.operation === undefined ? [] : [sql`o.name = ${asked.operation}`]),
+        ...(asked.release === undefined ? [] : [sql`c.release = ${asked.release}`]),
       ])}
       ORDER BY c.bucket`,
+  })
+
+  // The releases whose span overlaps [from, to): one row each.
+  const findReleases = SqlSchema.findAll({
+    Request: Schema.Struct({
+      from: Schema.Int,
+      to: Schema.Int,
+      environment: Schema.optionalKey(EnvironmentKey),
+      component: Schema.optionalKey(ComponentKey),
+    }),
+    Result: ReleaseSpanRow,
+    execute: (asked) => sql`
+      SELECT component, environment, release, first_seen AS "firstSeen", last_seen AS "lastSeen"
+      FROM signals_releases
+      WHERE ${sql.and([
+        sql`last_seen > ${asked.from}`,
+        sql`first_seen < ${asked.to}`,
+        ...(asked.environment === undefined ? [] : [sql`environment = ${asked.environment}`]),
+        ...(asked.component === undefined ? [] : [sql`component = ${asked.component}`]),
+      ])}
+      ORDER BY first_seen DESC, component, environment, release`,
   })
 
   // The operation's row ID, adding the operation when it is new; past the limit, `(other operations)`.
@@ -278,7 +328,8 @@ export const operationStore = Effect.gen(function* () {
   ) {
     const bucket = floorTo(DateTime.toEpochMillis(counts.bucket), resolution.width)
     const environment = counts.environment ?? ""
-    const stored = yield* findDurations(resolution)({ bucket, operation, environment })
+    const release = counts.release ?? ""
+    const stored = yield* findDurations(resolution)({ bucket, operation, environment, release })
     const durations = Option.match(stored, {
       onNone: () => counts.durations,
       onSome: (row) => mergeSketches([row.durations, counts.durations]),
@@ -289,12 +340,13 @@ export const operationStore = Effect.gen(function* () {
         bucket,
         operation,
         environment,
+        release,
         count: counts.count,
         errors: counts.errors,
         total_ms: counts.totalMs,
         durations: json,
       })}
-      ON CONFLICT (bucket, operation, environment) DO UPDATE SET
+      ON CONFLICT (bucket, operation, environment, release) DO UPDATE SET
         count = count + excluded.count,
         errors = errors + excluded.errors,
         total_ms = total_ms + excluded.total_ms,
@@ -325,6 +377,7 @@ export const operationStore = Effect.gen(function* () {
           hour,
           kept_for: list,
           trace: trace.trace,
+          release: trace.release ?? "",
           start,
           duration_ms: trace.durationMs,
           failed: trace.failed ? 1 : 0,
@@ -344,8 +397,47 @@ export const operationStore = Effect.gen(function* () {
     }
   })
 
-  // Adds a batch's counts by the minute and by the hour, and keeps its traces worth opening. Runs
-  // inside the caller's transaction.
+  // Widens each release's span to the minutes this batch ran it in.
+  const seeReleases = Effect.fn("OperationStore.seeReleases")(function* (
+    component: ComponentKey,
+    batch: ReadonlyArray<OperationCounts>,
+  ) {
+    const spans = new Map<
+      string,
+      { readonly environment: string; readonly release: string; firstSeen: number; lastSeen: number }
+    >()
+    for (const counts of batch) {
+      if (counts.release === undefined) {
+        continue
+      }
+      const start = floorTo(DateTime.toEpochMillis(counts.bucket), byMinute.width)
+      const environment = counts.environment ?? ""
+      const key = [environment, counts.release].join("\u0000")
+      const span = spans.get(key)
+      if (span === undefined) {
+        spans.set(key, { environment, release: counts.release, firstSeen: start, lastSeen: start + byMinute.width })
+      } else {
+        span.firstSeen = Math.min(span.firstSeen, start)
+        span.lastSeen = Math.max(span.lastSeen, start + byMinute.width)
+      }
+    }
+    for (const span of spans.values()) {
+      yield* sql`
+        INSERT INTO signals_releases ${sql.insert({
+          component,
+          environment: span.environment,
+          release: span.release,
+          first_seen: span.firstSeen,
+          last_seen: span.lastSeen,
+        })}
+        ON CONFLICT (component, environment, release) DO UPDATE SET
+          first_seen = min(first_seen, excluded.first_seen),
+          last_seen = max(last_seen, excluded.last_seen)`
+    }
+  })
+
+  // Adds a batch's counts by the minute and by the hour, widens its releases' spans, and keeps its
+  // traces worth opening. Runs inside the caller's transaction.
   const add = Effect.fn("OperationStore.add")(function* (
     component: ComponentKey,
     batch: ReadonlyArray<OperationCounts>,
@@ -361,14 +453,17 @@ export const operationStore = Effect.gen(function* () {
       const operation = yield* operationIdOf(component, counts.operation, known)
       yield* addTo(byHour, operation, counts)
     }
+    yield* seeReleases(component, batch)
     yield* keep(component, kept, known)
   })
 
-  // Removes minutes and kept traces older than 14 days, and hours older than 15 months.
+  // Removes minutes and kept traces older than 14 days, and hours and releases last seen longer ago
+  // than 15 months.
   const cleanUp = Effect.fn("OperationStore.cleanUp")(function* (now: number) {
     yield* sql`DELETE FROM signals_minute_counts WHERE bucket < ${now - Duration.toMillis(byMinute.kept)}`
     yield* sql`DELETE FROM signals_kept_traces WHERE hour < ${now - Duration.toMillis(byMinute.kept)}`
     yield* sql`DELETE FROM signals_hour_counts WHERE bucket < ${now - Duration.toMillis(byHour.kept)}`
+    yield* sql`DELETE FROM signals_releases WHERE last_seen < ${now - Duration.toMillis(byHour.kept)}`
   })
 
   const countsIn = Effect.fn("OperationStore.countsIn")(function* (query: OperationQuery) {
@@ -385,6 +480,7 @@ export const operationStore = Effect.gen(function* () {
       ...(query.environment === undefined ? {} : { environment: query.environment }),
       ...(query.component === undefined ? {} : { component: query.component }),
       ...(query.operation === undefined ? {} : { operation: query.operation }),
+      ...(query.release === undefined ? {} : { release: query.release }),
     }).pipe(Effect.orDie)
     const period = new Period({
       from: DateTime.makeUnsafe(covered.value.from),
@@ -477,6 +573,7 @@ export const operationStore = Effect.gen(function* () {
       ...(query.environment === undefined ? {} : { environment: query.environment }),
       ...(query.component === undefined ? {} : { component: query.component }),
       ...(query.operation === undefined ? {} : { operation: query.operation }),
+      ...(query.release === undefined ? {} : { release: query.release }),
     }
     const slowest = yield* findKept({ keptFor: "slowest", ...asked }).pipe(Effect.orDie)
     const failed = yield* findKept({ keptFor: "failed", ...asked }).pipe(Effect.orDie)
@@ -504,6 +601,7 @@ export const operationStore = Effect.gen(function* () {
       ...(query.environment === undefined ? {} : { environment: query.environment }),
       ...(query.component === undefined ? {} : { component: query.component }),
       ...(query.operation === undefined ? {} : { operation: query.operation }),
+      ...(query.release === undefined ? {} : { release: query.release }),
     }).pipe(Effect.orDie)
     const byOperation = Map.groupBy(rows, (row) => [row.component, row.environment, row.operation].join("\u0000"))
     const answer: ReadonlyArray<MinutesRan> = Array.from(byOperation.values()).flatMap((minutes) => {
@@ -522,5 +620,25 @@ export const operationStore = Effect.gen(function* () {
     return answer
   })
 
-  return { add, cleanUp, operations, loadOverTime, keptTraces, minutesRan }
+  // The releases that ran in the query's period, each with its whole span.
+  const releases = Effect.fn("OperationStore.releases")(function* (query: ReleaseQuery) {
+    const rows = yield* findReleases({
+      from: DateTime.toEpochMillis(query.period.from),
+      to: DateTime.toEpochMillis(query.period.to),
+      ...(query.environment === undefined ? {} : { environment: query.environment }),
+      ...(query.component === undefined ? {} : { component: query.component }),
+    }).pipe(Effect.orDie)
+    const table: ReleaseTable = {
+      rows: rows.map((row): ReleaseRow => ({
+        component: row.component,
+        ...(row.environment === "" ? {} : { environment: row.environment }),
+        release: row.release,
+        firstSeen: DateTime.makeUnsafe(row.firstSeen),
+        lastSeen: DateTime.makeUnsafe(row.lastSeen),
+      })),
+    }
+    return table
+  })
+
+  return { add, cleanUp, operations, loadOverTime, keptTraces, minutesRan, releases }
 })

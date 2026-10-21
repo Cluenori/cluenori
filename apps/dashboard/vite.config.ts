@@ -11,8 +11,9 @@ import { defineConfig } from "vite"
 // definition (Effect's runtime, Schema, and HTTP API client) is about 75 KB of it, and every page
 // needs it before it can show anything. Lowered to 240 KB when one error's page and a
 // trace began loading after start. Raised to 244 KB when the API gained members and passkeys,
-// whose definitions the typed client carries.
-const firstLoadBudget = { scriptKb: 244, styleKb: 36 }
+// whose definitions the typed client carries, and to 248 KB when it gained Releases, the first
+// module.
+const firstLoadBudget = { scriptKb: 248, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

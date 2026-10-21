@@ -1,8 +1,8 @@
 /**
  * Signals from a project's services: OpenTelemetry exports read where they arrive, every export kept
- * in the archive for 90 days, and in the project's Durable Object their operations counted (by the
- * minute 14 days, by the hour 15 months), the traces of the slowest and failed kept to open (14
- * days), their warnings and errors kept 90 days, and errors grouped.
+ * in the archive for 90 days, and in the project's Durable Object their operations counted by
+ * environment and release (by the minute 14 days, by the hour 15 months), the traces of the slowest
+ * and failed kept to open (14 days), their warnings and errors kept 90 days, and errors grouped.
  */
 export { archiveRetention } from "./archive-index.ts"
 export { ArchiveStore, ArchiveUnavailable } from "./archive-store.ts"
@@ -39,6 +39,9 @@ export {
   otherOperations,
   LoadSeries,
   MinutesRan,
+  ReleaseQuery,
+  ReleaseRow,
+  ReleaseTable,
   SeriesStep,
   stepMillis,
 } from "./operation-queries.ts"

@@ -1,7 +1,9 @@
 import { webCryptoLayer } from "@bagatka/web-crypto"
+import type { ErrorSchema, ModuleDefinition, ModuleQuery, PlainSchema as QuerySchema } from "@cluenori/foundation"
 import { ActivityLog, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
 import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
+import { releasesModule } from "@cluenori/releases"
 import { Signals } from "@cluenori/signals"
 import { Today } from "@cluenori/today"
 import { SqliteClient } from "@effect/sql-sqlite-do"
@@ -12,8 +14,8 @@ import { FetchHttpClient } from "effect/http"
 import { sendActivity } from "./activity-queue.ts"
 import type { PlainSchema } from "./object-calls.ts"
 import { exitText, serve } from "./object-calls.ts"
-import type { ProjectCall, ProjectCallName } from "./project-calls.ts"
-import { projectCalls } from "./project-calls.ts"
+import type { EngineCallName, ProjectCall, ProjectCallName } from "./project-calls.ts"
+import { moduleCall, projectCalls } from "./project-calls.ts"
 import { r2ArchiveLayer } from "./r2-archive.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 
@@ -46,7 +48,7 @@ const served = <I extends PlainSchema, S extends PlainSchema, F extends PlainSch
 })
 
 // Each call the Worker can make, on a visible line, translated to the engines' services.
-const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Served>> => ({
+const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Served>> => ({
   createProject: served(projectCalls.createProject, ({ actor, name }) =>
     Effect.gen(function* () {
       const projects = yield* Projects
@@ -233,6 +235,27 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
   ),
 })
 
+// The modules every project's object serves, each on a visible line; their queries read the engines.
+const modules: ReadonlyArray<
+  ModuleDefinition<
+    string,
+    Readonly<Record<string, ModuleQuery<QuerySchema, QuerySchema, ErrorSchema, ProjectServices>>>
+  >
+> = [releasesModule]
+
+// Each module's queries, under `<module>.<query>`, answered by the module's own `run`.
+const servedModules = (project: ProjectKey) =>
+  modules.flatMap((module) =>
+    Object.entries(module.queries).map(([name, query]) => {
+      const call = moduleCall(module, name)
+      const entry: readonly [ProjectCallName, Served] = [
+        call.name,
+        served(call, (input) => query.run(input), new ProjectNotFound({ project })),
+      ]
+      return entry
+    }),
+  )
+
 /**
  * One project's Durable Object, named `<workspace>/<project>`: its database, and the engines that
  * keep their records in it, built once per object. The Worker reaches it through `call`.
@@ -241,7 +264,7 @@ export class ProjectObject extends DurableObject<Env> {
   readonly #storage: DurableObjectStorage
   readonly #activity: Queue
   readonly #runtime: ManagedRuntime.ManagedRuntime<ProjectServices | ActivityLog, never>
-  readonly #calls: Readonly<Record<ProjectCallName, Served>>
+  readonly #calls: ReadonlyMap<string, Served>
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -252,7 +275,7 @@ export class ProjectObject extends DurableObject<Env> {
     const project = ProjectKey.make(projectName ?? "")
     this.#storage = ctx.storage
     this.#activity = env.ACTIVITY
-    this.#calls = servedCalls(project)
+    this.#calls = new Map([...Object.entries(servedCalls(project)), ...servedModules(project)])
     this.#runtime = ManagedRuntime.make(
       Today.layer.pipe(
         Layer.provideMerge(Incidents.layer),
@@ -269,9 +292,16 @@ export class ProjectObject extends DurableObject<Env> {
     )
   }
 
-  /** Runs one of `projectCalls`: its input and answer are that call's encodings as JSON text. */
+  /**
+   * Runs one of `projectCalls`, or a module's query: its input and answer are that call's encodings
+   * as JSON text.
+   */
   call(name: ProjectCallName, input: string): Promise<string> {
-    const call = this.#calls[name]
+    const call = this.#calls.get(name)
+    if (call === undefined) {
+      // The Worker and its objects deploy together, so every name it sends is served.
+      return Promise.reject(new Error(`A project's object serves no call named ${name}`))
+    }
     const created = this.#storage.kv.get(projectCreated) === true
     if (call.beforeCreated !== undefined && !created) {
       return Effect.runPromise(call.beforeCreated)

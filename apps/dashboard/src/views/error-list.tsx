@@ -34,7 +34,8 @@ function StepBars({ values }: { readonly values: ReadonlyArray<number | undefine
 
 /**
  * The project's errors, most frequent first, each in its component's color, with what it said and
- * when it happened; each row opens its error's page.
+ * when it happened; each row opens its error's page. With `now`, each says whether it is new and
+ * whether it is happening now.
  */
 export function ErrorList({
   groups,
@@ -44,8 +45,11 @@ export function ErrorList({
   linkOf,
 }: {
   readonly groups: ReadonlyArray<ErrorGroup>
-  /** The time the answer covers up to: what "new" and "now" are measured from. */
-  readonly now: number
+  /**
+   * The time the answer covers up to: what "new" and "now" are measured from. Absent when the
+   * answer ended before now, such as the errors of a release that no longer runs.
+   */
+  readonly now: number | undefined
   readonly colorOf: (component: string) => string
   /** A group's occurrences in each step of the period, when counted. */
   readonly stepsOf: (group: ErrorGroup) => ReadonlyArray<number | undefined> | undefined
@@ -56,7 +60,7 @@ export function ErrorList({
     <ul className="divide-y">
       {groups.map((group) => {
         const { type, message } = titleParts(group)
-        const status = errorStatusOf(group, now)
+        const status = now === undefined ? { ongoing: false, isNew: false } : errorStatusOf(group, now)
         const steps = stepsOf(group)
         return (
           <li key={group.id}>

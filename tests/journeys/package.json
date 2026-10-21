@@ -14,6 +14,7 @@
     "@cluenori/notifications": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
+    "@cluenori/releases": "workspace:*",
     "@cluenori/worker": "workspace:*",
     "@effect/vitest": "catalog:",
     "effect": "catalog:",

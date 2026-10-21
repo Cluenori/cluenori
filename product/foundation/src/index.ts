@@ -1,7 +1,7 @@
 /**
  * The product model every engine and module shares: the scope keys that place every record, the
- * envelope every signal and activity entry uses, who acts, and the one way to change records, which
- * commits each write with its activity.
+ * envelope every signal and activity entry uses, who acts, the one way to change records, which
+ * commits each write with its activity, and the contract a module is defined by.
  */
 export { ActivityLog } from "./activity-log.ts"
 export type { ActivityLogSettings, Change } from "./activity-log.ts"
@@ -13,6 +13,8 @@ export { Envelope, EnvelopeKind, EnvelopeName, ModuleKind, Source } from "./enve
 export { FeatureKey } from "./feature-key.ts"
 export { Instant } from "./instant.ts"
 export { AccountId, AgentRunId, EnvelopeId, InstallationId, MemberId, PersonId, SessionId, Uuidv7 } from "./ids.ts"
+export { defineModule, moduleQuery } from "./module.ts"
+export type { ErrorSchema, ModuleDefinition, ModuleQueries, ModuleQuery, PlainSchema } from "./module.ts"
 export { Period } from "./period.ts"
 export { ReleaseVersion } from "./release-version.ts"
 export { ComponentKey, EnvironmentKey, ProjectKey, WorkspaceKey } from "./scope-keys.ts"

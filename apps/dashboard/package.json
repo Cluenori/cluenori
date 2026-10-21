@@ -17,6 +17,7 @@
     "@cluenori/members": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
+    "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/worker": "workspace:*",
     "@effect/atom-react": "catalog:",

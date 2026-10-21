@@ -3,7 +3,15 @@
 // last answer, marked waiting, until the new one arrives. This is the one file that knows where data
 // comes from; pages and views ask it (PATTERNS.md, "Dashboard views").
 
-import type { ComponentKey, EnvelopeName, MemberId, ProjectKey, TraceId } from "@cluenori/foundation"
+import type {
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  MemberId,
+  ProjectKey,
+  ReleaseVersion,
+  TraceId,
+} from "@cluenori/foundation"
 import type { Email, InviteCode, SignInId } from "@cluenori/members"
 import type { PhoneId } from "@cluenori/phones"
 import type { ErrorGroupId, IndexedLevel, LogCountsBy, SeriesStep } from "@cluenori/signals"
@@ -311,6 +319,54 @@ export const logsAtom = Atom.family(
         }),
       ),
     ),
+)
+
+/**
+ * The releases that ran over the period, the latest first seen first, at most 30, of a project or
+ * one component; with `asOf`, the end of the period asked about, which "live" is measured from.
+ */
+export const releasesAtom = Atom.family((scope: Scope) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastOf(periodMillis[get(periodAtom)])
+        const list = yield* client.releases.releases({
+          params: { project: scope.project },
+          query: { ...period, ...(scope.component === undefined ? {} : { component: scope.component }) },
+        })
+        return { releases: list.releases, asOf: period.to }
+      }),
+    ),
+  ),
+)
+
+/** A release of a component, in an environment when it has one: by its component and version. */
+export type ReleaseScope = {
+  readonly project: ProjectKey
+  readonly component: ComponentKey
+  readonly release: ReleaseVersion
+  readonly environment?: EnvironmentKey
+}
+
+/**
+ * One release compared with the one before it, whatever the period; with `asOf`, when it was asked,
+ * which "live" is measured from. Fails with `ReleaseNotFound` for a release never counted.
+ */
+export const releaseAtom = Atom.family((key: ReleaseScope) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const asOf = yield* DateTime.now
+        const detail = yield* client.releases.release({
+          params: { project: key.project, component: key.component, release: key.release },
+          query: key.environment === undefined ? {} : { environment: key.environment },
+        })
+        return { detail, asOf }
+      }),
+    ),
+  ),
 )
 
 /** One trace, read from the archive around when it happened. */

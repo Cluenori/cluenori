@@ -28,6 +28,8 @@ import type {
   MinutesRan,
   OperationQuery,
   OperationTable,
+  ReleaseQuery,
+  ReleaseTable,
   SeriesStep,
 } from "./operation-queries.ts"
 import { operationStore } from "./operation-store.ts"
@@ -101,6 +103,13 @@ export class Signals extends Context.Service<
      * 14 days, so the period is cut to them. Reads only.
      */
     readonly minutesRan: (query: OperationQuery, atMost: number) => Effect.Effect<ReadonlyArray<MinutesRan>>
+    /**
+     * The releases whose operations ran in the query's period, the latest first seen first: each
+     * with its whole span, from the first minute it ran in to the end of the last, kept 15 months
+     * after it was last seen. A release is what a component reports in `service.version`; counts
+     * from before October 2026 have none. Reads one row per release.
+     */
+    readonly releases: (query: ReleaseQuery) => Effect.Effect<ReleaseTable>
     /** The errors of the query's period, most frequent first. Reads only. */
     readonly errors: (query: ErrorQuery) => Effect.Effect<ErrorTable>
     /** One error and its latest occurrences in the query's period. Reads only. */
@@ -287,6 +296,7 @@ export class Signals extends Context.Service<
           loadOverTime: counts.loadOverTime,
           keptTraces: counts.keptTraces,
           minutesRan: counts.minutesRan,
+          releases: counts.releases,
           errors,
           error,
           logs: searchLogs,

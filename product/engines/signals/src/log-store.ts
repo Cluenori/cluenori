@@ -37,6 +37,7 @@ const GroupRow = Schema.Struct({
   title: Schema.String,
   culprit: Schema.String,
   firstSeen: Schema.Int,
+  firstRelease: Schema.Union([Schema.Literal(""), ReleaseVersion]),
   lastSeen: Schema.Int,
   lastComponent: ComponentKey,
   lastEnvironment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
@@ -69,6 +70,7 @@ const groupOf = (row: GroupRow): ErrorGroup => ({
   culprit: row.culprit,
   occurrences: row.occurrences,
   firstSeen: DateTime.makeUnsafe(row.firstSeen),
+  ...(row.firstRelease === "" ? {} : { firstRelease: row.firstRelease }),
   lastSeen: DateTime.makeUnsafe(row.lastSeen),
   lastComponent: row.lastComponent,
   ...(row.lastEnvironment === "" ? {} : { lastEnvironment: row.lastEnvironment }),
@@ -112,10 +114,11 @@ export const logStore = Effect.gen(function* () {
       if (first === undefined) {
         return yield* Effect.die(`Error group ${group.id} came with no occurrence`)
       }
-      const firstSeen = occurrences.reduce(
-        (least, entry) => Math.min(least, DateTime.toEpochMillis(entry.time)),
-        Infinity,
+      const earliest = occurrences.reduce(
+        (oldest, entry) => (DateTime.toEpochMillis(entry.time) < DateTime.toEpochMillis(oldest.time) ? entry : oldest),
+        first,
       )
+      const firstSeen = DateTime.toEpochMillis(earliest.time)
       const latest = occurrences.reduce(
         (newest, entry) => (DateTime.toEpochMillis(entry.time) > DateTime.toEpochMillis(newest.time) ? entry : newest),
         first,
@@ -127,12 +130,14 @@ export const logStore = Effect.gen(function* () {
           title: group.title,
           culprit: group.culprit,
           first_seen: firstSeen,
+          first_release: earliest.release ?? "",
           last_seen: DateTime.toEpochMillis(latest.time),
           last_component: component,
           last_environment: latest.environment ?? "",
           last_release: latest.release ?? "",
         })}
         ON CONFLICT (id) DO UPDATE SET
+          first_release = CASE WHEN excluded.first_seen < first_seen THEN excluded.first_release ELSE first_release END,
           first_seen = min(first_seen, excluded.first_seen),
           title = CASE WHEN excluded.last_seen >= last_seen THEN excluded.title ELSE title END,
           culprit = CASE WHEN excluded.last_seen >= last_seen THEN excluded.culprit ELSE culprit END,
@@ -168,7 +173,8 @@ export const logStore = Effect.gen(function* () {
       Request: Schema.Void,
       Result: GroupRow,
       execute: () => sql`
-        SELECT g.id, g.kind, g.title, g.culprit, g.first_seen AS "firstSeen", g.last_seen AS "lastSeen",
+        SELECT g.id, g.kind, g.title, g.culprit, g.first_seen AS "firstSeen", g.first_release AS "firstRelease",
+          g.last_seen AS "lastSeen",
           g.last_component AS "lastComponent", g.last_environment AS "lastEnvironment",
           g.last_release AS "lastRelease", count(*) AS occurrences
         FROM signals_logs l JOIN signals_error_groups g ON g.id = l.error
