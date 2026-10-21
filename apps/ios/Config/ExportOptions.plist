@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- How apps/ios/testflight sends an archive: signed for the App Store by the team the archive was
+     signed by, and uploaded to App Store Connect, with the build number the script gave it. -->
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>destination</key>
+	<string>upload</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+	<!-- For the team's own testers alone: the build can't go to external testers or the App Store. -->
+	<key>testFlightInternalTestingOnly</key>
+	<true/>
+</dict>
+</plist>

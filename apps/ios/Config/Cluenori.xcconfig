@@ -16,6 +16,10 @@ CLUENORI_VARIANT_ID =
 CLUENORI_VARIANT_ID[config=Debug] = .local
 CLUENORI_APP_NAME = Cluenori
 CLUENORI_APP_NAME[config=Debug] = Cluenori Local
+// Cluenori Local's icon is Cluenori's on the dashboard's light colors, in dark mode too, so the two
+// apps look apart at a glance.
+CLUENORI_APP_ICON = AppIcon
+CLUENORI_APP_ICON[config=Debug] = AppIconLocal
 
 DEVELOPMENT_TEAM = $(CLUENORI_TEAM)
 CODE_SIGN_STYLE = Automatic

@@ -6,6 +6,14 @@
   "trailingComma": "all",
   "arrowParens": "always",
   "sortImports": true,
-  // Markdown is wrapped by hand at 100 columns; generated files are written by their generators.
-  "ignorePatterns": ["**/*.md", "bun.lock", "flake.lock", "**/worker-configuration.d.ts", "**/openapi.json"]
+  // Markdown is wrapped by hand at 100 columns; generated files are written by their generators, and
+  // Icon Composer documents by Icon Composer.
+  "ignorePatterns": [
+    "**/*.md",
+    "bun.lock",
+    "flake.lock",
+    "**/worker-configuration.d.ts",
+    "**/openapi.json",
+    "**/*.icon/**"
+  ]
 }

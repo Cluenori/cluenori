@@ -1,0 +1,33 @@
+#!/bin/sh
+# Sends the app to TestFlight, as `bun run testflight:ios` does: builds Cluenori, the Release app,
+# with a build number from the time, and uploads it to App Store Connect, signed for the App Store;
+# the team's internal testers get it once Apple has processed it. Xcode signs and uploads as the
+# account in its Settings, Accounts, and makes the App Store's profiles, and the team's distribution
+# certificate the first time, which takes the Admin or Account Holder role. Needs a Mac with Xcode,
+# Config/Local.xcconfig, and the app's record in App Store Connect (README.md, "TestFlight").
+set -eu
+cd "$(dirname "$0")"
+
+# The Xcode the app is built with; another can be given in DEVELOPER_DIR.
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode27.2RC.app/Contents/Developer}"
+
+if [ ! -f Config/Local.xcconfig ]; then
+  echo "Copy Config/Local.example.xcconfig to Config/Local.xcconfig, with your bundle ID and team, first."
+  exit 1
+fi
+
+# Every upload needs a build number greater than the last: the time, in UTC, to the minute.
+build_number=$(date -u +%Y%m%d%H%M)
+# Kept, one per upload, for reading its crash reports later.
+archive="build/testflight/Cluenori-$build_number.xcarchive"
+
+echo "Building Cluenori, build $build_number"
+xcodebuild archive -project Cluenori.xcodeproj -scheme Cluenori -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath "$archive" -derivedDataPath build/testflight/derived \
+  -allowProvisioningUpdates -quiet CURRENT_PROJECT_VERSION="$build_number"
+
+echo "Uploading it to App Store Connect"
+xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist Config/ExportOptions.plist \
+  -exportPath "build/testflight/Cluenori-$build_number" -allowProvisioningUpdates -quiet
+
+echo "Uploaded build $build_number. Once Apple has processed it, in a few minutes, internal testers get it in TestFlight."

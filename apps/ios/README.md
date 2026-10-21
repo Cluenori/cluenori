@@ -12,6 +12,7 @@ clock, through silent mode, with an Acknowledge button (`concept/Modules.md`).
 bun run check:ios                     from the root: formatting, the package's tests, the app built
 open apps/ios/Cluenori.xcodeproj      Xcode 27.2: run on a simulator or an iPhone
 bun run generate                      from the root: rewrites CluenoriAPI.swift when the API changes
+bun run testflight:ios                from the root: builds the Release app and uploads it to TestFlight
 ```
 
 To run it on an iPhone, copy `Config/Local.example.xcconfig` to `Config/Local.xcconfig` with your
@@ -21,6 +22,23 @@ everything but alerts: `./run` can't reach APNs. To pair with `./run`, which lis
 Worker for the local network instead (`bun run wrangler dev --ip 0.0.0.0` in `apps/worker`), and
 make the pairing link at the Mac's address; the first call asks for Local Network access.
 
+## TestFlight
+
+Once, before the first upload:
+
+1. In App Store Connect, Apps, add a new iOS app with the bundle ID of `Config/Local.xcconfig`, any
+   SKU, and a name no other App Store app has; the home screen says Cluenori whatever it is.
+2. In Xcode, Settings, Accounts, sign in as the team's Admin or Account Holder: the first upload
+   makes the team's distribution certificate, which those roles alone may.
+3. In the app's TestFlight, Internal Testing, add a group, with automatic distribution, and the
+   team's people in it; Users and Access adds someone to the team first. Each installs TestFlight
+   and accepts the email.
+
+Then `bun run testflight:ios` builds the Release app, with the time as its build number, and
+uploads it, for internal testers alone; the archive stays in `build/testflight`, for its crash
+reports. Testers get it once Apple has processed it, in a few minutes. On an iPhone that ran the
+Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Local stays beside it.
+
 ## Owns
 
 - **The app** (`Cluenori/`, the Xcode target): its entry, the pairing links it opens
@@ -28,7 +46,9 @@ make the pairing link at the Mac's address; the first call asks for Local Networ
   alone, and what the phone says about itself: its model, iOS and app versions. Its delegate
   registers for pushes and gives the deployment the token, for the APNs the build's provisioning
   profile names; it answers an alert's Acknowledge action, and opens the project an alert is
-  about. It asks for notifications and alarms (`AlertsOnThisPhone`), and rings our siren.
+  about. It asks for notifications and alarms (`AlertsOnThisPhone`), and rings our siren. Its
+  icons are Icon Composer documents, `AppIcon.icon` and, for Cluenori Local, `AppIconLocal.icon`:
+  their SVG layers are the source, so open them in Icon Composer to change them.
 - **The alerts' extension** (`CluenoriAlerts/`, a notification service extension): runs for
   every alert push. An alarm less than 10 minutes old rings as an AlarmKit alarm, in the app's
   red; a later push about the incident (recovered, or acknowledged anywhere) stops it. Without

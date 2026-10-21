@@ -61,6 +61,7 @@
     "postinstall": "effect-tsgo patch && bun run --cwd apps/worker types && bun run --cwd apps/dashboard browsers",
     "check": "bun run typecheck && bun run lint && oxfmt --check && bun apps/cli/src/main.ts check && bun run --cwd apps/dashboard build",
     "check:ios": "apps/ios/check",
+    "testflight:ios": "apps/ios/testflight",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "oxlint",
     "test": "TZ=Pacific/Chatham LANG=tr_TR.UTF-8 vitest run",

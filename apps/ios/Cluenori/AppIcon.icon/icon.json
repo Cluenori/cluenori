@@ -1,0 +1,44 @@
+{
+  "fill": {
+    "solid": "srgb:0.04314,0.04314,0.04314,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "red.svg",
+          "name": "red"
+        }
+      ]
+    },
+    {
+      "layers": [
+        {
+          "image-name": "purple.svg",
+          "name": "purple"
+        }
+      ]
+    },
+    {
+      "layers": [
+        {
+          "image-name": "sky.svg",
+          "name": "sky"
+        }
+      ]
+    },
+    {
+      "layers": [
+        {
+          "image-name": "mint.svg",
+          "name": "mint"
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "iOS"
+    ]
+  }
+}

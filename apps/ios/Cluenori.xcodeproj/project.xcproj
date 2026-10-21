@@ -40,6 +40,7 @@
         { "path": "Cluenori.entitlements" },
         { "path": "Alerts.entitlements" },
         { "path": "Local.example.xcconfig" },
+        { "path": "ExportOptions.plist" },
       ],
     },
   ],

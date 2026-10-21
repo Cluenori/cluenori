@@ -525,6 +525,8 @@ conflict.
   - All tests: `bun run test`; one package's or journey's: `bun run test <path>`, such as
     `bun run test tests/journeys/test/deployment-journey.test.ts`
   - Format: `bun run format`
+  - The iPhone app, on a Mac with Xcode: check it with `bun run check:ios`; send it to TestFlight
+    with `bun run testflight:ios`
   - Rewrite generated files (the OpenAPI document, and the iOS app's Swift client of it):
     `bun run generate`
 - **System map:** `ARCHITECTURE.md`
