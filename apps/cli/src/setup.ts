@@ -110,7 +110,8 @@ const ensureArchive = Effect.fn("ensureArchive")(function* (jurisdiction: Jurisd
   })
   if (exists !== 0) {
     yield* Console.log("It isn't there yet, so setup makes it.\n")
-    yield* wrangler(["r2", "bucket", "create", archiveBucket, ...where])
+    // wrangler.jsonc binds it already, as ARCHIVE; without the flag Wrangler offers to add it again.
+    yield* wrangler(["r2", "bucket", "create", archiveBucket, "--update-config=false", ...where])
   }
   const rulesFile = path.join(directory, "lifecycle.json")
   const rules = yield* Schema.encodeEffect(LifecycleFile)({
