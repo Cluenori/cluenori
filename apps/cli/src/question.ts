@@ -10,6 +10,7 @@ import { utcMinute } from "./terminal-text.ts"
 
 /** `--local`: ask the Cluenori `./run` serves instead of the deployment. */
 export const local = Flag.Boolean("local").pipe(
+  Flag.withDefault(false),
   Flag.withDescription("Ask the Cluenori ./run serves on this computer, not the deployment ./setup made."),
 )
 
