@@ -299,7 +299,7 @@ Modules sets the phase of each module, and its table is the only list of phases.
 - [ ] Name the first feature catalog and its tagging rules for the three projects.
 - [ ] Decide the "worse than usual" rules for rates (crash-free sessions, journey success, error rate), and name the critical journeys of the first three projects.
 - [ ] Define version 1 of the manifest schema, the version header, and the offline behavior of the update gate.
-- [ ] Confirm that a Worker can send to APNs over HTTP/2, and measure the fan-out cost of a large push.
+- [ ] Confirm that a Worker can send to APNs over HTTP/2 (reports say it works in production but not in local development on macOS), and measure the fan-out cost of a large push.
 - [ ] Choose the email providers for transactional and marketing mail, and set up the sending domains.
 - [ ] Check the limits of Cloudflare Email Sending, and whether its terms allow marketing mail.
 - [ ] Check the Amp details in the Amp docs: webhooks, OIDC tokens, the thread usage window and the default push behavior.

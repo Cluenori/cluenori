@@ -9,6 +9,7 @@ import { count, duration, share } from "@/lib/format"
 import {
   operationsAtom,
   errorsAtom,
+  incidentsAtom,
   logCountsAtom,
   periodAtom,
   projectAtom,
@@ -69,6 +70,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
   const operations = useAtomValue(operationsAtom(scope))
   const compared = useAtomValue(usualOperationsAtom(scope))
   const errors = useAtomValue(errorsAtom(scope))
+  const incidents = useAtomValue(incidentsAtom(project))
   const logCounts = useAtomValue(logCountsAtom({ project, by: "level" }))
   const periodText = periodWords[period].toLowerCase()
 
@@ -84,7 +86,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
       </ProjectHeader>
 
       <Panel icon={BellIcon} title="Needs attention" subtitle="What is wrong now, the worst first">
-        <Loaded result={AsyncResult.all({ errors, load, compared })}>
+        <Loaded result={AsyncResult.all({ incidents, errors, compared })}>
           {(facts) => <AttentionList items={attentionOf({ project, ...facts })} />}
         </Loaded>
       </Panel>

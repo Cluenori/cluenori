@@ -19,6 +19,9 @@ const api = ComponentKey.make("notes-api")
 const days = (count: number) => Duration.toMillis(Duration.days(count))
 const lastHour = new Period({ from: DateTime.makeUnsafe(now - 3_600_000), to: DateTime.makeUnsafe(now) })
 
+// The start of the minute `ago` milliseconds before the fixture's.
+const minuteOf = (ago: number) => DateTime.makeUnsafe(capturedAt - (capturedAt % 60_000) - ago)
+
 const fixture = Effect.fromResult(Base64.decode(dotnetTraces)).pipe(Effect.orDie)
 
 const readFixtureAt = (time: number) =>
@@ -400,6 +403,34 @@ describe("Signals", () => {
         assert.strictEqual(
           hours.points.reduce((total, point) => total + point.count, 0),
           5,
+        )
+      }),
+    ),
+  )
+
+  it.effect("tells the minutes each sparse operation ran in, and leaves the busy ones out", () =>
+    inProject(
+      "minutes-ran",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        // An hourly job, three times; and an endpoint in four minutes, busier than asked for.
+        const job = [0, 3_600_000, 7_200_000].map((ago) => counts("cleanup.run", 1, { bucket: minuteOf(ago) }))
+        const busy = [0, 60_000, 120_000, 180_000].map((ago) => counts("GET /a", 2, { bucket: minuteOf(ago) }))
+        yield* signals.recordTraces(api, batchOf("f", [...job, ...busy]))
+        const threeHours = new Period({ from: DateTime.makeUnsafe(now - 3 * 3_600_000), to: DateTime.makeUnsafe(now) })
+
+        const ran = yield* signals.minutesRan({ period: threeHours }, 3)
+
+        assert.deepStrictEqual(
+          ran.map((entry) => [entry.operation, entry.environment, entry.minutes.map(DateTime.toEpochMillis)]),
+          [
+            [
+              EnvelopeName.make("cleanup.run"),
+              EnvironmentKey.make("prod"),
+              [7_200_000, 3_600_000, 0].map((ago) => DateTime.toEpochMillis(minuteOf(ago))),
+            ],
+          ],
         )
       }),
     ),

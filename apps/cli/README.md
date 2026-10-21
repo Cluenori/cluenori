@@ -17,6 +17,11 @@ asks about their operations, and checks this repository.
 ./cluenori errors <project> [--last ...]                  errors grouped by type and stack
 ./cluenori error <project> <id> [--last ...]              its stack, latest occurrences, and how to open its trace
 ./cluenori logs <project> [--level warn|error|fatal] [--search <text>] [--trace <id>] [--error <id>]
+./cluenori incidents <project>                             open incidents, and those resolved in 7 days
+./cluenori acknowledge <project> <incident id>             stops its notifications
+./cluenori monitors <project>                              the URLs fetched every minute, and how each answered
+./cluenori monitor add <project> <component> <url>         fetch it every minute; two failures open an incident
+./cluenori monitor remove <project> <monitor id>
 ./cluenori trace <project> <trace id> [--at <ISO time>]   a trace's spans and every log line, found by its ID in the archive
 bun run check            … cluenori check     dependency rules, suppression comments, generated files
 bun run generate         cluenori generate    rewrites apps/worker/openapi.json

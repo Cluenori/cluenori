@@ -127,7 +127,7 @@ packages/
   scrub/                       @bagatka/scrub: removes credentials and personal data from text
 product/
   foundation/                  @cluenori/foundation
-  engines/<engine>/            @cluenori/<engine>: projects, signals
+  engines/<engine>/            @cluenori/<engine>: projects, signals, incidents
   modules/<module>/            @cluenori/<module>
 apps/
   worker/                      @cluenori/worker: the deployable Worker and composition root
@@ -149,11 +149,11 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 
 | Part | Package | Purpose | Status |
 |---|---|---|---|
-| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, operations, their load, errors and logs over time, kept traces, logs, traces), OTLP ingest of traces, logs and metrics, the archive in R2, each project's Durable Object and the workspace's, and the dashboard's files |
+| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, operations, their load, errors and logs over time, kept traces, logs, traces, incidents and monitors), OTLP ingest of traces, logs and metrics, the archive in R2, each project's Durable Object and the workspace's, the project's alarm that runs its detectors every minute, and the dashboard's files |
 | CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, questions about them, and the repository's check and generate | Built |
 | Dashboard | `apps/dashboard` | The web app over the public API | Built: served by the Worker, signed in with the API token; reads the public API for a project's overview, its performance, operations, errors, and logs by component, and a trace; the views waiting for app data are in its design kit, on sample data |
 | Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, and `ActivityLog`, which commits a write with its activity. Delivery to Queues comes with the first reaction, the module contract with the first module |
-| Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys) and `signals` (the archive, operation counts, kept traces, warnings and errors, error groups, traces); Actions and policy come with the first module |
+| Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys) and `signals` (the archive, operation counts, kept traces, warnings and errors, error groups, traces), and `incidents` (detectors, incidents, monitors); Actions and policy come with the first module |
 | Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Planned |
 | Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | Built: `workspace-rules`, for the architecture check; `web-crypto`, for `Crypto` in workerd; `otlp`, for OpenTelemetry exports; `quantile-sketch`, for percentiles; `scrub`, to remove secrets and personal data |
 | Web SDK | `sdks/web` | Init, identify, consent, track, feature, flags, and the client kit views, for browsers and JavaScript backends | Planned |
@@ -409,3 +409,4 @@ updates this table in the same change.
 |---|---|---|---|---|
 | `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests; the workspace's index of its projects | Foundation's `ActivityLog` | — |
 | `@cluenori/signals` | Engine | The archive of every export and its index; operations counted by name and environment; warnings and errors; error groups; the duplicate window | `@bagatka/otlp`, `@bagatka/quantile-sketch`, `@bagatka/scrub`; an `ArchiveStore` the host provides; `projects` for its API's errors | — |
+| `@cluenori/incidents` | Engine | Its project's incidents and monitors; the detectors and what they learn: usual error rates and schedules | `@cluenori/signals`, `@cluenori/projects`; Foundation's `ActivityLog`; an `HttpClient` the host provides, for monitors | — |

@@ -7,6 +7,7 @@ import { HttpApiBuilder } from "effect/http-api"
 
 import { ApiToken } from "./api-token.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
+import { IncidentsHandlers } from "./incidents-handlers.ts"
 import { memberAuthorizationLayer } from "./member-authorization-layer.ts"
 import { OtlpLogs, OtlpMetrics, OtlpTraces } from "./otlp-ingest.ts"
 import { ProjectObjects } from "./project-objects.ts"
@@ -51,6 +52,7 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
   Layer.provide(SignInHandlers),
   Layer.provide(ProjectsHandlers),
   Layer.provide(SignalsHandlers),
+  Layer.provide(IncidentsHandlers),
   Layer.provide(memberAuthorizationLayer),
   Layer.provideMerge(
     Layer.unwrap(

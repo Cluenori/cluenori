@@ -1,7 +1,10 @@
 import { Schema } from "effect"
 
-// Every ID in Cluenori is a lowercase UUIDv7, so IDs sort by when they were made and compare as text.
-const Uuidv7 = Schema.String.check(
+/**
+ * The rule of every ID in Cluenori: a lowercase UUIDv7, so IDs sort by when they were made and
+ * compare as text. A package brands it for each of its IDs: `Uuidv7.pipe(Schema.brand("FeatureId"))`.
+ */
+export const Uuidv7 = Schema.String.check(
   Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/, {
     expected: "a lowercase UUIDv7",
   }),

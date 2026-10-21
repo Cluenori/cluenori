@@ -32,6 +32,9 @@ its exact rule.
 | Counts | How many times each operation ran and failed, by environment, by the minute and by the hour, with a sketch of their durations | `OperationCounts`, `Signals`, `@cluenori/signals` | metrics (a separate signal, later), counters |
 | Load | The counts over time: how many operations ran, and how many failed, in each step | `LoadSeries`, `@cluenori/signals` | traffic, throughput |
 | Kept trace | A trace Cluenori keeps so it opens from its operation: of each operation, environment and hour, the five slowest and the five slowest failed, 14 days | `KeptTrace`, `KeptTraces`, `@cluenori/signals` | sample (it isn't random), exemplar, slow request |
+| Incident | One problem from its start to its recovery, one open for each detector and subject: it opens when its detector fires, resolves 10 minutes after the problem is gone, and reopens if it is back within 30 | `Incident`, `Incidents`, `@cluenori/incidents` | alert (that is a notification about one), issue (a record people track), outage |
+| Detector | A fixed rule that opens incidents, each measure against its own usual: `down`, `failing`, `stopped` | `Detector`, `@cluenori/incidents` | alert rule, check (one fetch of a monitor), threshold |
+| Monitor | A URL of one component that Cluenori fetches every minute, such as its health endpoint | `Monitor`, `@cluenori/incidents` | uptime check, probe, health check (the endpoint it fetches) |
 | Covered period | The part of an asked-for period that counts answer for: no earlier than they are kept, no later than now | `covered` | — |
 | Archive | Every export Cluenori received, scrubbed, kept 90 days: the source every view is derived from | `ArchiveStore`, `@cluenori/signals` | lake (the planned SQL over it), backup, logs |
 | Error group | Errors that are the same error: one exception type and stack top, or one logger and message template | `ErrorGroup`, `ErrorGroupId` | issue (a record people track), exception, crash |

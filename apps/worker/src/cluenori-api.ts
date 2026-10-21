@@ -1,3 +1,4 @@
+import { IncidentsGroup } from "@cluenori/incidents"
 import { ProjectsGroup } from "@cluenori/projects"
 import { SignalsGroup } from "@cluenori/signals"
 import { Schema } from "effect"
@@ -45,5 +46,6 @@ export class CluenoriApi extends HttpApi.make("cluenori")
   .add(SignInGroup)
   .add(ProjectsGroup.middleware(MemberAuthorization))
   .add(SignalsGroup.middleware(MemberAuthorization))
+  .add(IncidentsGroup.middleware(MemberAuthorization))
   .prefix("/api")
   .annotate(OpenApi.Title, "Cluenori") {}

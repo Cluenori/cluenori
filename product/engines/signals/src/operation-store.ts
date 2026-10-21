@@ -11,6 +11,7 @@ import type {
   OperationTable,
   KeptTraceRow,
   KeptTraces,
+  MinutesRan,
   OperationQuery,
   LoadSeries,
   SeriesStep,
@@ -69,6 +70,13 @@ const KeptRow = Schema.Struct({
   durationMs: Schema.Finite,
   failed: Schema.BooleanFromBit,
   status: Schema.NullOr(HttpStatus),
+})
+
+const MinuteRow = Schema.Struct({
+  component: ComponentKey,
+  operation: EnvelopeName,
+  environment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
+  bucket: Schema.Int,
 })
 
 const keptRowOf = (row: typeof KeptRow.Type): KeptTraceRow => ({
@@ -206,6 +214,39 @@ export const operationStore = Effect.gen(function* () {
       ])}
       ORDER BY ${asked.keptFor === "slowest" ? sql`k.duration_ms DESC` : sql`k.start DESC`}
       LIMIT ${keptListed}`,
+  })
+
+  // The minutes each sparse operation ran in: those of operations, by environment, that ran in at
+  // most `atMost` minutes of the period, so a busy operation never costs a row per minute.
+  const findMinutes = SqlSchema.findAll({
+    Request: Schema.Struct({
+      from: Schema.Int,
+      to: Schema.Int,
+      atMost: Schema.Int,
+      environment: Schema.optionalKey(EnvironmentKey),
+      component: Schema.optionalKey(ComponentKey),
+      operation: Schema.optionalKey(EnvelopeName),
+    }),
+    Result: MinuteRow,
+    execute: (asked) => sql`
+      WITH sparse AS (
+        SELECT operation, environment FROM signals_minute_counts
+        WHERE bucket >= ${asked.from} AND bucket < ${asked.to}
+        GROUP BY operation, environment
+        HAVING count(*) <= ${asked.atMost}
+      )
+      SELECT o.component, o.name AS operation, c.environment, c.bucket
+      FROM signals_minute_counts c
+        JOIN sparse s ON s.operation = c.operation AND s.environment = c.environment
+        JOIN signals_operations o ON o.id = c.operation
+      WHERE ${sql.and([
+        sql`c.bucket >= ${asked.from}`,
+        sql`c.bucket < ${asked.to}`,
+        ...(asked.environment === undefined ? [] : [sql`c.environment = ${asked.environment}`]),
+        ...(asked.component === undefined ? [] : [sql`o.component = ${asked.component}`]),
+        ...(asked.operation === undefined ? [] : [sql`o.name = ${asked.operation}`]),
+      ])}
+      ORDER BY c.bucket`,
   })
 
   // The operation's row ID, adding the operation when it is new; past the limit, `(other operations)`.
@@ -447,5 +488,39 @@ export const operationStore = Effect.gen(function* () {
     return answer
   })
 
-  return { add, cleanUp, operations, loadOverTime, keptTraces }
+  // The minutes each sparse operation ran in, in the query's period cut to the 14 days minutes are
+  // kept.
+  const minutesRan = Effect.fn("OperationStore.minutesRan")(function* (query: OperationQuery, atMost: number) {
+    const current = yield* DateTime.now
+    const covered = coveredOf(query.period, byMinute, DateTime.toEpochMillis(current))
+    if (covered._tag === "None") {
+      const none: ReadonlyArray<MinutesRan> = []
+      return none
+    }
+    const rows = yield* findMinutes({
+      from: covered.value.from,
+      to: covered.value.to,
+      atMost,
+      ...(query.environment === undefined ? {} : { environment: query.environment }),
+      ...(query.component === undefined ? {} : { component: query.component }),
+      ...(query.operation === undefined ? {} : { operation: query.operation }),
+    }).pipe(Effect.orDie)
+    const byOperation = Map.groupBy(rows, (row) => [row.component, row.environment, row.operation].join("\u0000"))
+    const answer: ReadonlyArray<MinutesRan> = Array.from(byOperation.values()).flatMap((minutes) => {
+      const [first] = minutes
+      return first === undefined
+        ? []
+        : [
+            {
+              component: first.component,
+              ...(first.environment === "" ? {} : { environment: first.environment }),
+              operation: first.operation,
+              minutes: minutes.map((row) => DateTime.makeUnsafe(row.bucket)),
+            },
+          ]
+    })
+    return answer
+  })
+
+  return { add, cleanUp, operations, loadOverTime, keptTraces, minutesRan }
 })

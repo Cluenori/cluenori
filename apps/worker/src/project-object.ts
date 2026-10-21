@@ -1,10 +1,12 @@
 import { webCryptoLayer } from "@bagatka/web-crypto"
 import { ActivityLog, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
+import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
 import { Signals } from "@cluenori/signals"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
-import { Effect, Exit, Layer, ManagedRuntime, Redacted, Schema } from "effect"
+import { Clock, Duration, Effect, Exit, Layer, ManagedRuntime, Redacted, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
 
 import type { PlainSchema } from "./object-calls.ts"
 import { exitText, serve } from "./object-calls.ts"
@@ -13,7 +15,10 @@ import { projectCalls } from "./project-calls.ts"
 import { r2ArchiveLayer } from "./r2-archive.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 
-type ProjectServices = Projects | Signals
+type ProjectServices = Projects | Signals | Incidents
+
+// How often the detectors look: the object's alarm runs `Incidents.check` this often.
+const checkEvery = Duration.toMillis(Duration.minutes(1))
 
 // Set when the object is first asked to create its project. Until then it builds no database, so a
 // request for a project that doesn't exist leaves nothing behind.
@@ -170,6 +175,51 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
       }),
     new ProjectNotFound({ project }),
   ),
+  incidents: served(
+    projectCalls.incidents,
+    () =>
+      Effect.gen(function* () {
+        const incidents = yield* Incidents
+        return yield* incidents.incidents
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  acknowledge: served(
+    projectCalls.acknowledge,
+    ({ actor, incident }) =>
+      Effect.gen(function* () {
+        const incidents = yield* Incidents
+        return yield* incidents.acknowledge(actor, incident)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  monitors: served(
+    projectCalls.monitors,
+    () =>
+      Effect.gen(function* () {
+        const incidents = yield* Incidents
+        return yield* incidents.monitors
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  addMonitor: served(
+    projectCalls.addMonitor,
+    ({ actor, monitor }) =>
+      Effect.gen(function* () {
+        const incidents = yield* Incidents
+        return yield* incidents.addMonitor(actor, monitor)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  removeMonitor: served(
+    projectCalls.removeMonitor,
+    ({ actor, monitor }) =>
+      Effect.gen(function* () {
+        const incidents = yield* Incidents
+        return yield* incidents.removeMonitor(actor, monitor)
+      }),
+    new ProjectNotFound({ project }),
+  ),
 })
 
 /**
@@ -191,10 +241,12 @@ export class ProjectObject extends DurableObject<Env> {
     this.#storage = ctx.storage
     this.#calls = servedCalls(project)
     this.#runtime = ManagedRuntime.make(
-      Layer.mergeAll(Projects.layer({ project }), Signals.layer({ workspace, project })).pipe(
+      Incidents.layer.pipe(
+        Layer.provideMerge(Layer.mergeAll(Projects.layer({ project }), Signals.layer({ workspace, project }))),
         Layer.provideMerge(ActivityLog.layer({ workspace, project })),
         Layer.provide(webCryptoLayer(crypto)),
         Layer.provide(r2ArchiveLayer(env.ARCHIVE)),
+        Layer.provide(FetchHttpClient.layer),
         Layer.provide(SqliteClient.layer({ storage: ctx.storage })),
         // In the runtime itself, so every call runs on it as the Worker's requests do. A scheduler
         // is a reference, so it doesn't show in the runtime's type.
@@ -213,6 +265,37 @@ export class ProjectObject extends DurableObject<Env> {
     if (!created) {
       this.#storage.kv.put(projectCreated, true)
     }
-    return this.#runtime.runPromise(call.serve(input))
+    return this.#runtime.runPromise(this.#watched.pipe(Effect.andThen(call.serve(input))))
+  }
+
+  /**
+   * Runs the detectors, then looks again in a minute. The next look is scheduled first, so a check
+   * that fails is tried again then, not retried at once by the platform; its failure is logged.
+   */
+  override alarm(): Promise<void> {
+    const storage = this.#storage
+    return this.#runtime.runPromise(
+      Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis
+        yield* Effect.promise(() => storage.setAlarm(now + checkEvery))
+        const incidents = yield* Incidents
+        // Not handled: telling anyone. `check` returns its changes, and their activity is kept; the
+        // iOS app's pushes will react to that activity.
+        yield* incidents.check
+      }).pipe(Effect.catchCause((cause) => Effect.logError("The detectors' check failed", cause))),
+    )
+  }
+
+  // Once a project exists, its detectors look every minute: the first call sets the alarm, which
+  // then sets itself again. Projects made before the detectors start on their next call.
+  get #watched() {
+    const storage = this.#storage
+    return Effect.gen(function* () {
+      if ((yield* Effect.promise(() => storage.getAlarm())) !== null) {
+        return
+      }
+      const now = yield* Clock.currentTimeMillis
+      yield* Effect.promise(() => storage.setAlarm(now + checkEvery))
+    })
   }
 }

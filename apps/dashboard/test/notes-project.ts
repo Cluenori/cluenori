@@ -7,6 +7,7 @@ import {
   ReleaseVersion,
   TraceId,
 } from "@cluenori/foundation"
+import { Incident, IncidentId, IncidentList } from "@cluenori/incidents"
 import { Component, ComponentName, Project, ProjectDetail, ProjectList, ProjectName } from "@cluenori/projects"
 import type { OperationRow, ErrorGroup, LogLine, SeriesStep } from "@cluenori/signals"
 import {
@@ -354,6 +355,32 @@ const SignInBody = Schema.fromJsonString(Schema.Struct({ token: Schema.String })
 const noSuchCall = (method: string, path: ReadonlyArray<string>) =>
   Effect.die(`The fake API has no ${method} /api/${path.join("/")}.`)
 
+// The export has failed since 40 minutes ago, which the detectors saw: one open incident.
+const incidents = Effect.gen(function* () {
+  const now = yield* Clock.currentTimeMillis
+  return yield* reply(IncidentList, {
+    open: [
+      new Incident({
+        id: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64"),
+        component: api,
+        environment: EnvironmentKey.make("production"),
+        subject: "POST /api/export",
+        title: "POST /api/export: 20% failed, usually 0.1%",
+        evidence: {
+          _tag: "failing",
+          operation: EnvelopeName.make("POST /api/export"),
+          failed: 10,
+          count: 50,
+          usualRate: 0.001,
+        },
+        openedAt: DateTime.makeUnsafe(now - 40 * minute),
+      }),
+    ],
+    resolved: [],
+    checkedAt: DateTime.makeUnsafe(now),
+  })
+})
+
 /**
  * The public API with Notes in it, signed in or not; `workspace` replaces the workspace's projects,
  * such as none for a workspace that has just been set up.
@@ -397,6 +424,9 @@ export const notesApi = ({
       }
       if (!isNotes) {
         return yield* Effect.die(`The fake API answers only Notes's signals, not ${project}'s.`)
+      }
+      if (area === "incidents") {
+        return yield* incidents
       }
       const asked = yield* Schema.decodeEffect(Asked)(Object.fromEntries(call.query)).pipe(Effect.orDie)
       if (area === "traces" && id !== undefined) {

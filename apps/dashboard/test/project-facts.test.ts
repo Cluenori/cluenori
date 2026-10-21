@@ -1,4 +1,5 @@
 import { ComponentKey, EnvelopeName, Period, ProjectKey, TraceId } from "@cluenori/foundation"
+import { Incident, IncidentId } from "@cluenori/incidents"
 import type { OperationRow, ErrorGroup, LoadSeries } from "@cluenori/signals"
 import { ErrorGroupId, SpanId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
@@ -9,7 +10,6 @@ import {
   attentionOf,
   columnTimesOf,
   exceptionsOf,
-  failureSpikeOf,
   logColumnsOf,
   loadColumnsOf,
   operationSpanOf,
@@ -71,40 +71,6 @@ describe("logColumnsOf", () => {
       ],
     }
     assert.deepStrictEqual(logColumnsOf(counts, ["error", "fatal"]).values, [2, 0, 1])
-  })
-})
-
-describe("failureSpikeOf", () => {
-  it("finds the window where the error rate jumped, widened to its neighbors", () => {
-    assert.deepStrictEqual(failureSpikeOf(series([0, 1, 0, 0, 20, 30, 0, 0, 1, 0])), {
-      from: now + 4 * minute,
-      to: now + 6 * minute,
-      failed: 50,
-      count: 200,
-    })
-  })
-
-  it("finds nothing when failures stay level", () => {
-    assert.isUndefined(failureSpikeOf(series([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])))
-  })
-
-  it("finds nothing when the worst window is under a 2% error rate", () => {
-    assert.isUndefined(failureSpikeOf(series([0, 0, 0, 0, 1, 0, 0, 0, 0, 0])))
-  })
-
-  it("ends a window in the step under way with the period, not after it", () => {
-    const ending = { ...series([0, 0, 0, 0, 0, 0, 0, 0, 0, 40]) }
-    const covered = new Period({ from: at(now), to: at(now + 9 * minute + 20_000) })
-    assert.strictEqual(failureSpikeOf({ ...ending, covered })?.to, now + 9 * minute + 20_000)
-  })
-
-  it("never widens a window across a step nothing reported", () => {
-    assert.deepStrictEqual(failureSpikeOf(series([0, 0, 0, 30, undefined, 20, 0, 0, 0, 0])), {
-      from: now + 3 * minute,
-      to: now + 4 * minute,
-      failed: 30,
-      count: 100,
-    })
   })
 })
 
@@ -255,18 +221,48 @@ describe("attentionOf", () => {
       ],
       occurrences: 84,
     },
-    load: series([0, 1, 0, 0, 20, 30, 0, 0, 1, 0]),
+    incidents: {
+      open: [
+        new Incident({
+          id: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64"),
+          component: api,
+          subject: "POST /api/export",
+          title: "POST /api/export: 20% failed, usually 0.1%",
+          evidence: {
+            _tag: "failing",
+            operation: EnvelopeName.make("POST /api/export"),
+            failed: 10,
+            count: 50,
+            usualRate: 0.001,
+          },
+          openedAt: at(now - 12 * minute),
+        }),
+      ],
+      resolved: [],
+      checkedAt: at(now),
+    },
     compared: {
       lastDay: table([operation("GET /api/feed", 620), operation("POST /api/export", 4_200)]),
       usual: table([operation("GET /api/feed", 300), operation("POST /api/export", 4_000)]),
     },
   })
 
-  it("puts what is failing, now and in a jump, before what is new or slower", () => {
+  it("puts open incidents and what is failing now before what is new or slower", () => {
     assert.deepStrictEqual(
       items.map((item) => item.key),
-      ["ongoing 2222222222222222", "spike", "new 1111111111111111", `slower notes-api\u0000\u0000GET /api/feed`],
+      [
+        "incident 0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64",
+        "ongoing 2222222222222222",
+        "new 1111111111111111",
+        `slower notes-api\u0000\u0000GET /api/feed`,
+      ],
     )
+    assert.deepStrictEqual(items[0]?.action?.to, {
+      page: "operation",
+      project,
+      component: api,
+      operation: EnvelopeName.make("POST /api/export"),
+    })
   })
 
   it("leaves an operation that is slow by nature, but as usual, alone", () => {
@@ -281,7 +277,7 @@ describe("attentionOf", () => {
         groups: [group({ firstSeen: at(now - 2 * hour), lastSeen: at(now - minute) })],
         occurrences: 42,
       },
-      load: series([0, 0, 0]),
+      incidents: { open: [], resolved: [] },
       compared: { lastDay: table([]), usual: table([]) },
     })
     assert.deepStrictEqual(

@@ -1,5 +1,5 @@
 {
-  "lockfileVersion": 2,
+  "lockfileVersion": 1,
   "configVersion": 1,
   "workspaces": {
     "": {
@@ -18,6 +18,7 @@
       "dependencies": {
         "@bagatka/workspace-rules": "workspace:*",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/incidents": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/worker": "workspace:*",
@@ -30,6 +31,7 @@
       "dependencies": {
         "@base-ui/react": "catalog:",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/incidents": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/worker": "workspace:*",
@@ -74,6 +76,7 @@
         "@bagatka/otlp": "workspace:*",
         "@bagatka/web-crypto": "workspace:*",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/incidents": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
@@ -133,6 +136,24 @@
         "vitest": "catalog:",
       },
     },
+    "product/engines/incidents": {
+      "name": "@cluenori/incidents",
+      "dependencies": {
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/projects": "workspace:*",
+        "@cluenori/signals": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@bagatka/quantile-sketch": "workspace:*",
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
     "product/engines/projects": {
       "name": "@cluenori/projects",
       "dependencies": {
@@ -186,6 +207,7 @@
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/incidents": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/worker": "workspace:*",
         "@effect/vitest": "catalog:",
@@ -279,6 +301,8 @@
     "@cluenori/dashboard": ["@cluenori/dashboard@workspace:apps/dashboard"],
 
     "@cluenori/foundation": ["@cluenori/foundation@workspace:product/foundation"],
+
+    "@cluenori/incidents": ["@cluenori/incidents@workspace:product/engines/incidents"],
 
     "@cluenori/journeys": ["@cluenori/journeys@workspace:tests/journeys"],
 
@@ -1136,7 +1160,7 @@
 
     "@cspotcode/source-map-support/@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.9", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.0.3", "@jridgewell/sourcemap-codec": "^1.4.10" } }, "sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ=="],
 
-    "@reduxjs/toolkit/immer": ["immer@11.2.1", "", {}, "sha512-dRqvyR/SQUbT2vcfFoxox+hsTp70EdhIqfJK4pdcTXNMPOyRqqSuMJdvAjw1jfgiSxqVEVf8miof+QU348H1zg=="],
+    "@reduxjs/toolkit/immer": ["immer@11.2.6", "", {}, "sha512-AI5pkEyzJZLsu91LASM15eZ0L9CK9SJZ+yI/MwO3Gsv9ajEwTwILrzxnxRqquLVKG7oCalEgXpAPsJfyPuWk/w=="],
 
     "@reduxjs/toolkit/reselect": ["reselect@5.3.0", "", {}, "sha512-XGoLeRAVzUTcJ1qkxPQhDJyIZ5d6zzZD9nT7AEZOaaU9UbWclhycElmhO+VD5bFeLuzhPBaOV2oXC8uG35ZSpg=="],
 

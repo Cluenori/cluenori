@@ -87,6 +87,18 @@ export const projectsAtom = kept(
   ),
 )
 
+/** A project's incidents: the open ones, and those resolved in the last 7 days, whatever the period. */
+export const incidentsAtom = Atom.family((project: ProjectKey) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.incidents.incidents({ params: { project } })
+      }),
+    ),
+  ),
+)
+
 /** One project and its components. */
 export const projectAtom = Atom.family((project: ProjectKey) =>
   kept(

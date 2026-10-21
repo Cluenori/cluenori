@@ -22,7 +22,14 @@ import type { ExportSignal, LogExport, MetricsExport, TraceExport } from "./expo
 import type { ErrorGroupId } from "./log-entry.ts"
 import { logStore } from "./log-store.ts"
 import { BatchDigest } from "./operation-counts.ts"
-import type { OperationTable, KeptTraces, OperationQuery, LoadSeries, SeriesStep } from "./operation-queries.ts"
+import type {
+  KeptTraces,
+  LoadSeries,
+  MinutesRan,
+  OperationQuery,
+  OperationTable,
+  SeriesStep,
+} from "./operation-queries.ts"
 import { operationStore } from "./operation-store.ts"
 import { traceViewOf } from "./read-archived-trace.ts"
 import { migrateSignals } from "./signals-migrations.ts"
@@ -87,6 +94,13 @@ export class Signals extends Context.Service<
      * five slowest and the five slowest failed, 14 days). Reads only.
      */
     readonly keptTraces: (query: OperationQuery) => Effect.Effect<KeptTraces>
+    /**
+     * When each operation ran: for each one that ran in at most `atMost` distinct minutes of the
+     * query's period, the start of each of those minutes, oldest first. Busier operations are left
+     * out, so the answer stays small; a job's schedule shows in it. Reads the minute counts, kept
+     * 14 days, so the period is cut to them. Reads only.
+     */
+    readonly minutesRan: (query: OperationQuery, atMost: number) => Effect.Effect<ReadonlyArray<MinutesRan>>
     /** The errors of the query's period, most frequent first. Reads only. */
     readonly errors: (query: ErrorQuery) => Effect.Effect<ErrorTable>
     /** One error and its latest occurrences in the query's period. Reads only. */
@@ -272,6 +286,7 @@ export class Signals extends Context.Service<
           operations: counts.operations,
           loadOverTime: counts.loadOverTime,
           keptTraces: counts.keptTraces,
+          minutesRan: counts.minutesRan,
           errors,
           error,
           logs: searchLogs,

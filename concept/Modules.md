@@ -21,7 +21,7 @@ The sidebar shows each module by name, as in PostHog. Above the sidebar are a wo
 | Engineering | Errors | Find crashes and exceptions | Error groups, readable stack traces, affected customers | v1 |
 | Engineering | Logs | See what your apps report as wrong | Errors and warnings with how often each occurs, search, the logs of one trace | v1 |
 | Engineering | Performance | See the load, and what got slower: each operation, screen and query against its usual | The load over time, operations, database queries, external calls, screens, the trace of one operation | v1 |
-| Engineering | Uptime | Make sure that apps are available and jobs run | Monitors, cron check-ins, certificates | v2 |
+| Engineering | Uptime | Make sure that apps are available and jobs run | Cron check-ins, certificates | v2 |
 | Engineering | Issues | Track bugs and tasks | List, statuses, links | v2 |
 | Delivery | Releases | See what you shipped, who updated, and what changed | Releases, store rollout, impact | v1 |
 | Delivery | Versions | Control which app versions can run | Version adoption, update prompt, force update, API check | v1 |
@@ -34,7 +34,7 @@ The sidebar shows each module by name, as in PostHog. Above the sidebar are a wo
 | Business | Revenue | See the money that comes in | MRR, payments, net receipts, failed payments | v1 |
 | Business | Spend | See the money that goes out | Operating, development, distribution, overhead | v1 |
 | Business | Inventory | Track what you own and when it expires | Domains, certificates, keys, accounts, subscriptions | v2 |
-| Automation | Incidents | Follow each anomaly to a verified recovery | Open incidents, evidence, timeline | v2 |
+| Automation | Incidents | Follow each anomaly to a verified recovery | Open incidents, detectors, monitors, evidence, timeline | v1 |
 | Automation | Agent runs | See what agents investigated, changed and spent | Runs, actions, outcomes, cost | v2 |
 | Automation | Policies | Set what agents can do | Authority by action class, budgets, release policy | v2 |
 | Automation | Workflows | Run processes step by step | Release announcements, notify voters, incident steps | v2 |
@@ -166,6 +166,38 @@ Cluenori keeps every export it receives in an archive for 90 days, with emails, 
 ### Errors and crashes
 
 Crashes on iOS and Android, and exceptions on the web and on backends, are grouped by their stack. The release pipeline uploads dSYM files, R8 or ProGuard mapping files and source maps, so the stacks are readable. Each group shows the release where it started, the affected customers and MRR, the feature, and the session trail before the error.
+
+## Incidents and alerts
+
+Nobody watches a dashboard. Cluenori checks each project every minute and tells me when something is broken, on my phone: once for each problem, and once when it recovers.
+
+### Detectors
+
+A detector is a fixed rule that opens an incident. It compares each measure with its own usual, as "Quality: worse than usual" in the vision says, so I set no thresholds.
+
+| Detector | Opens an incident when | Push |
+| --- | --- | --- |
+| Down | A monitor's URL fails two checks in a row | Yes |
+| Failing | An operation's error rate over the last 15 minutes is at least 2% and three times its usual, with at least 5 failures | Yes |
+| Stopped | An operation that runs on a schedule, such as a cleanup job, misses twice its usual gap. Cluenori learns the schedule from its history. | Yes |
+| New error | An error group appears for the first time | No, the morning brief |
+| Slower | An operation's p95 over the last day is at least 1.5 times its p95 over the 7 days before, and at least 100 ms more | No, the morning brief |
+
+A monitor is the only thing I set up: one URL for each component, such as its health endpoint, which Cluenori checks every minute. A small app is silent for hours at night, so silence alone cannot tell "down" from "no users".
+
+### Incidents
+
+An incident is one problem from its start to its recovery, one for each detector and subject: an operation, a monitor or an error group. It notifies me once when it opens, and again only when it gets worse. It resolves after 10 minutes without the problem and notifies "Recovered". A problem that returns within 30 minutes reopens the same incident. Acknowledging an incident stops its notifications. Each incident keeps its evidence: the chart of its window, the error group behind it and a few failed traces.
+
+Every push goes out when it happens. There are no quiet hours.
+
+### Where alerts reach me
+
+The Cluenori iOS app receives the pushes through APNs. It shows Today, each incident with its evidence, and Acknowledge and Mute. Deep investigation stays on the web. A push names the project, the detector and what it saw: "notes · Failing: POST /api/export, 18% failed, usually 0.1%".
+
+When a push cannot be delivered, Cluenori tries again, then shows the failure on Today. When the checks themselves stop, Today says since when. If Cluenori itself is down, nothing can tell me; an outside heartbeat comes later. Email, Slack and the morning brief come later.
+
+A deployment sends with its owner's APNs key to the owner's own build of the app.
 
 ## Releases, versions, changelog, flags and issues
 

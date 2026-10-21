@@ -38,6 +38,7 @@ export {
   OperationQuery,
   otherOperations,
   LoadSeries,
+  MinutesRan,
   SeriesStep,
   stepMillis,
 } from "./operation-queries.ts"

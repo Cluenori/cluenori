@@ -91,7 +91,7 @@ Twelve engines do the work that many modules need. A module uses an engine; it n
 | Connectors | Sign-in, history import, webhooks and mapping for each outside system | GitHub, stores, Stripe, RevenueCat, Cloudflare, Amp, email providers |
 | Query | Counters, nightly summaries and drill-down to the lake. The dashboard and MCP use the same queries. | Every chart, agents |
 | Search | One index across people, records and activity | ⌘K, MCP |
-| My notifications | Alerts, approvals and the daily brief, with quiet hours | Today, incidents, policies |
+| My notifications | Alerts, approvals and the daily brief | Today, incidents, policies |
 
 Cloudflare supplies most of the runtime. [Workflows](https://developers.cloudflare.com/workflows/reference/limits) runs durable steps with sleeps of up to 365 days. Queues carry activity to the engines that react to it.
 

@@ -3,6 +3,7 @@ import { Command } from "effect/cli"
 import { check } from "./check.ts"
 import { error, errors, logs, trace } from "./errors-commands.ts"
 import { generate } from "./generate.ts"
+import { acknowledge, incidents, monitor, monitors } from "./incidents-commands.ts"
 import { load, operation, operations } from "./operations-commands.ts"
 import { component, project } from "./projects-commands.ts"
 import { run } from "./run.ts"
@@ -30,6 +31,10 @@ export const cluenori = Command.make("cluenori").pipe(
     error,
     logs,
     trace,
+    incidents,
+    acknowledge,
+    monitors,
+    monitor,
     check,
     generate,
   ]),

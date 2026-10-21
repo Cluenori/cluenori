@@ -4,6 +4,7 @@
 // covers up to, never the clock, so a page renders the same for the same answers.
 
 import type { Period, ProjectKey } from "@cluenori/foundation"
+import type { Incident, IncidentList } from "@cluenori/incidents"
 import type {
   OperationRow,
   OperationTable,
@@ -24,7 +25,7 @@ import { stepMillis } from "@cluenori/signals"
 import { DateTime } from "effect"
 
 import { componentColor } from "@/lib/colors"
-import { ago, axisTime, count, dayOf, duration, share, viewerTimeZone } from "@/lib/format"
+import { ago, axisTime, count, dayOf, duration, viewerTimeZone } from "@/lib/format"
 import type { PeriodKey } from "@/project-data"
 import { periodMillis } from "@/project-data"
 import type { Attention } from "@/views/attention-list"
@@ -303,48 +304,6 @@ export const operationSpanOf = (view: TraceView, span: SpanId | undefined): Trac
 
 // ---- Needs attention -------------------------------------------------------------------------------
 
-// The sum of the columns whose values are known.
-const knownSumOf = (values: ReadonlyArray<number | undefined>) => sumOf(values.map((value) => value ?? 0))
-
-/**
- * When failures jumped: the step with the highest error rate, widened to neighboring steps with at
- * least a quarter of it, from the start of the first to the end of the last, or now. Absent unless that
- * window's error rate is at least 2% and three times the period's. A step with nothing reported
- * has no rate, so it never joins a window.
- */
-export const failureSpikeOf = (series: LoadSeries) => {
-  const asked = loadColumnsOf(series, (point) => point.count)
-  const failed = loadColumnsOf(series, (point) => point.errors)
-  const rateAt = (index: number) => {
-    const total = asked.values[index]
-    const errors = failed.values[index]
-    return total === undefined || errors === undefined ? 0 : errors / Math.max(1, total)
-  }
-  const peak = asked.values.reduce<number>((best, _, index) => (rateAt(index) > rateAt(best) ? index : best), 0)
-  let first = peak
-  let last = peak
-  while (first > 0 && rateAt(first - 1) >= rateAt(peak) / 4 && rateAt(first - 1) > 0) {
-    first -= 1
-  }
-  while (last < asked.values.length - 1 && rateAt(last + 1) >= rateAt(peak) / 4 && rateAt(last + 1) > 0) {
-    last += 1
-  }
-  const windowFailed = knownSumOf(failed.values.slice(first, last + 1))
-  const windowAsked = knownSumOf(asked.values.slice(first, last + 1))
-  const overall = knownSumOf(failed.values) / Math.max(1, knownSumOf(asked.values))
-  const rate = windowFailed / Math.max(1, windowAsked)
-  if (asked.values.length === 0 || rate < 0.02 || rate < 3 * overall) {
-    return undefined
-  }
-  const end = endOf(series) ?? asked.from + asked.values.length * asked.step
-  return {
-    from: asked.from + first * asked.step,
-    to: Math.min(asked.from + (last + 1) * asked.step, end),
-    failed: windowFailed,
-    count: windowAsked,
-  }
-}
-
 // "1 occurrence", "36 occurrences".
 const occurrencesText = (occurrences: number) =>
   `${count(occurrences)} ${occurrences === 1 ? "occurrence" : "occurrences"}`
@@ -352,21 +311,37 @@ const occurrencesText = (occurrences: number) =>
 // The most slower, against its usual, first.
 const byHowMuchSlower = (left: Slower, right: Slower) => right.p95Ms / right.usualP95Ms - left.p95Ms / left.usualP95Ms
 
+// Where an incident's evidence is: its operation's page, or, for a monitor, its component's
+// performance.
+const incidentAction = (project: ProjectKey, incident: Incident) =>
+  incident.evidence._tag === "down"
+    ? { label: "Open the performance", to: { page: "performance" as const, project, component: incident.component } }
+    : {
+        label: "Open the operation",
+        to: {
+          page: "operation" as const,
+          project,
+          component: incident.component,
+          operation: incident.evidence.operation,
+        },
+      }
+
 /**
- * What needs attention in the project now, the worst first: errors happening now, a jump in
- * failures, new errors, then operations that got slower; an error both new and happening now is one
- * item. Each item is one click from its detail.
- * "Now" is the time the errors cover up to.
+ * What needs attention in the project now, the worst first: its open incidents, which the server's
+ * detectors keep, an acknowledged one in yellow; errors happening now; new errors; then operations
+ * that got slower. An error both new and happening now is one item. Each item is one click from its
+ * detail. "Now" is the time an answer covers up to: when the detectors last looked, and the end
+ * of the errors' period.
  */
 export const attentionOf = (facts: {
   readonly project: ProjectKey
+  readonly incidents: IncidentList
   readonly errors: ErrorTable
-  readonly load: LoadSeries
   readonly compared: Compared
 }): ReadonlyArray<Attention> => {
   const { project } = facts
   const now = endOf(facts.errors)
-  const spike = failureSpikeOf(facts.load)
+  const looked = facts.incidents.checkedAt === undefined ? undefined : DateTime.toEpochMillis(facts.incidents.checkedAt)
   const slowerByKey = slowerOperations(facts.compared)
   const slower = facts.compared.lastDay.rows
     .flatMap((row) => {
@@ -386,6 +361,16 @@ export const attentionOf = (facts: {
           lastSeen: ago(DateTime.toEpochMillis(group.lastSeen), now),
         }))
   return [
+    ...facts.incidents.open.map((incident) => {
+      const opened = DateTime.toEpochMillis(incident.openedAt)
+      return {
+        key: `incident ${incident.id}`,
+        tone: incident.acknowledgedAt === undefined ? ("failure" as const) : ("warning" as const),
+        title: incident.title,
+        detail: `Opened ${ago(opened, looked ?? opened)}${incident.acknowledgedAt === undefined ? "" : ", acknowledged"}`,
+        action: incidentAction(project, incident),
+      }
+    }),
     ...groups
       .filter((entry) => entry.ongoing)
       .map(({ group, lastSeen, isNew }) => ({
@@ -395,17 +380,6 @@ export const attentionOf = (facts: {
         detail: `${occurrencesText(group.occurrences)} in the period, last ${lastSeen}`,
         action: { label: "Open the error", to: errorRoute(group.id) },
       })),
-    ...(spike === undefined
-      ? []
-      : [
-          {
-            key: "spike",
-            tone: "failure" as const,
-            title: `Error rate ${share(spike.failed, spike.count)} between ${axisTime(spike.from)} and ${axisTime(spike.to)}`,
-            detail: `${count(spike.failed)} of ${count(spike.count)} failed`,
-            action: { label: "Open the errors", to: { page: "errors" as const, project } },
-          },
-        ]),
     ...groups
       .filter((entry) => entry.isNew && !entry.ongoing)
       .map(({ group, firstSeen }) => ({

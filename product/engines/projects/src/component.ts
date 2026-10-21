@@ -19,6 +19,11 @@ export class Component extends Schema.Class<Component>("Component")({
 export const AddComponent = Schema.Struct({ key: ComponentKey, name: ComponentName })
 export type AddComponent = typeof AddComponent.Type
 
+/** The project has no component with this key. */
+export class ComponentNotFound extends Schema.TaggedError<ComponentNotFound>()("ComponentNotFound", {
+  component: ComponentKey,
+}) {}
+
 /** The project already has a component with this key. */
 export class ComponentExists extends Schema.TaggedError<ComponentExists>()("ComponentExists", {
   component: ComponentKey,

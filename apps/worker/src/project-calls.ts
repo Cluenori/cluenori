@@ -1,8 +1,22 @@
 import { Actor, TraceId } from "@cluenori/foundation"
 import {
+  AddMonitor,
+  Incident,
+  IncidentId,
+  IncidentList,
+  IncidentNotFound,
+  Monitor,
+  MonitorExists,
+  MonitorId,
+  MonitorLimitReached,
+  MonitorList,
+  MonitorNotFound,
+} from "@cluenori/incidents"
+import {
   AddComponent,
   AddedComponentResponse,
   ComponentExists,
+  ComponentNotFound,
   IngestKey,
   IngestKeyRejected,
   Project,
@@ -52,6 +66,11 @@ export type ProjectCallName =
   | "logs"
   | "logCounts"
   | "trace"
+  | "incidents"
+  | "acknowledge"
+  | "monitors"
+  | "addMonitor"
+  | "removeMonitor"
 
 const recorded = Schema.Literals(["recorded", "duplicate"])
 const ingestFailure = Schema.Union([IngestKeyRejected, ArchiveUnavailable])
@@ -126,5 +145,25 @@ export const projectCalls = {
     Schema.Struct({ trace: TraceId, around: Schema.optionalKey(Schema.DateTimeUtcFromString) }),
     TraceView,
     Schema.Union([ProjectNotFound, ArchiveUnavailable]),
+  ),
+  incidents: projectCall("incidents", Schema.Void, IncidentList, ProjectNotFound),
+  acknowledge: projectCall(
+    "acknowledge",
+    Schema.Struct({ actor: Actor, incident: IncidentId }),
+    Incident,
+    Schema.Union([ProjectNotFound, IncidentNotFound]),
+  ),
+  monitors: projectCall("monitors", Schema.Void, MonitorList, ProjectNotFound),
+  addMonitor: projectCall(
+    "addMonitor",
+    Schema.Struct({ actor: Actor, monitor: AddMonitor }),
+    Monitor,
+    Schema.Union([ProjectNotFound, ComponentNotFound, MonitorExists, MonitorLimitReached]),
+  ),
+  removeMonitor: projectCall(
+    "removeMonitor",
+    Schema.Struct({ actor: Actor, monitor: MonitorId }),
+    Schema.Void,
+    Schema.Union([ProjectNotFound, MonitorNotFound]),
   ),
 }

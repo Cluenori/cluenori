@@ -31,6 +31,10 @@ const kept = yield* signals.keptTraces({ period, operation: EnvelopeName.make("G
 const series = yield* signals.loadOverTime({ period, operation: EnvelopeName.make("GET /api/feed") }, "1h")
 // points: [{ start, count: 940, errors: 3, p50Ms: 85, p80Ms: 160, p95Ms: 420, p99Ms: 1210 }, ...]
 
+// When each sparse operation ran, the minutes it ran in: a job's schedule shows in them.
+const ran = yield* signals.minutesRan({ period }, 200) // busier operations are left out
+// [{ operation: "cleanup.run", minutes: [10:00, 11:00, 12:00, ...] }]
+
 // Warnings and errors over time, a series per level, component, or error group.
 const counts = yield* signals.logCounts({ period, step: "1h", by: "error" })
 // series: [{ key: "159dae307f199986", total: 41, points: [{ start, count: 3 }, ...] }, ...]

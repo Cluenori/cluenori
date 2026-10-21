@@ -110,3 +110,16 @@ export const KeptTraces = Schema.Struct({
   failed: Schema.Array(KeptTraceRow),
 })
 export type KeptTraces = typeof KeptTraces.Type
+
+/**
+ * The minutes one operation ran in, oldest first: the start of each minute it ran in at least once.
+ * A job's schedule shows in them.
+ */
+export const MinutesRan = Schema.Struct({
+  component: ComponentKey,
+  /** Absent when the component didn't say. */
+  environment: Schema.optionalKey(EnvironmentKey),
+  operation: EnvelopeName,
+  minutes: Schema.Array(Schema.DateTimeUtcFromString),
+})
+export type MinutesRan = typeof MinutesRan.Type

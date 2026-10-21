@@ -8,6 +8,7 @@
   "dependencies": {
     "@bagatka/workspace-rules": "workspace:*",
     "@cluenori/foundation": "workspace:*",
+    "@cluenori/incidents": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/worker": "workspace:*",

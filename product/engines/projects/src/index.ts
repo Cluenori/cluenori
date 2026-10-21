@@ -3,7 +3,7 @@
  * project lives in a Durable Object of its own, where `Projects` runs; the workspace's own object
  * lists them, in `ProjectIndex`.
  */
-export { AddComponent, Component, ComponentExists, ComponentName } from "./component.ts"
+export { AddComponent, Component, ComponentExists, ComponentName, ComponentNotFound } from "./component.ts"
 export { IngestKey, IngestKeyRejected, ingestKeyScope } from "./ingest-key.ts"
 export { CreateProject, Project, ProjectExists, ProjectName, ProjectNotFound } from "./project.ts"
 export { ComponentAdded, ProjectCreated } from "./projects-activity.ts"

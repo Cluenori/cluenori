@@ -2223,6 +2223,434 @@
         },
         "description": "One trace across services, from the archive, found by its ID: its spans as a tree, with their durations and attributes, and its logs at every level. `around`, the time it happened, is optional: of a trace with more archive files than are read, those nearest to it are read first. Kept 90 days."
       }
+    },
+    "/api/projects/{project}/incidents": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "incidents.incidents",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "signIn": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "open": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IncidentEncoded"
+                      }
+                    },
+                    "resolved": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IncidentEncoded"
+                      }
+                    },
+                    "checkedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "open",
+                    "resolved"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "The project's open incidents, newest first, and up to 50 resolved in the last 7 days. Detectors look every minute: a monitor down two checks in a row, an operation failing at least 2% and three times its usual over 15 minutes, and a scheduled operation that missed twice its usual gap. `checkedAt` says when they last looked."
+      }
+    },
+    "/api/projects/{project}/incidents/{incident}/acknowledge": {
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "incidents.acknowledge",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "incident",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "signIn": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Incident",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | IncidentNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/IncidentNotFoundEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Marks an incident as being looked at, which stops its notifications, and returns it. Acknowledging it again keeps the first time."
+      }
+    },
+    "/api/projects/{project}/monitors": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "incidents.monitors",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "signIn": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "monitors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "monitor": {
+                            "$ref": "#/components/schemas/MonitorEncoded"
+                          },
+                          "lastCheck": {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "problem": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "monitor"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "monitors"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "The project's monitors, oldest first, each with its last check: the URLs fetched every minute, which pass with a status below 400 within 10 seconds."
+      },
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "incidents.addMonitor",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "signIn": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Monitor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ComponentNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ComponentNotFoundEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "MonitorExists | MonitorLimitReached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/MonitorExistsEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MonitorLimitReachedEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Adds a monitor: a URL of one component, such as its health endpoint, fetched every minute from the next check on. A project has at most 20.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "component": {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2048
+                  }
+                },
+                "required": [
+                  "component",
+                  "url"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/projects/{project}/monitors/{monitor}": {
+      "delete": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "incidents.removeMonitor",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "monitor",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "signIn": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | MonitorNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFoundEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MonitorNotFoundEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Removes a monitor, and resolves its open incident, if any."
+      }
     }
   },
   "components": {
@@ -2246,22 +2674,22 @@
         ],
         "additionalProperties": false
       },
-      "ArchiveUnavailableEncoded": {
+      "MonitorNotFoundEncoded": {
         "type": "object",
         "properties": {
           "_tag": {
             "type": "string",
             "enum": [
-              "ArchiveUnavailable"
+              "MonitorNotFound"
             ]
           },
-          "message": {
+          "monitor": {
             "type": "string"
           }
         },
         "required": [
           "_tag",
-          "message"
+          "monitor"
         ],
         "additionalProperties": false
       },
@@ -2282,6 +2710,295 @@
         "required": [
           "_tag",
           "project"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorLimitReachedEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "MonitorLimitReached"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "_tag",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorExistsEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "MonitorExists"
+            ]
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "_tag",
+          "component",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "ComponentNotFoundEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "ComponentNotFound"
+            ]
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "_tag",
+          "component"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorEncoded": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "addedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "url",
+          "addedAt"
+        ],
+        "additionalProperties": false
+      },
+      "IncidentNotFoundEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "IncidentNotFound"
+            ]
+          },
+          "incident": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "incident"
+        ],
+        "additionalProperties": false
+      },
+      "IncidentEncoded": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "subject": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "_tag": {
+                    "type": "string",
+                    "enum": [
+                      "down"
+                    ]
+                  },
+                  "monitor": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "failures": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "problem": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "monitor",
+                  "url",
+                  "failures",
+                  "problem"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "_tag": {
+                    "type": "string",
+                    "enum": [
+                      "failing"
+                    ]
+                  },
+                  "operation": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "allOf": [
+                      {
+                        "pattern": "^\\P{Cc}*$"
+                      }
+                    ]
+                  },
+                  "failed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "usualRate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "operation",
+                  "failed",
+                  "count",
+                  "usualRate"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "_tag": {
+                    "type": "string",
+                    "enum": [
+                      "stopped"
+                    ]
+                  },
+                  "operation": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                    "allOf": [
+                      {
+                        "pattern": "^\\P{Cc}*$"
+                      }
+                    ]
+                  },
+                  "lastRanAt": {
+                    "type": "string"
+                  },
+                  "usualGapMs": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "operation",
+                  "lastRanAt",
+                  "usualGapMs"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "resolvedAt": {
+            "type": "string"
+          },
+          "acknowledgedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "subject",
+          "title",
+          "evidence",
+          "openedAt"
+        ],
+        "additionalProperties": false
+      },
+      "ArchiveUnavailableEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "ArchiveUnavailable"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "message"
         ],
         "additionalProperties": false
       },
@@ -2434,6 +3151,9 @@
     },
     {
       "name": "signals"
+    },
+    {
+      "name": "incidents"
     }
   ]
 }
