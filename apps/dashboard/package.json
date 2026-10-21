@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@bagatka/qr-code": "workspace:*",
+    "@bagatka/webauthn": "workspace:*",
     "@base-ui/react": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/incidents": "workspace:*",
+    "@cluenori/members": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/signals": "workspace:*",

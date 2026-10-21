@@ -6,9 +6,11 @@
     "typecheck": "tsc"
   },
   "devDependencies": {
+    "@bagatka/webauthn": "workspace:*",
     "@cloudflare/vitest-plugin": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/incidents": "workspace:*",
+    "@cluenori/members": "workspace:*",
     "@cluenori/notifications": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",

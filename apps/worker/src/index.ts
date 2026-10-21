@@ -3,4 +3,4 @@
  * from it, and tests call the Worker through it. The entry the platform runs is `src/worker.ts`.
  */
 export { CluenoriApi } from "./cluenori-api.ts"
-export { CurrentActor, MemberAuthorization, Unauthorized } from "./member-authorization.ts"
+export { CurrentMember, MemberAuthorization, Unauthorized } from "./member-authorization.ts"

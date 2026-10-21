@@ -16,9 +16,11 @@ yield* client.health()
 const table = yield* client.signals.operations({ params: { project }, query: { from, to } })
 ```
 
-Every group but the system's, sign-in's and pairing's needs the deployment's API token, which a client sends
-through `HttpApiMiddleware.layerClient(MemberAuthorization, ...)`; a missing or wrong token answers
-401. A browser signs in instead: `POST /api/sign-in` with the token sets an HttpOnly, Secure,
+Every group but the system's, sign-in's, passkeys', pairing's and a phone's push token's needs a
+member's credential. The deployment's API token, the owner's, is one, which a client sends through
+`HttpApiMiddleware.layerClient(MemberAuthorization, ...)`; a missing or wrong one answers 401. A
+browser signs in with a passkey (`POST /api/sign-in/passkey`, or joining by an invitation), and
+gets the sign-in cookie, or signs in with the token: `POST /api/sign-in` with the token sets an HttpOnly, Secure,
 SameSite=Strict cookie for `/api`, kept 30 days, which the API accepts in its place;
 `POST /api/sign-out` removes it. A paired phone sends its own key as the bearer token,
 `cluenori.phone.<phone ID>.<secret>`, and acts for whoever paired it; a removed phone's key answers
@@ -36,8 +38,12 @@ export the archive can't take is answered 503, so the exporter sends it again.
   `MemberAuthorization`, the endpoints about the deployment itself (`GET /api/health`), and signing
   a browser in and out.
 - **The API token's rule,** `src/api-token.ts`: whose a presented token is, for a bearer token and
-  for signing in alike; `src/member-authorization-layer.ts` lets a call through with either, or
-  with a phone's key, which the workspace's object checks. Where a call came from, for a phone's
+  for signing in alike; `src/member-authorization-layer.ts` lets a call through with it, with a
+  phone's key, or with a browser's passkey sign-in, which the workspace's object checks, and gives
+  handlers who calls and what they see (`CurrentMember`).
+- **Access,** `src/member-projects.ts`: the public API's only way to a project's object, keeping to
+  the projects the member sees; a lint rule (`.oxlintrc.json`) keeps handlers from reaching around
+  it. Listing projects, Today and phones filter the same way. Where a call came from, for a phone's
   last seen, is Cloudflare's headers (`src/caller.ts`). How
   clients import the definitions is an open decision in ARCHITECTURE.md: "How clients import the
   API definition".
@@ -82,7 +88,8 @@ Read from `env` with `ConfigProvider.fromUnknown(env)` in `src/worker.ts`:
 
 - `CLUENORI_API_TOKEN`, a secret: the token the public API requires. `./setup` makes it; `./run`
   makes one in `.dev.vars`. Without it the API refuses every call but the health check.
-- `CLUENORI_OWNER`: the member the token stands for, until members are records.
+- `CLUENORI_OWNER`: the owner the token stands for, listed as a member when the workspace's object
+  starts.
 - `CLUENORI_JURISDICTION`: `eu` in the `eu` environment, so projects' Durable Objects are made in
   the EU. Absent otherwise.
 - `CLUENORI_APNS_KEY` (a secret, the `.p8` key's text or its base64 alone), `CLUENORI_APNS_KEY_ID`,

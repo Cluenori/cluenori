@@ -3,7 +3,8 @@
 // last answer, marked waiting, until the new one arrives. This is the one file that knows where data
 // comes from; pages and views ask it (PATTERNS.md, "Dashboard views").
 
-import type { ComponentKey, EnvelopeName, ProjectKey, TraceId } from "@cluenori/foundation"
+import type { ComponentKey, EnvelopeName, MemberId, ProjectKey, TraceId } from "@cluenori/foundation"
+import type { Email, InviteCode, SignInId } from "@cluenori/members"
 import type { PhoneId } from "@cluenori/phones"
 import type { ErrorGroupId, IndexedLevel, LogCountsBy, SeriesStep } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
@@ -11,6 +12,7 @@ import { DateTime, Duration, Effect, Redacted } from "effect"
 import { Atom, AsyncResult } from "effect/reactivity"
 
 import { CluenoriClient } from "@/api-client"
+import { askForPasskey, makePasskey } from "@/passkeys"
 
 /** How far back a page looks. */
 export type PeriodKey = "1h" | "24h" | "7d" | "30d" | "90d"
@@ -84,6 +86,16 @@ export const projectsAtom = kept(
     Effect.gen(function* () {
       const client = yield* CluenoriClient
       return yield* client.projects.listProjects()
+    }),
+  ),
+)
+
+/** Who is signed in, and what they see: an owner every project, a member those listed. */
+export const meAtom = kept(
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.members.me()
     }),
   ),
 )
@@ -327,10 +339,116 @@ export const signInAtom = CluenoriClient.runtime.fn((token: string) =>
 )
 
 /** Signs this browser out; the projects' question then fails, which shows the sign-in again. */
+/**
+ * Signs this browser in with one of the site's passkeys, which the browser asks the person to pick
+ * and confirm, and asks for the projects again.
+ */
+export const signInWithPasskeyAtom = CluenoriClient.runtime.fn(() =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    const options = yield* client.passkeys.signInOptions()
+    const assertion = yield* askForPasskey(options)
+    yield* client.passkeys.signInWithPasskey({ payload: assertion })
+    yield* Atom.refresh(projectsAtom)
+    yield* Atom.refresh(meAtom)
+  }),
+)
+
 export const signOutAtom = CluenoriClient.runtime.fn(() =>
   Effect.gen(function* () {
     const client = yield* CluenoriClient
     yield* client.signOut()
     yield* Atom.refresh(projectsAtom)
+  }),
+)
+
+// Members, browsers and invitations: their pages load after start, these with the rest.
+
+/** The deployment's members, owners first. Owners only. */
+export const membersAtom = CluenoriClient.runtime.atom(
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    return yield* client.members.members()
+  }),
+)
+
+/** Invites someone to see projects: a link to send them, good once for 7 days. */
+export const inviteAtom = CluenoriClient.runtime.fn(
+  (input: { readonly email: Email; readonly projects: ReadonlyArray<ProjectKey> }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const invite = yield* client.members.invite({ payload: input })
+      yield* Atom.refresh(membersAtom)
+      return invite
+    }),
+)
+
+/** Sets the projects a member sees, and asks for the members again. */
+export const setProjectsAtom = CluenoriClient.runtime.fn(
+  (input: { readonly member: MemberId; readonly projects: ReadonlyArray<ProjectKey> }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      yield* client.members.setProjects({ params: { member: input.member }, payload: { projects: input.projects } })
+      yield* Atom.refresh(membersAtom)
+    }),
+)
+
+/** Removes a member, whose passkeys, sign-ins and phones stop working at once. */
+export const removeMemberAtom = CluenoriClient.runtime.fn((member: MemberId) =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    yield* client.members.removeMember({ params: { member } })
+    yield* Atom.refresh(membersAtom)
+  }),
+)
+
+/** The browsers signed in with passkeys that this member sees, the latest seen first. */
+export const signInsAtom = CluenoriClient.runtime.atom(
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    return yield* client.members.signIns()
+  }),
+)
+
+/** Signs a browser out, and asks for the browsers again. */
+export const endSignInAtom = CluenoriClient.runtime.fn((signIn: SignInId) =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    yield* client.members.endSignIn({ params: { signIn } })
+    yield* Atom.refresh(signInsAtom)
+  }),
+)
+
+/** Makes another passkey for the member signed in, on this device. */
+export const addPasskeyAtom = CluenoriClient.runtime.fn(() =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    const options = yield* client.members.passkeyOptions()
+    const registration = yield* makePasskey(options)
+    yield* client.members.addPasskey({ payload: registration })
+    yield* Atom.refresh(meAtom)
+  }),
+)
+
+/** Who an invitation is for, by the passkey options it gives; asking checks it is still open. */
+export const invitationAtom = Atom.family((code: InviteCode) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.passkeys.joinOptions({ payload: { code } })
+    }),
+  ),
+)
+
+/** Joins by an invitation with a new passkey, which signs this browser in. */
+export const joinAtom = CluenoriClient.runtime.fn((code: InviteCode) =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    const options = yield* client.passkeys.joinOptions({ payload: { code } })
+    const registration = yield* makePasskey(options)
+    const member = yield* client.passkeys.join({ payload: { code, registration } })
+    yield* Atom.refresh(projectsAtom)
+    yield* Atom.refresh(meAtom)
+    return member
   }),
 )

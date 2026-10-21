@@ -37,6 +37,9 @@ export type Route =
   | { readonly page: "logs"; readonly project: ProjectKey; readonly component?: ComponentKey }
   | { readonly page: "trace"; readonly project: ProjectKey; readonly trace: TraceId; readonly around?: DateTime.Utc }
   | { readonly page: "phones" }
+  | { readonly page: "browsers" }
+  | { readonly page: "members" }
+  | { readonly page: "invite" }
   | { readonly page: "kit" }
 
 // An operation's name often holds slashes (`GET /api/notes/{id}`). An address keeps them as its own:
@@ -73,6 +76,12 @@ export const hrefOf = (route: Route): string => {
         : `/${route.project}/traces/${route.trace}?around=${encodeURIComponent(DateTime.formatIso(route.around))}`
     case "phones":
       return "/phones"
+    case "browsers":
+      return "/browsers"
+    case "members":
+      return "/members"
+    case "invite":
+      return "/invite"
     case "kit":
       return "/kit"
   }
@@ -100,13 +109,14 @@ export const routeOf = (path: string, search: string): Route => {
   if (first === undefined) {
     return { page: "start" }
   }
-  // Not handled: a project whose key is `kit` or `phones` opens these pages instead of its own;
-  // reserving the two at project creation would take an error in Projects.
+  // Not handled: a project whose key is `kit`, `phones`, `browsers`, `members` or `invite` opens
+  // these pages instead of its own; reserving them at project creation would take an error in
+  // Projects.
   if (first === "kit") {
     return { page: "kit" }
   }
-  if (first === "phones") {
-    return { page: "phones" }
+  if (first === "phones" || first === "browsers" || first === "members" || first === "invite") {
+    return page === undefined ? { page: first } : { page: "missing" }
   }
   const project = projectKey(first)
   const named = query.get("component") ?? undefined

@@ -1,4 +1,4 @@
-import { Instant, Uuidv7 } from "@cluenori/foundation"
+import { Instant, MemberId, Uuidv7 } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 /** A phone's ID. */
@@ -55,18 +55,6 @@ export const PhoneDetails = Schema.Struct({
 })
 export type PhoneDetails = typeof PhoneDetails.Type
 
-/**
- * Where a call came from: the caller's IP address and the country Cloudflare places it in, when
- * known, and its `User-Agent`, in which the app says its own and its iOS version:
- * `Cluenori/1.0 (12) iOS/27.1`.
- */
-export const Caller = Schema.Struct({
-  address: Schema.optionalKey(Schema.String),
-  country: Schema.optionalKey(Schema.String),
-  userAgent: Schema.optionalKey(Schema.String),
-})
-export type Caller = typeof Caller.Type
-
 /** When a phone last called the API, from which address, and in which country. */
 export const LastSeen = Schema.Struct({
   at: Instant,
@@ -88,6 +76,8 @@ export class Phone extends Schema.Class<Phone>("Phone")({
   pairedAt: Instant,
   /** Absent until its first call after pairing. */
   lastSeen: Schema.optionalKey(LastSeen),
+  /** The member it acts for, who started its pairing; absent when that was no member. */
+  member: Schema.optionalKey(MemberId),
 }) {}
 
 /** The phones paired with the deployment, the latest paired first. */
@@ -133,8 +123,13 @@ export const RegisterPush = Schema.Struct({ token: PushToken, environment: PushE
 })
 export type RegisterPush = typeof RegisterPush.Type
 
-/** A phone pushes reach, by the token it last registered. */
-export const PushTarget = Schema.Struct({ phone: PhoneId, token: PushToken, environment: PushEnvironment })
+/** A phone pushes reach, by the token it last registered, and the member it acts for, if any. */
+export const PushTarget = Schema.Struct({
+  phone: PhoneId,
+  token: PushToken,
+  environment: PushEnvironment,
+  member: Schema.optionalKey(MemberId),
+})
 export type PushTarget = typeof PushTarget.Type
 
 /** The pairing code is wrong, already used, or older than 10 minutes: show a new one on the web. */

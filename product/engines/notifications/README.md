@@ -26,6 +26,7 @@ yield* notifications.testAlert(phone)
     when Stopped opens or any incident reopens; quiet when one recovers or someone acknowledges it.
     Nothing about an incident someone is on, nor for other activity. An alarm more than 10 minutes
     late comes as time sensitive.
+  - **Who is told:** the phones whose member sees the incident's project; an owner sees every one.
   - **What a push says:** "<project> · <what happened>", and the incident's title.
   - **Tokens that are gone:** a token APNs calls `BadDeviceToken`, `Unregistered` or
     `DeviceTokenNotForTopic` is forgotten, through Phones.
@@ -45,7 +46,8 @@ alarm through `NotificationsGroup`.
 
 ## Depends on
 
-`@cluenori/phones` for push targets, `@cluenori/projects`' index for project names,
+`@cluenori/phones` for push targets, `@cluenori/members` for what each phone's member sees,
+`@cluenori/projects`' index for project names,
 `@cluenori/incidents` for the activity it reads, `@bagatka/apns`, and an `HttpClient` the host
 provides.
 

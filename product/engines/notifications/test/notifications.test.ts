@@ -1,15 +1,16 @@
+import { softwareAuthenticator } from "@bagatka/webauthn"
 import type { ActivityPayload, Actor } from "@cluenori/foundation"
 import {
   ComponentKey,
   Envelope,
   EnvelopeId,
   EnvelopeName,
-  MemberId,
   ProcessName,
   ProjectKey,
   Source,
   WorkspaceKey,
 } from "@cluenori/foundation"
+import type { Caller } from "@cluenori/foundation"
 import {
   IncidentAcknowledged,
   IncidentId,
@@ -19,7 +20,8 @@ import {
   IncidentWorsened,
 } from "@cluenori/incidents"
 import type { Detector } from "@cluenori/incidents"
-import type { Caller, PushEnvironment } from "@cluenori/phones"
+import { Email, InviteCode, Members } from "@cluenori/members"
+import type { PushEnvironment } from "@cluenori/phones"
 import { AppVersion, ModelIdentifier, PairingCode, Phones, PushToken, SystemVersion } from "@cluenori/phones"
 import { ProjectIndex, ProjectName } from "@cluenori/projects"
 import { assert, describe, it } from "@effect/vitest"
@@ -30,14 +32,15 @@ import { TestClock } from "effect/testing"
 import type { NotificationsSettings } from "../src/index.ts"
 import { Notifications } from "../src/index.ts"
 import type { ApnsReply } from "./in-workspace.ts"
-import { fakeApns, inWorkspace } from "./in-workspace.ts"
+import { fakeApns, inWorkspace, owner } from "./in-workspace.ts"
 
 // 2026-10-21T10:00:00Z.
 const start = 1792576800000
 const minute = 60_000
 
 const notes = ProjectKey.make("notes")
-const member: Actor = { _tag: "Member", id: MemberId.make("0199f7a2-5c1e-7d3a-9b2f-4e8a1c6d0f53") }
+const atlas = ProjectKey.make("atlas")
+const member: Actor = { _tag: "Member", id: owner }
 const home: Caller = { address: "203.0.113.7", country: "PL", userAgent: "Cluenori/1.0 (1) iOS/27.0" }
 const incident = IncidentId.make("0199f7a2-6000-7000-8000-000000000001")
 const down: Detector = "down"
@@ -98,10 +101,10 @@ const activityOf = (
 }
 
 // Pairs a phone, which registers `token` for `environment`; returns its ID.
-const phoneWith = (token: string, environment: PushEnvironment = "production") =>
+const phoneWith = (token: string, environment: PushEnvironment = "production", pairedBy: Actor = member) =>
   Effect.gen(function* () {
     const phones = yield* Phones
-    const pairing = yield* phones.startPairing(member, "https://cluenori.example")
+    const pairing = yield* phones.startPairing(pairedBy, "https://cluenori.example")
     const { phone, key } = yield* phones.pair(
       {
         code: PairingCode.make(new URL(pairing.link).searchParams.get("code") ?? ""),
@@ -115,13 +118,14 @@ const phoneWith = (token: string, environment: PushEnvironment = "production") =
     return phone.id
   })
 
-const notesProject = Effect.gen(function* () {
+const withProjects = Effect.gen(function* () {
   const index = yield* ProjectIndex
-  yield* index.record({
-    key: notes,
-    name: ProjectName.make("Notes"),
-    createdAt: DateTime.makeUnsafe(start - 7 * 86_400_000),
-  })
+  for (const [key, name] of [
+    [notes, "Notes"],
+    [atlas, "Atlas"],
+  ] as const) {
+    yield* index.record({ key, name: ProjectName.make(name), createdAt: DateTime.makeUnsafe(start - 7 * 86_400_000) })
+  }
 })
 
 // What the tests read of a push's payload.
@@ -156,7 +160,7 @@ describe("Notifications", () => {
         settings,
         apns.layer,
         Effect.gen(function* () {
-          yield* notesProject
+          yield* withProjects
           yield* phoneWith(phoneToken, "development")
           // A minute on, so phones are told in the order they paired.
           yield* TestClock.adjust(minute)
@@ -206,7 +210,7 @@ describe("Notifications", () => {
         settings,
         apns.layer,
         Effect.gen(function* () {
-          yield* notesProject
+          yield* withProjects
           yield* phoneWith(phoneToken)
           yield* notify([
             activityOf(
@@ -270,7 +274,7 @@ describe("Notifications", () => {
         apns.layer,
         Effect.gen(function* () {
           const phones = yield* Phones
-          yield* notesProject
+          yield* withProjects
           yield* phoneWith(phoneToken)
           // A minute on, so phones are told in the order they paired.
           yield* TestClock.adjust(minute)
@@ -345,6 +349,62 @@ describe("Notifications", () => {
         }),
       )
       assert.deepStrictEqual(apns.accepted, [])
+    }),
+  )
+
+  it.effect("tells a member's phone only about the projects they see, and an owner's about every one", () =>
+    Effect.gen(function* () {
+      const settings = yield* settingsWithKey
+      const apns = fakeApns(accepts)
+      yield* inWorkspace(
+        "members",
+        start,
+        settings,
+        apns.layer,
+        Effect.gen(function* () {
+          const members = yield* Members
+          yield* withProjects
+          yield* phoneWith(phoneToken)
+
+          // Ada joins, seeing Atlas alone, and pairs a phone.
+          const site = { origin: "https://cluenori.example", rpId: "cluenori.example" }
+          const invite = yield* members.invite(
+            member,
+            { email: Email.make("ada@example.com"), projects: [atlas] },
+            site,
+          )
+          const code = InviteCode.make(new URL(invite.link).hash.slice(1))
+          const options = yield* members.startJoining(code, site)
+          const device = yield* softwareAuthenticator(crypto)
+          const joined = yield* members.join(
+            code,
+            yield* device.register({ ...site, challenge: options.challenge }),
+            site,
+            home,
+          )
+          yield* TestClock.adjust(minute)
+          yield* phoneWith(otherToken, "production", { _tag: "Member", id: joined.member.id })
+
+          yield* notify([
+            activityOf(IncidentOpened.make(fields)),
+            activityOf(
+              IncidentOpened.make({ ...fields, incident: IncidentId.make("0199f7a2-6000-7000-8000-000000000009") }),
+              start,
+              {
+                project: atlas,
+              },
+            ),
+          ])
+        }),
+      )
+      const told = yield* Effect.forEach(apns.accepted, (push) =>
+        decodePayload(push.payload).pipe(Effect.map((payload) => [push.deviceToken, payload.aps.alert.title])),
+      )
+      assert.deepStrictEqual(told, [
+        [phoneToken, "Notes · Down"],
+        [phoneToken, "Atlas · Down"],
+        [otherToken, "Atlas · Down"],
+      ])
     }),
   )
 })

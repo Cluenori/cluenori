@@ -73,6 +73,671 @@
         "description": "Signs the browser out: answers 204 and removes the sign-in cookie."
       }
     },
+    "/api/invites/options": {
+      "post": {
+        "tags": [
+          "passkeys"
+        ],
+        "operationId": "passkeys.joinOptions",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "PasskeyCreationOptions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyCreationOptions"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "InviteRejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteRejected"
+                }
+              }
+            }
+          }
+        },
+        "description": "The options that make the invited person's passkey on this site, good for 5 minutes. 403 for an invitation that is wrong, used, or older than 7 days.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationCode"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/invites/join": {
+      "post": {
+        "tags": [
+          "passkeys"
+        ],
+        "operationId": "passkeys.join",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "PasskeyRejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyRejected"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "InviteRejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteRejected"
+                }
+              }
+            }
+          }
+        },
+        "description": "Joins with the passkey made from joinOptions: the new member, signed in with the sign-in cookie, HttpOnly, Secure and SameSite=Strict, for /api, kept 30 days. The invitation is used up; a passkey that doesn't hold answers 400 and leaves it open.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinWithPasskey"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/sign-in/passkey/options": {
+      "post": {
+        "tags": [
+          "passkeys"
+        ],
+        "operationId": "passkeys.signInOptions",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "PasskeyRequestOptions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyRequestOptions"
+                }
+              }
+            }
+          }
+        },
+        "description": "The options that sign in with any of this site's passkeys, good for 5 minutes: pass them to navigator.credentials.get()."
+      }
+    },
+    "/api/sign-in/passkey": {
+      "post": {
+        "tags": [
+          "passkeys"
+        ],
+        "operationId": "passkeys.signInWithPasskey",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "PasskeyRejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyRejected"
+                }
+              }
+            }
+          }
+        },
+        "description": "Signs in with a passkey answering signInOptions: the member, signed in with the sign-in cookie for 30 days. 401 for a passkey the deployment doesn't know, or an answer that doesn't hold.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyAssertion"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "members.me",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          }
+        },
+        "description": "The member who calls: an owner sees every project; a member, the projects listed."
+      }
+    },
+    "/api/me/passkeys/options": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "members.passkeyOptions",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PasskeyCreationOptions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyCreationOptions"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          }
+        },
+        "description": "The options that make another passkey for the member who calls, on this site, good for 5 minutes: pass them to navigator.credentials.create()."
+      }
+    },
+    "/api/me/passkeys": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "members.addPasskey",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "PasskeyRejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyRejected"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          }
+        },
+        "description": "Adds the passkey made from passkeyOptions to the member who calls. 400 when it doesn't hold, such as for options used already.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegistration"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/sign-ins": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "members.signIns",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SignInList",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          }
+        },
+        "description": "The browsers signed in with passkeys, the latest seen first, each with what it is, when and where from it signed in and last called, and whether it is the one asking: an owner sees every member's, a member their own."
+      }
+    },
+    "/api/sign-ins/{signIn}": {
+      "delete": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "members.endSignIn",
+        "parameters": [
+          {
+            "name": "signIn",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SignInNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Signs a browser out: its sign-in stops working at once. An owner signs out any; a member, their own."
+      }
+    },
+    "/api/members": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "members.members",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "MemberList",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          }
+        },
+        "description": "Every member, owners first. Owners only."
+      }
+    },
+    "/api/members/invites": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "members.invite",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Invite",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Invite"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "MemberExists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberExists"
+                }
+              }
+            }
+          }
+        },
+        "description": "Invites someone to see these projects: a link, <deployment>/invite#<code>, good once for 7 days, which makes their passkey and signs them in. Send it to them yourself. Owners only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteMember"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/members/{member}/projects": {
+      "put": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "members.setProjects",
+        "parameters": [
+          {
+            "name": "member",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "MemberNotFound | ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/MemberNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Sets the projects a member sees. Owners only, and not for an owner.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProjects"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/members/{member}": {
+      "delete": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "members.removeMember",
+        "parameters": [
+          {
+            "name": "member",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "MemberNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Removes a member: their passkeys, sign-ins and phones stop working at once. Owners only, and not an owner."
+      }
+    },
     "/api/projects": {
       "get": {
         "tags": [
@@ -147,6 +812,16 @@
               }
             }
           },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
           "409": {
             "description": "ProjectExists",
             "content": {
@@ -158,7 +833,7 @@
             }
           }
         },
-        "description": "Creates a project: one product, with the components that ship separately. Its key is permanent.",
+        "description": "Creates a project: one product, with the components that ship separately. Its key is permanent. Owners only.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2588,6 +3263,9 @@
           },
           "lastSeen": {
             "$ref": "#/components/schemas/LastSeen"
+          },
+          "member": {
+            "type": "string"
           }
         },
         "required": [
@@ -3749,6 +4427,21 @@
         ],
         "additionalProperties": false
       },
+      "NotAllowed": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "NotAllowed"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
       "ProjectExists": {
         "type": "object",
         "properties": {
@@ -3823,6 +4516,548 @@
         ],
         "additionalProperties": false
       },
+      "MemberNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "MemberNotFound"
+            ]
+          },
+          "member": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "member"
+        ],
+        "additionalProperties": false
+      },
+      "Member": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MemberRole"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 254
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          "addedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "passkeys": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "addedAt",
+          "passkeys"
+        ],
+        "additionalProperties": false
+      },
+      "MemberRole": {
+        "type": "string",
+        "enum": [
+          "owner",
+          "member"
+        ]
+      },
+      "SetProjects": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            }
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "additionalProperties": false
+      },
+      "MemberExists": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "MemberExists"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 254
+          }
+        },
+        "required": [
+          "_tag",
+          "email"
+        ],
+        "additionalProperties": false
+      },
+      "Invite": {
+        "type": "object",
+        "properties": {
+          "link": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "link",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "InviteMember": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "email",
+          "projects"
+        ],
+        "additionalProperties": false
+      },
+      "MemberList": {
+        "type": "object",
+        "properties": {
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            }
+          }
+        },
+        "required": [
+          "members"
+        ],
+        "additionalProperties": false
+      },
+      "SignInNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "SignInNotFound"
+            ]
+          },
+          "signIn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "signIn"
+        ],
+        "additionalProperties": false
+      },
+      "SignInList": {
+        "type": "object",
+        "properties": {
+          "signIns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SignIn_1"
+            }
+          }
+        },
+        "required": [
+          "signIns"
+        ],
+        "additionalProperties": false
+      },
+      "SignIn_1": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "member": {
+            "type": "string"
+          },
+          "browser": {
+            "type": "string"
+          },
+          "signedInAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "address": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "member",
+          "signedInAt",
+          "seenAt",
+          "current"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyRejected": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PasskeyRejected"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyRegistration": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/components/schemas/PasskeyAttestation"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "response"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyAttestation": {
+        "type": "object",
+        "properties": {
+          "clientDataJSON": {
+            "type": "string"
+          },
+          "authenticatorData": {
+            "type": "string"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "publicKeyAlgorithm": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clientDataJSON",
+          "authenticatorData",
+          "publicKeyAlgorithm"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyCreationOptions": {
+        "type": "object",
+        "properties": {
+          "rp": {
+            "$ref": "#/components/schemas/PasskeySite"
+          },
+          "user": {
+            "$ref": "#/components/schemas/PasskeyUser"
+          },
+          "challenge": {
+            "type": "string"
+          },
+          "pubKeyCredParams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PasskeyAlgorithm"
+            }
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "excludeCredentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PasskeyCredential"
+            }
+          },
+          "authenticatorSelection": {
+            "$ref": "#/components/schemas/PasskeySelection"
+          },
+          "attestation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rp",
+          "user",
+          "challenge",
+          "pubKeyCredParams",
+          "timeout",
+          "excludeCredentials",
+          "authenticatorSelection",
+          "attestation"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeySelection": {
+        "type": "object",
+        "properties": {
+          "residentKey": {
+            "type": "string"
+          },
+          "requireResidentKey": {
+            "type": "boolean"
+          },
+          "userVerification": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "residentKey",
+          "requireResidentKey",
+          "userVerification"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyCredential": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyAlgorithm": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "alg": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "type",
+          "alg"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "displayName"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeySite": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyAssertion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/components/schemas/PasskeySignature"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "response"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeySignature": {
+        "type": "object",
+        "properties": {
+          "clientDataJSON": {
+            "type": "string"
+          },
+          "authenticatorData": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "userHandle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientDataJSON",
+          "authenticatorData",
+          "signature"
+        ],
+        "additionalProperties": false
+      },
+      "PasskeyRequestOptions": {
+        "type": "object",
+        "properties": {
+          "challenge": {
+            "type": "string"
+          },
+          "rpId": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "userVerification": {
+            "type": "string"
+          },
+          "allowCredentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PasskeyCredential"
+            }
+          }
+        },
+        "required": [
+          "challenge",
+          "rpId",
+          "timeout",
+          "userVerification",
+          "allowCredentials"
+        ],
+        "additionalProperties": false
+      },
+      "InviteRejected": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "InviteRejected"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
+      "JoinWithPasskey": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "registration": {
+            "$ref": "#/components/schemas/PasskeyRegistration"
+          }
+        },
+        "required": [
+          "code",
+          "registration"
+        ],
+        "additionalProperties": false
+      },
+      "InvitationCode": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "additionalProperties": false
+      },
       "SignIn": {
         "type": "object",
         "properties": {
@@ -3855,6 +5090,12 @@
     },
     {
       "name": "signIn"
+    },
+    {
+      "name": "passkeys"
+    },
+    {
+      "name": "members"
     },
     {
       "name": "projects"

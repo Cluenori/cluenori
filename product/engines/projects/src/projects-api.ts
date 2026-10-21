@@ -1,4 +1,4 @@
-import { ProjectKey } from "@cluenori/foundation"
+import { NotAllowed, ProjectKey } from "@cluenori/foundation"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
@@ -40,10 +40,10 @@ export class ProjectsGroup extends HttpApiGroup.make("projects")
     HttpApiEndpoint.post("createProject", "/projects", {
       payload: CreateProject,
       success: Project.pipe(HttpApiSchema.status(201)),
-      error: ProjectExists.pipe(HttpApiSchema.status(409)),
+      error: [ProjectExists.pipe(HttpApiSchema.status(409)), NotAllowed.pipe(HttpApiSchema.status(403))],
     }).annotate(
       OpenApi.Description,
-      "Creates a project: one product, with the components that ship separately. Its key is permanent.",
+      "Creates a project: one product, with the components that ship separately. Its key is permanent. Owners only.",
     ),
   )
   .add(

@@ -1,10 +1,10 @@
-import type { Actor } from "@cluenori/foundation"
+import type { Actor, Caller } from "@cluenori/foundation"
 import { ActivityLog, MemberId } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Exit, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 
-import type { Caller, PairPhone } from "../src/index.ts"
+import type { PairPhone } from "../src/index.ts"
 import { AppVersion, ModelIdentifier, PairingCode, PhoneKey, Phones, PushToken, SystemVersion } from "../src/index.ts"
 import { inWorkspace } from "./in-workspace.ts"
 
@@ -162,6 +162,15 @@ describe("Phones", () => {
         )
         assert.deepStrictEqual(yield* activityNames, ["phone.removed", "phone.paired", "phone.paired"])
         assert.isUndefined((yield* phones.phones).phones.find((each) => each.id === phone.id))
+
+        // Each phone acts for the member who paired it; removing a member removes his phones.
+        assert.deepStrictEqual(
+          (yield* phones.phones).phones.map((each) => each.member),
+          [member.id],
+        )
+        yield* phones.removeAllOf(member, member.id)
+        assert.deepStrictEqual((yield* phones.phones).phones, [])
+        assert.strictEqual((yield* phones.authenticate(other.key, home).pipe(Effect.flip))._tag, "PhoneKeyRejected")
       }),
     ),
   )
@@ -179,6 +188,7 @@ describe("Phones", () => {
         const targetsOf = phones.pushTargets.pipe(
           Effect.map((targets) => targets.map((target) => [target.phone, target.token, target.environment])),
         )
+        assert.deepStrictEqual(yield* phones.pushTargets, [])
 
         yield* phones.registerPush(first.key, home, { token: old, environment: "development" })
         yield* phones.registerPush(first.key, home, { token: fresh, environment: "production" })

@@ -13,8 +13,10 @@
   "dependencies": {
     "@bagatka/otlp": "workspace:*",
     "@bagatka/web-crypto": "workspace:*",
+    "@bagatka/webauthn": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/incidents": "workspace:*",
+    "@cluenori/members": "workspace:*",
     "@cluenori/notifications": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",

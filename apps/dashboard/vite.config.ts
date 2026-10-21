@@ -10,8 +10,9 @@ import { defineConfig } from "vite"
 // raised from 180 KB when the pages began reading the API: the typed client derived from its
 // definition (Effect's runtime, Schema, and HTTP API client) is about 75 KB of it, and every page
 // needs it before it can show anything. Lowered to 240 KB when one error's page and a
-// trace began loading after start.
-const firstLoadBudget = { scriptKb: 240, styleKb: 36 }
+// trace began loading after start. Raised to 244 KB when the API gained members and passkeys,
+// whose definitions the typed client carries.
+const firstLoadBudget = { scriptKb: 244, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

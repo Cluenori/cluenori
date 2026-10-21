@@ -51,6 +51,135 @@ public struct CluenoriAPI: Sendable {
         _ = try await self.send("POST", "/api/sign-out")
     }
 
+    /// The options that make the invited person's passkey on this site, good for 5 minutes. 403 for
+    /// an invitation that is wrong, used, or older than 7 days.
+    ///
+    /// Fails with `.inviteRejected`, or as any call can.
+    @concurrent
+    public func joinOptions(
+        _ body: InvitationCode,
+    ) async throws(APIError) -> PasskeyCreationOptions {
+        let answer = try await self.send("POST", "/api/invites/options", body: try Self.encoded(body))
+        return try Self.decoded(PasskeyCreationOptions.self, from: answer)
+    }
+
+    /// Joins with the passkey made from joinOptions: the new member, signed in with the sign-in
+    /// cookie, HttpOnly, Secure and SameSite=Strict, for /api, kept 30 days. The invitation is used
+    /// up; a passkey that doesn't hold answers 400 and leaves it open.
+    ///
+    /// Fails with `.passkeyRejected`, `.inviteRejected`, or as any call can.
+    @concurrent
+    public func join(_ body: JoinWithPasskey) async throws(APIError) -> Member {
+        let answer = try await self.send("POST", "/api/invites/join", body: try Self.encoded(body))
+        return try Self.decoded(Member.self, from: answer)
+    }
+
+    /// The options that sign in with any of this site's passkeys, good for 5 minutes: pass them to
+    /// navigator.credentials.get().
+    @concurrent
+    public func signInOptions() async throws(APIError) -> PasskeyRequestOptions {
+        let answer = try await self.send("POST", "/api/sign-in/passkey/options")
+        return try Self.decoded(PasskeyRequestOptions.self, from: answer)
+    }
+
+    /// Signs in with a passkey answering signInOptions: the member, signed in with the sign-in
+    /// cookie for 30 days. 401 for a passkey the deployment doesn't know, or an answer that doesn't
+    /// hold.
+    ///
+    /// Fails with `.passkeyRejected`, or as any call can.
+    @concurrent
+    public func signInWithPasskey(_ body: PasskeyAssertion) async throws(APIError) -> Member {
+        let answer = try await self.send("POST", "/api/sign-in/passkey", body: try Self.encoded(body))
+        return try Self.decoded(Member.self, from: answer)
+    }
+
+    /// The member who calls: an owner sees every project; a member, the projects listed.
+    ///
+    /// Fails with `.unauthorized`, or as any call can.
+    @concurrent
+    public func me() async throws(APIError) -> Member {
+        let answer = try await self.send("GET", "/api/me")
+        return try Self.decoded(Member.self, from: answer)
+    }
+
+    /// The options that make another passkey for the member who calls, on this site, good for 5
+    /// minutes: pass them to navigator.credentials.create().
+    ///
+    /// Fails with `.unauthorized`, or as any call can.
+    @concurrent
+    public func passkeyOptions() async throws(APIError) -> PasskeyCreationOptions {
+        let answer = try await self.send("POST", "/api/me/passkeys/options")
+        return try Self.decoded(PasskeyCreationOptions.self, from: answer)
+    }
+
+    /// Adds the passkey made from passkeyOptions to the member who calls. 400 when it doesn't hold,
+    /// such as for options used already.
+    ///
+    /// Fails with `.passkeyRejected`, `.unauthorized`, or as any call can.
+    @concurrent
+    public func addPasskey(_ body: PasskeyRegistration) async throws(APIError) {
+        _ = try await self.send("POST", "/api/me/passkeys", body: try Self.encoded(body))
+    }
+
+    /// The browsers signed in with passkeys, the latest seen first, each with what it is, when and
+    /// where from it signed in and last called, and whether it is the one asking: an owner sees
+    /// every member's, a member their own.
+    ///
+    /// Fails with `.unauthorized`, or as any call can.
+    @concurrent
+    public func signIns() async throws(APIError) -> SignInList {
+        let answer = try await self.send("GET", "/api/sign-ins")
+        return try Self.decoded(SignInList.self, from: answer)
+    }
+
+    /// Signs a browser out: its sign-in stops working at once. An owner signs out any; a member,
+    /// their own.
+    ///
+    /// Fails with `.unauthorized`, `.signInNotFound`, or as any call can.
+    @concurrent
+    public func endSignIn(signIn: String) async throws(APIError) {
+        _ = try await self.send("DELETE", "/api/sign-ins/\(Self.escaped(Self.text(signIn)))")
+    }
+
+    /// Every member, owners first. Owners only.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, or as any call can.
+    @concurrent
+    public func members() async throws(APIError) -> MemberList {
+        let answer = try await self.send("GET", "/api/members")
+        return try Self.decoded(MemberList.self, from: answer)
+    }
+
+    /// Invites someone to see these projects: a link, <deployment>/invite#<code>, good once for 7
+    /// days, which makes their passkey and signs them in. Send it to them yourself. Owners only.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.projectNotFound`, `.memberExists`, or as any
+    /// call can.
+    @concurrent
+    public func invite(_ body: InviteMember) async throws(APIError) -> Invite {
+        let answer = try await self.send("POST", "/api/members/invites", body: try Self.encoded(body))
+        return try Self.decoded(Invite.self, from: answer)
+    }
+
+    /// Sets the projects a member sees. Owners only, and not for an owner.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.memberNotFound`, `.projectNotFound`, or as any
+    /// call can.
+    @concurrent
+    public func setProjects(member: String, _ body: SetProjects) async throws(APIError) -> Member {
+        let answer = try await self.send("PUT", "/api/members/\(Self.escaped(Self.text(member)))/projects", body: try Self.encoded(body))
+        return try Self.decoded(Member.self, from: answer)
+    }
+
+    /// Removes a member: their passkeys, sign-ins and phones stop working at once. Owners only, and
+    /// not an owner.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.memberNotFound`, or as any call can.
+    @concurrent
+    public func removeMember(member: String) async throws(APIError) {
+        _ = try await self.send("DELETE", "/api/members/\(Self.escaped(Self.text(member)))")
+    }
+
     /// The workspace's projects, by key: each one's key, name, and when it was created.
     ///
     /// Fails with `.unauthorized`, or as any call can.
@@ -61,9 +190,9 @@ public struct CluenoriAPI: Sendable {
     }
 
     /// Creates a project: one product, with the components that ship separately. Its key is
-    /// permanent.
+    /// permanent. Owners only.
     ///
-    /// Fails with `.unauthorized`, `.projectExists`, or as any call can.
+    /// Fails with `.unauthorized`, `.notAllowed`, `.projectExists`, or as any call can.
     @concurrent
     public func createProject(_ body: CreateProject) async throws(APIError) -> Project {
         let answer = try await self.send("POST", "/api/projects", body: try Self.encoded(body))
@@ -436,11 +565,16 @@ public enum APIError: Error, Sendable {
     case componentNotFound(ComponentNotFound)
     case errorGroupNotFound(ErrorGroupNotFound)
     case incidentNotFound(IncidentNotFound)
+    case inviteRejected(InviteRejected)
+    case memberExists(MemberExists)
+    case memberNotFound(MemberNotFound)
     case monitorExists(MonitorExists)
     case monitorLimitReached(MonitorLimitReached)
     case monitorNotFound(MonitorNotFound)
     case noPushToken(NoPushToken)
+    case notAllowed(NotAllowed)
     case pairingCodeRejected(PairingCodeRejected)
+    case passkeyRejected(PasskeyRejected)
     case phoneKeyRejected(PhoneKeyRejected)
     case phoneNotFound(PhoneNotFound)
     case projectExists(ProjectExists)
@@ -448,6 +582,7 @@ public enum APIError: Error, Sendable {
     case pushNotSetUp(PushNotSetUp)
     case pushRejected(PushRejected)
     case pushUnavailable(PushUnavailable)
+    case signInNotFound(SignInNotFound)
     case unauthorized(Unauthorized)
     /// The server didn't answer: no connection, a timeout, or a cancelled call.
     case unreachable(URLError)
@@ -774,6 +909,49 @@ public struct IndexedLevel: RawRepresentable, Codable, Hashable, Sendable {
     public static let fatal = IndexedLevel(rawValue: "fatal")
 }
 
+public struct InvitationCode: Codable, Hashable, Sendable {
+    public let code: String
+
+    public init(code: String) {
+        self.code = code
+    }
+}
+
+public struct Invite: Codable, Hashable, Sendable {
+    public let link: String
+    public let expiresAt: Date
+
+    public init(link: String, expiresAt: Date) {
+        self.link = link
+        self.expiresAt = expiresAt
+    }
+}
+
+public struct InviteMember: Codable, Hashable, Sendable {
+    public let email: String
+    public let projects: [String]
+
+    public init(email: String, projects: [String]) {
+        self.email = email
+        self.projects = projects
+    }
+}
+
+public struct InviteRejected: Codable, Hashable, Sendable {
+    public init() {
+    }
+}
+
+public struct JoinWithPasskey: Codable, Hashable, Sendable {
+    public let code: String
+    public let registration: PasskeyRegistration
+
+    public init(code: String, registration: PasskeyRegistration) {
+        self.code = code
+        self.registration = registration
+    }
+}
+
 public struct KeptTraceRow: Codable, Hashable, Sendable {
     public let trace: String
     public let operation: String
@@ -1005,6 +1183,67 @@ public struct LogPage: Codable, Hashable, Sendable {
     }
 }
 
+public struct Member: Codable, Hashable, Sendable {
+    public let id: String
+    public let role: MemberRole
+    public let email: String?
+    public let projects: [String]?
+    public let addedAt: Date
+    public let passkeys: Int
+
+    public init(
+        id: String,
+        role: MemberRole,
+        email: String? = nil,
+        projects: [String]? = nil,
+        addedAt: Date,
+        passkeys: Int,
+    ) {
+        self.id = id
+        self.role = role
+        self.email = email
+        self.projects = projects
+        self.addedAt = addedAt
+        self.passkeys = passkeys
+    }
+}
+
+public struct MemberExists: Codable, Hashable, Sendable {
+    public let email: String
+
+    public init(email: String) {
+        self.email = email
+    }
+}
+
+public struct MemberList: Codable, Hashable, Sendable {
+    public let members: [Member]
+
+    public init(members: [Member]) {
+        self.members = members
+    }
+}
+
+public struct MemberNotFound: Codable, Hashable, Sendable {
+    public let member: String
+
+    public init(member: String) {
+        self.member = member
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct MemberRole: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let owner = MemberRole(rawValue: "owner")
+    public static let member = MemberRole(rawValue: "member")
+}
+
 public struct Monitor: Codable, Hashable, Sendable {
     public let id: String
     public let component: String
@@ -1078,6 +1317,11 @@ public struct NoPushToken: Codable, Hashable, Sendable {
 
     public init(phone: String) {
         self.phone = phone
+    }
+}
+
+public struct NotAllowed: Codable, Hashable, Sendable {
+    public init() {
     }
 }
 
@@ -1179,6 +1423,180 @@ public struct PairingCodeRejected: Codable, Hashable, Sendable {
     }
 }
 
+public struct PasskeyAlgorithm: Codable, Hashable, Sendable {
+    public let type: String
+    public let alg: Int
+
+    public init(type: String, alg: Int) {
+        self.type = type
+        self.alg = alg
+    }
+}
+
+public struct PasskeyAssertion: Codable, Hashable, Sendable {
+    public let id: String
+    public let type: String
+    public let response: PasskeySignature
+
+    public init(id: String, type: String, response: PasskeySignature) {
+        self.id = id
+        self.type = type
+        self.response = response
+    }
+}
+
+public struct PasskeyAttestation: Codable, Hashable, Sendable {
+    public let clientDataJSON: String
+    public let authenticatorData: String
+    public let publicKey: String?
+    public let publicKeyAlgorithm: Double
+
+    public init(
+        clientDataJSON: String,
+        authenticatorData: String,
+        publicKey: String? = nil,
+        publicKeyAlgorithm: Double,
+    ) {
+        self.clientDataJSON = clientDataJSON
+        self.authenticatorData = authenticatorData
+        self.publicKey = publicKey
+        self.publicKeyAlgorithm = publicKeyAlgorithm
+    }
+}
+
+public struct PasskeyCreationOptions: Codable, Hashable, Sendable {
+    public let rp: PasskeySite
+    public let user: PasskeyUser
+    public let challenge: String
+    public let pubKeyCredParams: [PasskeyAlgorithm]
+    public let timeout: Int
+    public let excludeCredentials: [PasskeyCredential]
+    public let authenticatorSelection: PasskeySelection
+    public let attestation: String
+
+    public init(
+        rp: PasskeySite,
+        user: PasskeyUser,
+        challenge: String,
+        pubKeyCredParams: [PasskeyAlgorithm],
+        timeout: Int,
+        excludeCredentials: [PasskeyCredential],
+        authenticatorSelection: PasskeySelection,
+        attestation: String,
+    ) {
+        self.rp = rp
+        self.user = user
+        self.challenge = challenge
+        self.pubKeyCredParams = pubKeyCredParams
+        self.timeout = timeout
+        self.excludeCredentials = excludeCredentials
+        self.authenticatorSelection = authenticatorSelection
+        self.attestation = attestation
+    }
+}
+
+public struct PasskeyCredential: Codable, Hashable, Sendable {
+    public let type: String
+    public let id: String
+
+    public init(type: String, id: String) {
+        self.type = type
+        self.id = id
+    }
+}
+
+public struct PasskeyRegistration: Codable, Hashable, Sendable {
+    public let id: String
+    public let type: String
+    public let response: PasskeyAttestation
+
+    public init(id: String, type: String, response: PasskeyAttestation) {
+        self.id = id
+        self.type = type
+        self.response = response
+    }
+}
+
+public struct PasskeyRejected: Codable, Hashable, Sendable {
+    public init() {
+    }
+}
+
+public struct PasskeyRequestOptions: Codable, Hashable, Sendable {
+    public let challenge: String
+    public let rpId: String
+    public let timeout: Int
+    public let userVerification: String
+    public let allowCredentials: [PasskeyCredential]
+
+    public init(
+        challenge: String,
+        rpId: String,
+        timeout: Int,
+        userVerification: String,
+        allowCredentials: [PasskeyCredential],
+    ) {
+        self.challenge = challenge
+        self.rpId = rpId
+        self.timeout = timeout
+        self.userVerification = userVerification
+        self.allowCredentials = allowCredentials
+    }
+}
+
+public struct PasskeySelection: Codable, Hashable, Sendable {
+    public let residentKey: String
+    public let requireResidentKey: Bool
+    public let userVerification: String
+
+    public init(residentKey: String, requireResidentKey: Bool, userVerification: String) {
+        self.residentKey = residentKey
+        self.requireResidentKey = requireResidentKey
+        self.userVerification = userVerification
+    }
+}
+
+public struct PasskeySignature: Codable, Hashable, Sendable {
+    public let clientDataJSON: String
+    public let authenticatorData: String
+    public let signature: String
+    public let userHandle: String?
+
+    public init(
+        clientDataJSON: String,
+        authenticatorData: String,
+        signature: String,
+        userHandle: String? = nil,
+    ) {
+        self.clientDataJSON = clientDataJSON
+        self.authenticatorData = authenticatorData
+        self.signature = signature
+        self.userHandle = userHandle
+    }
+}
+
+public struct PasskeySite: Codable, Hashable, Sendable {
+    public let id: String
+    public let name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
+public struct PasskeyUser: Codable, Hashable, Sendable {
+    public let id: String
+    public let name: String
+    public let displayName: String
+
+    public init(id: String, name: String, displayName: String) {
+        self.id = id
+        self.name = name
+        self.displayName = displayName
+    }
+}
+
 public struct Period: Codable, Hashable, Sendable {
     public let from: Date
     public let to: Date
@@ -1197,6 +1615,7 @@ public struct Phone: Codable, Hashable, Sendable {
     public let appVersion: String
     public let pairedAt: Date
     public let lastSeen: LastSeen?
+    public let member: String?
 
     public init(
         id: String,
@@ -1206,6 +1625,7 @@ public struct Phone: Codable, Hashable, Sendable {
         appVersion: String,
         pairedAt: Date,
         lastSeen: LastSeen? = nil,
+        member: String? = nil,
     ) {
         self.id = id
         self.model = model
@@ -1214,6 +1634,7 @@ public struct Phone: Codable, Hashable, Sendable {
         self.appVersion = appVersion
         self.pairedAt = pairedAt
         self.lastSeen = lastSeen
+        self.member = member
     }
 }
 
@@ -1351,11 +1772,66 @@ public struct SeriesStep: RawRepresentable, Codable, Hashable, Sendable {
     public static let `1d` = SeriesStep(rawValue: "1d")
 }
 
+public struct SetProjects: Codable, Hashable, Sendable {
+    public let projects: [String]
+
+    public init(projects: [String]) {
+        self.projects = projects
+    }
+}
+
 public struct SignIn: Codable, Hashable, Sendable {
     public let token: String
 
     public init(token: String) {
         self.token = token
+    }
+}
+
+public struct SignInList: Codable, Hashable, Sendable {
+    public let signIns: [SignIn_1]
+
+    public init(signIns: [SignIn_1]) {
+        self.signIns = signIns
+    }
+}
+
+public struct SignInNotFound: Codable, Hashable, Sendable {
+    public let signIn: String
+
+    public init(signIn: String) {
+        self.signIn = signIn
+    }
+}
+
+public struct SignIn_1: Codable, Hashable, Sendable {
+    public let id: String
+    public let member: String
+    public let browser: String?
+    public let signedInAt: Date
+    public let seenAt: Date
+    public let address: String?
+    public let country: String?
+    public let current: Bool
+
+    public init(
+        id: String,
+        member: String,
+        browser: String? = nil,
+        signedInAt: Date,
+        seenAt: Date,
+        address: String? = nil,
+        country: String? = nil,
+        current: Bool,
+    ) {
+        self.id = id
+        self.member = member
+        self.browser = browser
+        self.signedInAt = signedInAt
+        self.seenAt = seenAt
+        self.address = address
+        self.country = country
+        self.current = current
     }
 }
 
@@ -1711,11 +2187,16 @@ extension CluenoriAPI {
             case "ComponentNotFound": return .componentNotFound(try jsonDecoder().decode(ComponentNotFound.self, from: data))
             case "ErrorGroupNotFound": return .errorGroupNotFound(try jsonDecoder().decode(ErrorGroupNotFound.self, from: data))
             case "IncidentNotFound": return .incidentNotFound(try jsonDecoder().decode(IncidentNotFound.self, from: data))
+            case "InviteRejected": return .inviteRejected(try jsonDecoder().decode(InviteRejected.self, from: data))
+            case "MemberExists": return .memberExists(try jsonDecoder().decode(MemberExists.self, from: data))
+            case "MemberNotFound": return .memberNotFound(try jsonDecoder().decode(MemberNotFound.self, from: data))
             case "MonitorExists": return .monitorExists(try jsonDecoder().decode(MonitorExists.self, from: data))
             case "MonitorLimitReached": return .monitorLimitReached(try jsonDecoder().decode(MonitorLimitReached.self, from: data))
             case "MonitorNotFound": return .monitorNotFound(try jsonDecoder().decode(MonitorNotFound.self, from: data))
             case "NoPushToken": return .noPushToken(try jsonDecoder().decode(NoPushToken.self, from: data))
+            case "NotAllowed": return .notAllowed(try jsonDecoder().decode(NotAllowed.self, from: data))
             case "PairingCodeRejected": return .pairingCodeRejected(try jsonDecoder().decode(PairingCodeRejected.self, from: data))
+            case "PasskeyRejected": return .passkeyRejected(try jsonDecoder().decode(PasskeyRejected.self, from: data))
             case "PhoneKeyRejected": return .phoneKeyRejected(try jsonDecoder().decode(PhoneKeyRejected.self, from: data))
             case "PhoneNotFound": return .phoneNotFound(try jsonDecoder().decode(PhoneNotFound.self, from: data))
             case "ProjectExists": return .projectExists(try jsonDecoder().decode(ProjectExists.self, from: data))
@@ -1723,6 +2204,7 @@ extension CluenoriAPI {
             case "PushNotSetUp": return .pushNotSetUp(try jsonDecoder().decode(PushNotSetUp.self, from: data))
             case "PushRejected": return .pushRejected(try jsonDecoder().decode(PushRejected.self, from: data))
             case "PushUnavailable": return .pushUnavailable(try jsonDecoder().decode(PushUnavailable.self, from: data))
+            case "SignInNotFound": return .signInNotFound(try jsonDecoder().decode(SignInNotFound.self, from: data))
             case "Unauthorized": return .unauthorized(try jsonDecoder().decode(Unauthorized.self, from: data))
             default: return .unreadable(status: status, reason: "An error this client doesn't know: \(named.error).")
             }

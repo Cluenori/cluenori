@@ -11,7 +11,7 @@ import { OperationPage } from "@/pages/operation-page"
 import { OperationsPage } from "@/pages/operations-page"
 import { OverviewPage } from "@/pages/overview-page"
 import { PerformancePage } from "@/pages/performance-page"
-import { projectsAtom, signOutAtom } from "@/project-data"
+import { meAtom, projectsAtom, signOutAtom } from "@/project-data"
 import type { Route } from "@/router"
 import { Link, useRoute } from "@/router"
 import { AppSidebar } from "@/views/app-sidebar"
@@ -40,6 +40,14 @@ const TracePage = lazy(() => tracePage.then((module) => ({ default: module.Trace
 // Phones, with the QR code encoder, are a page of the deployment, opened now and then.
 const phonesPage = import("@/pages/phones-page")
 const PhonesPage = lazy(() => phonesPage.then((module) => ({ default: module.PhonesPage })))
+
+// Browsers and members, deployment pages too, and accepting an invitation, which a visit opens on.
+const browsersPage = import("@/pages/browsers-page")
+const BrowsersPage = lazy(() => browsersPage.then((module) => ({ default: module.BrowsersPage })))
+const membersPage = import("@/pages/members-page")
+const MembersPage = lazy(() => membersPage.then((module) => ({ default: module.MembersPage })))
+const invitePage = import("@/pages/invite-page")
+const InvitePage = lazy(() => invitePage.then((module) => ({ default: module.InvitePage })))
 
 // While a page that loads after start isn't there yet, on a visit that opens on it.
 const opening = <div className="p-8 text-sm text-muted-foreground">Opening the page…</div>
@@ -159,6 +167,20 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
           <PhonesPage />
         </Suspense>
       )
+    case "browsers":
+      return (
+        <Suspense fallback={opening}>
+          <BrowsersPage />
+        </Suspense>
+      )
+    case "members":
+      return (
+        <Suspense fallback={opening}>
+          <MembersPage />
+        </Suspense>
+      )
+    case "invite":
+      return <NoSuchPage />
     case "kit":
       return (
         <Suspense fallback={<div className="p-8 text-sm text-muted-foreground">Opening the design kit…</div>}>
@@ -181,6 +203,7 @@ const isSignedOut = <A, E extends { readonly _tag: string }>(result: AsyncResult
 function Dashboard() {
   const route = useRoute()
   const projects = useAtomValue(projectsAtom)
+  const me = useAtomValue(meAtom)
   const retry = useAtomRefresh(projectsAtom)
   const signOut = useAtomSet(signOutAtom)
   const [searching, setSearching] = useState(false)
@@ -197,6 +220,14 @@ function Dashboard() {
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
+  // An invitation is accepted signed out, or signed in as someone else: it signs this browser in.
+  if (route.page === "invite") {
+    return (
+      <Suspense fallback={opening}>
+        <InvitePage />
+      </Suspense>
+    )
+  }
   if (route.page !== "kit" && isSignedOut(projects)) {
     return <SignIn />
   }
@@ -233,6 +264,7 @@ function Dashboard() {
         route={route}
         current={current}
         projects={list}
+        owner={AsyncResult.isSuccess(me) && me.value.role === "owner"}
         onSearch={() => setSearching(true)}
         onSignOut={() => signOut()}
       />

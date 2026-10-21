@@ -692,8 +692,16 @@ The configuration files are the specification; this entry says what each one own
   fails the same way.
 - **A key that names where it belongs** (`cluenori.<project>.<component>.<secret>`) lets the Worker
   route it before the owner checks it.
+- **Every request acts for a member, and sees what they see.** The Worker resolves the caller's
+  access once, with the credential (`CurrentMember`), and handlers reach a project's object only
+  through `MemberProjects`, which answers "not found" for a project the member doesn't see, as for
+  one that doesn't exist. A lint rule keeps handlers from importing `ProjectObjects`. Owner-only
+  actions fail with Foundation's `NotAllowed`.
+- **People sign in with passkeys** (`@bagatka/webauthn`); a browser keeps a sign-in token, stored
+  as a digest like every key, and a refused passkey says nothing about why.
 - Canonical examples: ingest keys, `product/engines/projects/src/ingest-key.ts` and `projects.ts`;
-  the API token, `apps/worker/src/member-authorization-layer.ts`.
+  the API token and sign-ins, `apps/worker/src/member-authorization-layer.ts`; access,
+  `apps/worker/src/member-projects.ts`; passkeys and sign-ins, `product/engines/members/src/members.ts`.
 
 ## 23. Dashboard views
 

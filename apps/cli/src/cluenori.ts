@@ -5,6 +5,7 @@ import { check } from "./check.ts"
 import { error, errors, logs, trace } from "./errors-commands.ts"
 import { generate } from "./generate.ts"
 import { acknowledge, incidents, monitor, monitors } from "./incidents-commands.ts"
+import { member, members } from "./members-commands.ts"
 import { load, operation, operations } from "./operations-commands.ts"
 import { phone, phones } from "./phones-commands.ts"
 import { component, project } from "./projects-commands.ts"
@@ -40,6 +41,8 @@ export const cluenori = Command.make("cluenori").pipe(
     acknowledge,
     monitors,
     monitor,
+    members,
+    member,
     phones,
     phone,
     push,

@@ -1,13 +1,15 @@
 import type { Actor } from "@cluenori/foundation"
+import type { Access } from "@cluenori/members"
 import { Context, Schema } from "effect"
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
 
 /**
- * Who is calling the public API: the member its token belongs to, or who paired the phone whose key
- * it is. Handlers act for them.
+ * Who is calling the public API, and what they see: the owner the API token stands for, the member a
+ * browser signed in as, or who paired the phone whose key it is. Handlers act for them, and reach
+ * projects through `MemberProjects`, which keeps to what they see.
  */
-export class CurrentActor extends Context.Service<CurrentActor, Actor>()(
-  "@cluenori/worker/member-authorization/CurrentActor",
+export class CurrentMember extends Context.Service<CurrentMember, { readonly actor: Actor; readonly access: Access }>()(
+  "@cluenori/worker/member-authorization/CurrentMember",
 ) {}
 
 /**
@@ -21,8 +23,9 @@ export class Unauthorized extends Schema.TaggedError<Unauthorized>()(
 ) {}
 
 /**
- * The cookie a browser gets by signing in with the API token (`POST /api/sign-in`): HttpOnly, so the
- * page's scripts can't read it; Secure; SameSite=Strict, so other sites can't send it; for `/api`.
+ * The cookie a browser gets by signing in: a sign-in token, from a passkey, or the API token itself,
+ * an owner's way in (`POST /api/sign-in`). HttpOnly, so the page's scripts can't read it; Secure;
+ * SameSite=Strict, so other sites can't send it; for `/api`.
  */
 export const signInCookie = HttpApiSecurity.apiKey({ key: "cluenori_sign_in", in: "cookie" })
 
@@ -33,7 +36,7 @@ export const signInCookie = HttpApiSecurity.apiKey({ key: "cluenori_sign_in", in
  */
 export class MemberAuthorization extends HttpApiMiddleware.Service<
   MemberAuthorization,
-  { provides: CurrentActor; requires: never }
+  { provides: CurrentMember; requires: never }
 >()("@cluenori/worker/member-authorization/MemberAuthorization", {
   requiredForClient: true,
   // Tried in this order, and a failure says what the last one found: a bearer token's problem, such

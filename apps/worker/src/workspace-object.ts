@@ -1,7 +1,11 @@
 import { webCryptoLayer } from "@bagatka/web-crypto"
-import { ActivityLog, WorkspaceKey } from "@cluenori/foundation"
-import { Notifications } from "@cluenori/notifications"
-import { Phones } from "@cluenori/phones"
+import type { Actor } from "@cluenori/foundation"
+import { ActivityLog, MemberId, WorkspaceKey } from "@cluenori/foundation"
+import type { Access } from "@cluenori/members"
+import { Members } from "@cluenori/members"
+import { NoPushToken, Notifications } from "@cluenori/notifications"
+import type { PhoneId } from "@cluenori/phones"
+import { PhoneKeyRejected, PhoneNotFound, Phones } from "@cluenori/phones"
 import { ProjectIndex } from "@cluenori/projects"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
@@ -13,7 +17,20 @@ import { SyncScheduler } from "./sync-scheduler.ts"
 import type { WorkspaceCallName } from "./workspace-calls.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
 
-type WorkspaceServices = ProjectIndex | Phones | Notifications
+type WorkspaceServices = ProjectIndex | Phones | Notifications | Members
+
+// The owner `./setup` made; the API token stands for them (PATTERNS.md, "Configuration").
+const ownerSetting = Config.option(Config.schema(MemberId, "CLUENORI_OWNER"))
+
+// Whether a member may act on a phone: an owner on any, a member on their own.
+const mayUsePhone = Effect.fn("mayUsePhone")(function* (actor: Actor, access: Access, phone: PhoneId) {
+  if (access._tag === "Everything") {
+    return true
+  }
+  const phones = yield* Phones
+  const found = (yield* phones.phones).phones.find((each) => each.id === phone)
+  return found !== undefined && actor._tag === "Member" && found.member === actor.id
+})
 
 // APNs's key, its IDs, and the app's bundle ID, which `./cluenori push setup` sets as secrets;
 // without them nothing is pushed (PATTERNS.md, "Configuration").
@@ -61,15 +78,27 @@ const servedCalls: Readonly<
       return { phone: paired.phone, key: Redacted.value(paired.key) }
     }),
   ),
+  // A phone of a removed member acts for no one.
   authenticatePhone: serve(workspaceCalls.authenticatePhone, ({ key, caller }) =>
     Effect.gen(function* () {
       const phones = yield* Phones
-      return yield* phones.authenticate(Redacted.make(key), caller)
+      const members = yield* Members
+      const actor = yield* phones.authenticate(Redacted.make(key), caller)
+      if (actor._tag !== "Member") {
+        return yield* new PhoneKeyRejected()
+      }
+      const access = yield* members
+        .accessOf(actor.id)
+        .pipe(Effect.catchTag("MemberNotFound", () => Effect.fail(new PhoneKeyRejected())))
+      return { actor, access }
     }),
   ),
-  removePhone: serve(workspaceCalls.removePhone, ({ actor, phone }) =>
+  removePhone: serve(workspaceCalls.removePhone, ({ actor, access, phone }) =>
     Effect.gen(function* () {
       const phones = yield* Phones
+      if (!(yield* mayUsePhone(actor, access, phone))) {
+        return yield* new PhoneNotFound({ phone })
+      }
       yield* phones.remove(actor, phone)
     }),
   ),
@@ -85,17 +114,116 @@ const servedCalls: Readonly<
       yield* notifications.notify(activity)
     }),
   ),
-  testAlert: serve(workspaceCalls.testAlert, ({ phone }) =>
+  testAlert: serve(workspaceCalls.testAlert, ({ actor, access, phone }) =>
     Effect.gen(function* () {
       const notifications = yield* Notifications
+      if (!(yield* mayUsePhone(actor, access, phone))) {
+        return yield* new NoPushToken({ phone })
+      }
       yield* notifications.testAlert(phone)
+    }),
+  ),
+  signedIn: serve(workspaceCalls.signedIn, ({ token, caller }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      const { member, access } = yield* members.signedIn(Redacted.make(token), caller)
+      const actor: Actor = { _tag: "Member", id: member }
+      return { actor, access }
+    }),
+  ),
+  signOut: serve(workspaceCalls.signOut, (token) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      yield* members.signOut(Redacted.make(token))
+    }),
+  ),
+  signIns: serve(workspaceCalls.signIns, ({ actor, current }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      return yield* members.signIns(actor, current)
+    }),
+  ),
+  endSignIn: serve(workspaceCalls.endSignIn, ({ actor, signIn }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      yield* members.endSignIn(actor, signIn)
+    }),
+  ),
+  me: serve(workspaceCalls.me, (member) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      return yield* members.member(member)
+    }),
+  ),
+  members: serve(workspaceCalls.members, (actor) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      return yield* members.members(actor)
+    }),
+  ),
+  invite: serve(workspaceCalls.invite, ({ actor, invite, site }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      return yield* members.invite(actor, invite, site)
+    }),
+  ),
+  setProjects: serve(workspaceCalls.setProjects, ({ actor, member, projects }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      return yield* members.setProjects(actor, member, projects)
+    }),
+  ),
+  removeMember: serve(workspaceCalls.removeMember, ({ actor, member }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      const phones = yield* Phones
+      yield* members.remove(actor, member)
+      yield* phones.removeAllOf(actor, member)
+    }),
+  ),
+  joinOptions: serve(workspaceCalls.joinOptions, ({ code, site }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      return yield* members.startJoining(code, site)
+    }),
+  ),
+  join: serve(workspaceCalls.join, ({ code, registration, site, caller }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      const joined = yield* members.join(code, registration, site, caller)
+      return { member: joined.member, signIn: Redacted.value(joined.signIn) }
+    }),
+  ),
+  signInOptions: serve(workspaceCalls.signInOptions, (site) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      return yield* members.startSignIn(site)
+    }),
+  ),
+  signIn: serve(workspaceCalls.signIn, ({ assertion, site, caller }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      const signedIn = yield* members.signIn(assertion, site, caller)
+      return { member: signedIn.member, signIn: Redacted.value(signedIn.signIn) }
+    }),
+  ),
+  passkeyOptions: serve(workspaceCalls.passkeyOptions, ({ actor, site }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      return yield* members.startAddingPasskey(actor, site)
+    }),
+  ),
+  addPasskey: serve(workspaceCalls.addPasskey, ({ actor, registration, site }) =>
+    Effect.gen(function* () {
+      const members = yield* Members
+      yield* members.addPasskey(actor, registration, site)
     }),
   ),
 }
 
 /**
  * The workspace's own Durable Object, named `<workspace>`: the records that belong to the whole
- * workspace rather than one project, today the index of its projects and its paired phones, and the
+ * workspace rather than one project: the index of its projects, its members, their phones, and the
  * alerts that reach them. The Worker reaches it through `call`.
  */
 export class WorkspaceObject extends DurableObject<Env> {
@@ -114,9 +242,16 @@ export class WorkspaceObject extends DurableObject<Env> {
         })
       }),
     ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie)
+    const MembersLive = Layer.unwrap(
+      Effect.gen(function* () {
+        const owner = yield* ownerSetting
+        return Members.layer({ owner, crypto: crypto.subtle })
+      }),
+    ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie)
     this.#runtime = ManagedRuntime.make(
       NotificationsLive.pipe(
-        Layer.provideMerge(Layer.mergeAll(ProjectIndex.layer, Phones.layer)),
+        Layer.provideMerge(Layer.mergeAll(Phones.layer, MembersLive)),
+        Layer.provideMerge(ProjectIndex.layer),
         Layer.provide(ActivityLog.layer({ workspace })),
         Layer.provide(webCryptoLayer(crypto)),
         Layer.provide(FetchHttpClient.layer),

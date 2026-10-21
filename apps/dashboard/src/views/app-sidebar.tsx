@@ -4,12 +4,14 @@ import {
   BugIcon,
   LayoutGridIcon,
   LogOutIcon,
+  MonitorIcon,
   MoonIcon,
   PaletteIcon,
   ScrollTextIcon,
   SearchIcon,
   SmartphoneIcon,
   SunIcon,
+  UsersIcon,
 } from "lucide-react"
 import { useState } from "react"
 
@@ -55,10 +57,13 @@ export function AppSidebar({
   route,
   current,
   projects,
+  owner,
   onSearch,
   onSignOut,
 }: {
   readonly route: Route
+  /** Whether who is signed in is an owner, who manages the members. */
+  readonly owner: boolean
   /** The project the page shows, if any. */
   readonly current: ProjectKey | undefined
   readonly projects: ReadonlyArray<{ readonly key: ProjectKey; readonly name: string }>
@@ -163,6 +168,30 @@ export function AppSidebar({
               <span>Phones</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={route.page === "browsers"}
+              tooltip="Browsers"
+              render={<Link to={{ page: "browsers" }} />}
+              className="text-muted-foreground"
+            >
+              <MonitorIcon />
+              <span>Browsers</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          {owner && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={route.page === "members"}
+                tooltip="Members"
+                render={<Link to={{ page: "members" }} />}
+                className="text-muted-foreground"
+              >
+                <UsersIcon />
+                <span>Members</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
           <SidebarMenuItem>
             <SidebarMenuButton
               isActive={route.page === "kit"}

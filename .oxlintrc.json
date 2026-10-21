@@ -102,6 +102,24 @@
       "rules": { "import/no-default-export": "off" }
     },
     {
+      // The public API's handlers reach a project's object only through MemberProjects, which keeps
+      // to the projects the calling member sees.
+      "files": ["apps/worker/src/*-handlers.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "./project-objects.ts",
+                "message": "Handlers reach projects through MemberProjects (./member-projects.ts), which keeps to what the member sees."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       // Layers inside the dashboard (PATTERNS.md, entry 23). Only `src/project-data.ts` asks the API,
       // so where data comes from is one file; only the design kit shows sample data, though views
       // ahead of the API may use its types.

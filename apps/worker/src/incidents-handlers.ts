@@ -2,44 +2,55 @@ import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 
 import { CluenoriApi } from "./cluenori-api.ts"
-import { CurrentActor } from "./member-authorization.ts"
+import { CurrentMember } from "./member-authorization.ts"
+import { MemberProjects } from "./member-projects.ts"
 import { projectCalls } from "./project-calls.ts"
-import { ProjectObjects } from "./project-objects.ts"
 
 /** Serves the incidents group, in each project's Durable Object. */
 export const IncidentsHandlers = HttpApiBuilder.group(CluenoriApi, "incidents", (handlers) =>
   handlers
     .handle("incidents", ({ params }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.incidents, undefined)
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.incidents, undefined)
       }),
     )
     .handle("acknowledge", ({ params }) =>
       Effect.gen(function* () {
-        const actor = yield* CurrentActor
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.acknowledge, { actor, incident: params.incident })
+        const member = yield* CurrentMember
+        const { actor } = member
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.acknowledge, {
+          actor,
+          incident: params.incident,
+        })
       }),
     )
     .handle("monitors", ({ params }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.monitors, undefined)
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.monitors, undefined)
       }),
     )
     .handle("addMonitor", ({ params, payload }) =>
       Effect.gen(function* () {
-        const actor = yield* CurrentActor
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.addMonitor, { actor, monitor: payload })
+        const member = yield* CurrentMember
+        const { actor } = member
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.addMonitor, { actor, monitor: payload })
       }),
     )
     .handle("removeMonitor", ({ params }) =>
       Effect.gen(function* () {
-        const actor = yield* CurrentActor
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.removeMonitor, { actor, monitor: params.monitor })
+        const member = yield* CurrentMember
+        const { actor } = member
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.removeMonitor, {
+          actor,
+          monitor: params.monitor,
+        })
       }),
     ),
 )

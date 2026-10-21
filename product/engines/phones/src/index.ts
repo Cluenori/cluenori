@@ -5,7 +5,6 @@
  */
 export {
   AppVersion,
-  Caller,
   isPhoneKey,
   LastSeen,
   ModelIdentifier,

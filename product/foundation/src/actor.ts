@@ -24,3 +24,9 @@ export const Actor = Schema.Union([
   Schema.TaggedStruct("System", { process: ProcessName }),
 ])
 export type Actor = typeof Actor.Type
+
+/**
+ * The actor may not do this: only an owner invites, removes, or changes who sees what, or creates a
+ * project.
+ */
+export class NotAllowed extends Schema.TaggedError<NotAllowed>()("NotAllowed", {}) {}

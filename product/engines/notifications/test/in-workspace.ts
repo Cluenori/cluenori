@@ -1,11 +1,12 @@
 import { webCryptoLayer } from "@bagatka/web-crypto"
-import { ActivityLog, WorkspaceKey } from "@cluenori/foundation"
+import { ActivityLog, MemberId, WorkspaceKey } from "@cluenori/foundation"
+import { Members } from "@cluenori/members"
 import { Phones } from "@cluenori/phones"
 import { ProjectIndex } from "@cluenori/projects"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 
@@ -49,6 +50,9 @@ export const fakeApns = (reply: ApnsReply) => {
   return { accepted, layer: Layer.succeed(HttpClient.HttpClient, client) }
 }
 
+/** The owner the tests' deployment has, whose phones every alert reaches. */
+export const owner = MemberId.make("0199f7a2-5c1e-7d3a-9b2f-4e8a1c6d0f53")
+
 /**
  * Runs `program` inside the workspace's Durable Object named `name`, starting at the time `now` (Unix
  * ms), with the engine built on its storage the way the host builds it, with `settings`, and with
@@ -59,7 +63,7 @@ export const inWorkspace = <A, E>(
   now: number,
   settings: NotificationsSettings,
   apns: Layer.Layer<HttpClient.HttpClient>,
-  program: Effect.Effect<A, E, Notifications | Phones | ProjectIndex>,
+  program: Effect.Effect<A, E, Notifications | Phones | ProjectIndex | Members>,
 ) =>
   Effect.promise(() =>
     runInDurableObject(env.WORKSPACE.getByName(name), (_instance, state) =>
@@ -68,7 +72,10 @@ export const inWorkspace = <A, E>(
           Effect.andThen(program),
           Effect.provide(
             Notifications.layer(settings).pipe(
-              Layer.provideMerge(Layer.mergeAll(Phones.layer, ProjectIndex.layer)),
+              Layer.provideMerge(
+                Layer.mergeAll(Phones.layer, Members.layer({ owner: Option.some(owner), crypto: crypto.subtle })),
+              ),
+              Layer.provideMerge(ProjectIndex.layer),
               Layer.provide(ActivityLog.layer({ workspace: WorkspaceKey.make("main") })),
               Layer.provideMerge(webCryptoLayer(crypto)),
               Layer.provide(apns),

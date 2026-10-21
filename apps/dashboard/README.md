@@ -2,8 +2,8 @@
 
 The web app over the public API: each project opens on an overview of what needs attention and a
 summary of each area, and each area (performance, errors, logs) has a page of its own, for the whole
-project or one component. The Worker serves it, and a browser signs in with the deployment's API
-token.
+project or one component. The Worker serves it, and a browser signs in with a passkey, or with the
+deployment's API token, an owner's way in. Owners invite members to some projects there.
 
 ## Use it
 
@@ -30,11 +30,15 @@ Pages, each with a permanent URL (`src/router.tsx`):
 /notes/logs                                      warnings and errors over time, and every line, searchable
 /notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
 /phones                                          the paired phones, removing one, and adding one by its QR code
+/browsers                                        the browsers signed in with passkeys, signing one out, and adding a passkey
+/members                                         owners: the members, the projects each sees, inviting and removing
+/invite#<code>                                   accepting an invitation: making a passkey, which signs this browser in
 /kit                                             every view in the theme, to review the design; opens signed out too
 ```
 
-An address with a key that isn't one, such as `/Notes!`, opens a page that says so. `/phones` and
-`/kit` are the deployment's own, so a project with either key has no pages.
+An address with a key that isn't one, such as `/Notes!`, opens a page that says so. `/phones`,
+`/browsers`, `/members`, `/invite` and `/kit` are the deployment's own, so a project with one of
+those keys has no pages.
 
 ## Owns
 
@@ -62,6 +66,9 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
 - **Adding a phone,** `src/pages/phones-page.tsx`: the pairing link as a QR code
   (`src/views/qr-code.tsx`, from `@bagatka/qr-code`), counted down to its expiry, and the phones
   asked for every 3 seconds while it shows, so the page says which phone paired.
+- **Passkeys in the browser,** `src/passkeys.ts`: the API's options for
+  `navigator.credentials`, and what it returns, as the API takes it; a cancelled or impossible
+  ceremony is a problem the pages name (`src/views/passkey-problems.ts`).
 - **Pages and their URLs,** `src/router.tsx`, which decodes an address's keys with the API's own
   schemas.
 
@@ -69,8 +76,9 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
 
 - **Any rule about the data:** what counts as an operation, an error group, or a covered
   period belongs to the engines behind the public API.
-- **The API token and the sign-in cookie:** the Worker checks the token and sets the cookie
-  (`apps/worker`, `POST /api/sign-in`); the page's scripts never see either again.
+- **Credentials and the sign-in cookie:** the Worker checks passkeys and the API token and sets the
+  cookie (`apps/worker`, `@cluenori/members`); the page's scripts never see it.
+- **Who sees what:** the API answers only with what the member sees; the pages show what comes.
 
 ## Depends on
 

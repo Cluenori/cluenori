@@ -1,10 +1,12 @@
+import { NotAllowed } from "@cluenori/foundation"
+import { canSee } from "@cluenori/members"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 
 import { CluenoriApi } from "./cluenori-api.ts"
-import { CurrentActor } from "./member-authorization.ts"
+import { CurrentMember } from "./member-authorization.ts"
+import { MemberProjects } from "./member-projects.ts"
 import { projectCalls } from "./project-calls.ts"
-import { ProjectObjects } from "./project-objects.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
 import { WorkspaceObjects } from "./workspace-objects.ts"
 
@@ -16,14 +18,17 @@ export const ProjectsHandlers = HttpApiBuilder.group(CluenoriApi, "projects", (h
   handlers
     .handle("listProjects", () =>
       Effect.gen(function* () {
+        const member = yield* CurrentMember
         const workspace = yield* WorkspaceObjects
-        return yield* workspace.call(workspaceCalls.projects, undefined)
+        const { projects } = yield* workspace.call(workspaceCalls.projects, undefined)
+        return { projects: projects.filter((project) => canSee(member.access, project.key)) }
       }),
     )
     .handle("project", ({ params }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.detail, undefined)
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.detail, undefined)
       }),
     )
     // The project's own object creates it, then the workspace's index lists it: two objects, no
@@ -32,19 +37,26 @@ export const ProjectsHandlers = HttpApiBuilder.group(CluenoriApi, "projects", (h
     // and lists projects made before the index existed.
     .handle("createProject", ({ payload }) =>
       Effect.gen(function* () {
-        const actor = yield* CurrentActor
-        const objects = yield* ProjectObjects
+        const member = yield* CurrentMember
+        const { actor } = member
+        if (member.access._tag !== "Everything") {
+          return yield* new NotAllowed()
+        }
+        const projects = yield* MemberProjects
         const workspace = yield* WorkspaceObjects
-        const created = yield* objects
-          .call(payload.key, projectCalls.createProject, { actor, name: payload.name })
+        // An owner sees every project, so the project is never hidden from them.
+        const created = yield* projects
+          .call(member, payload.key, projectCalls.createProject, { actor, name: payload.name })
           .pipe(
-            Effect.catchTag("ProjectExists", (exists) =>
-              objects.call(payload.key, projectCalls.detail, undefined).pipe(
-                Effect.orDie,
-                Effect.flatMap((existing) => workspace.call(workspaceCalls.recordProject, existing.project)),
-                Effect.andThen(Effect.fail(exists)),
-              ),
-            ),
+            Effect.catchTags({
+              ProjectNotFound: (hidden) => Effect.die(hidden),
+              ProjectExists: (exists) =>
+                projects.call(member, payload.key, projectCalls.detail, undefined).pipe(
+                  Effect.orDie,
+                  Effect.flatMap((existing) => workspace.call(workspaceCalls.recordProject, existing.project)),
+                  Effect.andThen(Effect.fail(exists)),
+                ),
+            }),
           )
         yield* workspace.call(workspaceCalls.recordProject, created)
         return created
@@ -52,9 +64,10 @@ export const ProjectsHandlers = HttpApiBuilder.group(CluenoriApi, "projects", (h
     )
     .handle("addComponent", ({ params, payload }) =>
       Effect.gen(function* () {
-        const actor = yield* CurrentActor
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.addComponent, { actor, component: payload })
+        const member = yield* CurrentMember
+        const { actor } = member
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.addComponent, { actor, component: payload })
       }),
     ),
 )

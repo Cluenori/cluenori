@@ -15,7 +15,7 @@ Self-hosting has three steps. The cost starts at the $5 minimum of Workers Paid.
 Until Cluenori replaces my current tools, `./setup` must work only for me. These items come later:
 
 - **One-click deploy:** a [Deploy to Cloudflare button](https://developers.cloudflare.com/workers/platform/deploy-buttons/) copies the repository to the GitHub or GitLab account of the founder, makes R2, KV, Durable Objects and Queues, and deploys. It does not make Pipelines, and it needs a public repository. Thus `./setup` stays the main method.
-- **Dashboard login, self-hosted:** [Cloudflare Access](https://www.cloudflare.com/en-gb/products/zero-trust/access) adds a login page to the dashboard. It is free for teams of fewer than 50 users, so there is no authentication code to maintain.
+- **Dashboard login, self-hosted:** built with passkeys (`@cluenori/members`): an owner invites members to some projects by a link, and each signs in with Face ID, Touch ID or a PIN, with no password and no other product to set up. Cloudflare Access was the plan, but it needs a Zero Trust setup per deployment and keeps members' emails in two places.
 - **Dashboard login, official hosting:** [WorkOS](https://workos.com/pricing.md) AuthKit is free for up to 1 million monthly active users. SSO costs $125 for each connection, so SSO is for a paid team plan.
 
 ## Payments providers

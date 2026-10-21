@@ -1,4 +1,5 @@
 import { IncidentsGroup } from "@cluenori/incidents"
+import { MembersGroup, PasskeysGroup } from "@cluenori/members"
 import { NotificationsGroup } from "@cluenori/notifications"
 import { PairingGroup, PhonePushGroup, PhonesGroup } from "@cluenori/phones"
 import { ProjectsGroup } from "@cluenori/projects"
@@ -51,6 +52,8 @@ export class SignInGroup extends HttpApiGroup.make("signIn", { topLevel: true })
 export class CluenoriApi extends HttpApi.make("cluenori")
   .add(SystemGroup)
   .add(SignInGroup)
+  .add(PasskeysGroup)
+  .add(MembersGroup.middleware(MemberAuthorization))
   .add(ProjectsGroup.middleware(MemberAuthorization))
   .add(SignalsGroup.middleware(MemberAuthorization))
   .add(IncidentsGroup.middleware(MemberAuthorization))

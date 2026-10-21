@@ -5,22 +5,29 @@ import { HttpApiBuilder } from "effect/http-api"
 
 import { callerOf } from "./caller.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
-import { CurrentActor } from "./member-authorization.ts"
+import { CurrentMember } from "./member-authorization.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
 import { WorkspaceObjects } from "./workspace-objects.ts"
 
 /** Serves the phones group, in the workspace's Durable Object. */
 export const PhonesHandlers = HttpApiBuilder.group(CluenoriApi, "phones", (handlers) =>
   handlers
+    // An owner sees every phone; a member, their own.
     .handle("phones", () =>
       Effect.gen(function* () {
+        const { actor, access } = yield* CurrentMember
         const workspace = yield* WorkspaceObjects
-        return yield* workspace.call(workspaceCalls.phones, undefined)
+        const { phones } = yield* workspace.call(workspaceCalls.phones, undefined)
+        return {
+          phones: phones.filter(
+            (phone) => access._tag === "Everything" || (actor._tag === "Member" && phone.member === actor.id),
+          ),
+        }
       }),
     )
     .handle("startPairing", () =>
       Effect.gen(function* () {
-        const actor = yield* CurrentActor
+        const { actor } = yield* CurrentMember
         const request = yield* HttpServerRequest.HttpServerRequest
         const workspace = yield* WorkspaceObjects
         // Phones reach the deployment where this request did.
@@ -30,9 +37,9 @@ export const PhonesHandlers = HttpApiBuilder.group(CluenoriApi, "phones", (handl
     )
     .handle("removePhone", ({ params }) =>
       Effect.gen(function* () {
-        const actor = yield* CurrentActor
+        const { actor, access } = yield* CurrentMember
         const workspace = yield* WorkspaceObjects
-        yield* workspace.call(workspaceCalls.removePhone, { actor, phone: params.phone })
+        yield* workspace.call(workspaceCalls.removePhone, { actor, access, phone: params.phone })
       }),
     ),
 )
@@ -68,8 +75,9 @@ export const PhonePushHandlers = HttpApiBuilder.group(CluenoriApi, "phonePush", 
 export const NotificationsHandlers = HttpApiBuilder.group(CluenoriApi, "notifications", (handlers) =>
   handlers.handle("testAlert", ({ params }) =>
     Effect.gen(function* () {
+      const { actor, access } = yield* CurrentMember
       const workspace = yield* WorkspaceObjects
-      yield* workspace.call(workspaceCalls.testAlert, { phone: params.phone })
+      yield* workspace.call(workspaceCalls.testAlert, { actor, access, phone: params.phone })
     }),
   ),
 )

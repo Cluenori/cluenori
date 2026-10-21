@@ -20,6 +20,7 @@
         "@bagatka/workspace-rules": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/members": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/signals": "workspace:*",
@@ -33,9 +34,11 @@
       "name": "@cluenori/dashboard",
       "dependencies": {
         "@bagatka/qr-code": "workspace:*",
+        "@bagatka/webauthn": "workspace:*",
         "@base-ui/react": "catalog:",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/members": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/signals": "workspace:*",
@@ -80,8 +83,10 @@
       "dependencies": {
         "@bagatka/otlp": "workspace:*",
         "@bagatka/web-crypto": "workspace:*",
+        "@bagatka/webauthn": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/members": "workspace:*",
         "@cluenori/notifications": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
@@ -164,6 +169,16 @@
         "vitest": "catalog:",
       },
     },
+    "packages/webauthn": {
+      "name": "@bagatka/webauthn",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/workspace-rules": {
       "name": "@bagatka/workspace-rules",
       "dependencies": {
@@ -192,18 +207,37 @@
         "wrangler": "catalog:",
       },
     },
+    "product/engines/members": {
+      "name": "@cluenori/members",
+      "dependencies": {
+        "@bagatka/webauthn": "workspace:*",
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/projects": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
     "product/engines/notifications": {
       "name": "@cluenori/notifications",
       "dependencies": {
         "@bagatka/apns": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/members": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
         "@bagatka/web-crypto": "workspace:*",
+        "@bagatka/webauthn": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
@@ -296,9 +330,11 @@
     "tests/journeys": {
       "name": "@cluenori/journeys",
       "devDependencies": {
+        "@bagatka/webauthn": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
+        "@cluenori/members": "workspace:*",
         "@cluenori/notifications": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
@@ -371,6 +407,8 @@
 
     "@bagatka/web-crypto": ["@bagatka/web-crypto@workspace:packages/web-crypto"],
 
+    "@bagatka/webauthn": ["@bagatka/webauthn@workspace:packages/webauthn"],
+
     "@bagatka/workspace-rules": ["@bagatka/workspace-rules@workspace:packages/workspace-rules"],
 
     "@base-ui/react": ["@base-ui/react@1.9.0", "", { "dependencies": { "@babel/runtime": "^7.29.7 || ^8.0.0", "@base-ui/utils": "0.5.0", "@floating-ui/react-dom": "^2.1.9", "@floating-ui/utils": "^0.2.12", "use-sync-external-store": "^1.7.0" }, "peerDependencies": { "@date-fns/tz": "^1.2.0", "@types/react": "^17 || ^18 || ^19", "date-fns": "^4.0.0", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" }, "optionalPeers": ["@date-fns/tz", "@types/react", "date-fns"] }, "sha512-S8CSYosASBKtpL8SWUfS78rFElfLijiCgA7oHOK22jCJ95FULsYyKwBNFOgudt0RA+/7yNc7F81bOvQnRgbBiQ=="],
@@ -404,6 +442,8 @@
     "@cluenori/incidents": ["@cluenori/incidents@workspace:product/engines/incidents"],
 
     "@cluenori/journeys": ["@cluenori/journeys@workspace:tests/journeys"],
+
+    "@cluenori/members": ["@cluenori/members@workspace:product/engines/members"],
 
     "@cluenori/notifications": ["@cluenori/notifications@workspace:product/engines/notifications"],
 

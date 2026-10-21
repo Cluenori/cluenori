@@ -19,15 +19,17 @@ describe("start journey", () => {
         expect.element(screen.getByRole("heading", { name: "Sign in to Cluenori" })).toBeVisible(),
       )
       yield* expectAccessible()
+      // A passkey is the first way in; the token is one step away.
+      yield* Effect.promise(() => screen.getByRole("button", { name: "Use the API token instead" }).click())
       const token = screen.getByLabelText("API token")
       yield* Effect.promise(() => token.fill("not-the-token"))
-      yield* Effect.promise(() => screen.getByRole("button", { name: "Sign in" }).click())
+      yield* Effect.promise(() => screen.getByRole("button", { name: "Sign in with the token" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("alert")).toHaveTextContent("The API token is wrong."),
       )
 
       yield* Effect.promise(() => token.fill(notesToken))
-      yield* Effect.promise(() => screen.getByRole("button", { name: "Sign in" }).click())
+      yield* Effect.promise(() => screen.getByRole("button", { name: "Sign in with the token" }).click())
       // The start shows the first project.
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Notes" })).toBeVisible(),

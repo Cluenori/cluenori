@@ -1,10 +1,11 @@
+import type { Caller, MemberId } from "@cluenori/foundation"
 import { ActivityLog, Actor, Instant, Source } from "@cluenori/foundation"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Base64Url, Hex } from "effect/encoding"
 import { SqlClient, SqlSchema } from "effect/sql"
 
 import { appleModels } from "./apple-models.ts"
-import type { Caller, Pairing, PairPhone, PhoneList, RegisterPush } from "./phone.ts"
+import type { Pairing, PairPhone, PhoneList, RegisterPush } from "./phone.ts"
 import {
   AppVersion,
   ModelIdentifier,
@@ -56,8 +57,12 @@ const PhoneRow = Schema.Struct({
   seenAt: Schema.NullOr(Schema.Int),
   address: Schema.NullOr(Schema.String),
   country: Schema.NullOr(Schema.String),
+  actor: Schema.fromJsonString(Actor),
 })
 type PhoneRow = typeof PhoneRow.Type
+
+// The member an actor is, if a member.
+const memberOf = (actor: Actor) => (actor._tag === "Member" ? { member: actor.id } : {})
 
 const phoneOf = (row: PhoneRow) =>
   new Phone({
@@ -67,6 +72,7 @@ const phoneOf = (row: PhoneRow) =>
     systemVersion: row.systemVersion,
     appVersion: row.appVersion,
     pairedAt: row.pairedAt,
+    ...memberOf(row.actor),
     ...(row.seenAt === null
       ? {}
       : {
@@ -116,6 +122,11 @@ export class Phones extends Context.Service<
      */
     readonly remove: (actor: Actor, phone: PhoneId) => Effect.Effect<void, PhoneNotFound>
     /**
+     * Removes every phone acting for `member`, each with `phone.removed`: their keys stop working at
+     * once. None is nothing to remove.
+     */
+    readonly removeAllOf: (actor: Actor, member: MemberId) => Effect.Effect<void>
+    /**
      * Keeps the push token of the phone whose key this is, in place of any before; a token another
      * phone had moves to this one. Authenticates the key as `authenticate` does, and fails the same
      * way. Without activity: iOS changes a token on its own.
@@ -155,7 +166,7 @@ export class Phones extends Context.Service<
       const encodeActor = Schema.encodeEffect(Schema.fromJsonString(Actor))
 
       const phoneColumns = sql`p.id, p.model, p.system_version AS "systemVersion", p.app_version AS "appVersion",
-        p.paired_at AS "pairedAt", s.at AS "seenAt", s.address, s.country`
+        p.paired_at AS "pairedAt", s.at AS "seenAt", s.address, s.country, p.actor`
 
       const findPhones = SqlSchema.findAll({
         Request: Schema.Void,
@@ -167,9 +178,9 @@ export class Phones extends Context.Service<
 
       const findKey = SqlSchema.findOneOption({
         Request: PhoneId,
-        Result: Schema.Struct({ ...PhoneRow.fields, digest: Schema.String, actor: Schema.fromJsonString(Actor) }),
+        Result: Schema.Struct({ ...PhoneRow.fields, digest: Schema.String }),
         execute: (id) => sql`
-          SELECT ${phoneColumns}, p.key_digest AS "digest", p.actor
+          SELECT ${phoneColumns}, p.key_digest AS "digest"
           FROM phones_phones p LEFT JOIN phones_seen s ON s.phone = p.id WHERE p.id = ${id}`,
       })
 
@@ -248,14 +259,16 @@ export class Phones extends Context.Service<
           seenAt: millis,
           address: caller.address ?? null,
           country: caller.country ?? null,
+          actor,
         })
         return { phone, key: Redacted.make(key) }
       })
 
       const findPushTargets = SqlSchema.findAll({
         Request: Schema.Void,
-        Result: PushTarget,
-        execute: () => sql`SELECT phone, token, environment FROM phones_push ORDER BY phone`,
+        Result: Schema.Struct({ ...PushTarget.fields, actor: Schema.fromJsonString(Actor) }),
+        execute: () => sql`SELECT u.phone, u.token, u.environment, p.actor
+          FROM phones_push u JOIN phones_phones p ON p.id = u.phone ORDER BY u.phone`,
       })
 
       // The phone whose key this is, and who it acts for.
@@ -322,7 +335,18 @@ export class Phones extends Context.Service<
           .pipe(Effect.orDie)
       })
 
-      const pushTargets = findPushTargets(undefined).pipe(Effect.orDie, Effect.withSpan("Phones.pushTargets"))
+      const pushTargets = findPushTargets(undefined).pipe(
+        Effect.orDie,
+        Effect.map((rows) => rows.map(({ actor, ...target }): PushTarget => ({ ...target, ...memberOf(actor) }))),
+        Effect.withSpan("Phones.pushTargets"),
+      )
+
+      const removeAllOf = Effect.fn("Phones.removeAllOf")(function* (actor: Actor, member: MemberId) {
+        const { phones: listed } = yield* phones
+        for (const phone of listed.filter((each) => each.member === member)) {
+          yield* remove(actor, phone.id).pipe(Effect.catchTag("PhoneNotFound", () => Effect.void))
+        }
+      })
 
       const forgetPushToken = Effect.fn("Phones.forgetPushToken")(function* (target: PushTarget) {
         yield* sql`DELETE FROM phones_push WHERE phone = ${target.phone} AND token = ${target.token}`.pipe(Effect.orDie)
@@ -356,6 +380,7 @@ export class Phones extends Context.Service<
         authenticate,
         phones,
         remove,
+        removeAllOf,
         registerPush,
         pushTargets,
         forgetPushToken,

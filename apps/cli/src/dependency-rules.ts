@@ -117,7 +117,8 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     folders: "tests/journeys",
     name: "@cluenori/journeys",
     contract: false,
-    mayUse: ["product/foundation", "product/engines/*", "apps/worker"],
+    // Capabilities too, for what a journey plays a client with, such as a passkey's authenticator.
+    mayUse: ["packages/*", "product/foundation", "product/engines/*", "apps/worker"],
     mayInstall: [],
     mayInstallForDevelopment: ["effect", "@cloudflare/vitest-plugin", "wrangler", ...forTests],
   },

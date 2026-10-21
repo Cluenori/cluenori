@@ -1,7 +1,26 @@
-import { Actor, Envelope } from "@cluenori/foundation"
+import { CreationOptions, RegistrationResponse, RequestOptions, AssertionResponse } from "@bagatka/webauthn"
+import { Actor, Envelope, MemberId, NotAllowed, ProjectKey } from "@cluenori/foundation"
+import { Caller } from "@cluenori/foundation"
+import {
+  Access,
+  Invite,
+  InviteCode,
+  InviteMember,
+  InviteRejected,
+  Member,
+  MemberExists,
+  MemberList,
+  MemberNotFound,
+  PasskeyRejected,
+  SignInId,
+  SignInList,
+  SignInNotFound,
+  SignInRejected,
+  SignInToken,
+  Site,
+} from "@cluenori/members"
 import { NoPushToken, PushNotSetUp, PushRejected, PushUnavailable } from "@cluenori/notifications"
 import {
-  Caller,
   PairedPhone,
   Pairing,
   PairingCodeRejected,
@@ -13,7 +32,7 @@ import {
   PhoneNotFound,
   RegisterPush,
 } from "@cluenori/phones"
-import { Project, ProjectList } from "@cluenori/projects"
+import { Project, ProjectList, ProjectNotFound } from "@cluenori/projects"
 import { Schema } from "effect"
 
 import type { ObjectCall, PlainSchema } from "./object-calls.ts"
@@ -30,6 +49,21 @@ export type WorkspaceCallName =
   | "registerPush"
   | "notify"
   | "testAlert"
+  | "signedIn"
+  | "signOut"
+  | "signIns"
+  | "endSignIn"
+  | "me"
+  | "members"
+  | "invite"
+  | "setProjects"
+  | "removeMember"
+  | "joinOptions"
+  | "join"
+  | "signInOptions"
+  | "signIn"
+  | "passkeyOptions"
+  | "addPasskey"
 
 /** One thing the Worker asks the workspace's Durable Object: its input, its answer, and how it fails. */
 export type WorkspaceCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> = ObjectCall<
@@ -46,6 +80,12 @@ const workspaceCall = <I extends PlainSchema, S extends PlainSchema, F extends P
   error: F,
 ): WorkspaceCall<I, S, F> => objectCall(name, input, success, error)
 
+/** Who calls, and what they see. */
+export const Calling = Schema.Struct({ actor: Actor, access: Access })
+
+/** A member just signed in, with their browser's sign-in token. */
+const SignedIn = Schema.Struct({ member: Member, signIn: SignInToken })
+
 /** What the Worker asks the workspace's Durable Object, one entry per call. */
 export const workspaceCalls = {
   recordProject: workspaceCall("recordProject", Project, Schema.Void, Schema.Never),
@@ -59,15 +99,17 @@ export const workspaceCalls = {
   ),
   // The phone's new key crosses to the Worker only in the answer, and then to the phone.
   pair: workspaceCall("pair", Schema.Struct({ phone: PairPhone, caller: Caller }), PairedPhone, PairingCodeRejected),
+  // Who a phone's key acts for, and what they see: one request before the call's own.
   authenticatePhone: workspaceCall(
     "authenticatePhone",
     Schema.Struct({ key: PhoneKey, caller: Caller }),
-    Actor,
+    Calling,
     PhoneKeyRejected,
   ),
+  // An owner removes any phone; a member, only their own: another's is not found.
   removePhone: workspaceCall(
     "removePhone",
-    Schema.Struct({ actor: Actor, phone: PhoneId }),
+    Schema.Struct({ ...Calling.fields, phone: PhoneId }),
     Schema.Void,
     PhoneNotFound,
   ),
@@ -78,10 +120,74 @@ export const workspaceCalls = {
     PhoneKeyRejected,
   ),
   notify: workspaceCall("notify", Schema.Array(Envelope), Schema.Void, PushUnavailable),
+  // An owner rings any phone; a member, only their own: another's has no push token for them.
   testAlert: workspaceCall(
     "testAlert",
-    Schema.Struct({ phone: PhoneId }),
+    Schema.Struct({ ...Calling.fields, phone: PhoneId }),
     Schema.Void,
     Schema.Union([PushNotSetUp, NoPushToken, PushRejected, PushUnavailable]),
+  ),
+  // Who a browser's sign-in is for, and what they see: one request before the call's own.
+  signedIn: workspaceCall("signedIn", Schema.Struct({ token: SignInToken, caller: Caller }), Calling, SignInRejected),
+  signOut: workspaceCall("signOut", SignInToken, Schema.Void, Schema.Never),
+  signIns: workspaceCall(
+    "signIns",
+    Schema.Struct({ actor: Actor, current: Schema.optionalKey(SignInId) }),
+    SignInList,
+    Schema.Never,
+  ),
+  endSignIn: workspaceCall("endSignIn", Schema.Struct({ actor: Actor, signIn: SignInId }), Schema.Void, SignInNotFound),
+  me: workspaceCall("me", MemberId, Member, MemberNotFound),
+  members: workspaceCall("members", Actor, MemberList, NotAllowed),
+  invite: workspaceCall(
+    "invite",
+    Schema.Struct({ actor: Actor, invite: InviteMember, site: Site }),
+    Invite,
+    Schema.Union([NotAllowed, MemberExists, ProjectNotFound]),
+  ),
+  setProjects: workspaceCall(
+    "setProjects",
+    Schema.Struct({ actor: Actor, member: MemberId, projects: Schema.Array(ProjectKey) }),
+    Member,
+    Schema.Union([NotAllowed, MemberNotFound, ProjectNotFound]),
+  ),
+  // The member, then their phones, which stop working too.
+  removeMember: workspaceCall(
+    "removeMember",
+    Schema.Struct({ actor: Actor, member: MemberId }),
+    Schema.Void,
+    Schema.Union([NotAllowed, MemberNotFound]),
+  ),
+  joinOptions: workspaceCall(
+    "joinOptions",
+    Schema.Struct({ code: InviteCode, site: Site }),
+    CreationOptions,
+    InviteRejected,
+  ),
+  // The new sign-in's token crosses to the Worker only in the answer, and then to the cookie.
+  join: workspaceCall(
+    "join",
+    Schema.Struct({ code: InviteCode, registration: RegistrationResponse, site: Site, caller: Caller }),
+    SignedIn,
+    Schema.Union([InviteRejected, PasskeyRejected]),
+  ),
+  signInOptions: workspaceCall("signInOptions", Site, RequestOptions, Schema.Never),
+  signIn: workspaceCall(
+    "signIn",
+    Schema.Struct({ assertion: AssertionResponse, site: Site, caller: Caller }),
+    SignedIn,
+    PasskeyRejected,
+  ),
+  passkeyOptions: workspaceCall(
+    "passkeyOptions",
+    Schema.Struct({ actor: Actor, site: Site }),
+    CreationOptions,
+    NotAllowed,
+  ),
+  addPasskey: workspaceCall(
+    "addPasskey",
+    Schema.Struct({ actor: Actor, registration: RegistrationResponse, site: Site }),
+    Schema.Void,
+    Schema.Union([NotAllowed, PasskeyRejected]),
   ),
 }

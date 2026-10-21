@@ -1,6 +1,8 @@
 import type { ApnsCredentials, ApnsPush, ApnsSigning } from "@bagatka/apns"
 import { Apns } from "@bagatka/apns"
-import type { Envelope } from "@cluenori/foundation"
+import type { Envelope, MemberId, ProjectKey } from "@cluenori/foundation"
+import type { Access } from "@cluenori/members"
+import { canSee, Members } from "@cluenori/members"
 import type { PhoneId, PushTarget } from "@cluenori/phones"
 import { Phones } from "@cluenori/phones"
 import { ProjectIndex } from "@cluenori/projects"
@@ -40,8 +42,8 @@ export class Notifications extends Context.Service<
   Notifications,
   {
     /**
-     * Alerts every phone with a push token about the incident activity among `activity`, at its
-     * level: an alarm when Down or Failing opens or gets worse; time sensitive when Stopped opens or
+     * Alerts every phone with a push token whose member sees the project about the incident
+     * activity among `activity`, at its level: an alarm when Down or Failing opens or gets worse; time sensitive when Stopped opens or
      * any incident reopens; quiet when one recovers or someone acknowledges it, which also stops its
      * alarm. Nothing about an incident someone is on, nor for other activity. An alarm more than 10
      * minutes late comes as time sensitive.
@@ -68,7 +70,7 @@ export class Notifications extends Context.Service<
   ): Layer.Layer<
     Notifications,
     never,
-    SqlClient.SqlClient | Phones | ProjectIndex | Crypto.Crypto | HttpClient.HttpClient
+    SqlClient.SqlClient | Phones | ProjectIndex | Members | Crypto.Crypto | HttpClient.HttpClient
   > =>
     Option.match(settings.push, {
       onNone: () => Layer.effect(Notifications, make(Option.none())),
@@ -94,6 +96,7 @@ const make = (push: Option.Option<Pushing>) =>
     const sql = yield* SqlClient.SqlClient
     const phones = yield* Phones
     const index = yield* ProjectIndex
+    const members = yield* Members
     const crypto = yield* Crypto.Crypto
     yield* migrateNotifications.pipe(Effect.orDie)
 
@@ -143,9 +146,27 @@ const make = (push: Option.Option<Pushing>) =>
         Effect.orDie,
         Effect.map((rows) => new Set(rows.map((row) => `${row.envelope} ${row.phone}`))),
       )
+      // What each phone's member sees, asked once per notify; a removed member's phones see nothing.
+      const accesses = new Map<MemberId, Access>()
+      const sees = Effect.fn("Notifications.sees")(function* (member: MemberId | undefined, project: ProjectKey) {
+        if (member === undefined) {
+          return false
+        }
+        const known = accesses.get(member)
+        const access =
+          known ??
+          (yield* members
+            .accessOf(member)
+            .pipe(Effect.orElseSucceed((): Access => ({ _tag: "Projects", projects: [] }))))
+        accesses.set(member, access)
+        return canSee(access, project)
+      })
       for (const { entry, alert } of alerts) {
         for (const target of targets) {
           if (sent.has(`${entry} ${target.phone}`)) {
+            continue
+          }
+          if (alert.incident === undefined || !(yield* sees(target.member, alert.incident.project))) {
             continue
           }
           const answer = yield* sendTo(push.value, target, alert)

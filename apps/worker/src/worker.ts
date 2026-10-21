@@ -10,11 +10,12 @@ import { ApiToken } from "./api-token.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
 import { IncidentsHandlers } from "./incidents-handlers.ts"
 import { memberAuthorizationLayer } from "./member-authorization-layer.ts"
+import { MemberProjects } from "./member-projects.ts"
 import { OtlpLogs, OtlpMetrics, OtlpTraces } from "./otlp-ingest.ts"
 import { NotificationsHandlers, PairingHandlers, PhonePushHandlers, PhonesHandlers } from "./phones-handlers.ts"
 import { ProjectObjects } from "./project-objects.ts"
 import { ProjectsHandlers } from "./projects-handlers.ts"
-import { SignInHandlers } from "./sign-in-handlers.ts"
+import { MembersHandlers, PasskeysHandlers, SignInHandlers } from "./sign-in-handlers.ts"
 import { SignalsHandlers } from "./signals-handlers.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 import { SystemHandlers } from "./system-handlers.ts"
@@ -54,6 +55,8 @@ const Workspace = Layer.unwrap(
 const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi.json" }).pipe(
   Layer.provide(SystemHandlers),
   Layer.provide(SignInHandlers),
+  Layer.provide(PasskeysHandlers),
+  Layer.provide(MembersHandlers),
   Layer.provide(ProjectsHandlers),
   Layer.provide(SignalsHandlers),
   Layer.provide(IncidentsHandlers),
@@ -63,6 +66,9 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
   Layer.provide(NotificationsHandlers),
   Layer.provide(TodayHandlers),
   Layer.provide(memberAuthorizationLayer),
+  // Handlers reach projects only through it, which keeps to what the member sees (.oxlintrc.json);
+  // they ask for it per request, so it is an output.
+  Layer.provideMerge(MemberProjects.layer),
   Layer.provideMerge(
     Layer.unwrap(
       Effect.gen(function* () {

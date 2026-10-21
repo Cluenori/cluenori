@@ -12,8 +12,9 @@ import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 
 import { CluenoriApi } from "./cluenori-api.ts"
+import { CurrentMember } from "./member-authorization.ts"
+import { MemberProjects } from "./member-projects.ts"
 import { projectCalls } from "./project-calls.ts"
-import { ProjectObjects } from "./project-objects.ts"
 
 // The filters every question shares: the period, and optionally one environment or component.
 const queryOf = (filters: typeof LogFilters.Type | typeof LogCountFilters.Type): ErrorQuery => ({
@@ -50,14 +51,16 @@ export const SignalsHandlers = HttpApiBuilder.group(CluenoriApi, "signals", (han
   handlers
     .handle("operations", ({ params, query }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.operations, operationQueryOf(query))
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.operations, operationQueryOf(query))
       }),
     )
     .handle("load", ({ params, query }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.loadOverTime, {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.loadOverTime, {
           query: operationQueryOf(query),
           step: query.step,
         })
@@ -65,38 +68,47 @@ export const SignalsHandlers = HttpApiBuilder.group(CluenoriApi, "signals", (han
     )
     .handle("keptTraces", ({ params, query }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.keptTraces, operationQueryOf(query))
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.keptTraces, operationQueryOf(query))
       }),
     )
     .handle("errors", ({ params, query }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.errors, queryOf(query))
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.errors, queryOf(query))
       }),
     )
     .handle("error", ({ params, query }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.error, { id: params.error, query: queryOf(query) })
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.error, {
+          id: params.error,
+          query: queryOf(query),
+        })
       }),
     )
     .handle("logs", ({ params, query }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.logs, logQueryOf(query))
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.logs, logQueryOf(query))
       }),
     )
     .handle("logCounts", ({ params, query }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.logCounts, logCountQueryOf(query))
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.logCounts, logCountQueryOf(query))
       }),
     )
     .handle("trace", ({ params, query }) =>
       Effect.gen(function* () {
-        const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.trace, {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.trace, {
           trace: params.trace,
           ...(query.around === undefined ? {} : { around: query.around }),
         })

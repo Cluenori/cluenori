@@ -24,7 +24,7 @@ const actor = yield* phones.authenticate(key, caller)
 
 ## Owns
 
-- **Data:** phones with their keys' digests and who they act for (`phones_phones`), when and where
+- **Data:** phones with their keys' digests and the member they act for (`phones_phones`), when and where
   each last called (`phones_seen`), open pairings by their code's digest (`phones_pairings`), and
   the push token each last registered, with its APNs environment (`phones_push`).
 - **Rules:**

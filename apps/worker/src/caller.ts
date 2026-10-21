@@ -1,4 +1,5 @@
-import type { Caller } from "@cluenori/phones"
+import type { Caller } from "@cluenori/foundation"
+import type { Site } from "@cluenori/members"
 import type { HttpServerRequest } from "effect/http"
 
 /**
@@ -15,4 +16,13 @@ export const callerOf = (request: HttpServerRequest.HttpServerRequest): Caller =
     ...(country === undefined || country === "XX" ? {} : { country }),
     ...(userAgent === undefined ? {} : { userAgent }),
   }
+}
+
+/**
+ * Where a passkey ceremony runs: the origin the browser reached, and its hostname, which a passkey
+ * belongs to. Behind a custom domain, that domain; on workers.dev, the workers.dev name.
+ */
+export const siteOf = (request: HttpServerRequest.HttpServerRequest): Site => {
+  const url = new URL(request.originalUrl)
+  return { origin: url.origin, rpId: url.hostname }
 }
