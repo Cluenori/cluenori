@@ -59,9 +59,9 @@ struct PairSteps: View {
             }
             PairStep(number: 3) {
                 Text(
-                    "Point this iPhone's Camera at the code, and tap the link.",
+                    "Tap Scan the Code, and point this iPhone at it.",
                     bundle: #bundle,
-                    comment: "Third pairing step."
+                    comment: "Third pairing step: the button below."
                 )
             }
         }
@@ -90,6 +90,7 @@ struct PairStep<Content: View>: View {
 
 struct PairFooter: View {
     let pairing: PairingModel
+    @State private var isScanRequested = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -113,6 +114,7 @@ struct PairFooter: View {
                 .buttonStyle(.glassProminent)
                 .controlSize(.large)
             } else {
+                ScanPairingCodeButton(isRequested: $isScanRequested)
                 VStack(spacing: 8) {
                     Text(
                         "Or copy the link on the web, and paste it here.",
@@ -130,6 +132,7 @@ struct PairFooter: View {
                 }
             }
         }
+        .scansPairingCode($isScanRequested, pairing: pairing)
     }
 }
 

@@ -130,6 +130,7 @@ struct BannerText<Content: View>: View {
 struct PhoneMenu: View {
     let pairing: PairingModel
     @State private var isConfirming = false
+    @State private var isScanRequested = false
 
     var body: some View {
         Menu {
@@ -138,6 +139,7 @@ struct PhoneMenu: View {
                     Text("Paired with \(host)", bundle: #bundle, comment: "The deployment's address, in the menu.")
                 }
             }
+            ScanPairingCodeButton(isRequested: $isScanRequested, prominent: false)
             Button(role: .destructive) {
                 isConfirming = true
             } label: {
@@ -154,6 +156,7 @@ struct PhoneMenu: View {
                 Image(systemName: "gearshape")
             }
         }
+        .scansPairingCode($isScanRequested, pairing: pairing)
         .confirmationDialog(
             Text("Unpair this iPhone?", bundle: #bundle, comment: "Title of the confirmation before unpairing."),
             isPresented: $isConfirming,
