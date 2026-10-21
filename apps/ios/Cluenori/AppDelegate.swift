@@ -44,15 +44,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // alerts then don't reach this phone, and a test alarm says it has no push token.
     }
 
+    // Both answers run on the main actor: the system's completion handler behind each async method
+    // is then called on the main thread, where UIKit requires it; called elsewhere, it aborts.
+
     // An alert while the app is open shows as it would on the lock screen.
-    nonisolated func userNotificationCenter(
+    func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
     }
 
-    nonisolated func userNotificationCenter(
+    func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
@@ -62,7 +65,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         if action == Self.acknowledgeAction, let incident = alert.incident {
             _ = await pairing.acknowledge(incident)
         } else if action == UNNotificationDefaultActionIdentifier {
-            await pairing.open(alert)
+            pairing.open(alert)
         }
     }
 }
