@@ -11,8 +11,8 @@ export type Area = "performance" | "errors" | "logs"
  * Every page the dashboard has. The start, `/`, shows the first project; a project opens on its
  * overview; each area is a page that can show one component (`?component=notes-api`); performance
  * leads to every endpoint and then to one; the errors page leads to one error, with all it was sent
- * with; a request's trace is a page of its own, at the time it happened (`?around=<ISO 8601>`),
- * which the archive is read by. `hrefOf` and `routeOf` convert to and from URLs. An address is
+ * with; a request's trace is a page of its own, by its ID, with the time it happened when a link
+ * knows it (`?around=<ISO 8601>`). `hrefOf` and `routeOf` convert to and from URLs. An address is
  * untrusted input, so its keys are decoded here, once: one that isn't a page's is `missing`.
  */
 export type Route =
@@ -131,7 +131,6 @@ export const routeOf = (path: string, search: string): Route => {
   }
   if (page === "traces") {
     const trace = keyOf(TraceId, id)
-    // Without a time the trace page can't read the archive; it says so, rather than opening nothing.
     const around = keyOf(Schema.DateTimeUtcFromString, query.get("around") ?? undefined)
     return Option.isSome(trace)
       ? {

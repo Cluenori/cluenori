@@ -6,7 +6,7 @@ import { App } from "@/app"
 
 import { expectAccessible } from "./accessible.ts"
 import { answerApi } from "./fake-api.ts"
-import { exportTrace, notesApi, notesToken } from "./notes-project.ts"
+import { notesApi, notesToken } from "./notes-project.ts"
 
 describe("start journey", () => {
   it.effect("signs in with the API token, after saying why a wrong one was refused", () =>
@@ -50,7 +50,7 @@ describe("start journey", () => {
     }),
   )
 
-  it.effect("says so for an address no page has, and for a request's link without its time", () =>
+  it.effect("says so for an address no page has, and for a request the archive doesn't keep", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
       window.history.pushState(null, "", "/Notes!/errors")
@@ -59,11 +59,10 @@ describe("start journey", () => {
       yield* expectAccessible()
 
       yield* Effect.promise(() => screen.unmount())
-      window.history.pushState(null, "", `/notes/traces/${exportTrace}`)
+      window.history.pushState(null, "", "/notes/traces/0123456789abcdef0123456789abcdef")
       const again = yield* Effect.promise(() => render(<App />))
-      yield* Effect.promise(() =>
-        expect.element(again.getByText("This link doesn't say when the request happened")).toBeVisible(),
-      )
+      yield* Effect.promise(() => expect.element(again.getByText("No steps of this request")).toBeVisible())
+      yield* expectAccessible()
     }),
   )
 

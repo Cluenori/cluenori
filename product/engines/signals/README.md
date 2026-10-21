@@ -19,7 +19,7 @@ const table = yield* signals.errors({ period })
 // [{ id: "159dae307f199986", title: "TimeoutException: Notification service did not answer",
 //    culprit: "Program.<>c.<<<Main>$>b__0_5>d.MoveNext()", occurrences: 3, ... }]
 const detail = yield* signals.error(table.groups[0].id, { period }) // latest occurrences, with stacks
-const view = yield* signals.trace(detail.latest[0].trace, detail.latest[0].time)
+const view = yield* signals.trace(detail.latest[0].trace, detail.latest[0].time) // the time is optional
 // view.spans: the request's spans as a tree; view.logs: its logs at every level, from the archive
 
 // One endpoint over time, with its percentiles in each step.
@@ -85,10 +85,11 @@ in the project's object; `SignalsGroup` is the API's part.
   stored percentiles of each step's buckets; counts of warnings and errors group the 90-day index
   by step and by level, component, or error group, at most 100 series, the largest first.
 - **A trace is read from its own files:** the archive's index keeps which files hold each trace's
-  records, by the first 52 bits of its ID, so a trace is read from up to 60 of its files, the
-  nearest to the time asked about first, however many other exports arrived then. A service that
-  exports every few seconds would crowd a lookup by time. `trace` says how many of its files it read,
-  and how many it didn't. Exports archived before the index (October 2026) aren't in it.
+  records, by the first 52 bits of its ID, so a trace is found by its ID alone and read from up to
+  60 of its files, the nearest to the time asked about first, or the newest, however many other
+  exports arrived then. A service that exports every few seconds would crowd a lookup by time.
+  `trace` says how many of its files it read, and how many it didn't. Exports archived before the
+  index (October 2026) aren't in it.
 - **Counted once.** An export's SHA-256 digest is kept an hour, so an exporter's retry is skipped.
 - **Percentiles are within 2% of the true value,** by nearest rank.
 - **An answer's schemas live apart from the code that makes them** (`trace-view.ts` from

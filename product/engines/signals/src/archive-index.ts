@@ -79,11 +79,16 @@ export const archiveIndex = (settings: ArchiveSettings) => {
     })
 
     /**
-     * The files holding records of `trace`, nearest to `around` first: at most `limit`; how many
-     * there are; and when their records start and end, absent when none is kept.
+     * The files holding records of `trace`, nearest to `around` first, or the newest without it: at
+     * most `limit`; how many there are; and when their records start and end, absent when none is kept.
      */
-    const ofTrace = Effect.fn("ArchiveIndex.ofTrace")(function* (trace: TraceId, around: number, limit: number) {
+    const ofTrace = Effect.fn("ArchiveIndex.ofTrace")(function* (
+      trace: TraceId,
+      around: number | undefined,
+      limit: number,
+    ) {
       const key = traceKeyOf(trace)
+      const order = around === undefined ? sql`a.to_time DESC` : sql`abs((a.from_time + a.to_time) / 2 - ${around})`
       const files = yield* SqlSchema.findAll({
         Request: Schema.Void,
         Result: FileRow,
@@ -91,7 +96,7 @@ export const archiveIndex = (settings: ArchiveSettings) => {
           SELECT a.signal, a.component, a.key
           FROM signals_trace_files t JOIN signals_archive a ON a.id = t.file
           WHERE t.trace = ${key}
-          ORDER BY abs((a.from_time + a.to_time) / 2 - ${around})
+          ORDER BY ${order}
           LIMIT ${limit}`,
       })(undefined)
       const summary = yield* SqlSchema.findOne({

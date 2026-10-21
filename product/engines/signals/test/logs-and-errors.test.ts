@@ -396,6 +396,32 @@ describe("Signals' traces", () => {
     }),
   )
 
+  it.effect("finds a request by its ID alone, and says it searched all 90 days for one it doesn't keep", () =>
+    Effect.gen(function* () {
+      const { export: traces } = yield* readAt(now, fixtureTraces)
+      const { found, missing } = yield* inProject(
+        "trace-by-id",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordTraces(api, traces)
+          return {
+            found: yield* signals.trace(exportTrace),
+            missing: yield* signals.trace(TraceId.make("0123456789abcdef0123456789abcdef")),
+          }
+        }),
+      )
+
+      assert.lengthOf(found.spans, 3)
+      assert.deepStrictEqual(missing.spans, [])
+      assert.deepStrictEqual(missing.files, { read: 0, unread: 0 })
+      assert.deepStrictEqual(
+        [DateTime.toEpochMillis(missing.searched.from), DateTime.toEpochMillis(missing.searched.to)],
+        [now - Duration.toMillis(Duration.days(90)), now],
+      )
+    }),
+  )
+
   it.effect("reads only the request's own files, however many others arrived around then", () =>
     Effect.gen(function* () {
       const { export: traces } = yield* readAt(now, fixtureTraces)

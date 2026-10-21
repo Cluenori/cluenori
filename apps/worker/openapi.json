@@ -1734,7 +1734,7 @@
             "schema": {
               "type": "string"
             },
-            "required": true
+            "required": false
           }
         ],
         "security": [
@@ -1993,7 +1993,7 @@
             }
           }
         },
-        "description": "One request across services, from the archive: its spans as a tree, with their durations and attributes, and its logs at every level. Give the time it happened as `around`; the archive is read within two minutes of it. Kept 90 days."
+        "description": "One request across services, from the archive, found by its trace ID: its spans as a tree, with their durations and attributes, and its logs at every level. `around`, the time it happened, is optional: of a trace with more archive files than are read, those nearest to it are read first. Kept 90 days."
       }
     }
   },

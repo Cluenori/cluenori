@@ -126,6 +126,10 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it)
           ["error", "Export failed for [email]"],
         ],
       )
+
+      // The same request from its trace ID alone, as one pasted from another tool.
+      const byId = yield* client.signals.trace({ params: { project, trace: TraceId.make(failedTrace) }, query: {} })
+      assert.deepStrictEqual(byId.spans, trace.spans)
     }),
   )
 

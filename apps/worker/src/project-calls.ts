@@ -120,7 +120,7 @@ export const projectCalls = {
   logCounts: projectCall("logCounts", LogCountQuery, LogCounts, ProjectNotFound),
   trace: projectCall(
     "trace",
-    Schema.Struct({ trace: TraceId, around: Schema.DateTimeUtcFromString }),
+    Schema.Struct({ trace: TraceId, around: Schema.optionalKey(Schema.DateTimeUtcFromString) }),
     TraceView,
     Schema.Union([ProjectNotFound, ArchiveUnavailable]),
   ),

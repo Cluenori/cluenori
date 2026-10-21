@@ -246,14 +246,14 @@ export const logsAtom = Atom.family(
 
 /** One request's trace, read from the archive around when it happened. */
 export const traceAtom = Atom.family(
-  (key: { readonly project: ProjectKey; readonly trace: TraceId; readonly around: DateTime.Utc }) =>
+  (key: { readonly project: ProjectKey; readonly trace: TraceId; readonly around?: DateTime.Utc }) =>
     kept(
       CluenoriClient.runtime.atom(
         Effect.gen(function* () {
           const client = yield* CluenoriClient
           return yield* client.signals.trace({
             params: { project: key.project, trace: key.trace },
-            query: { around: key.around },
+            query: key.around === undefined ? {} : { around: key.around },
           })
         }),
       ),

@@ -16,7 +16,7 @@ asks about their requests, and checks this repository.
 ./cluenori errors <project> [--last ...]                  errors grouped by type and stack
 ./cluenori error <project> <id> [--last ...]              its stack, latest occurrences, and how to open its request
 ./cluenori logs <project> [--level warn|error|fatal] [--search <text>] [--trace <id>] [--error <id>]
-./cluenori trace <project> <trace id> [--at <ISO time>]   a request's spans and every log line, from the archive
+./cluenori trace <project> <trace id> [--at <ISO time>]   a request's spans and every log line, found by its ID in the archive
 bun run check            … cluenori check     dependency rules, suppression comments, generated files
 bun run generate         cluenori generate    rewrites apps/worker/openapi.json
 ```

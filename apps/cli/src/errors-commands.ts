@@ -5,7 +5,6 @@ import { Console, DateTime, Effect, Option, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 
 import { apiClient, reachFailures, refuse } from "./api-client.ts"
-import type { ApiTarget } from "./api-settings.ts"
 import { apiTarget } from "./api-settings.ts"
 import { filters, headline, local, optionalKey, parsed, questionOf } from "./question.ts"
 import { columns, count, milliseconds, utcClock, utcMinute, utcSecond } from "./terminal-text.ts"
@@ -191,30 +190,6 @@ const traceLines = (view: TraceView) => {
   return [...spans, ...(view.logs.length === 0 ? [] : ["", "Logs:", ...view.logs.map(logLine)])]
 }
 
-// When a trace happened: the time given, or that of a warning or error of it in the last 90 days;
-// none when there is neither.
-const timeOfTrace = Effect.fn("timeOfTrace")(function* (
-  target: ApiTarget,
-  project: ProjectKey,
-  traceId: TraceId,
-  given: Option.Option<DateTime.Utc>,
-) {
-  if (Option.isSome(given)) {
-    return given
-  }
-  const client = yield* apiClient(target)
-  const now = yield* DateTime.now
-  const page = yield* client.signals
-    .logs({ params: { project }, query: { from: DateTime.subtract(now, { days: 90 }), to: now, trace: traceId } })
-    .pipe(
-      Effect.catchTags({
-        ...reachFailures(target),
-        ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
-      }),
-    )
-  return Option.fromNullishOr(page.lines[0]?.time)
-})
-
 /** `cluenori trace <project> <trace>`. */
 export const trace = Command.make(
   "trace",
@@ -224,7 +199,7 @@ export const trace = Command.make(
     at: Flag.String("at").pipe(
       Flag.optional,
       Flag.withDescription(
-        "When it happened, ISO 8601, as ./cluenori error prints it. Without it, the time of a warning or error of the trace.",
+        "When it happened, ISO 8601, as ./cluenori error prints it: of a trace with many archive files, those nearest it are read first.",
       ),
     ),
     local,
@@ -239,16 +214,12 @@ export const trace = Command.make(
         "a time in ISO 8601, such as 2026-10-20T12:55:01Z",
       )
       const target = yield* apiTarget(input.local)
-      const looked = yield* timeOfTrace(target, project, traceId, given)
-      if (Option.isNone(looked)) {
-        const now = yield* DateTime.now
-        return yield* refuse(
-          `Cluenori finds a request in the archive by when it happened, and this one has no warning or error to say. Give the time with --at, such as --at ${DateTime.formatIso(now)}.`,
-        )
-      }
       const client = yield* apiClient(target)
       const view = yield* client.signals
-        .trace({ params: { project, trace: traceId }, query: { around: looked.value } })
+        .trace({
+          params: { project, trace: traceId },
+          query: Option.match(given, { onNone: () => ({}), onSome: (around) => ({ around }) }),
+        })
         .pipe(
           Effect.catchTags({
             ...reachFailures(target),
@@ -267,7 +238,7 @@ export const trace = Command.make(
       yield* Console.log(traceLines(view).join("\n"))
       if (view.files.unread > 0) {
         yield* Console.log(
-          `\n${count(view.files.unread)} more archive files from that time weren't read; give a more exact --at.`,
+          `\n${count(view.files.unread)} more of its archive files weren't read; give the time it happened with --at to read those nearest it first.`,
         )
       }
     }),

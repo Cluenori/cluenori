@@ -366,9 +366,8 @@ export const notesApi = ({
       }
       const asked = yield* Schema.decodeEffect(Asked)(Object.fromEntries(call.query)).pipe(Effect.orDie)
       if (area === "traces" && id !== undefined) {
-        return asked.around === undefined
-          ? yield* Effect.die("The dashboard asked for a trace without a time.")
-          : yield* trace(DateTime.toEpochMillis(asked.around), id)
+        const now = yield* Clock.currentTimeMillis
+        return yield* trace(asked.around === undefined ? now : DateTime.toEpochMillis(asked.around), id)
       }
       if (asked.from === undefined || asked.to === undefined) {
         return yield* Effect.die(`The dashboard asked for ${area} without a period.`)

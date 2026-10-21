@@ -28,7 +28,7 @@ Pages, each with a permanent URL (`src/router.tsx`):
 /notes/errors                                    errors over time by component, and every error group
 /notes/errors/<id>                               one error: its exception chain, every frame, its request, its log record
 /notes/logs                                      warnings and errors over time, and every line, searchable
-/notes/traces/<trace id>?around=<ISO 8601>       one request from the archive: its steps on a time line, its log lines
+/notes/traces/<trace id>[?around=<ISO 8601>]     one request from the archive: its steps on a time line, its log lines
 /kit                                             every view in the theme, to review the design; opens signed out too
 ```
 

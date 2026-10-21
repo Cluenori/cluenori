@@ -90,7 +90,10 @@ export const SignalsHandlers = HttpApiBuilder.group(CluenoriApi, "signals", (han
     .handle("trace", ({ params, query }) =>
       Effect.gen(function* () {
         const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.trace, { trace: params.trace, around: query.around })
+        return yield* objects.call(params.project, projectCalls.trace, {
+          trace: params.trace,
+          ...(query.around === undefined ? {} : { around: query.around }),
+        })
       }),
     ),
 )

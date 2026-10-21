@@ -190,24 +190,10 @@ function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly 
   )
 }
 
-/** A trace whose time is known: read from the archive around it. */
-function ArchivedTrace({
-  project,
-  trace,
-  around,
-}: {
-  readonly project: ProjectKey
-  readonly trace: TraceId
-  readonly around: DateTime.Utc
-}) {
-  const view = useAtomValue(traceAtom({ project, trace, around }))
-  return <Loaded result={view}>{(answer) => <TraceSteps project={project} view={answer} />}</Loaded>
-}
-
 /**
  * One request across components: every step it took, through the services that answered; how long
- * each ran; and every line it logged. The archive is read around the time the address names, as
- * the links to it from errors and logs give it.
+ * each ran; and every line it logged. It is found in the archive by its ID; the time the address
+ * names, as links from errors, logs and requests give it, says which of its files to read first.
  */
 export function TracePage({
   project,
@@ -218,21 +204,10 @@ export function TracePage({
   readonly trace: TraceId
   readonly around?: DateTime.Utc
 }) {
+  const view = useAtomValue(traceAtom({ project, trace, ...(around === undefined ? {} : { around }) }))
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
-      {around === undefined ? (
-        <>
-          <TraceHeader project={project}>
-            <h1 className="font-mono text-2xl font-semibold tracking-[-0.02em]">{trace}</h1>
-          </TraceHeader>
-          <NoSteps title="This link doesn't say when the request happened">
-            The archive is read around the time a request happened, and this link has none. Open the request from its
-            error or its log line instead.
-          </NoSteps>
-        </>
-      ) : (
-        <ArchivedTrace project={project} trace={trace} around={around} />
-      )}
+      <Loaded result={view}>{(answer) => <TraceSteps project={project} view={answer} />}</Loaded>
     </div>
   )
 }

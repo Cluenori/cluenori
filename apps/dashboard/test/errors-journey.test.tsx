@@ -7,7 +7,7 @@ import { App } from "@/app"
 
 import { expectAccessible } from "./accessible.ts"
 import { answerApi, apiCalls } from "./fake-api.ts"
-import { notesApi } from "./notes-project.ts"
+import { exportTrace, notesApi } from "./notes-project.ts"
 
 describe("errors journey", () => {
   it.effect("leads from the overview's ongoing error to its stack, and to its request's trace", () =>
@@ -46,6 +46,24 @@ describe("errors journey", () => {
       )
       yield* Effect.promise(() => expect.element(screen.getByText("INSERT exports")).toBeVisible())
       yield* expectAccessible()
+    }),
+  )
+
+  it.effect("opens a request's trace from an address with only its ID, as one pasted from elsewhere", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi())
+      window.history.pushState(null, "", `/notes/traces/${exportTrace}`)
+      const screen = yield* Effect.promise(() => render(<App />))
+
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("heading", { level: 1, name: /POST \/api\/export/ })).toBeVisible(),
+      )
+      yield* Effect.promise(() => expect.element(screen.getByText("INSERT exports")).toBeVisible())
+      const asked = apiCalls().filter((call) => call.path[2] === "traces")
+      assert.deepStrictEqual(
+        asked.map((call) => [call.path[3], call.query.has("around")]),
+        [[exportTrace, false]],
+      )
     }),
   )
 

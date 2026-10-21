@@ -58,8 +58,11 @@ export const LogCountFilters = Schema.Struct({
   error: Schema.optionalKey(ErrorGroupId),
 }).check(fromBeforeTo)
 
-/** When to look for a trace: within two minutes of `around`, ISO 8601 UTC. */
-export const TraceFilters = Schema.Struct({ around: Schema.DateTimeUtcFromString })
+/**
+ * When the trace happened, ISO 8601 UTC, when it is known: of a trace with more files than are read,
+ * those nearest to `around` are read first, else the newest.
+ */
+export const TraceFilters = Schema.Struct({ around: Schema.optionalKey(Schema.DateTimeUtcFromString) })
 
 /** Requests of a project's services: the public API's part for this engine. */
 export class SignalsGroup extends HttpApiGroup.make("signals")
@@ -137,6 +140,6 @@ export class SignalsGroup extends HttpApiGroup.make("signals")
       error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ArchiveUnavailable],
     }).annotate(
       OpenApi.Description,
-      "One request across services, from the archive: its spans as a tree, with their durations and attributes, and its logs at every level. Give the time it happened as `around`; the archive is read within two minutes of it. Kept 90 days.",
+      "One request across services, from the archive, found by its trace ID: its spans as a tree, with their durations and attributes, and its logs at every level. `around`, the time it happened, is optional: of a trace with more archive files than are read, those nearest to it are read first. Kept 90 days.",
     ),
   ) {}

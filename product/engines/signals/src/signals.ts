@@ -5,7 +5,7 @@ import type { SqlError } from "effect/sql"
 import { SqlClient, SqlSchema } from "effect/sql"
 
 import type { ArchiveSettings } from "./archive-index.ts"
-import { archiveIndex } from "./archive-index.ts"
+import { archiveIndex, archiveRetention } from "./archive-index.ts"
 import type { ArchiveUnavailable } from "./archive-store.ts"
 import { ArchiveStore } from "./archive-store.ts"
 import type {
@@ -35,9 +35,8 @@ const batchWindow = Duration.hours(1)
 const cleanupInterval = Duration.minutes(10)
 
 // A trace is read from at most this many of its archive files, the nearest to the time it is asked
-// about first. When none is kept, its answer says it was looked for this long either side of then.
+// about first, or the newest.
 const traceFiles = 60
-const traceWindow = Duration.minutes(2)
 
 /** Whose signals these are. */
 export type SignalsSettings = ArchiveSettings
@@ -94,9 +93,10 @@ export class Signals extends Context.Service<
     /**
      * Trace `trace` from the archive: its spans and its logs at every level, from every component,
      * read from the archive files that hold its records, found by its ID: up to 60 of them, the
-     * nearest to `around` first. Fails with `ArchiveUnavailable` when the archive can't be read.
+     * nearest to `around` first, or the newest without it. Fails with `ArchiveUnavailable` when the
+     * archive can't be read.
      */
-    readonly trace: (trace: TraceId, around: DateTime.Utc) => Effect.Effect<TraceView, ArchiveUnavailable>
+    readonly trace: (trace: TraceId, around?: DateTime.Utc) => Effect.Effect<TraceView, ArchiveUnavailable>
   }
 >()("@cluenori/signals/signals") {
   /** Builds the engine on the object's database and the archive, first creating or updating its tables. */
@@ -226,20 +226,25 @@ export class Signals extends Context.Service<
           return yield* logs.logCounts(query, now)
         })
 
-        const trace = Effect.fn("Signals.trace")(function* (traceId: TraceId, around: DateTime.Utc) {
-          const middle = DateTime.toEpochMillis(around)
-          const found = yield* index.ofTrace(traceId, middle, traceFiles)
+        const trace = Effect.fn("Signals.trace")(function* (traceId: TraceId, around?: DateTime.Utc) {
+          const found = yield* index.ofTrace(
+            traceId,
+            around === undefined ? undefined : DateTime.toEpochMillis(around),
+            traceFiles,
+          )
           const read = yield* Effect.forEach(
             found.files,
             (file) => archive.get(file.key).pipe(Effect.map(Option.map((bytes) => ({ ...file, bytes })))),
             { concurrency: 8 },
           )
           const files = read.flatMap((file) => (Option.isSome(file) ? [file.value] : []))
+          // The index holds every trace the archive keeps, so without files of this one, all of it was searched.
+          const now = yield* nowMillis
           const searched =
             found.span === undefined
               ? new Period({
-                  from: DateTime.makeUnsafe(middle - Duration.toMillis(traceWindow)),
-                  to: DateTime.makeUnsafe(middle + Duration.toMillis(traceWindow)),
+                  from: DateTime.makeUnsafe(now - Duration.toMillis(archiveRetention)),
+                  to: DateTime.makeUnsafe(now),
                 })
               : // A period ends before its `to`, so it ends a millisecond after the last record.
                 new Period({ from: DateTime.makeUnsafe(found.span.from), to: DateTime.makeUnsafe(found.span.to + 1) })
