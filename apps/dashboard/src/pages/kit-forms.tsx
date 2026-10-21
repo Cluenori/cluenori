@@ -5,7 +5,7 @@ import type { DateRange } from "react-day-picker"
 
 import { count, duration, share } from "@/lib/format"
 import { KitCard, KitColumn, KitGroup, KitSample } from "@/pages/kit-section"
-import { endpointTable, sampleComponents } from "@/sample/sample-project"
+import { operationTable, sampleComponents } from "@/sample/sample-project"
 import { Calendar } from "@/views/ui/calendar"
 import { Checkbox } from "@/views/ui/checkbox"
 import {
@@ -61,7 +61,7 @@ const releaseItems = releaseGroups.flatMap((group) =>
   group.versions.map((version) => ({ value: `${group.component}@${version}`, label: `${group.component} ${version}` })),
 )
 
-const endpoints = endpointTable("24h").rows.map((row) => row.endpoint)
+const operations = operationTable("24h").rows.map((row) => row.operation)
 
 // react-day-picker takes JavaScript dates. These are whole days, so they are built at midnight UTC
 // and the calendars below count days in UTC: the same days show in every time zone.
@@ -295,7 +295,7 @@ export function KitForms() {
               <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle>Count staging too</FieldTitle>
-                  <FieldDescription>Its requests are added to production's.</FieldDescription>
+                  <FieldDescription>Its runs are added to production's.</FieldDescription>
                 </FieldContent>
                 <Switch id="kit-share-staging" />
               </Field>
@@ -348,15 +348,15 @@ export function KitForms() {
               </NativeSelect>
             </Field>
             <Field>
-              <FieldLabel htmlFor="kit-endpoint">Endpoint</FieldLabel>
-              <Combobox items={endpoints}>
-                <ComboboxInput id="kit-endpoint" placeholder="Find an endpoint" className="w-full" />
+              <FieldLabel htmlFor="kit-operation">Operation</FieldLabel>
+              <Combobox items={operations}>
+                <ComboboxInput id="kit-operation" placeholder="Find an operation" className="w-full" />
                 <ComboboxContent>
                   <ComboboxEmpty>Nothing matches.</ComboboxEmpty>
                   <ComboboxList>
-                    {(endpoint: string) => (
-                      <ComboboxItem key={endpoint} value={endpoint}>
-                        <code className="font-mono text-xs">{endpoint}</code>
+                    {(operation: string) => (
+                      <ComboboxItem key={operation} value={operation}>
+                        <code className="font-mono text-xs">{operation}</code>
                       </ComboboxItem>
                     )}
                   </ComboboxList>
@@ -399,7 +399,7 @@ export function KitForms() {
               max={100}
               step={5}
             />
-            <FieldDescription>Every failed request is kept, whatever this says.</FieldDescription>
+            <FieldDescription>Every failed run is kept, whatever this says.</FieldDescription>
           </Field>
           <Field>
             <div className="flex items-center justify-between gap-4">

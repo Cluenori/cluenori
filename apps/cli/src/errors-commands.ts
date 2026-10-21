@@ -58,7 +58,7 @@ export const errors = Command.make("errors", filters, (input) =>
     ])
     yield* Console.log(lines.join("\n"))
     yield* Console.log(`\n${count(table.occurrences)} errors in ${count(table.groups.length)} groups.`)
-    yield* Console.log(`See one, with its stack and its request: ./cluenori error ${project} <ID>`)
+    yield* Console.log(`See one, with its stack and its trace: ./cluenori error ${project} <ID>`)
   }),
 ).pipe(Command.withDescription("The errors of a period, most frequent first, grouped by what makes them the same."))
 
@@ -102,7 +102,7 @@ export const error = Command.make(
       }
       if (latest.trace !== undefined) {
         yield* Console.log(
-          `\nIts request, with its spans and logs: ./cluenori trace ${project} ${latest.trace} --at ${DateTime.formatIso(latest.time)}`,
+          `\nIts trace, with its spans and logs: ./cluenori trace ${project} ${latest.trace} --at ${DateTime.formatIso(latest.time)}`,
         )
       }
       if (earlier.length > 0) {
@@ -127,7 +127,7 @@ export const logs = Command.make(
       Flag.optional,
       Flag.withDescription("Only this logger, such as Notes.Exports."),
     ),
-    trace: Flag.String("trace").pipe(Flag.optional, Flag.withDescription("Only this request's trace ID.")),
+    trace: Flag.String("trace").pipe(Flag.optional, Flag.withDescription("Only this trace's lines, by its ID.")),
     error: Flag.String("error").pipe(Flag.optional, Flag.withDescription("Only this error's ID.")),
     before: Flag.Int("before").pipe(
       Flag.optional,
@@ -195,7 +195,7 @@ export const trace = Command.make(
   "trace",
   {
     project: Argument.String("project").pipe(Argument.withDescription("The project's key.")),
-    trace: Argument.String("trace").pipe(Argument.withDescription("The request's trace ID.")),
+    trace: Argument.String("trace").pipe(Argument.withDescription("The trace's ID.")),
     at: Flag.String("at").pipe(
       Flag.optional,
       Flag.withDescription(
@@ -242,4 +242,4 @@ export const trace = Command.make(
         )
       }
     }),
-).pipe(Command.withDescription("One request from the archive: its spans as a tree, and its logs at every level."))
+).pipe(Command.withDescription("One trace from the archive: its spans as a tree, and its logs at every level."))

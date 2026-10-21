@@ -1,7 +1,7 @@
 import { KitCard, KitColumn, KitGroup } from "@/pages/kit-section"
 import { colorOf, slowerMeaning, slowerOf } from "@/project-facts"
 import {
-  endpointTable,
+  operationTable,
   errorGroups,
   networkCalls,
   sampleComponents,
@@ -17,7 +17,7 @@ const colorOfComponent = (component: string) => colorOf(component, components)
 const backend = "folio-api"
 const app = "folio-ios"
 
-const lastDay = endpointTable("24h").rows
+const lastDay = operationTable("24h").rows
 
 const screens = screenTable(app, "24h").map((row) => {
   const slower = slowerOf(row)
@@ -25,7 +25,7 @@ const screens = screenTable(app, "24h").map((row) => {
 })
 
 const calls = networkCalls(app, "24h").map((row) => {
-  const served = lastDay.find((entry) => entry.endpoint === row.endpoint)
+  const served = lastDay.find((entry) => entry.operation === row.endpoint)
   return served === undefined ? row : { ...row, backendP95Ms: served.p95Ms }
 })
 

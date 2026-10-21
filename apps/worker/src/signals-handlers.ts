@@ -5,8 +5,8 @@ import type {
   LogCountQuery,
   LogFilters,
   LogQuery,
-  RequestFilters,
-  RequestQuery,
+  RunFilters,
+  RunQuery,
 } from "@cluenori/signals"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
@@ -22,9 +22,9 @@ const queryOf = (filters: typeof LogFilters.Type | typeof LogCountFilters.Type):
   ...(filters.component === undefined ? {} : { component: filters.component }),
 })
 
-const requestQueryOf = (filters: typeof RequestFilters.Type): RequestQuery => ({
+const runQueryOf = (filters: typeof RunFilters.Type): RunQuery => ({
   ...queryOf(filters),
-  ...(filters.endpoint === undefined ? {} : { endpoint: filters.endpoint }),
+  ...(filters.operation === undefined ? {} : { operation: filters.operation }),
 })
 
 const logCountQueryOf = (filters: typeof LogCountFilters.Type): LogCountQuery => ({
@@ -48,25 +48,25 @@ const logQueryOf = (filters: typeof LogFilters.Type): LogQuery => ({
 /** Serves the signals group, in each project's Durable Object. */
 export const SignalsHandlers = HttpApiBuilder.group(CluenoriApi, "signals", (handlers) =>
   handlers
-    .handle("endpoints", ({ params, query }) =>
+    .handle("operations", ({ params, query }) =>
       Effect.gen(function* () {
         const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.endpoints, requestQueryOf(query))
+        return yield* objects.call(params.project, projectCalls.operations, runQueryOf(query))
       }),
     )
-    .handle("requests", ({ params, query }) =>
+    .handle("runs", ({ params, query }) =>
       Effect.gen(function* () {
         const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.requestsOverTime, {
-          query: requestQueryOf(query),
+        return yield* objects.call(params.project, projectCalls.runsOverTime, {
+          query: runQueryOf(query),
           step: query.step,
         })
       }),
     )
-    .handle("keptRequests", ({ params, query }) =>
+    .handle("keptRuns", ({ params, query }) =>
       Effect.gen(function* () {
         const objects = yield* ProjectObjects
-        return yield* objects.call(params.project, projectCalls.keptRequests, requestQueryOf(query))
+        return yield* objects.call(params.project, projectCalls.keptRuns, runQueryOf(query))
       }),
     )
     .handle("errors", ({ params, query }) =>

@@ -1,9 +1,9 @@
 # Cluenori
 
 The control room for a software factory: one founder, many projects, running in your own Cloudflare
-account. The product is described in `concept/`; it is at its first step, so today Cluenori serves
-the requests of your services: they send OpenTelemetry traces, and Cluenori shows each endpoint's
-requests, errors, and p50 to p99 durations.
+account. The product is described in `concept/`; it is at its first step, so today Cluenori watches
+your services: they send OpenTelemetry traces, and Cluenori shows each operation's runs, errors,
+and p50 to p99 durations.
 
 ## Run it
 
@@ -35,7 +35,7 @@ version later:
 ./update
 ```
 
-## See your services' requests
+## See your services' runs
 
 ```sh
 ./cluenori project create notes --name Notes
@@ -47,16 +47,19 @@ Point the service's OpenTelemetry exporter at Cluenori, over HTTP with protobuf:
 `AddOtlpExporter` with `OtlpExportProtocol.HttpProtobuf`, next to any exporter you already have. Then:
 
 ```sh
-./cluenori endpoints notes --last 24h   # requests, errors, avg, p50, p80, p95, p99 by endpoint
-./cluenori requests notes --last 24h    # the load over time
+./cluenori operations notes --last 24h  # runs, errors, avg, p50, p80, p95, p99 by operation
+./cluenori runs notes --last 24h        # the load over time
 ```
+
+An operation is what a service does, by name: an HTTP route it answers (`GET /api/notes/{id}`), a
+message it processes, or a job it starts. Each time one happens is a run.
 
 Send its logs too, to `<your Cluenori>/otlp/v1/logs` with the same header, and investigate:
 
 ```sh
 ./cluenori errors notes                 # errors grouped by type and stack, most frequent first
 ./cluenori error notes <ID>             # its stack, where it happens, and its latest occurrences
-./cluenori trace notes <trace ID>       # that request's spans and every log line, from the archive
+./cluenori trace notes <trace ID>       # that trace's spans and every log line, from the archive
 ./cluenori logs notes --search timeout  # warnings and errors, searchable
 ```
 

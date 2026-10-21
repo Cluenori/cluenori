@@ -29,7 +29,7 @@ const sendTo = Effect.fn("sendTo")(function* (path: string, ingestKey: string, b
 
 // Real time: the Worker keeps logs by the time they happened, against its own clock.
 layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it) => {
-  it.effect("an error leads from its group to its request's spans and logs", () =>
+  it.effect("an error leads from its group to its trace's spans and logs", () =>
     Effect.gen(function* () {
       const client = yield* CluenoriClient
       const project = ProjectKey.make("investigation")
@@ -39,7 +39,7 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it)
         payload: { key: ComponentKey.make("notes-api"), name: ComponentName.make("Notes API") },
       })
 
-      // The service exports one failing request's spans and its logs, info included.
+      // The service exports one failing run's spans and its logs, info included.
       const now = yield* DateTime.now
       const start = DateTime.toEpochMillis(now) - 2_000
       const traces = traceExport(service, [
@@ -106,7 +106,7 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it)
         ["Notifier is slow"],
       )
 
-      // The request, from the archive: its spans as a tree, and its logs at every level.
+      // The trace, from the archive: its spans as a tree, and its logs at every level.
       const trace = yield* client.signals.trace({
         params: { project, trace: TraceId.make(failedTrace) },
         query: { around: occurrence?.time ?? now },
@@ -127,23 +127,23 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it)
         ],
       )
 
-      // The same request from its trace ID alone, as one pasted from another tool.
+      // The same trace from its ID alone, as one pasted from another tool.
       const byId = yield* client.signals.trace({ params: { project, trace: TraceId.make(failedTrace) }, query: {} })
       assert.deepStrictEqual(byId.spans, trace.spans)
     }),
   )
 
-  it.effect("a request that logged nothing opens from its endpoint's slowest or failed requests", () =>
+  it.effect("a run that logged nothing opens from its operation's slowest or failed runs", () =>
     Effect.gen(function* () {
       const client = yield* CluenoriClient
-      const project = ProjectKey.make("kept-requests")
+      const project = ProjectKey.make("kept-runs")
       yield* client.projects.createProject({ payload: { key: project, name: ProjectName.make("Notes") } })
       const { ingestKey } = yield* client.projects.addComponent({
         params: { project },
         payload: { key: ComponentKey.make("notes-api"), name: ComponentName.make("Notes API") },
       })
 
-      // Three requests to one endpoint, none of which logs anything: a quick one, a slow one whose
+      // Three runs of one operation, none of which logs anything: a quick one, a slow one whose
       // query took the time, and one that failed.
       const quick = "1b2c3d4e5f60718293a4b5c6d7e8f901"
       const slow = "2c3d4e5f60718293a4b5c6d7e8f90112"
@@ -187,12 +187,12 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it)
       ])
       assert.strictEqual(yield* sendTo("traces", ingestKey, traces), 200)
 
-      // The endpoint's slowest requests, and its failed ones, each with its trace.
+      // The operation's slowest runs, and its failed ones, each with its trace.
       const period = { from: DateTime.subtract(now, { hours: 1 }), to: DateTime.add(now, { minutes: 1 }) }
-      const endpoint = EnvelopeName.make("GET /api/notes/{id}")
-      const kept = yield* client.signals.keptRequests({ params: { project }, query: { ...period, endpoint } })
+      const operation = EnvelopeName.make("GET /api/notes/{id}")
+      const kept = yield* client.signals.keptRuns({ params: { project }, query: { ...period, operation } })
       assert.deepStrictEqual(
-        kept.slowest.map((request) => [request.trace, request.durationMs, request.status, request.failed]),
+        kept.slowest.map((run) => [run.trace, run.durationMs, run.status, run.failed]),
         [
           [TraceId.make(slow), 1_840, 200, false],
           [TraceId.make(failed), 30, 503, true],
@@ -200,7 +200,7 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it)
         ],
       )
       assert.deepStrictEqual(
-        kept.failed.map((request) => request.trace),
+        kept.failed.map((run) => run.trace),
         [TraceId.make(failed)],
       )
 

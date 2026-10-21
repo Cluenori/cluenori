@@ -5,16 +5,16 @@
 
 import type { Period, ProjectKey } from "@cluenori/foundation"
 import type {
-  EndpointRow,
-  EndpointTable,
+  OperationRow,
+  OperationTable,
   ErrorGroup,
   ErrorGroupId,
   ErrorTable,
-  KeptRequests,
+  KeptRuns,
   LogCounts,
   LogException,
-  RequestPoint,
-  RequestSeries,
+  RunPoint,
+  RunSeries,
   SeriesStep,
   SpanId,
   TraceSpan,
@@ -28,8 +28,8 @@ import { ago, axisTime, count, dayOf, duration, share, viewerTimeZone } from "@/
 import type { PeriodKey } from "@/project-data"
 import { periodMillis } from "@/project-data"
 import type { Attention } from "@/views/attention-list"
-import type { Slower } from "@/views/endpoint-table"
 import { titleParts } from "@/views/error-group"
+import type { Slower } from "@/views/operation-table"
 
 export const sumOf = (values: ReadonlyArray<number>) => values.reduce((sum, value) => sum + value, 0)
 
@@ -93,10 +93,10 @@ const columnsOf = <Point extends { readonly start: DateTime.Utc }>(
 }
 
 /**
- * Requests over time as a chart's columns, over the period they cover. A step without a point had
+ * Runs over time as a chart's columns, over the period they cover. A step without a point had
  * nothing reported, which is not none (the sender may have been silent), so its column is unknown.
  */
-export const requestColumnsOf = (series: RequestSeries, valueOf: (point: RequestPoint) => number) =>
+export const runColumnsOf = (series: RunSeries, valueOf: (point: RunPoint) => number) =>
   columnsOf(series.covered, series.step, series.points, valueOf, undefined)
 
 /**
@@ -137,8 +137,8 @@ export const ticksOf = (columns: Columns) => {
 
 // ---- Slower than usual -----------------------------------------------------------------------------
 
-// An endpoint got slower when its p95 over the last day is at least this many times its usual p95,
-// over the 7 days before, and at least this much more. The second keeps a fast endpoint going from
+// An operation got slower when its p95 over the last day is at least this many times its usual p95,
+// over the 7 days before, and at least this much more. The second keeps a fast operation going from
 // 2 ms to 4 ms from counting.
 const slowerTimes = 1.5
 const slowerByMs = 100
@@ -155,51 +155,51 @@ export const slowerOf = (row: { readonly lastDayP95Ms: number; readonly usualP95
   return { p95Ms: row.lastDayP95Ms, usualP95Ms: usual }
 }
 
-/** An endpoint row's identity: its component, environment, and name. */
-export const endpointKeyOf = (row: Pick<EndpointRow, "component" | "environment" | "endpoint">) =>
-  [row.component, row.environment ?? "", row.endpoint].join("\u0000")
+/** An operation row's identity: its component, environment, and name. */
+export const operationKeyOf = (row: Pick<OperationRow, "component" | "environment" | "operation">) =>
+  [row.component, row.environment ?? "", row.operation].join("\u0000")
 
-/** The endpoints over the last day and over the 7 days before: what "slower" compares. */
-export type Compared = { readonly lastDay: EndpointTable; readonly usual: EndpointTable }
+/** The operations over the last day and over the 7 days before: what "slower" compares. */
+export type Compared = { readonly lastDay: OperationTable; readonly usual: OperationTable }
 
-/** An endpoint's p95 over the last day, and its usual p95 when it had requests in the 7 days before. */
+/** An operation's p95 over the last day, and its usual p95 when it had runs in the 7 days before. */
 export const usualOf = (compared: Compared, key: string) => {
-  const lastDay = compared.lastDay.rows.find((row) => endpointKeyOf(row) === key)
-  const usual = compared.usual.rows.find((row) => endpointKeyOf(row) === key)
+  const lastDay = compared.lastDay.rows.find((row) => operationKeyOf(row) === key)
+  const usual = compared.usual.rows.find((row) => operationKeyOf(row) === key)
   return lastDay === undefined
     ? undefined
     : { lastDayP95Ms: lastDay.p95Ms, ...(usual === undefined ? {} : { usualP95Ms: usual.p95Ms }) }
 }
 
-/** Which endpoints got slower, by `endpointKeyOf`. An endpoint new this week has no verdict. */
-export const slowerEndpoints = (compared: Compared): ReadonlyMap<string, Slower> =>
+/** Which operations got slower, by `operationKeyOf`. An operation new this week has no verdict. */
+export const slowerOperations = (compared: Compared): ReadonlyMap<string, Slower> =>
   new Map(
     compared.lastDay.rows.flatMap((row) => {
-      const timed = usualOf(compared, endpointKeyOf(row))
+      const timed = usualOf(compared, operationKeyOf(row))
       const slower = timed === undefined ? undefined : slowerOf(timed)
-      return slower === undefined ? [] : [[endpointKeyOf(row), slower] as const]
+      return slower === undefined ? [] : [[operationKeyOf(row), slower] as const]
     }),
   )
 
-/** A table's endpoints, each with whether it got slower, as the endpoint table shows them. */
-export const endpointRowsOf = (
-  table: EndpointTable,
+/** A table's operations, each with whether it got slower, as the operation table shows them. */
+export const operationRowsOf = (
+  table: OperationTable,
   compared: Compared,
-): ReadonlyArray<EndpointRow & { readonly slower?: Slower }> => {
-  const slower = slowerEndpoints(compared)
+): ReadonlyArray<OperationRow & { readonly slower?: Slower }> => {
+  const slower = slowerOperations(compared)
   return table.rows.map((row) => {
-    const found = slower.get(endpointKeyOf(row))
+    const found = slower.get(operationKeyOf(row))
     return found === undefined ? row : { ...row, slower: found }
   })
 }
 
-// ---- Kept requests ---------------------------------------------------------------------------------
+// ---- Kept runs ---------------------------------------------------------------------------------
 
 /**
- * What a list of kept requests answers for, in words: the page's period, or, of a period longer than
- * requests are kept, the days its answer covers, such as "last 14 days".
+ * What a list of kept runs answers for, in words: the page's period, or, of a period longer than
+ * runs are kept, the days its answer covers, such as "last 14 days".
  */
-export const keptOverOf = (answer: KeptRequests, period: PeriodKey) => {
+export const keptOverOf = (answer: KeptRuns, period: PeriodKey) => {
   const asked = periodWords[period].toLowerCase()
   if (answer.covered === undefined) {
     return asked
@@ -289,10 +289,10 @@ export const exceptionsOf = (exception: LogException): ReadonlyArray<ThrownExcep
 }
 
 /**
- * The request a log record was written in, from its trace: the server or consumer span it, or the
+ * The run a log record was written in, from its trace: the server or consumer span it, or the
  * span it was written in, belongs to; else the trace's first span. Absent when the trace has none.
  */
-export const requestOf = (view: TraceView, span: SpanId | undefined): TraceSpan | undefined => {
+export const runOf = (view: TraceView, span: SpanId | undefined): TraceSpan | undefined => {
   const byId = new Map(view.spans.map((entry) => [entry.span, entry] as const))
   let current = span === undefined ? undefined : byId.get(span)
   while (current !== undefined && current.kind !== "server" && current.kind !== "consumer") {
@@ -312,13 +312,13 @@ const knownSumOf = (values: ReadonlyArray<number | undefined>) => sumOf(values.m
  * window's error rate is at least 2% and three times the period's. A step with nothing reported
  * has no rate, so it never joins a window.
  */
-export const failureSpikeOf = (series: RequestSeries) => {
-  const asked = requestColumnsOf(series, (point) => point.requests)
-  const failed = requestColumnsOf(series, (point) => point.errors)
+export const failureSpikeOf = (series: RunSeries) => {
+  const asked = runColumnsOf(series, (point) => point.runs)
+  const failed = runColumnsOf(series, (point) => point.errors)
   const rateAt = (index: number) => {
-    const requests = asked.values[index]
+    const runs = asked.values[index]
     const errors = failed.values[index]
-    return requests === undefined || errors === undefined ? 0 : errors / Math.max(1, requests)
+    return runs === undefined || errors === undefined ? 0 : errors / Math.max(1, runs)
   }
   const peak = asked.values.reduce<number>((best, _, index) => (rateAt(index) > rateAt(best) ? index : best), 0)
   let first = peak
@@ -341,7 +341,7 @@ export const failureSpikeOf = (series: RequestSeries) => {
     from: asked.from + first * asked.step,
     to: Math.min(asked.from + (last + 1) * asked.step, end),
     failed: windowFailed,
-    requests: windowAsked,
+    runs: windowAsked,
   }
 }
 
@@ -354,23 +354,23 @@ const byHowMuchSlower = (left: Slower, right: Slower) => right.p95Ms / right.usu
 
 /**
  * What needs attention in the project now, the worst first: errors happening now, a jump in
- * failures, new errors, then endpoints that got slower; an error both new and happening now is one
+ * failures, new errors, then operations that got slower; an error both new and happening now is one
  * item. Each item is one click from its detail.
  * "Now" is the time the errors cover up to.
  */
 export const attentionOf = (facts: {
   readonly project: ProjectKey
   readonly errors: ErrorTable
-  readonly requests: RequestSeries
+  readonly runs: RunSeries
   readonly compared: Compared
 }): ReadonlyArray<Attention> => {
   const { project } = facts
   const now = endOf(facts.errors)
-  const spike = failureSpikeOf(facts.requests)
-  const slowerByKey = slowerEndpoints(facts.compared)
+  const spike = failureSpikeOf(facts.runs)
+  const slowerByKey = slowerOperations(facts.compared)
   const slower = facts.compared.lastDay.rows
     .flatMap((row) => {
-      const found = slowerByKey.get(endpointKeyOf(row))
+      const found = slowerByKey.get(operationKeyOf(row))
       return found === undefined ? [] : [{ row, ...found }]
     })
     .toSorted(byHowMuchSlower)
@@ -401,8 +401,8 @@ export const attentionOf = (facts: {
           {
             key: "spike",
             tone: "failure" as const,
-            title: `Error rate ${share(spike.failed, spike.requests)} between ${axisTime(spike.from)} and ${axisTime(spike.to)}`,
-            detail: `${count(spike.failed)} failed requests of ${count(spike.requests)}`,
+            title: `Error rate ${share(spike.failed, spike.runs)} between ${axisTime(spike.from)} and ${axisTime(spike.to)}`,
+            detail: `${count(spike.failed)} failed runs of ${count(spike.runs)}`,
             action: { label: "Open the errors", to: { page: "errors" as const, project } },
           },
         ]),
@@ -416,13 +416,13 @@ export const attentionOf = (facts: {
         action: { label: "Open the error", to: errorRoute(group.id) },
       })),
     ...slower.map((entry) => ({
-      key: `slower ${endpointKeyOf(entry.row)}`,
+      key: `slower ${operationKeyOf(entry.row)}`,
       tone: "warning" as const,
-      title: `${entry.row.endpoint} got slower`,
+      title: `${entry.row.operation} got slower`,
       detail: `p95 ${duration(entry.p95Ms)} over the last day, usually ${duration(entry.usualP95Ms)}`,
       action: {
-        label: "Open the endpoint",
-        to: { page: "endpoint" as const, project, component: entry.row.component, endpoint: entry.row.endpoint },
+        label: "Open the operation",
+        to: { page: "operation" as const, project, component: entry.row.component, operation: entry.row.operation },
       },
     })),
   ]

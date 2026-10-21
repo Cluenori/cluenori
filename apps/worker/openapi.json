@@ -395,12 +395,12 @@
         }
       }
     },
-    "/api/projects/{project}/endpoints": {
+    "/api/projects/{project}/operations": {
       "get": {
         "tags": [
           "signals"
         ],
-        "operationId": "signals.endpoints",
+        "operationId": "signals.operations",
         "parameters": [
           {
             "name": "project",
@@ -446,7 +446,7 @@
             "required": false
           },
           {
-            "name": "endpoint",
+            "name": "operation",
             "in": "query",
             "schema": {
               "type": "string",
@@ -494,7 +494,7 @@
                             "type": "string",
                             "maxLength": 40
                           },
-                          "endpoint": {
+                          "operation": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 256,
@@ -505,7 +505,7 @@
                               }
                             ]
                           },
-                          "requests": {
+                          "runs": {
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
@@ -538,8 +538,8 @@
                         },
                         "required": [
                           "component",
-                          "endpoint",
-                          "requests",
+                          "operation",
+                          "runs",
                           "errors",
                           "averageMs",
                           "p50Ms",
@@ -550,7 +550,7 @@
                         "additionalProperties": false
                       }
                     },
-                    "requests": {
+                    "runs": {
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 9007199254740991
@@ -566,7 +566,7 @@
                   },
                   "required": [
                     "rows",
-                    "requests",
+                    "runs",
                     "errors"
                   ],
                   "additionalProperties": false
@@ -595,15 +595,15 @@
             }
           }
         },
-        "description": "Every endpoint's requests in a period, most requested first, or one endpoint's with `endpoint`: how many, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover."
+        "description": "Every operation's runs in a period, the most runs first, or one operation's with `operation`: how many, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover."
       }
     },
-    "/api/projects/{project}/requests": {
+    "/api/projects/{project}/runs": {
       "get": {
         "tags": [
           "signals"
         ],
-        "operationId": "signals.requests",
+        "operationId": "signals.runs",
         "parameters": [
           {
             "name": "project",
@@ -649,7 +649,7 @@
             "required": false
           },
           {
-            "name": "endpoint",
+            "name": "operation",
             "in": "query",
             "schema": {
               "type": "string",
@@ -715,7 +715,7 @@
                           "start": {
                             "type": "string"
                           },
-                          "requests": {
+                          "runs": {
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
@@ -744,7 +744,7 @@
                         },
                         "required": [
                           "start",
-                          "requests",
+                          "runs",
                           "errors",
                           "p50Ms",
                           "p80Ms",
@@ -785,15 +785,15 @@
             }
           }
         },
-        "description": "Requests and errors over a period, one point per step that has requests, with their p50, p80, p95 and p99 durations: the load on a project's services, or on one endpoint with `endpoint`. A step without a point had no requests reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used."
+        "description": "Runs and errors over a period, one point per step that has runs, with their p50, p80, p95 and p99 durations: the load on a project's services, or on one operation with `operation`. A step without a point had no runs reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used."
       }
     },
-    "/api/projects/{project}/requests/kept": {
+    "/api/projects/{project}/runs/kept": {
       "get": {
         "tags": [
           "signals"
         ],
-        "operationId": "signals.keptRequests",
+        "operationId": "signals.keptRuns",
         "parameters": [
           {
             "name": "project",
@@ -839,7 +839,7 @@
             "required": false
           },
           {
-            "name": "endpoint",
+            "name": "operation",
             "in": "query",
             "schema": {
               "type": "string",
@@ -882,7 +882,7 @@
                           "trace": {
                             "type": "string"
                           },
-                          "endpoint": {
+                          "operation": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 256,
@@ -919,7 +919,7 @@
                         },
                         "required": [
                           "trace",
-                          "endpoint",
+                          "operation",
                           "start",
                           "durationMs",
                           "failed",
@@ -936,7 +936,7 @@
                           "trace": {
                             "type": "string"
                           },
-                          "endpoint": {
+                          "operation": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 256,
@@ -973,7 +973,7 @@
                         },
                         "required": [
                           "trace",
-                          "endpoint",
+                          "operation",
                           "start",
                           "durationMs",
                           "failed",
@@ -1013,7 +1013,7 @@
             }
           }
         },
-        "description": "Requests worth opening in a period, or one endpoint's with `endpoint`: the slowest, slowest first, and the failed, newest first, at most 20 of each, each with its trace ID, which opens it with the traces endpoint. Of each endpoint, environment and hour, the five slowest requests and the five slowest failed ones are kept, 14 days; `covered` says which part of the period that covers."
+        "description": "Runs worth opening in a period, or one operation's with `operation`: the slowest, slowest first, and the failed, newest first, at most 20 of each, each with its trace ID, which opens it with the traces endpoint. Of each operation, environment and hour, the five slowest runs and the five slowest failed ones are kept, 14 days; `covered` says which part of the period that covers."
       }
     },
     "/api/projects/{project}/errors": {
@@ -1067,7 +1067,7 @@
             "required": false
           },
           {
-            "name": "endpoint",
+            "name": "operation",
             "in": "query",
             "schema": {
               "type": "string",
@@ -1258,7 +1258,7 @@
             "required": false
           },
           {
-            "name": "endpoint",
+            "name": "operation",
             "in": "query",
             "schema": {
               "type": "string",
@@ -1472,7 +1472,7 @@
             }
           }
         },
-        "description": "One error and its latest occurrences in a period, with their messages, stack traces, and trace IDs: where an investigation starts. Each occurrence's trace ID and time open its request with the traces endpoint."
+        "description": "One error and its latest occurrences in a period, with their messages, stack traces, and trace IDs: where an investigation starts. Each occurrence's trace ID and time open its trace with the traces endpoint."
       }
     },
     "/api/projects/{project}/logs": {
@@ -1725,7 +1725,7 @@
             }
           }
         },
-        "description": "Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace, or error. Kept 90 days. Records below warning are in the archive, which the traces endpoint reads for one request."
+        "description": "Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace, or error. Kept 90 days. Records below warning are in the archive, which the traces endpoint reads for one trace."
       }
     },
     "/api/projects/{project}/logs/counts": {
@@ -2221,7 +2221,7 @@
             }
           }
         },
-        "description": "One request across services, from the archive, found by its trace ID: its spans as a tree, with their durations and attributes, and its logs at every level. `around`, the time it happened, is optional: of a trace with more archive files than are read, those nearest to it are read first. Kept 90 days."
+        "description": "One trace across services, from the archive, found by its ID: its spans as a tree, with their durations and attributes, and its logs at every level. `around`, the time it happened, is optional: of a trace with more archive files than are read, those nearest to it are read first. Kept 90 days."
       }
     }
   },

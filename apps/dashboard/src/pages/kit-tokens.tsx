@@ -71,13 +71,13 @@ const typeScale = [
   { classes: "text-3xl font-semibold tracking-tight", sample: "Performance" },
   { classes: "text-2xl font-semibold tracking-tight", sample: "Errors in folio" },
   { classes: "text-xl font-semibold tracking-tight", sample: "How long it takes" },
-  { classes: "text-base font-medium", sample: "Endpoints" },
-  { classes: "text-sm", sample: "Requests, error rate, and latency percentiles for each endpoint." },
+  { classes: "text-base font-medium", sample: "Operations" },
+  { classes: "text-sm", sample: "Runs, error rate, and latency percentiles for each operation." },
   { classes: "text-sm text-muted-foreground", sample: "The ones at the top take the most time in total." },
   { classes: "text-xs text-muted-foreground", sample: "Each square is one hour of the last day." },
 ] as const
 
-const endpointCounts = [48_210, 1_204, 31_005, 610] as const
+const operationCounts = [48_210, 1_204, 31_005, 610] as const
 
 function VariableName({ name, missing }: { readonly name: string; readonly missing: boolean }) {
   return (
@@ -193,7 +193,7 @@ export function KitTokens() {
           <div className="flex flex-col gap-6">
             <KitSample label="Numbers, with tabular-nums" className="flex-col items-start">
               <div className="flex flex-col items-end text-sm tabular-nums">
-                {endpointCounts.map((value) => (
+                {operationCounts.map((value) => (
                   <span key={value}>{count(value)}</span>
                 ))}
               </div>

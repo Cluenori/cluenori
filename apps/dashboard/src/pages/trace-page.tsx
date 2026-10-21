@@ -30,7 +30,7 @@ const noApps = () => false
 
 const millisOf = DateTime.toEpochMillis
 
-/** The top of the page: back to the project's performance, and what the request is. */
+/** The top of the page: back to the project's performance, and what the trace is. */
 function TraceHeader({ project, children }: { readonly project: ProjectKey; readonly children: ReactNode }) {
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-3 pb-2">
@@ -49,13 +49,13 @@ function TraceHeader({ project, children }: { readonly project: ProjectKey; read
 /** Why the page shows no steps, with what the reader can do. */
 function NoSteps({ title, children }: { readonly title: string; readonly children: ReactNode }) {
   return (
-    <Panel icon={SearchXIcon} title={title} subtitle="Requests are kept in the archive for 90 days">
+    <Panel icon={SearchXIcon} title={title} subtitle="Traces are kept in the archive for 90 days">
       <p className="max-w-2xl px-5 py-6 text-[15px]">{children}</p>
     </Panel>
   )
 }
 
-/** The request's steps, the one chosen, and its log lines. */
+/** The trace's steps, the one chosen, and its log lines. */
 function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly view: TraceView }) {
   const root = view.spans[0]
   const [selected, setSelected] = useState(root?.span)
@@ -65,8 +65,8 @@ function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly 
         <TraceHeader project={project}>
           <h1 className="font-mono text-2xl font-semibold tracking-[-0.02em]">{view.trace}</h1>
         </TraceHeader>
-        <NoSteps title="No steps of this request">
-          The archive has none of this request&apos;s steps. It may be older than 90 days, or from another project.
+        <NoSteps title="No steps of this trace">
+          The archive has none of this trace&apos;s steps. It may be older than 90 days, or from another project.
         </NoSteps>
       </div>
     )
@@ -129,7 +129,7 @@ function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly 
           </Panel>
           <Panel icon={ScrollTextIcon} title="Log lines" subtitle="Everything it logged, at every level">
             {view.logs.length === 0 ? (
-              <p className="px-5 py-6 text-sm text-muted-foreground">This request logged nothing.</p>
+              <p className="px-5 py-6 text-sm text-muted-foreground">Nothing was logged in this trace.</p>
             ) : (
               <ol className="divide-y">
                 {view.logs.map((log, index) => (
@@ -172,7 +172,7 @@ function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly 
               <p className="text-sm text-muted-foreground">
                 In {span.component}, starting{" "}
                 {millisOf(span.start) === rootStart
-                  ? "with the request"
+                  ? "with the trace"
                   : `${duration(millisOf(span.start) - rootStart)} in`}
                 .
               </p>
@@ -191,9 +191,9 @@ function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly 
 }
 
 /**
- * One request across components: every step it took, through the services that answered; how long
+ * One trace across components: every step it took, through the services that ran it; how long
  * each ran; and every line it logged. It is found in the archive by its ID; the time the address
- * names, as links from errors, logs and requests give it, says which of its files to read first.
+ * names, as links from errors, logs and runs give it, says which of its files to read first.
  */
 export function TracePage({
   project,

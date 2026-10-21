@@ -11,7 +11,7 @@ This tab is the vision. Foundation lists the primitives that all modules share. 
 I am a solo founder, and I am obsessed with quality and performance. With AI agents (Amp and Amp Orbs), I build web, iOS and Android projects very quickly. But after a launch, I do not know what happens. Today I cannot see, in one place:
 
 - that a project cost €50 in six months and has no users and no revenue,
-- the latency of each endpoint, in each project,
+- the latency of each operation, in each project,
 - which features people use, and which features they ignore,
 - that most iOS users never updated the app.
 
@@ -48,7 +48,7 @@ Eleven rules control what goes into Cluenori and what stays out.
 - **One model for all modules.** Each module uses the same scope, features, people, audiences, activity, actions and ledger. Thus a new module works with all other modules from its first day.
 - **Each action has an outcome.** A decision record keeps the question, the action and the result, so neither I nor an agent repeats a failed attempt.
 - **The factory contract.** Each new project reports to Cluenori from its first deploy, and Cluenori checks that the data arrives.
-- **Quality is measured against its own usual.** Each critical journey, endpoint, screen and app start is compared with its own recent past and with the previous release, not with a fixed limit that someone must set and keep current.
+- **Quality is measured against its own usual.** Each critical journey, operation, screen and app start is compared with its own recent past and with the previous release, not with a fixed limit that someone must set and keep current.
 - **Cluenori governs, agents execute.** Cluenori decides what work is permitted, with which evidence, budget and authority. Credentials and APIs enforce these limits, not instructions.
 - **One API for people and agents.** The dashboard and the MCP server use the same queries and actions, so revenue or activation has one definition.
 - **You own the code and the data.** Cluenori runs in your Cloudflare account, keeps data in open formats, and shows its own spend as a project.
@@ -57,7 +57,7 @@ Eleven rules control what goes into Cluenori and what stays out.
 
 A project is the business unit: one product and one investment. It contains components that release separately, for example an iOS app, an Android app, a web app, an API and scheduled jobs. Spend, revenue and value belong to the project. Versions and deployments belong to each component.
 
-A feature is a capability of the project, for example Export. It can exist in several components. The feature is a filter on every module: analytics, endpoints, logs, traces, errors, flags, costs, feedback and releases. I can see Export in all components, or only in the iOS app. Without a filter, each module shows the whole project. Foundation explains how each record gets its feature.
+A feature is a capability of the project, for example Export. It can exist in several components. The feature is a filter on every module: analytics, operations, logs, traces, errors, flags, costs, feedback and releases. I can see Export in all components, or only in the iOS app. Without a filter, each module shows the whole project. Foundation explains how each record gets its feature.
 
 &#91;embedded content: project model · 5 components × 4 features\]
 
@@ -104,7 +104,7 @@ The portfolio has one row for each project:
 | Coverage | Which data arrives, and which data is missing |
 | Next decision | The open question and its review date |
 
-Each number links down a level: from the portfolio to the project, then to one customer, feature, release, endpoint or error.
+Each number links down a level: from the portfolio to the project, then to one customer, feature, release, operation or error.
 
 ## From "going nowhere" to a diagnosis
 
@@ -171,12 +171,12 @@ Cluenori keeps three classes of data, with different rules.
 | Class | Examples | Rule |
 | --- | --- | --- |
 | Business facts | Payments, expenses, value events, decisions | Durable, deduplicated and traceable |
-| Operational measurements | Request counts, error counts, latency distributions | Aggregated from the observed traffic |
+| Operational measurements | Run counts, error counts, latency distributions | Aggregated from the observed traffic |
 | Diagnostic evidence | Traces, detailed logs | Kept by explicit sampling and retention rules |
 
 Each insight shows its population and denominator, its comparison period and cohort, the data freshness, the sampling or collection gaps, the attribution method and the remaining uncertainty. Missing data never shows as zero.
 
-Sampling is stated, not hidden. Request counts are exact and their percentiles are within 2%, and charts say so. To keep a trace because it was slow or failed, Cluenori must see the completed request before it decides (tail sampling). Thus a chart point opens retained examples. It does not promise every request behind the point.
+Sampling is stated, not hidden. Run counts are exact and their percentiles are within 2%, and charts say so. To keep a trace because it was slow or failed, Cluenori must see the completed run before it decides (tail sampling). Thus a chart point opens retained examples. It does not promise every run behind the point.
 
 ## Act from the same place
 
@@ -216,7 +216,7 @@ Authority is a policy for each project and each class of action.
 
 Credentials, APIs and deployment controls enforce these limits. Instructions to the agent are not sufficient. Amp's default workflow can push to the shared branch after its checks, so each project states its release policy explicitly.
 
-For an endpoint regression, the workflow is:
+For an operation that got slower, the workflow is:
 
 1. Confirm that the data is fresh and that the change is real.
 2. Group related alerts into one incident.
@@ -267,10 +267,10 @@ One latency limit cannot fit an upload, a search and a background export, and a 
 
 | Measure | Worse than usual when |
 | --- | --- |
-| The latency of an endpoint, a screen or an app start | Its p95 over the last day is at least 1.5 times its p95 over the 7 days before, and at least 100 ms more |
+| The latency of an operation, a screen or an app start | Its p95 over the last day is at least 1.5 times its p95 over the 7 days before, and at least 100 ms more |
 | Crash-free sessions, critical journey success, error rate | To decide; the same idea, a drop against the 7 days before that is large enough to matter |
 
-A measure with no usual yet, such as a new endpoint, is shown without a verdict. Each release is also compared with the previous one, with the sample size. A worse result with enough data opens an incident.
+A measure with no usual yet, such as a new operation, is shown without a verdict. Each release is also compared with the previous one, with the sample size. A worse result with enough data opens an incident.
 
 ## What we will not build
 

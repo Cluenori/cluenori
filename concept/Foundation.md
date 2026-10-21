@@ -17,7 +17,7 @@ Twelve keys place every record. Each module uses the same keys, so one filter ba
 | Workspace | The tenant: members, billing, settings | My factory | A self-hosted deployment usually has one |
 | Project | The business unit: one product and one investment | Notes | Owns spend, revenue, brand and decisions |
 | Component | A part that ships separately | notes-ios, notes-android, notes-web, notes-api, notes-jobs | Has a platform, store and bundle IDs, an SDK key and a repository. Its platform gives its role: an app runs on people's devices (iOS, Android, web), a backend on servers (.NET, Node.js) |
-| Origin | The app and release that started a request | notes-ios 2.4.0 | Comes from baggage. Answers "did iOS 2.4 slow the API?" |
+| Origin | The app and release a trace started in | notes-ios 2.4.0 | Comes from baggage. Answers "did iOS 2.4 slow the API?" |
 | Environment | Where a component runs | production, staging | Production is the default view |
 | Release | One version of one component | notes-ios 2.4.0, build 312 | Has commits, PRs, features, notes and store state |
 | Feature | A capability of the project, across components | editor.export | A dotted key: a filter on editor includes editor.export |
@@ -25,7 +25,7 @@ Twelve keys place every record. Each module uses the same keys, so one filter ba
 | Installation | One app on one device | The iPhone of a person, on notes-ios 2.3 | Holds the push token, permission, OS version, locale, time zone and last-seen release. Version audiences use installations. |
 | Account | The group that pays, for B2B apps | A team or a company | Optional |
 | Session | One visit or app session, with device context | iPhone 15, iOS 18.4, Germany, German | Stored once; events refer to it |
-| Trace | One request across services | A W3C trace ID | Links spans, logs and errors |
+| Trace | One run and what it caused, across services | A W3C trace ID | Links spans, logs and errors |
 
 Each record always has a workspace, a source and a time, and a project unless it is a workspace record. The other keys are attached when they are known. An unknown key stays empty and shows as "unknown", never as a guess.
 
@@ -46,7 +46,7 @@ A record gets its feature key in one of four ways:
 | Method | Example | Used for |
 | --- | --- | --- |
 | In code | `track('export.completed', { feature: 'editor.export' })`. In .NET: `app.MapPost("/api/export", Export).WithFeature("editor.export")` | Events, spans, logs, costs |
-| Propagated | The app sends the current feature in the W3C `baggage` header. The Cluenori helpers copy it to the spans, logs and queue messages of that request. | Traces, logs, jobs |
+| Propagated | The app sends the current feature in the W3C `baggage` header. The Cluenori helpers copy it to the spans, logs and queue messages of that trace. | Traces, logs, jobs |
 | Catalog rules | Route `POST /api/export/*`, event names `export.*`, flag `new-export`, log category `Notes.Export` | Data that arrives without a key |
 | Links | The PR label `feature:editor.export`, a feedback item, a changelog entry, an issue | Records in modules |
 
@@ -64,7 +64,7 @@ All data has one of three shapes. Each shape has its own store and rules.
 
 | Shape | What it is | Volume | Store | Examples |
 | --- | --- | --- | --- | --- |
-| Signals | Measurements and telemetry. Append only. | High | Lake (R2, Iceberg), and counts in the database of each project (Durable Objects) | Product events, requests and their traces, logs, errors, web vitals |
+| Signals | Measurements and telemetry. Append only. | High | Lake (R2, Iceberg), and counts in the database of each project (Durable Objects) | Product events, runs and their traces, logs, errors, web vitals |
 | Records | Objects with state that one module owns | Low | The database of the project or the workspace | Releases, deployments, provider resources, flags, version policies, campaigns, feedback, issues, decisions, consent records, ledger lines, distribution attempts |
 | Activity | Typed facts about each change. Never edited. | Low to medium | With its record, then archived to R2 | release.published, flag.changed, payment.succeeded, feedback.submitted, agent\_run.finished |
 
@@ -72,7 +72,7 @@ Each write to a record emits activity. Activity feeds the customer timeline, Tod
 
 The data classes of the Vision map to these shapes. Business facts are records or exact counts: payments, ledger lines with their currency and exchange rate, and core value events, which Durable Objects count exactly. Operational measurements are counters. Diagnostic evidence is sampled signals. A change is activity.
 
-Signals and activity use one envelope: an ID, a time, a kind (`event`, `request`, `span`, `log`, `error`, `activity`, `cost`, `money`, or a module kind such as `uptime.check`), a name, the scope keys that are known, the source, and the payload. An activity entry also carries its actor. The envelope is defined in code, in `product/foundation/src/envelope.ts`, which owns its exact fields and rules.
+Signals and activity use one envelope: an ID, a time, a kind (`event`, `run`, `span`, `log`, `error`, `activity`, `cost`, `money`, or a module kind such as `uptime.check`), a name, the scope keys that are known, the source, and the payload. An activity entry also carries its actor. The envelope is defined in code, in `product/foundation/src/envelope.ts`, which owns its exact fields and rules.
 
 ## Shared engines
 

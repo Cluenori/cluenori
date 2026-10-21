@@ -342,7 +342,7 @@ describe("Signals' warnings and errors", () => {
 })
 
 describe("Signals' traces", () => {
-  it.effect("shows one request from the archive: its spans as a tree and its logs at every level", () =>
+  it.effect("shows one trace from the archive: its spans as a tree and its logs at every level", () =>
     Effect.gen(function* () {
       const { export: logs } = yield* readAt(now, fixtureLogs)
       const { export: traces } = yield* readAt(now, fixtureTraces)
@@ -378,7 +378,7 @@ describe("Signals' traces", () => {
     }),
   )
 
-  it.effect("finds a request by its ID, however far from then it is asked about", () =>
+  it.effect("finds a trace by its ID, however far from then it is asked about", () =>
     Effect.gen(function* () {
       const { export: traces } = yield* readAt(now, fixtureTraces)
       const view = yield* inProject(
@@ -396,7 +396,7 @@ describe("Signals' traces", () => {
     }),
   )
 
-  it.effect("finds a request by its ID alone, and says it searched all 90 days for one it doesn't keep", () =>
+  it.effect("finds a trace by its ID alone, and says it searched all 90 days for one it doesn't keep", () =>
     Effect.gen(function* () {
       const { export: traces } = yield* readAt(now, fixtureTraces)
       const { found, missing } = yield* inProject(
@@ -422,10 +422,10 @@ describe("Signals' traces", () => {
     }),
   )
 
-  it.effect("reads only the request's own files, however many others arrived around then", () =>
+  it.effect("reads only the trace's own files, however many others arrived around then", () =>
     Effect.gen(function* () {
       const { export: traces } = yield* readAt(now, fixtureTraces)
-      // Other requests' exports from the same moment, more than a trace is read from.
+      // Other traces' exports from the same moment, more than a trace is read from.
       const others = Array.from({ length: 80 }, (_, index): TraceExport => ({
         digest: BatchDigest.make((index + 1).toString(16).padStart(64, "f")),
         archive: new Uint8Array(0),

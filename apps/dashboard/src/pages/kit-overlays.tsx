@@ -141,14 +141,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/views/ui/tooltip"
 
 const orders = [
   { value: "time", label: "Time in total" },
-  { value: "requests", label: "Requests" },
+  { value: "runs", label: "Runs" },
   { value: "slowest", label: "Slowest" },
 ] as const
 
 type Order = (typeof orders)[number]["value"]
 
 const exportStats = [
-  { label: "Requests", value: count(1_204) },
+  { label: "Runs", value: count(1_204) },
   { label: "Failed", value: share(39, 1_204) },
   { label: "Half finished within", value: duration(900) },
   { label: "p95", value: duration(4_200) },
@@ -257,7 +257,7 @@ function DrawerSample() {
         <div className="mx-auto flex w-full max-w-md flex-col">
           <DrawerHeader>
             <DrawerTitle>Filters</DrawerTitle>
-            <DrawerDescription>Which requests every page counts.</DrawerDescription>
+            <DrawerDescription>Which runs every page counts.</DrawerDescription>
           </DrawerHeader>
           <FieldGroup className="gap-3 p-4">
             <Field orientation="horizontal">
@@ -275,7 +275,7 @@ function DrawerSample() {
             <FieldDescription>Swipe down to close.</FieldDescription>
           </FieldGroup>
           <DrawerFooter>
-            <DrawerClose render={<Button />}>Show {count(48_210)} requests</DrawerClose>
+            <DrawerClose render={<Button />}>Show {count(48_210)} runs</DrawerClose>
             <DrawerClose render={<Button variant="outline" />}>Cancel</DrawerClose>
           </DrawerFooter>
         </div>
@@ -381,10 +381,10 @@ function DropdownMenuSample() {
         <DropdownMenuGroup>
           <DropdownMenuLabel>Show</DropdownMenuLabel>
           <DropdownMenuCheckboxItem checked={failedOnly} onCheckedChange={setFailedOnly}>
-            Failed requests only
+            Failed runs only
           </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem checked={slowOnly} onCheckedChange={setSlowOnly}>
-            Slow requests only
+            Slow runs only
           </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
@@ -454,7 +454,7 @@ function ContextMenuSample() {
           <code className="font-mono">POST /api/export</code>
           <span className="text-destructive tabular-nums">500</span>
         </span>
-        <span className="text-xs text-muted-foreground">Right-click this request to see its menu.</span>
+        <span className="text-xs text-muted-foreground">Right-click this run to see its menu.</span>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-56">
         <ContextMenuItem>
@@ -473,9 +473,9 @@ function ContextMenuSample() {
             Show only
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            <ContextMenuItem>This endpoint</ContextMenuItem>
+            <ContextMenuItem>This operation</ContextMenuItem>
             <ContextMenuItem>This release</ContextMenuItem>
-            <ContextMenuItem>Failed requests</ContextMenuItem>
+            <ContextMenuItem>Failed runs</ContextMenuItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
         <ContextMenuSeparator />
@@ -484,7 +484,7 @@ function ContextMenuSample() {
         </ContextMenuCheckboxItem>
         <ContextMenuItem variant="destructive">
           <EyeOffIcon />
-          Hide this endpoint
+          Hide this operation
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -551,7 +551,7 @@ function MenubarSample() {
           </MenubarItem>
           <MenubarItem>
             <InfoIcon />
-            What counts as a request
+            What counts as a run
           </MenubarItem>
         </MenubarContent>
       </MenubarMenu>
@@ -562,7 +562,7 @@ function MenubarSample() {
 function CommandSample() {
   return (
     <Command className="rounded-xl ring-1 ring-foreground/10">
-      <CommandInput placeholder="Search pages, endpoints and errors" />
+      <CommandInput placeholder="Search pages, operations and errors" />
       <CommandList>
         <CommandEmpty>Nothing matches.</CommandEmpty>
         <CommandGroup heading="Pages">
@@ -583,7 +583,7 @@ function CommandSample() {
           </CommandItem>
         </CommandGroup>
         <CommandSeparator />
-        <CommandGroup heading="Endpoints">
+        <CommandGroup heading="Operations">
           <CommandItem value="POST /api/export">
             <ActivityIcon />
             <code className="font-mono text-xs">POST /api/export</code>
@@ -656,7 +656,7 @@ function ToastSamples() {
         variant="outline"
         onClick={() =>
           toast.add({
-            title: "Endpoint hidden",
+            title: "Operation hidden",
             description: "GET /health no longer shows in lists.",
             actionProps: {
               children: "Undo",
@@ -707,7 +707,7 @@ export function KitOverlays() {
         </KitCard>
         <KitCard
           title="Command"
-          description="A search that finds pages, endpoints and errors. The same list opens with ⌘K."
+          description="A search that finds pages, operations and errors. The same list opens with ⌘K."
           files={["command.tsx"]}
         >
           <CommandSample />

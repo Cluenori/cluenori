@@ -137,7 +137,7 @@ function WhatWasChecked() {
               <TraceIcon>
                 <ActivityIcon />
               </TraceIcon>
-              <TraceTitle>Requests to POST /api/export this morning</TraceTitle>
+              <TraceTitle>Runs of POST /api/export this morning</TraceTitle>
               <TraceDescription>{count(1_204)}</TraceDescription>
             </TraceLine>
             <TraceLine status="error">
@@ -256,7 +256,7 @@ function Conversation() {
                       <BubbleContent>
                         <p>
                           For 40 minutes, from {clockTime(incident.from)} to {clockTime(incident.to)}, folio-api
-                          couldn't read from Postgres in time. Every failed request to POST /api/export ended in
+                          couldn't read from Postgres in time. Every failed run of POST /api/export ended in
                           NpgsqlException: Exception while reading from stream.
                         </p>
                         <p className="mt-3">

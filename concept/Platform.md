@@ -61,7 +61,7 @@ GDPR applies because of where the users are, not where the server is. A founder 
 | Logs and errors | Cluenori removes emails, tokens and card numbers before storage. |
 | Session trail | Screens and taps. Never typed text. |
 | Messages | Promotional push and marketing email only after an opt-in, by purpose and channel. Each marketing email has one-click unsubscribe, honored within 48 hours. |
-| Retention | Product events 5 years. Every export (traces, logs, metrics) 90 days in the archive; warnings and errors 90 days; request counts by the minute 14 days and by the hour 15 months (Modules, "Data sources"). |
+| Retention | Product events 5 years. Every export (traces, logs, metrics) 90 days in the archive; warnings and errors 90 days; run counts by the minute 14 days and by the hour 15 months (Modules, "Data sources"). |
 | Export and deletion | Export or delete all data of one customer from the customer page. Each module exports and deletes its own data for that person. |
 | Data inventory | Cluenori lists what each component collects. It drafts the privacy policy and the store privacy answers from this list. |
 

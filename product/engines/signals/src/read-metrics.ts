@@ -3,7 +3,7 @@ import { Crypto, DateTime, Effect } from "effect"
 import { Hex } from "effect/encoding"
 
 import type { MetricsExport } from "./exports.ts"
-import { BatchDigest } from "./request-counts.ts"
+import { BatchDigest } from "./run-counts.ts"
 
 /**
  * Reads the body of an OTLP/HTTP protobuf metrics export, checking its framing, for the archive to

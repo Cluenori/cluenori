@@ -5,7 +5,7 @@ import { compact, count, duration, share } from "@/lib/format"
 import { speedPlace } from "@/lib/speed"
 import type { Route } from "@/router"
 import { Link } from "@/router"
-import { EndpointName } from "@/views/endpoint-name"
+import { OperationName } from "@/views/operation-name"
 
 /** Latency percentiles, by nearest rank. */
 export type Latency = {
@@ -15,18 +15,18 @@ export type Latency = {
   readonly p99Ms: number
 }
 
-/** An endpoint that got slower lately: its p95 over the last day, and its usual p95, the 7 days before. */
+/** An operation that got slower lately: its p95 over the last day, and its usual p95, the 7 days before. */
 export type Slower = { readonly p95Ms: number; readonly usualP95Ms: number }
 
 /**
- * One endpoint's row: its name, component, environment when the sender gave one, requests,
+ * One operation's row: its name, component, environment when the sender gave one, runs,
  * failures, average, and latency percentiles, and whether it got slower.
  */
-export type EndpointLatency = Latency & {
-  readonly endpoint: string
+export type OperationLatency = Latency & {
+  readonly operation: string
   readonly component: string
   readonly environment?: string
-  readonly requests: number
+  readonly runs: number
   readonly errors: number
   readonly averageMs: number
   readonly slower?: Slower
@@ -70,8 +70,8 @@ export function SlowerTag({ slower }: { readonly slower: Slower }) {
   )
 }
 
-/** What endpoints can be sorted by; `time` is time in total, requests times their average. */
-export type SortKey = "time" | "endpoint" | "p50" | "p80" | "p95" | "p99" | "errors" | "requests"
+/** What operations can be sorted by; `time` is time in total, runs times their average. */
+export type SortKey = "time" | "operation" | "p50" | "p80" | "p95" | "p99" | "errors" | "runs"
 export type Sort = { readonly key: SortKey; readonly descending: boolean }
 export const byTimeInTotal: Sort = { key: "time", descending: true }
 
@@ -87,12 +87,12 @@ export const percentiles: ReadonlyArray<{
   { key: "p99", always: false, of: (latency) => latency.p99Ms },
 ]
 
-const errorRateOf = (row: EndpointLatency) => (row.requests === 0 ? 0 : row.errors / row.requests)
+const errorRateOf = (row: OperationLatency) => (row.runs === 0 ? 0 : row.errors / row.runs)
 
-const valueOf = (row: EndpointLatency, key: Exclude<SortKey, "endpoint">) => {
+const valueOf = (row: OperationLatency, key: Exclude<SortKey, "operation">) => {
   switch (key) {
     case "time":
-      return row.requests * row.averageMs
+      return row.runs * row.averageMs
     case "p50":
       return row.p50Ms
     case "p80":
@@ -103,33 +103,36 @@ const valueOf = (row: EndpointLatency, key: Exclude<SortKey, "endpoint">) => {
       return row.p99Ms
     case "errors":
       return errorRateOf(row)
-    case "requests":
-      return row.requests
+    case "runs":
+      return row.runs
   }
 }
 
-// Endpoint names are machine text, so they sort by code point, not by any locale.
-const byName = (left: EndpointLatency, right: EndpointLatency) => {
-  if (left.endpoint === right.endpoint) {
+// Operation names are machine text, so they sort by code point, not by any locale.
+const byName = (left: OperationLatency, right: OperationLatency) => {
+  if (left.operation === right.operation) {
     return 0
   }
-  return left.endpoint < right.endpoint ? -1 : 1
+  return left.operation < right.operation ? -1 : 1
 }
 
 /** `rows` in the order of `sort`. */
-export const sortEndpoints = <Row extends EndpointLatency>(rows: ReadonlyArray<Row>, sort: Sort): ReadonlyArray<Row> =>
+export const sortOperations = <Row extends OperationLatency>(
+  rows: ReadonlyArray<Row>,
+  sort: Sort,
+): ReadonlyArray<Row> =>
   rows.toSorted((left, right) => {
-    const order = sort.key === "endpoint" ? byName(left, right) : valueOf(left, sort.key) - valueOf(right, sort.key)
+    const order = sort.key === "operation" ? byName(left, right) : valueOf(left, sort.key) - valueOf(right, sort.key)
     return sort.descending ? -order : order
   })
 
 /**
- * Endpoints by latency: p50, p80, p95, and p99, each a value beside a cell filled as high as it is
- * on a log scale from 1 ms to 10 s; then the error rate and the requests. An endpoint that got
+ * Operations by latency: p50, p80, p95, and p99, each a value beside a cell filled as high as it is
+ * on a log scale from 1 ms to 10 s; then the error rate and the runs. An operation that got
  * slower says so beside its name, and so does its environment when the rows are of more than one.
- * Every row opens its endpoint. With `onSort`, a click on a column's name sorts by it.
+ * Every row opens its operation. With `onSort`, a click on a column's name sorts by it.
  */
-export function EndpointTable<Row extends EndpointLatency>({
+export function OperationTable<Row extends OperationLatency>({
   rows,
   colorOf,
   linkOf,
@@ -144,7 +147,7 @@ export function EndpointTable<Row extends EndpointLatency>({
   readonly onSort?: (sort: Sort) => void
 }) {
   const environments = new Set(rows.map((row) => row.environment))
-  // On a phone only p50 and p95 show, so endpoint names fit.
+  // On a phone only p50 and p95 show, so operation names fit.
   const grid =
     "grid grid-cols-[minmax(0,1fr)_repeat(2,4.5rem)] gap-x-3 sm:grid-cols-[minmax(0,1fr)_repeat(4,4.5rem)_3.5rem_4rem]"
 
@@ -160,7 +163,9 @@ export function EndpointTable<Row extends EndpointLatency>({
         aria-label={`Sort by ${label}`}
         aria-pressed={active}
         // A click sorts by a column, the largest first, or names A to Z; a second click reverses it.
-        onClick={() => onSort(active ? { key, descending: !sort.descending } : { key, descending: key !== "endpoint" })}
+        onClick={() =>
+          onSort(active ? { key, descending: !sort.descending } : { key, descending: key !== "operation" })
+        }
         className={cn(
           "flex items-center gap-1 text-left hover:text-foreground focus-visible:text-foreground focus-visible:outline-1 focus-visible:outline-ring",
           active && "text-foreground",
@@ -176,25 +181,25 @@ export function EndpointTable<Row extends EndpointLatency>({
   return (
     <div className="flex flex-col">
       <div className={cn(grid, "border-b pb-2 text-sm text-muted-foreground")}>
-        {header("endpoint", "Endpoint")}
+        {header("operation", "Operation")}
         {percentiles.map((column) => (
           <span key={column.key} className={cn(!column.always && "hidden sm:block")}>
             {header(column.key, column.key, "font-mono")}
           </span>
         ))}
         <span className="hidden justify-self-end sm:block">{header("errors", "Errors")}</span>
-        <span className="hidden justify-self-end sm:block">{header("requests", "Requests")}</span>
+        <span className="hidden justify-self-end sm:block">{header("runs", "Runs")}</span>
       </div>
       {rows.map((row) => {
         const errorRate = errorRateOf(row)
         return (
           <Link
-            key={`${row.component} ${row.environment ?? ""} ${row.endpoint}`}
+            key={`${row.component} ${row.environment ?? ""} ${row.operation}`}
             to={linkOf(row)}
             className={cn(grid, "items-center border-b py-2 outline-none hover:bg-accent/60 focus-visible:bg-accent")}
           >
             <span className="flex min-w-0 items-baseline gap-2.5">
-              <EndpointName endpoint={row.endpoint} className="text-[15px]" />
+              <OperationName name={row.operation} className="text-[15px]" />
               {environments.size > 1 && (
                 <span className="shrink-0 font-mono text-xs text-muted-foreground">
                   {row.environment ?? "no environment"}
@@ -216,13 +221,13 @@ export function EndpointTable<Row extends EndpointLatency>({
                 errorRate >= 0.01 ? "text-failure" : "text-muted-foreground",
               )}
             >
-              {row.errors === 0 ? "none" : share(row.errors, row.requests)}
+              {row.errors === 0 ? "none" : share(row.errors, row.runs)}
             </span>
             <span
               className="hidden text-right font-mono text-[13px] text-muted-foreground sm:block"
-              title={`${count(row.requests)} requests`}
+              title={`${count(row.runs)} runs`}
             >
-              {row.requests >= 10_000 ? compact(row.requests) : count(row.requests)}
+              {row.runs >= 10_000 ? compact(row.runs) : count(row.runs)}
             </span>
           </Link>
         )

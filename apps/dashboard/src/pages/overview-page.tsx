@@ -7,24 +7,24 @@ import { ActivityIcon, BellIcon, BoxesIcon, BugIcon, ScrollTextIcon } from "luci
 import { failureColor, warningColor } from "@/lib/colors"
 import { count, duration, share } from "@/lib/format"
 import {
-  endpointsAtom,
+  operationsAtom,
   errorsAtom,
   logCountsAtom,
   periodAtom,
   projectAtom,
-  requestsAtom,
-  usualEndpointsAtom,
+  runsAtom,
+  usualOperationsAtom,
 } from "@/project-data"
 import {
   attentionOf,
   colorOf,
   columnTimesOf,
   endOf,
-  endpointKeyOf,
+  operationKeyOf,
   logColumnsOf,
   periodWords,
-  requestColumnsOf,
-  slowerEndpoints,
+  runColumnsOf,
+  slowerOperations,
   statusOf,
   sumOf,
   ticksOf,
@@ -65,9 +65,9 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
   const scope = { project }
   const period = useAtomValue(periodAtom)
   const detail = useAtomValue(projectAtom(project))
-  const requests = useAtomValue(requestsAtom(scope))
-  const endpoints = useAtomValue(endpointsAtom(scope))
-  const compared = useAtomValue(usualEndpointsAtom(scope))
+  const runs = useAtomValue(runsAtom(scope))
+  const operations = useAtomValue(operationsAtom(scope))
+  const compared = useAtomValue(usualOperationsAtom(scope))
   const errors = useAtomValue(errorsAtom(scope))
   const logCounts = useAtomValue(logCountsAtom({ project, by: "level" }))
   const periodText = periodWords[period].toLowerCase()
@@ -76,7 +76,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
       <ProjectHeader
         title={AsyncResult.isSuccess(detail) ? detail.value.project.name : project}
-        latest={AsyncResult.map(endpoints, (table) =>
+        latest={AsyncResult.map(operations, (table) =>
           table.dataUntil === undefined ? undefined : DateTime.toEpochMillis(table.dataUntil),
         )}
       >
@@ -84,7 +84,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
       </ProjectHeader>
 
       <Panel icon={BellIcon} title="Needs attention" subtitle="What is wrong now, the worst first">
-        <Loaded result={AsyncResult.all({ errors, requests, compared })}>
+        <Loaded result={AsyncResult.all({ errors, runs, compared })}>
           {(facts) => <AttentionList items={attentionOf({ project, ...facts })} />}
         </Loaded>
       </Panel>
@@ -92,14 +92,14 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
       <div className="grid gap-4 xl:grid-cols-3">
         <Panel
           icon={ActivityIcon}
-          title="Requests"
+          title="Runs"
           subtitle={periodWords[period]}
           action={<OpenButton project={project} area="performance" />}
         >
-          <Loaded result={AsyncResult.all({ requests, endpoints })}>
-            {({ requests: series, endpoints: table }) => {
-              const asked = requestColumnsOf(series, (point) => point.requests)
-              const failed = requestColumnsOf(series, (point) => point.errors)
+          <Loaded result={AsyncResult.all({ runs, operations })}>
+            {({ runs: series, operations: table }) => {
+              const asked = runColumnsOf(series, (point) => point.runs)
+              const failed = runColumnsOf(series, (point) => point.errors)
               const { whenOf } = columnTimesOf(asked)
               const slowest = table.rows.toSorted((left, right) => right.p95Ms - left.p95Ms)[0]
               return (
@@ -107,9 +107,9 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
                   <div className="my-auto px-5 py-5">
                     <BarRows
                       rowHeight={summaryRowHeight}
-                      label="Requests to every component over the period, and failed requests."
+                      label="Runs of every component over the period, and failed runs."
                       rows={[
-                        { label: "Requests", color: "var(--blue)", values: asked.values },
+                        { label: "Runs", color: "var(--blue)", values: asked.values },
                         { label: "Failed", color: failureColor, values: failed.values },
                       ]}
                       ticks={everyOther(ticksOf(asked))}
@@ -118,10 +118,10 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
                   </div>
                   <PanelStats
                     stats={[
-                      { label: "Requests", value: count(table.requests) },
+                      { label: "Runs", value: count(table.runs) },
                       {
                         label: "Error rate",
-                        value: share(table.errors, table.requests),
+                        value: share(table.errors, table.runs),
                         ...(table.errors > 0 ? { color: failureColor } : {}),
                       },
                       ...(slowest === undefined ? [] : [{ label: "Slowest p95", value: duration(slowest.p95Ms) }]),
@@ -232,12 +232,12 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
       </div>
 
       <Panel icon={BoxesIcon} title="Components" subtitle={`How each part is doing, ${periodText}`}>
-        <Loaded result={AsyncResult.all({ detail, endpoints, compared })}>
-          {({ detail: { components }, endpoints: table, compared: usual }) => {
+        <Loaded result={AsyncResult.all({ detail, operations, compared })}>
+          {({ detail: { components }, operations: table, compared: usual }) => {
             const keys = components.map((component) => component.key)
-            const slower = slowerEndpoints(usual)
+            const slower = slowerOperations(usual)
             const slowerIn = (component: string) =>
-              usual.lastDay.rows.filter((row) => row.component === component && slower.has(endpointKeyOf(row))).length
+              usual.lastDay.rows.filter((row) => row.component === component && slower.has(operationKeyOf(row))).length
             if (components.length === 0) {
               return (
                 <p className="max-w-2xl px-5 py-6 text-[15px]">
@@ -253,7 +253,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
               <ul className="divide-y">
                 {components.map((component) => {
                   const rows = table.rows.filter((row) => row.component === component.key)
-                  const asked = sumOf(rows.map((row) => row.requests))
+                  const asked = sumOf(rows.map((row) => row.runs))
                   const failed = sumOf(rows.map((row) => row.errors))
                   const gotSlower = slowerIn(component.key)
                   return (
@@ -269,11 +269,11 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
                         </span>
                       </span>
                       {rows.length === 0 ? (
-                        <span className="text-sm text-muted-foreground">No requests in this period.</span>
+                        <span className="text-sm text-muted-foreground">No runs in this period.</span>
                       ) : (
                         <dl className="grid grid-cols-3 gap-x-6">
                           {[
-                            { label: "Requests", value: count(asked) },
+                            { label: "Runs", value: count(asked) },
                             {
                               label: "Error rate",
                               value: share(failed, asked),

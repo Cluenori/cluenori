@@ -4,7 +4,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Pie, Pi
 
 import { compact, count, dayOf, duration, share } from "@/lib/format"
 import { KitCard, KitGroup } from "@/pages/kit-section"
-import { requestSeries, sampleNow } from "@/sample/sample-project"
+import { runSeries, sampleNow } from "@/sample/sample-project"
 import type { ChartConfig } from "@/views/ui/chart"
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/views/ui/chart"
 
@@ -16,13 +16,13 @@ const isWeekend = (epochMillis: number) => {
   return weekday === 0 || weekday === 6
 }
 
-// Requests per day over the last 30 days, fewer at weekends.
-const dailyRequests = requestSeries("30d").points.map((point) => ({
+// Runs per day over the last 30 days, fewer at weekends.
+const dailyRuns = runSeries("30d").points.map((point) => ({
   day: dayOf(point.start),
-  requests: Math.round(point.requests * (isWeekend(point.start) ? 0.62 : 1)),
+  runs: Math.round(point.runs * (isWeekend(point.start) ? 0.62 : 1)),
 }))
 
-const requestsConfig = { requests: { label: "Requests", color: "var(--chart-1)" } } satisfies ChartConfig
+const runsConfig = { runs: { label: "Runs", color: "var(--chart-1)" } } satisfies ChartConfig
 
 // Errors per day over the last two weeks, by component; today has the export incident.
 const apiErrors = [18, 22, 15, 19, 24, 12, 9, 21, 17, 26, 19, 14, 23, 61] as const
@@ -66,27 +66,27 @@ const latencyLabels: Readonly<Record<string, string>> = {
   notes: latencyConfig.notes.label,
 }
 
-// Requests in the last day, by component. A slice's fill names the chart's own variable, which only
+// Runs in the last day, by component. A slice's fill names the chart's own variable, which only
 // exists inside the chart; the legend beside it takes the color from the config.
-const requestsByComponent = [
-  { component: "api", requests: 141_211, fill: "var(--color-api)" },
-  { component: "web", requests: 52_880, fill: "var(--color-web)" },
-  { component: "ios", requests: 23_410, fill: "var(--color-ios)" },
+const runsByComponent = [
+  { component: "api", runs: 141_211, fill: "var(--color-api)" },
+  { component: "web", runs: 52_880, fill: "var(--color-web)" },
+  { component: "ios", runs: 23_410, fill: "var(--color-ios)" },
 ] as const
 
-const totalRequests = requestsByComponent.reduce((sum, entry) => sum + entry.requests, 0)
+const totalRuns = runsByComponent.reduce((sum, entry) => sum + entry.runs, 0)
 
 const axisProps = { tickLine: false, axisLine: false } as const
 
-function RequestsArea() {
+function RunsArea() {
   const id = useId().replaceAll(":", "")
   return (
-    <ChartContainer config={requestsConfig} className="aspect-auto h-60 w-full">
-      <AreaChart data={dailyRequests} margin={{ top: 8, right: 0, bottom: 0, left: 0 }}>
+    <ChartContainer config={runsConfig} className="aspect-auto h-60 w-full">
+      <AreaChart data={dailyRuns} margin={{ top: 8, right: 0, bottom: 0, left: 0 }}>
         <defs>
           <linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-requests)" stopOpacity={0.3} />
-            <stop offset="100%" stopColor="var(--color-requests)" stopOpacity={0} />
+            <stop offset="0%" stopColor="var(--color-runs)" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="var(--color-runs)" stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid vertical={false} strokeDasharray="2 4" />
@@ -100,9 +100,9 @@ function RequestsArea() {
         />
         <ChartTooltip cursor={{ stroke: "var(--border)" }} content={<ChartTooltipContent indicator="line" />} />
         <Area
-          dataKey="requests"
+          dataKey="runs"
           type="monotone"
-          stroke="var(--color-requests)"
+          stroke="var(--color-runs)"
           strokeWidth={2}
           fill={`url(#${id}-fill)`}
           isAnimationActive={false}
@@ -151,7 +151,7 @@ function ErrorsStacked() {
   )
 }
 
-// One line of the latency tooltip: the endpoint's color, its name, and its p95.
+// One line of the latency tooltip: the operation's color, its name, and its p95.
 const latencyLine: NonNullable<ComponentProps<typeof ChartTooltipContent>["formatter"]> = (value, name, item) => (
   <div className="flex w-full items-center gap-2">
     <span className="size-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: item.color }} />
@@ -194,7 +194,7 @@ function LatencyLines() {
   )
 }
 
-function RequestsDonut() {
+function RunsDonut() {
   return (
     <div className="grid items-center gap-6 sm:grid-cols-[auto_1fr]">
       <div className="relative mx-auto size-52">
@@ -202,8 +202,8 @@ function RequestsDonut() {
           <PieChart>
             <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="component" />} />
             <Pie
-              data={[...requestsByComponent]}
-              dataKey="requests"
+              data={[...runsByComponent]}
+              dataKey="runs"
               nameKey="component"
               innerRadius={64}
               outerRadius={96}
@@ -216,20 +216,20 @@ function RequestsDonut() {
           </PieChart>
         </ChartContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-semibold tracking-tight tabular-nums">{compact(totalRequests)}</span>
-          <span className="text-xs text-muted-foreground">requests</span>
+          <span className="text-2xl font-semibold tracking-tight tabular-nums">{compact(totalRuns)}</span>
+          <span className="text-xs text-muted-foreground">runs</span>
         </div>
       </div>
       <ul className="flex flex-col gap-3 text-sm">
-        {requestsByComponent.map((entry) => (
+        {runsByComponent.map((entry) => (
           <li key={entry.component} className="flex items-center gap-3">
             <span
               className="size-2.5 shrink-0 rounded-[2px]"
               style={{ backgroundColor: componentConfig[entry.component].color }}
             />
             <span>{componentConfig[entry.component].label}</span>
-            <span className="ml-auto text-muted-foreground tabular-nums">{count(entry.requests)}</span>
-            <span className="w-12 text-right tabular-nums">{share(entry.requests, totalRequests)}</span>
+            <span className="ml-auto text-muted-foreground tabular-nums">{count(entry.runs)}</span>
+            <span className="w-12 text-right tabular-nums">{share(entry.runs, totalRuns)}</span>
           </li>
         ))}
       </ul>
@@ -246,11 +246,11 @@ export function KitCharts() {
       description="Recharts inside the chart container, colored with var(--chart-1) to var(--chart-5) in order. Hover them."
     >
       <KitCard
-        title="Requests per day"
+        title="Runs per day"
         description="An area chart of the last 30 days, fewer at weekends."
         files={["chart.tsx"]}
       >
-        <RequestsArea />
+        <RunsArea />
       </KitCard>
       <KitCard
         title="Errors by component"
@@ -261,17 +261,17 @@ export function KitCharts() {
       </KitCard>
       <KitCard
         title="p95 latency by release"
-        description="A line for each endpoint of folio-api. Exports got slower in 2.14.0+412."
+        description="A line for each operation of folio-api. Exports got slower in 2.14.0+412."
         files={["chart.tsx"]}
       >
         <LatencyLines />
       </KitCard>
       <KitCard
-        title="Requests by component"
+        title="Runs by component"
         description="A donut of the last day, with the numbers beside it."
         files={["chart.tsx"]}
       >
-        <RequestsDonut />
+        <RunsDonut />
       </KitCard>
     </KitGroup>
   )

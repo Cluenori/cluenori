@@ -5,10 +5,10 @@ import { AsyncResult } from "effect/reactivity"
 import { FolderPlusIcon, SearchXIcon } from "lucide-react"
 import { lazy, Suspense, useEffect, useState } from "react"
 
-import { EndpointPage } from "@/pages/endpoint-page"
-import { EndpointsPage } from "@/pages/endpoints-page"
 import { ErrorsPage } from "@/pages/errors-page"
 import { LogsPage } from "@/pages/logs-page"
+import { OperationPage } from "@/pages/operation-page"
+import { OperationsPage } from "@/pages/operations-page"
 import { OverviewPage } from "@/pages/overview-page"
 import { PerformancePage } from "@/pages/performance-page"
 import { projectsAtom, signOutAtom } from "@/project-data"
@@ -31,7 +31,7 @@ const KitPage = lazy(() => import("@/pages/kit-page").then((module) => ({ defaul
 const searchDialog = import("@/views/search-dialog")
 const SearchDialog = lazy(() => searchDialog.then((module) => ({ default: module.SearchDialog })))
 
-// One error's page and one request's trace load after start too: most visits begin on a summary,
+// One error's page and one trace load after start too: most visits begin on a summary,
 // and they are there by the time anyone opens one.
 const errorPage = import("@/pages/error-page")
 const ErrorPage = lazy(() => errorPage.then((module) => ({ default: module.ErrorPage })))
@@ -102,18 +102,18 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
           {...(route.component === undefined ? {} : { component: route.component })}
         />
       )
-    case "endpoints":
+    case "operations":
       return (
-        <EndpointsPage
+        <OperationsPage
           project={route.project}
           {...(route.component === undefined ? {} : { component: route.component })}
         />
       )
-    case "endpoint":
+    case "operation":
       return (
-        <EndpointPage
+        <OperationPage
           project={route.project}
-          endpoint={route.endpoint}
+          operation={route.operation}
           {...(route.component === undefined ? {} : { component: route.component })}
         />
       )

@@ -109,5 +109,23 @@ export const migrateSignals = Migrator.make({})({
       yield* sql`CREATE INDEX signals_kept_requests_endpoint ON signals_kept_requests (endpoint, kept_for, hour)`
       yield* sql`CREATE INDEX signals_kept_requests_hour ON signals_kept_requests (hour)`
     }),
+    // A request is now a run, and an endpoint an operation, since jobs and messages are counted
+    // too. Renaming changes only the schema, not the rows; SQLite renames a column in its keys and
+    // indexes, but an index keeps its name, so each is made again under the new one.
+    "0005_operations_runs": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE signals_endpoints RENAME TO signals_operations`
+      yield* sql`UPDATE signals_operations SET name = '(other operations)' WHERE name = '(other endpoints)'`
+      for (const table of ["signals_minute_counts", "signals_hour_counts"]) {
+        yield* sql`ALTER TABLE ${sql(table)} RENAME COLUMN endpoint TO operation`
+        yield* sql`ALTER TABLE ${sql(table)} RENAME COLUMN requests TO runs`
+      }
+      yield* sql`ALTER TABLE signals_kept_requests RENAME TO signals_kept_runs`
+      yield* sql`ALTER TABLE signals_kept_runs RENAME COLUMN endpoint TO operation`
+      yield* sql`DROP INDEX signals_kept_requests_endpoint`
+      yield* sql`DROP INDEX signals_kept_requests_hour`
+      yield* sql`CREATE INDEX signals_kept_runs_operation ON signals_kept_runs (operation, kept_for, hour)`
+      yield* sql`CREATE INDEX signals_kept_runs_hour ON signals_kept_runs (hour)`
+    }),
   }),
 })

@@ -8,17 +8,17 @@ import {
   TraceId,
 } from "@cluenori/foundation"
 import { Component, ComponentName, Project, ProjectDetail, ProjectList, ProjectName } from "@cluenori/projects"
-import type { EndpointRow, ErrorGroup, LogLine, SeriesStep } from "@cluenori/signals"
+import type { OperationRow, ErrorGroup, LogLine, SeriesStep } from "@cluenori/signals"
 import {
-  EndpointTable,
+  OperationTable,
   ErrorDetail,
   ErrorGroupId,
   ErrorGroupNotFound,
   ErrorTable,
-  KeptRequests,
+  KeptRuns,
   LogCounts,
   LogPage,
-  RequestSeries,
+  RunSeries,
   SeriesStep as SeriesStepSchema,
   SpanId,
   stepMillis,
@@ -66,7 +66,7 @@ const Asked = Schema.Struct({
   step: Schema.optionalKey(SeriesStepSchema),
   around: Schema.optionalKey(Schema.DateTimeUtcFromString),
   component: Schema.optionalKey(Schema.String),
-  endpoint: Schema.optionalKey(Schema.String),
+  operation: Schema.optionalKey(Schema.String),
   level: Schema.optionalKey(Schema.String),
   search: Schema.optionalKey(Schema.String),
   by: Schema.optionalKey(Schema.String),
@@ -89,14 +89,14 @@ const stepsOf = (period: Period, step: SeriesStep) => {
 }
 
 const row = (
-  endpoint: string,
-  requests: number,
+  operation: string,
+  runs: number,
   errors: number,
   [p50Ms, p80Ms, p95Ms, p99Ms]: readonly [number, number, number, number],
-): EndpointRow => ({
+): OperationRow => ({
   component: api,
-  endpoint: EnvelopeName.make(endpoint),
-  requests,
+  operation: EnvelopeName.make(operation),
+  runs,
   errors,
   averageMs: p50Ms * 1.2,
   p50Ms,
@@ -117,33 +117,33 @@ const usualRows = [
   row("POST /api/export", 8_100, 240, [880, 1_650, 4_000, 8_500]),
 ]
 
-const endpoints = ({ asked, period, now }: Question) => {
+const operations = ({ asked, period, now }: Question) => {
   // The 7 days before the last day end a day ago; every other question ends now.
   const usual = now - DateTime.toEpochMillis(period.to) > 12 * hour
   const rows = (usual ? usualRows : lastDayRows).filter(
     (entry) =>
       (asked.component === undefined || entry.component === asked.component) &&
-      (asked.endpoint === undefined || entry.endpoint === asked.endpoint),
+      (asked.operation === undefined || entry.operation === asked.operation),
   )
-  return reply(EndpointTable, {
+  return reply(OperationTable, {
     covered: period,
     rows,
-    requests: rows.reduce((sum, entry) => sum + entry.requests, 0),
+    runs: rows.reduce((sum, entry) => sum + entry.runs, 0),
     errors: rows.reduce((sum, entry) => sum + entry.errors, 0),
     dataUntil: period.to,
   })
 }
 
-const requests = ({ asked, period }: Question) =>
+const runs = ({ asked, period }: Question) =>
   Effect.gen(function* () {
     const step = yield* stepOf(asked)
-    const slow = asked.endpoint === "GET /api/feed"
-    return yield* reply(RequestSeries, {
+    const slow = asked.operation === "GET /api/feed"
+    return yield* reply(RunSeries, {
       covered: period,
       step,
       points: stepsOf(period, step).map((start, index) => ({
         start: DateTime.makeUnsafe(start),
-        requests: 40 + (index % 7) * 6,
+        runs: 40 + (index % 7) * 6,
         errors: index % 9 === 0 ? 1 : 0,
         p50Ms: 60,
         p80Ms: 120,
@@ -153,13 +153,13 @@ const requests = ({ asked, period }: Question) =>
     })
   })
 
-// The export's requests kept: its slowest, which failed, and the next slowest. Kept 14 days.
-const keptRequests = ({ asked, period, now }: Question) => {
+// The export's runs kept: its slowest, which failed, and the next slowest. Kept 14 days.
+const keptRuns = ({ asked, period, now }: Question) => {
   const kept = (trace: TraceId, ago: number, durationMs: number, status: number) => ({
     trace,
     component: api,
     environment: EnvironmentKey.make("production"),
-    endpoint: EnvelopeName.make("POST /api/export"),
+    operation: EnvelopeName.make("POST /api/export"),
     start: DateTime.makeUnsafe(now - ago),
     durationMs,
     failed: status >= 500,
@@ -167,8 +167,8 @@ const keptRequests = ({ asked, period, now }: Question) => {
   })
   const failed = kept(exportTrace, 40 * minute, 4_210, 500)
   const slow = kept(TraceId.make("9c41e07b2d5af6831e0c7d2b4a9f6e15"), 3 * hour, 2_870, 200)
-  const ofExport = asked.endpoint === undefined || asked.endpoint === "POST /api/export"
-  return reply(KeptRequests, {
+  const ofExport = asked.operation === undefined || asked.operation === "POST /api/export"
+  return reply(KeptRuns, {
     covered: new Period({
       from: DateTime.makeUnsafe(Math.max(DateTime.toEpochMillis(period.from), now - 14 * day)),
       to: period.to,
@@ -411,11 +411,11 @@ export const notesApi = ({
         period: new Period({ from: asked.from, to: asked.to }),
         now: yield* Clock.currentTimeMillis,
       }
-      if (area === "endpoints") {
-        return yield* endpoints(question)
+      if (area === "operations") {
+        return yield* operations(question)
       }
-      if (area === "requests") {
-        return yield* id === "kept" ? keptRequests(question) : requests(question)
+      if (area === "runs") {
+        return yield* id === "kept" ? keptRuns(question) : runs(question)
       }
       if (area === "errors") {
         return yield* id === undefined ? errors(question) : error(question, id)

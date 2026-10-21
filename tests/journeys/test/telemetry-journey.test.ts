@@ -41,7 +41,7 @@ const lastHour = Effect.gen(function* () {
   return { from: DateTime.subtract(now, { hours: 1 }), to: DateTime.add(now, { minutes: 1 }) }
 })
 
-const requestsAt = (start: number): ReadonlyArray<ExportedSpan> => [
+const runsAt = (start: number): ReadonlyArray<ExportedSpan> => [
   ...[12, 18, 25, 31, 240].map((durationMillis, index) => ({
     name: "GET /api/notes/{id}",
     kind: "server" as const,
@@ -53,49 +53,49 @@ const requestsAt = (start: number): ReadonlyArray<ExportedSpan> => [
   { name: "GET", kind: "client", startMillis: start + 80, durationMillis: 9 },
 ]
 
-// Real time: the Worker counts requests by the time they started, against its own clock.
+// Real time: the Worker counts runs by the time they started, against its own clock.
 layer(CluenoriClient.layer, { excludeTestServices: true })("telemetry", (it) => {
-  it.effect("a service's requests become its project's endpoint table", () =>
+  it.effect("a service's runs become its project's operation table", () =>
     Effect.gen(function* () {
       const client = yield* CluenoriClient
       // Set up: a project, and its API with an ingest key.
       const { project, ingestKey } = yield* projectWithApi("notes")
 
-      // The API's exporter sends a batch: seven requests, and a client span that is no request.
+      // The API's exporter sends a batch: seven runs, and a client span that is no run.
       const now = yield* DateTime.now
-      const body = traceExport(notesApi, requestsAt(DateTime.toEpochMillis(now) - 1_000))
+      const body = traceExport(notesApi, runsAt(DateTime.toEpochMillis(now) - 1_000))
       const sent = yield* sendExport(ingestKey, body)
       assert.deepStrictEqual(sent, { status: 200, contentType: "application/x-protobuf", answerBytes: 0 })
 
-      // The endpoint table shows them, by endpoint, with their percentiles.
+      // The operation table shows them, by operation, with their percentiles.
       const period = yield* lastHour
-      const table = yield* client.signals.endpoints({ params: { project }, query: period })
+      const table = yield* client.signals.operations({ params: { project }, query: period })
       const [notes, fail] = table.rows
-      assert.deepStrictEqual([table.requests, table.errors], [7, 2])
-      assert.strictEqual(notes?.endpoint, "GET /api/notes/{id}")
+      assert.deepStrictEqual([table.runs, table.errors], [7, 2])
+      assert.strictEqual(notes?.operation, "GET /api/notes/{id}")
       assert.strictEqual(notes?.environment, "production")
-      assert.strictEqual(notes?.requests, 5)
+      assert.strictEqual(notes?.runs, 5)
       assert.closeTo(notes?.p50Ms ?? 0, 25, 25 * 0.02)
       assert.closeTo(notes?.p99Ms ?? 0, 240, 240 * 0.02)
       assert.strictEqual(fail?.errors, 2)
 
       // The exporter retries the same batch after a timeout: it counts once.
       const retried = yield* sendExport(ingestKey, body)
-      const again = yield* client.signals.endpoints({ params: { project }, query: period })
+      const again = yield* client.signals.operations({ params: { project }, query: period })
       assert.strictEqual(retried.status, 200)
-      assert.strictEqual(again.requests, 7)
+      assert.strictEqual(again.runs, 7)
 
       // The load over time, and the environment filter.
-      const series = yield* client.signals.requests({ params: { project }, query: { ...period, step: "5m" } })
-      const staging = yield* client.signals.endpoints({
+      const series = yield* client.signals.runs({ params: { project }, query: { ...period, step: "5m" } })
+      const staging = yield* client.signals.operations({
         params: { project },
         query: { ...period, environment: EnvironmentKey.make("staging") },
       })
       assert.strictEqual(
-        series.points.reduce((total, point) => total + point.requests, 0),
+        series.points.reduce((total, point) => total + point.runs, 0),
         7,
       )
-      assert.strictEqual(staging.requests, 0)
+      assert.strictEqual(staging.runs, 0)
     }),
   )
 
@@ -103,7 +103,7 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("telemetry", (it) => 
     Effect.gen(function* () {
       const { ingestKey } = yield* projectWithApi("wrong-keys")
       const now = yield* DateTime.now
-      const body = traceExport(notesApi, requestsAt(DateTime.toEpochMillis(now)))
+      const body = traceExport(notesApi, runsAt(DateTime.toEpochMillis(now)))
       const tampered = `${ingestKey.slice(0, -1)}${ingestKey.endsWith("A") ? "B" : "A"}`
       const otherProject = ingestKey.replace("cluenori.wrong-keys.", "cluenori.no-such-project.")
 
@@ -150,7 +150,7 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("telemetry", (it) => 
       const client = yield* CluenoriClient
       const period = yield* lastHour
       const missing = yield* client.signals
-        .endpoints({ params: { project: ProjectKey.make("never-created") }, query: period })
+        .operations({ params: { project: ProjectKey.make("never-created") }, query: period })
         .pipe(Effect.flip)
       const created = yield* client.projects
         .createProject({ payload: { key: ProjectKey.make("never-created"), name: ProjectName.make("Later") } })

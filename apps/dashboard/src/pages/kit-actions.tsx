@@ -172,7 +172,7 @@ export function KitActions() {
               </Button>
             </ButtonGroup>
             <ButtonGroup className="w-72">
-              <Input placeholder="Find an endpoint" aria-label="Find an endpoint" />
+              <Input placeholder="Find an operation" aria-label="Find an operation" />
               <Button variant="outline" size="icon" aria-label="Search">
                 <SearchIcon />
               </Button>
@@ -208,7 +208,7 @@ export function KitActions() {
                 <Kbd>↑</Kbd>
                 <Kbd>↓</Kbd>
               </KbdGroup>
-              and open a request with <Kbd>Enter</Kbd>.
+              and open a run with <Kbd>Enter</Kbd>.
             </p>
           </div>
           <KitSample label="In a button">

@@ -4,29 +4,29 @@ import { ComponentKey, EnvelopeName, EnvironmentKey, Period, TraceId } from "@cl
 import { DateTime, Duration, Effect, Option, Order, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 
-import { requestRetention } from "./read-traces.ts"
-import type { KeptRequest, RequestCounts } from "./request-counts.ts"
-import { HttpStatus, keptPerHour } from "./request-counts.ts"
+import { runRetention } from "./read-traces.ts"
+import type { KeptRun, RunCounts } from "./run-counts.ts"
+import { HttpStatus, keptPerHour } from "./run-counts.ts"
 import type {
-  EndpointRow,
-  EndpointTable,
-  KeptRequestRow,
-  KeptRequests,
-  RequestQuery,
-  RequestSeries,
+  OperationRow,
+  OperationTable,
+  KeptRunRow,
+  KeptRuns,
+  RunQuery,
+  RunSeries,
   SeriesStep,
-} from "./request-queries.ts"
-import { otherEndpoints, stepMillis } from "./request-queries.ts"
+} from "./run-queries.ts"
+import { otherOperations, stepMillis } from "./run-queries.ts"
 
 /** How long hourly counts are kept: 15 months, so a year compares with the one before. */
 export const hourlyRetention = Duration.days(455)
 
-const maxEndpointsPerComponent = 500
+const maxOperationsPerComponent = 500
 
-// How many kept requests a question answers in each list.
+// How many kept runs a question answers in each list.
 const keptListed = 20
 
-// Which list a request is kept for: the slowest, or the slowest that failed.
+// Which list a run is kept for: the slowest, or the slowest that failed.
 const KeptFor = Schema.Literals(["slowest", "failed"])
 type KeptFor = typeof KeptFor.Type
 
@@ -40,7 +40,7 @@ interface Resolution {
   readonly kept: Duration.Duration
 }
 
-const byMinute: Resolution = { table: "signals_minute_counts", width: 60_000, kept: requestRetention }
+const byMinute: Resolution = { table: "signals_minute_counts", width: 60_000, kept: runRetention }
 const byHour: Resolution = { table: "signals_hour_counts", width: 3_600_000, kept: hourlyRetention }
 
 const floorTo = (millis: number, width: number) => millis - (((millis % width) + width) % width)
@@ -51,9 +51,9 @@ const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const CountsRow = Schema.Struct({
   bucket: Schema.Int,
   component: ComponentKey,
-  endpoint: EnvelopeName,
+  operation: EnvelopeName,
   environment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
-  requests: Count,
+  runs: Count,
   errors: Count,
   totalMs: Schema.Finite,
   durations: Schema.fromJsonString(QuantileSketch),
@@ -62,7 +62,7 @@ type CountsRow = typeof CountsRow.Type
 
 const KeptRow = Schema.Struct({
   component: ComponentKey,
-  endpoint: EnvelopeName,
+  operation: EnvelopeName,
   environment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
   trace: TraceId,
   start: Schema.Int,
@@ -71,10 +71,10 @@ const KeptRow = Schema.Struct({
   status: Schema.NullOr(HttpStatus),
 })
 
-const keptRowOf = (row: typeof KeptRow.Type): KeptRequestRow => ({
+const keptRowOf = (row: typeof KeptRow.Type): KeptRunRow => ({
   trace: row.trace,
   component: row.component,
-  endpoint: row.endpoint,
+  operation: row.operation,
   ...(row.environment === "" ? {} : { environment: row.environment }),
   start: DateTime.makeUnsafe(row.start),
   durationMs: row.durationMs,
@@ -82,11 +82,11 @@ const keptRowOf = (row: typeof KeptRow.Type): KeptRequestRow => ({
   ...(row.status === null ? {} : { status: row.status }),
 })
 
-const byRequestsThenName = Order.combineAll<EndpointRow>([
-  Order.mapInput(Order.flip(Order.Number), (row) => row.requests),
+const byRunsThenName = Order.combineAll<OperationRow>([
+  Order.mapInput(Order.flip(Order.Number), (row) => row.runs),
   Order.mapInput(Order.String, (row) => row.component),
   Order.mapInput(Order.String, (row) => row.environment ?? ""),
-  Order.mapInput(Order.String, (row) => row.endpoint),
+  Order.mapInput(Order.String, (row) => row.operation),
 ])
 
 // Which store answers a question about `period`: minutes for two days or less, hours beyond.
@@ -105,17 +105,17 @@ const coveredOf = (period: Period, resolution: Resolution, now: number) => {
 
 const percentile = (durations: Sketch, quantile: number) =>
   Option.match(quantileOf(durations, Quantile.make(quantile)), {
-    onNone: () => Effect.die("A counted endpoint has no durations"),
+    onNone: () => Effect.die("A counted operation has no durations"),
     onSome: (value) => Effect.succeed(value),
   })
 
-// A batch's counts added up into hours, so each hour, endpoint and environment is one write.
-const hoursOf = (counts: ReadonlyArray<RequestCounts>): ReadonlyArray<RequestCounts> => {
-  const hours = new Map<string, RequestCounts>()
+// A batch's counts added up into hours, so each hour, operation and environment is one write.
+const hoursOf = (counts: ReadonlyArray<RunCounts>): ReadonlyArray<RunCounts> => {
+  const hours = new Map<string, RunCounts>()
   for (const entry of counts) {
     const hour = floorTo(DateTime.toEpochMillis(entry.bucket), byHour.width)
     // Names and keys hold no control characters, so NUL separates them unambiguously.
-    const key = [hour, entry.endpoint, entry.environment ?? ""].join("\u0000")
+    const key = [hour, entry.operation, entry.environment ?? ""].join("\u0000")
     const earlier = hours.get(key)
     hours.set(
       key,
@@ -123,7 +123,7 @@ const hoursOf = (counts: ReadonlyArray<RequestCounts>): ReadonlyArray<RequestCou
         ? { ...entry, bucket: DateTime.makeUnsafe(hour) }
         : {
             ...earlier,
-            requests: earlier.requests + entry.requests,
+            runs: earlier.runs + entry.runs,
             errors: earlier.errors + entry.errors,
             totalMs: earlier.totalMs + entry.totalMs,
             durations: mergeSketches([earlier.durations, entry.durations]),
@@ -134,27 +134,27 @@ const hoursOf = (counts: ReadonlyArray<RequestCounts>): ReadonlyArray<RequestCou
 }
 
 /**
- * The project's requests, counted by endpoint and environment, by the minute for 14 days and by the
- * hour for 15 months, and the requests kept so they can be opened, 14 days. Part of Signals, which
+ * The project's runs, counted by operation and environment, by the minute for 14 days and by the
+ * hour for 15 months, and the runs kept so they can be opened, 14 days. Part of Signals, which
  * owns the transaction each write runs in.
  */
-export const requestStore = Effect.gen(function* () {
+export const runStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
 
   const encodeSketch = Schema.encodeEffect(Schema.fromJsonString(QuantileSketch))
 
-  const findEndpoints = SqlSchema.findAll({
+  const findOperations = SqlSchema.findAll({
     Request: ComponentKey,
     Result: Schema.Struct({ id: Schema.Int, name: EnvelopeName }),
-    execute: (component) => sql`SELECT id, name FROM signals_endpoints WHERE component = ${component}`,
+    execute: (component) => sql`SELECT id, name FROM signals_operations WHERE component = ${component}`,
   })
 
   const findDurations = (resolution: Resolution) =>
     SqlSchema.findOneOption({
-      Request: Schema.Struct({ bucket: Schema.Int, endpoint: Schema.Int, environment: Schema.String }),
+      Request: Schema.Struct({ bucket: Schema.Int, operation: Schema.Int, environment: Schema.String }),
       Result: Schema.Struct({ durations: Schema.fromJsonString(QuantileSketch) }),
       execute: (key) =>
-        sql`SELECT durations FROM ${sql(resolution.table)} WHERE bucket = ${key.bucket} AND endpoint = ${key.endpoint} AND environment = ${key.environment}`,
+        sql`SELECT durations FROM ${sql(resolution.table)} WHERE bucket = ${key.bucket} AND operation = ${key.operation} AND environment = ${key.environment}`,
     })
 
   const findCounts = (resolution: Resolution) =>
@@ -164,19 +164,19 @@ export const requestStore = Effect.gen(function* () {
         to: Schema.Int,
         environment: Schema.optionalKey(EnvironmentKey),
         component: Schema.optionalKey(ComponentKey),
-        endpoint: Schema.optionalKey(EnvelopeName),
+        operation: Schema.optionalKey(EnvelopeName),
       }),
       Result: CountsRow,
-      execute: (request) => sql`
-        SELECT c.bucket, e.component, e.name AS endpoint, c.environment, c.requests, c.errors,
+      execute: (asked) => sql`
+        SELECT c.bucket, o.component, o.name AS operation, c.environment, c.runs, c.errors,
           c.total_ms AS "totalMs", c.durations
-        FROM ${sql(resolution.table)} c JOIN signals_endpoints e ON e.id = c.endpoint
+        FROM ${sql(resolution.table)} c JOIN signals_operations o ON o.id = c.operation
         WHERE ${sql.and([
-          sql`c.bucket >= ${request.from}`,
-          sql`c.bucket < ${request.to}`,
-          ...(request.environment === undefined ? [] : [sql`c.environment = ${request.environment}`]),
-          ...(request.component === undefined ? [] : [sql`e.component = ${request.component}`]),
-          ...(request.endpoint === undefined ? [] : [sql`e.name = ${request.endpoint}`]),
+          sql`c.bucket >= ${asked.from}`,
+          sql`c.bucket < ${asked.to}`,
+          ...(asked.environment === undefined ? [] : [sql`c.environment = ${asked.environment}`]),
+          ...(asked.component === undefined ? [] : [sql`o.component = ${asked.component}`]),
+          ...(asked.operation === undefined ? [] : [sql`o.name = ${asked.operation}`]),
         ])}`,
     })
 
@@ -187,57 +187,53 @@ export const requestStore = Effect.gen(function* () {
       to: Schema.Int,
       environment: Schema.optionalKey(EnvironmentKey),
       component: Schema.optionalKey(ComponentKey),
-      endpoint: Schema.optionalKey(EnvelopeName),
+      operation: Schema.optionalKey(EnvelopeName),
     }),
     Result: KeptRow,
-    execute: (request) => sql`
-      SELECT e.component, e.name AS endpoint, k.environment, k.trace, k.start,
+    execute: (asked) => sql`
+      SELECT o.component, o.name AS operation, k.environment, k.trace, k.start,
         k.duration_ms AS "durationMs", k.failed, k.status
-      FROM signals_kept_requests k JOIN signals_endpoints e ON e.id = k.endpoint
+      FROM signals_kept_runs k JOIN signals_operations o ON o.id = k.operation
       WHERE ${sql.and([
-        sql`k.kept_for = ${request.keptFor}`,
-        sql`k.hour >= ${floorTo(request.from, byHour.width)}`,
-        sql`k.hour < ${request.to}`,
-        sql`k.start >= ${request.from}`,
-        sql`k.start < ${request.to}`,
-        ...(request.environment === undefined ? [] : [sql`k.environment = ${request.environment}`]),
-        ...(request.component === undefined ? [] : [sql`e.component = ${request.component}`]),
-        ...(request.endpoint === undefined ? [] : [sql`e.name = ${request.endpoint}`]),
+        sql`k.kept_for = ${asked.keptFor}`,
+        sql`k.hour >= ${floorTo(asked.from, byHour.width)}`,
+        sql`k.hour < ${asked.to}`,
+        sql`k.start >= ${asked.from}`,
+        sql`k.start < ${asked.to}`,
+        ...(asked.environment === undefined ? [] : [sql`k.environment = ${asked.environment}`]),
+        ...(asked.component === undefined ? [] : [sql`o.component = ${asked.component}`]),
+        ...(asked.operation === undefined ? [] : [sql`o.name = ${asked.operation}`]),
       ])}
-      ORDER BY ${request.keptFor === "slowest" ? sql`k.duration_ms DESC` : sql`k.start DESC`}
+      ORDER BY ${asked.keptFor === "slowest" ? sql`k.duration_ms DESC` : sql`k.start DESC`}
       LIMIT ${keptListed}`,
   })
 
-  // The endpoint's row ID, adding the endpoint when it is new; past the limit, `(other endpoints)`.
-  const endpointIdOf = Effect.fn("RequestStore.endpointIdOf")(function* (
+  // The operation's row ID, adding the operation when it is new; past the limit, `(other operations)`.
+  const operationIdOf = Effect.fn("RunStore.operationIdOf")(function* (
     component: ComponentKey,
     name: EnvelopeName,
     known: Map<string, number>,
   ) {
-    const atLimit = known.size >= maxEndpointsPerComponent
-    const counted = atLimit && !known.has(name) ? otherEndpoints : name
+    const atLimit = known.size >= maxOperationsPerComponent
+    const counted = atLimit && !known.has(name) ? otherOperations : name
     const existing = known.get(counted)
     if (existing !== undefined) {
       return existing
     }
     const [added] = yield* sql<{
       readonly id: number
-    }>`INSERT INTO signals_endpoints (component, name) VALUES (${component}, ${counted}) RETURNING id`
+    }>`INSERT INTO signals_operations (component, name) VALUES (${component}, ${counted}) RETURNING id`
     if (added === undefined) {
-      return yield* Effect.die("Adding an endpoint returned no row")
+      return yield* Effect.die("Adding an operation returned no row")
     }
     known.set(counted, added.id)
     return added.id
   })
 
-  const addTo = Effect.fn("RequestStore.addTo")(function* (
-    resolution: Resolution,
-    endpoint: number,
-    counts: RequestCounts,
-  ) {
+  const addTo = Effect.fn("RunStore.addTo")(function* (resolution: Resolution, operation: number, counts: RunCounts) {
     const bucket = floorTo(DateTime.toEpochMillis(counts.bucket), resolution.width)
     const environment = counts.environment ?? ""
-    const stored = yield* findDurations(resolution)({ bucket, endpoint, environment })
+    const stored = yield* findDurations(resolution)({ bucket, operation, environment })
     const durations = Option.match(stored, {
       onNone: () => counts.durations,
       onSome: (row) => mergeSketches([row.durations, counts.durations]),
@@ -246,91 +242,91 @@ export const requestStore = Effect.gen(function* () {
     yield* sql`
       INSERT INTO ${sql(resolution.table)} ${sql.insert({
         bucket,
-        endpoint,
+        operation,
         environment,
-        requests: counts.requests,
+        runs: counts.runs,
         errors: counts.errors,
         total_ms: counts.totalMs,
         durations: json,
       })}
-      ON CONFLICT (bucket, endpoint, environment) DO UPDATE SET
-        requests = requests + excluded.requests,
+      ON CONFLICT (bucket, operation, environment) DO UPDATE SET
+        runs = runs + excluded.runs,
         errors = errors + excluded.errors,
         total_ms = total_ms + excluded.total_ms,
         durations = excluded.durations`
   })
 
-  // Keeps a batch's requests with those kept before, in the list or lists each is kept for, then
-  // keeps of each endpoint, environment, hour and list only the slowest `keptPerHour`.
-  const keep = Effect.fn("RequestStore.keep")(function* (
+  // Keeps a batch's runs with those kept before, in the list or lists each is kept for, then
+  // keeps of each operation, environment, hour and list only the slowest `keptPerHour`.
+  const keep = Effect.fn("RunStore.keep")(function* (
     component: ComponentKey,
-    kept: ReadonlyArray<KeptRequest>,
+    kept: ReadonlyArray<KeptRun>,
     known: Map<string, number>,
   ) {
     const lists = new Map<
       string,
-      { readonly endpoint: number; readonly environment: string; readonly hour: number; readonly keptFor: KeptFor }
+      { readonly operation: number; readonly environment: string; readonly hour: number; readonly keptFor: KeptFor }
     >()
-    for (const request of kept) {
-      const endpoint = yield* endpointIdOf(component, request.endpoint, known)
-      const start = DateTime.toEpochMillis(request.start)
+    for (const run of kept) {
+      const operation = yield* operationIdOf(component, run.operation, known)
+      const start = DateTime.toEpochMillis(run.start)
       const hour = floorTo(start, byHour.width)
-      const environment = request.environment ?? ""
-      const keptFor: ReadonlyArray<KeptFor> = request.failed ? ["slowest", "failed"] : ["slowest"]
+      const environment = run.environment ?? ""
+      const keptFor: ReadonlyArray<KeptFor> = run.failed ? ["slowest", "failed"] : ["slowest"]
       for (const list of keptFor) {
-        yield* sql`INSERT INTO signals_kept_requests ${sql.insert({
-          endpoint,
+        yield* sql`INSERT INTO signals_kept_runs ${sql.insert({
+          operation,
           environment,
           hour,
           kept_for: list,
-          trace: request.trace,
+          trace: run.trace,
           start,
-          duration_ms: request.durationMs,
-          failed: request.failed ? 1 : 0,
-          ...(request.status === undefined ? {} : { status: request.status }),
+          duration_ms: run.durationMs,
+          failed: run.failed ? 1 : 0,
+          ...(run.status === undefined ? {} : { status: run.status }),
         })}`
-        lists.set([endpoint, environment, hour, list].join("\u0000"), { endpoint, environment, hour, keptFor: list })
+        lists.set([operation, environment, hour, list].join("\u0000"), { operation, environment, hour, keptFor: list })
       }
     }
     for (const list of lists.values()) {
       yield* sql`
-        DELETE FROM signals_kept_requests WHERE id IN (
-          SELECT id FROM signals_kept_requests
-          WHERE endpoint = ${list.endpoint} AND kept_for = ${list.keptFor} AND hour = ${list.hour}
+        DELETE FROM signals_kept_runs WHERE id IN (
+          SELECT id FROM signals_kept_runs
+          WHERE operation = ${list.operation} AND kept_for = ${list.keptFor} AND hour = ${list.hour}
             AND environment = ${list.environment}
           ORDER BY duration_ms DESC, id
           LIMIT -1 OFFSET ${keptPerHour})`
     }
   })
 
-  // Adds a batch's counts by the minute and by the hour, and keeps its requests worth opening. Runs
+  // Adds a batch's counts by the minute and by the hour, and keeps its runs worth opening. Runs
   // inside the caller's transaction.
-  const add = Effect.fn("RequestStore.add")(function* (
+  const add = Effect.fn("RunStore.add")(function* (
     component: ComponentKey,
-    batch: ReadonlyArray<RequestCounts>,
-    kept: ReadonlyArray<KeptRequest>,
+    batch: ReadonlyArray<RunCounts>,
+    kept: ReadonlyArray<KeptRun>,
   ) {
-    const endpoints = yield* findEndpoints(component)
-    const known = new Map(endpoints.map((endpoint) => [endpoint.name, endpoint.id] as const))
+    const operations = yield* findOperations(component)
+    const known = new Map(operations.map((operation) => [operation.name, operation.id] as const))
     for (const counts of batch) {
-      const endpoint = yield* endpointIdOf(component, counts.endpoint, known)
-      yield* addTo(byMinute, endpoint, counts)
+      const operation = yield* operationIdOf(component, counts.operation, known)
+      yield* addTo(byMinute, operation, counts)
     }
     for (const counts of hoursOf(batch)) {
-      const endpoint = yield* endpointIdOf(component, counts.endpoint, known)
-      yield* addTo(byHour, endpoint, counts)
+      const operation = yield* operationIdOf(component, counts.operation, known)
+      yield* addTo(byHour, operation, counts)
     }
     yield* keep(component, kept, known)
   })
 
-  // Removes minutes and kept requests older than 14 days, and hours older than 15 months.
-  const cleanUp = Effect.fn("RequestStore.cleanUp")(function* (now: number) {
+  // Removes minutes and kept runs older than 14 days, and hours older than 15 months.
+  const cleanUp = Effect.fn("RunStore.cleanUp")(function* (now: number) {
     yield* sql`DELETE FROM signals_minute_counts WHERE bucket < ${now - Duration.toMillis(byMinute.kept)}`
-    yield* sql`DELETE FROM signals_kept_requests WHERE hour < ${now - Duration.toMillis(byMinute.kept)}`
+    yield* sql`DELETE FROM signals_kept_runs WHERE hour < ${now - Duration.toMillis(byMinute.kept)}`
     yield* sql`DELETE FROM signals_hour_counts WHERE bucket < ${now - Duration.toMillis(byHour.kept)}`
   })
 
-  const countsIn = Effect.fn("RequestStore.countsIn")(function* (query: RequestQuery) {
+  const countsIn = Effect.fn("RunStore.countsIn")(function* (query: RunQuery) {
     const current = yield* DateTime.now
     const now = DateTime.toEpochMillis(current)
     const resolution = resolutionFor(query.period)
@@ -343,7 +339,7 @@ export const requestStore = Effect.gen(function* () {
       to: covered.value.to,
       ...(query.environment === undefined ? {} : { environment: query.environment }),
       ...(query.component === undefined ? {} : { component: query.component }),
-      ...(query.endpoint === undefined ? {} : { endpoint: query.endpoint }),
+      ...(query.operation === undefined ? {} : { operation: query.operation }),
     }).pipe(Effect.orDie)
     const period = new Period({
       from: DateTime.makeUnsafe(covered.value.from),
@@ -352,24 +348,24 @@ export const requestStore = Effect.gen(function* () {
     return { covered: Option.some(period), rows, now, resolution }
   })
 
-  const rowOf = Effect.fn("RequestStore.rowOf")(function* (rows: ReadonlyArray<CountsRow>) {
+  const rowOf = Effect.fn("RunStore.rowOf")(function* (rows: ReadonlyArray<CountsRow>) {
     const [first] = rows
     if (first === undefined) {
-      return yield* Effect.die("An endpoint row needs counts")
+      return yield* Effect.die("An operation row needs counts")
     }
-    const requests = rows.reduce((total, counts) => total + counts.requests, 0)
+    const runs = rows.reduce((total, counts) => total + counts.runs, 0)
     const durations = mergeSketches(rows.map((counts) => counts.durations))
     const p50Ms = yield* percentile(durations, 0.5)
     const p80Ms = yield* percentile(durations, 0.8)
     const p95Ms = yield* percentile(durations, 0.95)
     const p99Ms = yield* percentile(durations, 0.99)
-    const row: EndpointRow = {
+    const row: OperationRow = {
       component: first.component,
       ...(first.environment === "" ? {} : { environment: first.environment }),
-      endpoint: first.endpoint,
-      requests,
+      operation: first.operation,
+      runs,
       errors: rows.reduce((total, counts) => total + counts.errors, 0),
-      averageMs: rows.reduce((total, counts) => total + counts.totalMs, 0) / requests,
+      averageMs: rows.reduce((total, counts) => total + counts.totalMs, 0) / runs,
       p50Ms,
       p80Ms,
       p95Ms,
@@ -378,25 +374,22 @@ export const requestStore = Effect.gen(function* () {
     return row
   })
 
-  const endpoints = Effect.fn("RequestStore.endpoints")(function* (query: RequestQuery) {
+  const operations = Effect.fn("RunStore.operations")(function* (query: RunQuery) {
     const { covered, rows, now, resolution } = yield* countsIn(query)
-    const byEndpoint = Map.groupBy(rows, (row) => [row.component, row.environment, row.endpoint].join("\u0000"))
-    const endpointRows = yield* Effect.forEach(byEndpoint.values(), rowOf)
+    const byOperation = Map.groupBy(rows, (row) => [row.component, row.environment, row.operation].join("\u0000"))
+    const operationRows = yield* Effect.forEach(byOperation.values(), rowOf)
     const newest = rows.reduce((latest, row) => Math.max(latest, row.bucket + resolution.width), 0)
-    const table: EndpointTable = {
+    const table: OperationTable = {
       ...(covered._tag === "Some" ? { covered: covered.value } : {}),
-      rows: endpointRows.toSorted(byRequestsThenName),
-      requests: rows.reduce((total, row) => total + row.requests, 0),
+      rows: operationRows.toSorted(byRunsThenName),
+      runs: rows.reduce((total, row) => total + row.runs, 0),
       errors: rows.reduce((total, row) => total + row.errors, 0),
       ...(rows.length === 0 ? {} : { dataUntil: DateTime.makeUnsafe(Math.min(newest, now)) }),
     }
     return table
   })
 
-  const requestsOverTime = Effect.fn("RequestStore.requestsOverTime")(function* (
-    query: RequestQuery,
-    step: SeriesStep,
-  ) {
+  const runsOverTime = Effect.fn("RunStore.runsOverTime")(function* (query: RunQuery, step: SeriesStep) {
     const { covered, rows, resolution } = yield* countsIn(query)
     const used: SeriesStep = stepMillis[step] < resolution.width ? "1h" : step
     const byStep = Map.groupBy(rows, (row) => floorTo(row.bucket, stepMillis[used]))
@@ -405,7 +398,7 @@ export const requestStore = Effect.gen(function* () {
         const durations = mergeSketches(inStep.map((row) => row.durations))
         return {
           start: DateTime.makeUnsafe(start),
-          requests: inStep.reduce((total, row) => total + row.requests, 0),
+          runs: inStep.reduce((total, row) => total + row.runs, 0),
           errors: inStep.reduce((total, row) => total + row.errors, 0),
           p50Ms: yield* percentile(durations, 0.5),
           p80Ms: yield* percentile(durations, 0.8),
@@ -414,7 +407,7 @@ export const requestStore = Effect.gen(function* () {
         }
       }),
     )
-    const series: RequestSeries = {
+    const series: RunSeries = {
       ...(covered._tag === "Some" ? { covered: covered.value } : {}),
       step: used,
       points: points.toSorted(
@@ -424,13 +417,13 @@ export const requestStore = Effect.gen(function* () {
     return series
   })
 
-  // The slowest and the failed of the requests kept in the query's period, cut to the 14 days they
+  // The slowest and the failed of the runs kept in the query's period, cut to the 14 days they
   // are kept, as minutes are.
-  const keptRequests = Effect.fn("RequestStore.keptRequests")(function* (query: RequestQuery) {
+  const keptRuns = Effect.fn("RunStore.keptRuns")(function* (query: RunQuery) {
     const current = yield* DateTime.now
     const covered = coveredOf(query.period, byMinute, DateTime.toEpochMillis(current))
     if (covered._tag === "None") {
-      const none: KeptRequests = { slowest: [], failed: [] }
+      const none: KeptRuns = { slowest: [], failed: [] }
       return none
     }
     const asked = {
@@ -438,11 +431,11 @@ export const requestStore = Effect.gen(function* () {
       to: covered.value.to,
       ...(query.environment === undefined ? {} : { environment: query.environment }),
       ...(query.component === undefined ? {} : { component: query.component }),
-      ...(query.endpoint === undefined ? {} : { endpoint: query.endpoint }),
+      ...(query.operation === undefined ? {} : { operation: query.operation }),
     }
     const slowest = yield* findKept({ keptFor: "slowest", ...asked }).pipe(Effect.orDie)
     const failed = yield* findKept({ keptFor: "failed", ...asked }).pipe(Effect.orDie)
-    const answer: KeptRequests = {
+    const answer: KeptRuns = {
       covered: new Period({ from: DateTime.makeUnsafe(covered.value.from), to: DateTime.makeUnsafe(covered.value.to) }),
       slowest: slowest.map(keptRowOf),
       failed: failed.map(keptRowOf),
@@ -450,5 +443,5 @@ export const requestStore = Effect.gen(function* () {
     return answer
   })
 
-  return { add, cleanUp, endpoints, requestsOverTime, keptRequests }
+  return { add, cleanUp, operations, runsOverTime, keptRuns }
 })

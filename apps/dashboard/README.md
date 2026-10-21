@@ -22,13 +22,13 @@ Pages, each with a permanent URL (`src/router.tsx`):
 ```
 /                                                the first project, or how to create one; signed out, the sign-in
 /notes                                           the overview: needs attention, a summary per area, each component
-/notes/performance?component=notes-api           requests and failures over time, the endpoints that got slower or take the most time
-/notes/endpoints?component=notes-api             every endpoint, searchable and sortable by any percentile
-/notes/endpoints/GET%20/api/feed?component=…     one endpoint, its name as path segments: requests and p95 over time, its slowest and failed requests
+/notes/performance?component=notes-api           runs and failures over time, the operations that got slower or take the most time
+/notes/operations?component=notes-api            every operation, searchable and sortable by any percentile
+/notes/operations/GET%20/api/feed?component=…    one operation, its name as path segments: runs and p95 over time, its slowest and failed runs
 /notes/errors                                    errors over time by component, and every error group
-/notes/errors/<id>                               one error: its exception chain, every frame, its request, its log record
+/notes/errors/<id>                               one error: its exception chain, every frame, its run, its log record
 /notes/logs                                      warnings and errors over time, and every line, searchable
-/notes/traces/<trace id>[?around=<ISO 8601>]     one request from the archive: its steps on a time line, its log lines
+/notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
 /kit                                             every view in the theme, to review the design; opens signed out too
 ```
 
@@ -44,16 +44,16 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
   answer is kept 5 minutes after the last page showing it closes, and asked again when it is older
   than 30 seconds, as it is shown and when the tab comes back into view.
 - **What the pages say about the answers,** `src/project-facts.ts`: what needs attention, when
-  failures jumped, which errors are new or happening now, and which endpoints got slower. A step a
+  failures jumped, which errors are new or happening now, and which operations got slower. A step a
   series has no point for is unknown, never zero; "now" is the time an answer covers up to.
-- **What "slower" means,** `src/project-facts.ts`: an endpoint got slower when its p95 over the
+- **What "slower" means,** `src/project-facts.ts`: an operation got slower when its p95 over the
   last day is 1.5 times its p95 over the 7 days before, and 100 ms more. There is no fixed limit and
-  no setting: an endpoint slow by nature, such as an export, is not news; one that got worse is.
+  no setting: an operation slow by nature, such as an export, is not news; one that got worse is.
 - **What a color means,** `src/lib/colors.ts`: each component keeps one color everywhere; red is
   failure, yellow a warning.
 - **The panel** every question is answered in, `src/views/panel.tsx`, an answer's three states,
-  `src/views/loaded.tsx`, and the charts: `bar-rows.tsx` for counts over time, `endpoint-table.tsx`
-  for how long endpoints take.
+  `src/views/loaded.tsx`, and the charts: `bar-rows.tsx` for counts over time, `operation-table.tsx`
+  for how long operations take.
 - **How people read numbers and times,** `src/lib/format.ts`: in the viewer's locale and time zone,
   passed to `Intl` explicitly.
 - **Pages and their URLs,** `src/router.tsx`, which decodes an address's keys with the API's own
@@ -61,7 +61,7 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
 
 ## Does not own
 
-- **Any rule about the data:** what counts as a request, an endpoint, an error group, or a covered
+- **Any rule about the data:** what counts as a run, an operation, an error group, or a covered
   period belongs to the engines behind the public API.
 - **The API token and the sign-in cookie:** the Worker checks the token and sets the cookie
   (`apps/worker`, `POST /api/sign-in`); the page's scripts never see either again.
@@ -99,7 +99,7 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
   sentence filters, hover-only numbers, and a page per question):
   - A project opens on its overview, the one place to act: what needs attention, the worst first,
     each one click from its detail, and a summary of each area. Later areas (analytics, releases)
-    add their summaries there and their pages beside requests, errors, and logs.
+    add their summaries there and their pages beside performance, errors, and logs.
   - Each area is a page with a one-click component switch, kept in the URL and carried between
     pages.
   - Every control is one click: period and log level are visible buttons; projects are listed in
@@ -110,11 +110,11 @@ An address with a key that isn't one, such as `/Notes!`, opens a page that says 
   becomes an API change only when it is right for the API's other clients too.
 - **Not in the API yet, so not on the pages:** which components are apps and which are backends,
   and everything an app's SDK will send (its start, screens, network calls, sessions, crashes, and
-  what it did before an error); a request's origin; single slow and failed requests. Their views
+  what it did before an error); and a run's origin. Their views
   wait in the design kit, "Ahead of the API", on sample data (`src/sample/`), which nothing else
   reads.
 - **Navigation is instant:** the pages most visits open are in the first load; one error's page and
-  a request's trace load right after start, as search does, so they are there before anyone opens
+  a trace load right after start, as search does, so they are there before anyone opens
   them. An answer a page showed a moment ago is shown again at once, and refreshed in the
   background when stale.
 - **The first load's budget** is 240 KB of scripts, compressed, of which the typed API client is

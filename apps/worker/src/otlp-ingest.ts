@@ -111,7 +111,7 @@ const otlpRoute = <E extends { readonly rejected: Rejected | undefined }>(
     }),
   )
 
-/** `POST /otlp/v1/traces`: requests are counted, and the export is archived. */
+/** `POST /otlp/v1/traces`: runs are counted, and the export is archived. */
 export const OtlpTraces = otlpRoute("/otlp/v1/traces", readTraces, (project, ingestKey, read) =>
   ProjectObjects.use((objects) => objects.call(project, projectCalls.ingestTraces, { ingestKey, export: read.export })),
 )

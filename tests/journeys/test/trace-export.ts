@@ -40,7 +40,7 @@ const keyValue = (field: number, key: string, value: string) =>
 const attribute = (key: string, value: string) => keyValue(1, key, value)
 
 /**
- * One span of an export: a server span is a request; a client span is not. With `trace`, its trace
+ * One span of an export: a server span is a run; a client span is not. With `trace`, its trace
  * ID; with `status`, the HTTP status it answered with.
  */
 export interface ExportedSpan {

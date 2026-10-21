@@ -13,7 +13,7 @@ import { HttpApiClient } from "effect/http-api"
 
 const client = yield* HttpApiClient.make(CluenoriApi, { baseUrl: "https://cluenori.example.workers.dev" })
 yield* client.health()
-const table = yield* client.signals.endpoints({ params: { project }, query: { from, to } })
+const table = yield* client.signals.operations({ params: { project }, query: { from, to } })
 ```
 
 Every group but the system's and sign-in's needs the deployment's API token, which a client sends

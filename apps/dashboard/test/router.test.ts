@@ -12,17 +12,17 @@ const readBack = (route: Route) => {
   return query === -1 ? routeOf(href, "") : routeOf(href.slice(0, query), href.slice(query))
 }
 
-const endpoint = (name: string): Route => ({
-  page: "endpoint",
+const operation = (name: string): Route => ({
+  page: "operation",
   project: ProjectKey.make("folio"),
   component: ComponentKey.make("folio-api"),
-  endpoint: EnvelopeName.make(name),
+  operation: EnvelopeName.make(name),
 })
 
 describe("routeOf", () => {
-  it("reads an endpoint's name back from its address, slashes, parameters, and a trailing slash too", () => {
+  it("reads an operation's name back from its address, slashes, parameters, and a trailing slash too", () => {
     for (const name of ["GET /api/profile/{profileId:guid}/followers", "POST /api/profile/", "SendDigest"]) {
-      assert.deepStrictEqual(readBack(endpoint(name)), endpoint(name))
+      assert.deepStrictEqual(readBack(operation(name)), operation(name))
     }
   })
 

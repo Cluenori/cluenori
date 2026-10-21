@@ -706,7 +706,7 @@ language.
   always visible; the component a page shows is a `ComponentSwitch`, kept in the URL. Details of a
   short item open in place, such as a log line. A summary shows the top few of a long list and
   links to a page with all of them, searchable and sortable; an item with more to show, such as an
-  endpoint, an error, or a request's trace, has a page of its own (`src/pages/error-page.tsx`).
+  operation, an error, or a trace, has a page of its own (`src/pages/error-page.tsx`).
   Folded detail, such as a stack's library frames, opens with one click where it is.
 - **Data comes from one file,** `src/project-data.ts`: an atom for each question the pages ask the
   public API, run on its typed client, `kept` so going back shows an answer at once and a stale one
@@ -718,7 +718,7 @@ language.
   loads.
 - **What a page says about the answers** (what needs attention, what got slower) is computed once,
   by pure rules in `src/project-facts.ts`; pages show it. "Now" is the time an answer covers up to,
-  never the clock, and a step without a point is unknown (`requestColumnsOf`) unless the API says it
+  never the clock, and a step without a point is unknown (`runColumnsOf`) unless the API says it
   means none (`logColumnsOf`).
 - **An address is untrusted input:** `src/router.tsx` decodes its keys with the API's own schemas,
   once, so pages take `ProjectKey`, `ComponentKey`, and the like; an address that isn't a page's

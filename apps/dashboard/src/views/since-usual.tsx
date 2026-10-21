@@ -1,5 +1,5 @@
 import { duration } from "@/lib/format"
-import type { Slower } from "@/views/endpoint-table"
+import type { Slower } from "@/views/operation-table"
 
 /**
  * How something timed did over the last day against its usual, the 7 days before, in a sentence:

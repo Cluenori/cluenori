@@ -13,21 +13,21 @@ import {
 } from "@cluenori/projects"
 import {
   ArchiveUnavailable,
-  EndpointTable,
+  OperationTable,
   ErrorDetail,
   ErrorGroupId,
   ErrorGroupNotFound,
   ErrorQuery,
   ErrorTable,
-  KeptRequests,
+  KeptRuns,
   LogCountQuery,
   LogCounts,
   LogExport,
   LogPage,
   LogQuery,
   MetricsExport,
-  RequestQuery,
-  RequestSeries,
+  RunQuery,
+  RunSeries,
   SeriesStep,
   TraceExport,
   TraceView,
@@ -44,9 +44,9 @@ export type ProjectCallName =
   | "ingestTraces"
   | "ingestLogs"
   | "ingestMetrics"
-  | "endpoints"
-  | "requestsOverTime"
-  | "keptRequests"
+  | "operations"
+  | "runsOverTime"
+  | "keptRuns"
   | "errors"
   | "error"
   | "logs"
@@ -104,14 +104,14 @@ export const projectCalls = {
     recorded,
     ingestFailure,
   ),
-  endpoints: projectCall("endpoints", RequestQuery, EndpointTable, ProjectNotFound),
-  requestsOverTime: projectCall(
-    "requestsOverTime",
-    Schema.Struct({ query: RequestQuery, step: SeriesStep }),
-    RequestSeries,
+  operations: projectCall("operations", RunQuery, OperationTable, ProjectNotFound),
+  runsOverTime: projectCall(
+    "runsOverTime",
+    Schema.Struct({ query: RunQuery, step: SeriesStep }),
+    RunSeries,
     ProjectNotFound,
   ),
-  keptRequests: projectCall("keptRequests", RequestQuery, KeptRequests, ProjectNotFound),
+  keptRuns: projectCall("keptRuns", RunQuery, KeptRuns, ProjectNotFound),
   errors: projectCall("errors", ErrorQuery, ErrorTable, ProjectNotFound),
   error: projectCall(
     "error",

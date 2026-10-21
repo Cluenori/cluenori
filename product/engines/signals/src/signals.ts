@@ -22,9 +22,9 @@ import type { ExportSignal, LogExport, MetricsExport, TraceExport } from "./expo
 import type { ErrorGroupId } from "./log-entry.ts"
 import { logStore } from "./log-store.ts"
 import { traceViewOf } from "./read-archived-trace.ts"
-import { BatchDigest } from "./request-counts.ts"
-import type { EndpointTable, KeptRequests, RequestQuery, RequestSeries, SeriesStep } from "./request-queries.ts"
-import { requestStore } from "./request-store.ts"
+import { BatchDigest } from "./run-counts.ts"
+import type { OperationTable, KeptRuns, RunQuery, RunSeries, SeriesStep } from "./run-queries.ts"
+import { runStore } from "./run-store.ts"
 import { migrateSignals } from "./signals-migrations.ts"
 import type { TraceView } from "./trace-view.ts"
 
@@ -42,15 +42,15 @@ const traceFiles = 60
 export type SignalsSettings = ArchiveSettings
 
 /**
- * The signals of one project: its requests, warnings and errors, and every export in the archive,
+ * The signals of one project: its runs, warnings and errors, and every export in the archive,
  * and the questions asked of them. Runs inside the Durable Object that holds the project's database.
  */
 export class Signals extends Context.Service<
   Signals,
   {
     /**
-     * Archives a trace export, adds its requests to the counts of `component`, and keeps those of
-     * its requests that are now among the slowest or the slowest failed of their endpoint and hour,
+     * Archives a trace export, adds its runs to the counts of `component`, and keeps those of its
+     * runs that are now among the slowest or the slowest failed of their operation and hour,
      * once: an export whose digest arrived in the last hour, an exporter's retry, is skipped. Fails
      * with `ArchiveUnavailable` when it can't be archived, having counted nothing, so the exporter
      * should send it again.
@@ -70,22 +70,22 @@ export class Signals extends Context.Service<
       exported: MetricsExport,
     ) => Effect.Effect<"recorded" | "duplicate", ArchiveUnavailable>
     /**
-     * Every endpoint's requests in the query's period, most requested first: by the minute for two
+     * Every operation's runs in the query's period, the most runs first: by the minute for two
      * days or less, by the hour beyond. Reads only.
      */
-    readonly endpoints: (query: RequestQuery) => Effect.Effect<EndpointTable>
+    readonly operations: (query: RunQuery) => Effect.Effect<OperationTable>
     /**
-     * Requests and errors over the query's period, one point per step that has requests. A step
+     * Runs and errors over the query's period, one point per step that has runs. A step
      * finer than the counts' buckets (by the hour past two days) is widened to them; the answer
      * says which step it used. Reads only.
      */
-    readonly requestsOverTime: (query: RequestQuery, step: SeriesStep) => Effect.Effect<RequestSeries>
+    readonly runsOverTime: (query: RunQuery, step: SeriesStep) => Effect.Effect<RunSeries>
     /**
-     * Requests worth opening in the query's period: the slowest, slowest first, and the failed,
-     * newest first, at most 20 of each, from those kept of each endpoint, environment and hour (the
+     * Runs worth opening in the query's period: the slowest, slowest first, and the failed,
+     * newest first, at most 20 of each, from those kept of each operation, environment and hour (the
      * five slowest and the five slowest failed, 14 days). Reads only.
      */
-    readonly keptRequests: (query: RequestQuery) => Effect.Effect<KeptRequests>
+    readonly keptRuns: (query: RunQuery) => Effect.Effect<KeptRuns>
     /** The errors of the query's period, most frequent first. Reads only. */
     readonly errors: (query: ErrorQuery) => Effect.Effect<ErrorTable>
     /** One error and its latest occurrences in the query's period. Reads only. */
@@ -114,7 +114,7 @@ export class Signals extends Context.Service<
         const sql = yield* SqlClient.SqlClient
         const archive = yield* ArchiveStore
         yield* migrateSignals.pipe(Effect.orDie)
-        const requests = yield* requestStore
+        const runs = yield* runStore
         const logs = yield* logStore
         const index = yield* archiveIndex(settings)
         const lastCleanup = yield* Ref.make(0)
@@ -130,7 +130,7 @@ export class Signals extends Context.Service<
           if (now - last < Duration.toMillis(cleanupInterval)) {
             return
           }
-          yield* requests.cleanUp(now)
+          yield* runs.cleanUp(now)
           yield* logs.cleanUp(now)
           yield* index.cleanUp(now)
           yield* sql`DELETE FROM signals_batches WHERE received_at < ${now - Duration.toMillis(batchWindow)}`
@@ -196,7 +196,7 @@ export class Signals extends Context.Service<
             component,
             exported,
             exported.traces,
-            requests.add(component, exported.counts, exported.kept),
+            runs.add(component, exported.counts, exported.kept),
           )
         })
 
@@ -268,9 +268,9 @@ export class Signals extends Context.Service<
           recordTraces,
           recordLogs,
           recordMetrics,
-          endpoints: requests.endpoints,
-          requestsOverTime: requests.requestsOverTime,
-          keptRequests: requests.keptRequests,
+          operations: runs.operations,
+          runsOverTime: runs.runsOverTime,
+          keptRuns: runs.keptRuns,
           errors,
           error,
           logs: searchLogs,

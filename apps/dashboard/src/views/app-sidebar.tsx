@@ -37,7 +37,7 @@ import {
 // Pages that open from an area's page, so the area stays marked on them.
 const underArea = (route: Route, area: Area) =>
   area === "performance"
-    ? route.page === "endpoints" || route.page === "endpoint" || route.page === "trace"
+    ? route.page === "operations" || route.page === "operation" || route.page === "trace"
     : area === "errors" && route.page === "error"
 
 const areas: ReadonlyArray<{ readonly area: Area; readonly label: string; readonly icon: typeof BugIcon }> = [

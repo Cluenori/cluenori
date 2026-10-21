@@ -106,7 +106,7 @@ function LogPages({
 
 /**
  * A project's warnings and errors, or one component's, over the period: how many in each step, and
- * every line, newest first, searchable, each opening in place with a way to its request.
+ * every line, newest first, searchable, each opening in place with a way to its trace.
  */
 export function LogsPage({ project, component }: { readonly project: ProjectKey; readonly component?: ComponentKey }) {
   const scope = { project, ...(component === undefined ? {} : { component }) }

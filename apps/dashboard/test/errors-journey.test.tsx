@@ -10,7 +10,7 @@ import { answerApi, apiCalls } from "./fake-api.ts"
 import { exportTrace, notesApi } from "./notes-project.ts"
 
 describe("errors journey", () => {
-  it.effect("leads from the overview's ongoing error to its stack, and to its request's trace", () =>
+  it.effect("leads from the overview's ongoing error to its stack, and to its trace", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
       window.history.pushState(null, "", "/notes")
@@ -23,7 +23,7 @@ describe("errors journey", () => {
       yield* expectAccessible()
       yield* Effect.promise(() => screen.getByRole("link", { name: "Open the error" }).first().click())
 
-      // The error's page: what it said, every frame, the library ones folded, and its request.
+      // The error's page: what it said, every frame, the library ones folded, and its run.
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "NpgsqlException" })).toBeVisible(),
       )
@@ -39,8 +39,8 @@ describe("errors journey", () => {
       yield* Effect.promise(() => expect.element(screen.getByText("Notes.Api.Exports.ExportEndpoint")).toBeVisible())
       yield* expectAccessible()
 
-      // An occurrence opens its request's trace, read from the archive around when it happened.
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Open the request" }).click())
+      // An occurrence opens its trace, read from the archive around when it happened.
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Open the trace" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: /POST \/api\/export/ })).toBeVisible(),
       )
@@ -49,7 +49,7 @@ describe("errors journey", () => {
     }),
   )
 
-  it.effect("opens a request's trace from an address with only its ID, as one pasted from elsewhere", () =>
+  it.effect("opens a trace from an address with only its ID, as one pasted from elsewhere", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
       window.history.pushState(null, "", `/notes/traces/${exportTrace}`)

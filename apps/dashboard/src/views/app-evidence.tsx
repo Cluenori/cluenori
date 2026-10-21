@@ -5,7 +5,7 @@ import { DateTime } from "effect"
 import { duration, share } from "@/lib/format"
 import { Link } from "@/router"
 import type { TrailEvent } from "@/sample/sample-project"
-import { EndpointName } from "@/views/endpoint-name"
+import { OperationName } from "@/views/operation-name"
 import { buttonVariants } from "@/views/ui/button"
 
 // What an app's error will show once the API carries it: how it spreads over releases, and what the
@@ -52,7 +52,7 @@ function TrailText({ event, project }: { readonly event: TrailEvent; readonly pr
     case "request":
       return (
         <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <EndpointName endpoint={event.endpoint} className="max-w-full" />
+          <OperationName name={event.endpoint} className="max-w-full" />
           <span
             className={cn(
               "shrink-0 font-mono text-[13px]",
@@ -65,7 +65,7 @@ function TrailText({ event, project }: { readonly event: TrailEvent; readonly pr
             to={{ page: "trace", project, trace: event.trace, around: DateTime.makeUnsafe(event.time) }}
             className={buttonVariants({ variant: "outline", size: "sm", className: "ml-auto shrink-0" })}
           >
-            Open the request
+            Open the trace
           </Link>
         </span>
       )

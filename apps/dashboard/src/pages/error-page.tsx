@@ -26,7 +26,7 @@ import {
   exceptionsOf,
   logColumnsOf,
   periodWords,
-  requestOf,
+  runOf,
   statusOf,
   ticksOf,
   zoneOf,
@@ -34,10 +34,10 @@ import {
 import { Link } from "@/router"
 import { AttributeList } from "@/views/attribute-list"
 import { BarRows } from "@/views/bar-rows"
-import { EndpointName } from "@/views/endpoint-name"
 import { titleParts } from "@/views/error-group"
 import { ExceptionView } from "@/views/exception-view"
 import { Loaded } from "@/views/loaded"
+import { OperationName } from "@/views/operation-name"
 import { Panel, PanelStats } from "@/views/panel"
 import { PeriodSwitch } from "@/views/period-switch"
 import { TemplateText } from "@/views/template-text"
@@ -62,27 +62,27 @@ function Facts({ rows }: { readonly rows: ReadonlyArray<{ readonly label: string
   )
 }
 
-/** The request an occurrence was logged in, in a few facts, one click from its whole trace. */
-function RequestSummary({
+/** The run an occurrence was logged in, in a few facts, one click from its whole trace. */
+function RunSummary({
   project,
   line,
   trace,
-  request,
+  run,
 }: {
   readonly project: ProjectKey
   readonly line: LogLine
   readonly trace: TraceId
-  readonly request: TraceSpan | undefined
+  readonly run: TraceSpan | undefined
 }) {
-  if (request === undefined) {
+  if (run === undefined) {
     return <p className="text-sm text-muted-foreground">The archive has none of its steps from around then.</p>
   }
-  const status = request.attributes["http.response.status_code"]
-  const path = textOf(request.attributes["url.path"])
-  const client = textOf(request.attributes["user_agent.original"])
+  const status = run.attributes["http.response.status_code"]
+  const path = textOf(run.attributes["url.path"])
+  const client = textOf(run.attributes["user_agent.original"])
   return (
     <div className="flex h-full flex-col gap-4">
-      <EndpointName endpoint={request.name} wrap className="text-[15px]" />
+      <OperationName name={run.name} wrap className="text-[15px]" />
       <Facts
         rows={[
           ...(typeof status === "number"
@@ -93,7 +93,7 @@ function RequestSummary({
                 },
               ]
             : []),
-          { label: "Took", value: <span className="font-mono">{duration(request.durationMs)}</span> },
+          { label: "Took", value: <span className="font-mono">{duration(run.durationMs)}</span> },
           ...(path === undefined
             ? []
             : [{ label: "Path", value: <span className="font-mono text-[13px] wrap-anywhere">{path}</span> }]),
@@ -102,7 +102,7 @@ function RequestSummary({
             label: "Component",
             value: (
               <>
-                {request.component}
+                {run.component}
                 {line.release !== undefined && <span className="font-mono text-muted-foreground"> {line.release}</span>}
               </>
             ),
@@ -110,7 +110,7 @@ function RequestSummary({
           ...(line.environment === undefined ? [] : [{ label: "Environment", value: line.environment }]),
           {
             label: "Started",
-            value: <span className="font-mono">{preciseTime(DateTime.toEpochMillis(request.start))}</span>,
+            value: <span className="font-mono">{preciseTime(DateTime.toEpochMillis(run.start))}</span>,
           },
         ]}
       />
@@ -118,14 +118,14 @@ function RequestSummary({
         to={{ page: "trace", project, trace, around: line.time }}
         className={buttonVariants({ variant: "outline", className: "mt-auto self-start" })}
       >
-        Open the request
+        Open the trace
       </Link>
     </div>
   )
 }
 
-/** Everything an occurrence was sent with: its log record's fields and attributes, and its request's. */
-function SentWith({ line, request }: { readonly line: LogLine; readonly request: TraceSpan | undefined }) {
+/** Everything an occurrence was sent with: its log record's fields and attributes, and its run's. */
+function SentWith({ line, run }: { readonly line: LogLine; readonly run: TraceSpan | undefined }) {
   return (
     <div className="grid gap-x-6 gap-y-5 p-5 lg:grid-cols-2">
       <section aria-label="The log record" className="flex min-w-0 flex-col gap-3">
@@ -146,28 +146,28 @@ function SentWith({ line, request }: { readonly line: LogLine; readonly request:
         />
         <AttributeList attributes={line.attributes} empty="It carried nothing else." />
       </section>
-      <section aria-label="The request" className="flex min-w-0 flex-col gap-3">
-        <span className="text-sm text-muted-foreground">The request</span>
-        {request === undefined ? (
-          <p className="text-sm text-muted-foreground">There is no request to show.</p>
+      <section aria-label="The run" className="flex min-w-0 flex-col gap-3">
+        <span className="text-sm text-muted-foreground">The run</span>
+        {run === undefined ? (
+          <p className="text-sm text-muted-foreground">There is no run to show.</p>
         ) : (
-          <AttributeList attributes={request.attributes} empty="It sent no details." />
+          <AttributeList attributes={run.attributes} empty="It sent no details." />
         )}
       </section>
     </div>
   )
 }
 
-/** An occurrence: its exception beside its request, then everything it was sent with. */
+/** An occurrence: its exception beside its run, then everything it was sent with. */
 function OccurrenceDetail({
   project,
   line,
-  request,
+  run,
 }: {
   readonly project: ProjectKey
   readonly line: LogLine
-  /** The request it happened in, once its trace is read; absent when it was logged outside one. */
-  readonly request: { readonly trace: TraceId; readonly found: TraceSpan | undefined } | undefined
+  /** The run it happened in, once its trace is read; absent when it was logged outside one. */
+  readonly run: { readonly trace: TraceId; readonly found: TraceSpan | undefined } | undefined
 }) {
   return (
     <>
@@ -188,26 +188,26 @@ function OccurrenceDetail({
             </div>
           </Panel>
         )}
-        <Panel icon={WaypointsIcon} title="Request" subtitle="The request it happened in" className="xl:col-span-4">
+        <Panel icon={WaypointsIcon} title="Run" subtitle="The run it happened in" className="xl:col-span-4">
           <div className="flex-1 px-5 py-5">
-            {request === undefined ? (
+            {run === undefined ? (
               <p className="text-sm text-muted-foreground">
-                It was logged outside a request, such as in a background job.
+                It was logged outside a run, such as while its service started.
               </p>
             ) : (
-              <RequestSummary project={project} line={line} trace={request.trace} request={request.found} />
+              <RunSummary project={project} line={line} trace={run.trace} run={run.found} />
             )}
           </div>
         </Panel>
       </div>
-      <Panel icon={FileTextIcon} title="Sent with" subtitle="Everything the log record and its request carried">
-        <SentWith line={line} request={request?.found} />
+      <Panel icon={FileTextIcon} title="Sent with" subtitle="Everything the log record and its run carried">
+        <SentWith line={line} run={run?.found} />
       </Panel>
     </>
   )
 }
 
-/** An occurrence logged in a request: its trace is read first, from the archive around then. */
+/** An occurrence logged in a run: its trace is read first, from the archive around then. */
 function TracedOccurrence({
   project,
   line,
@@ -222,7 +222,7 @@ function TracedOccurrence({
     <Loaded result={view}>
       {(answer) => (
         <div className="flex flex-col gap-4">
-          <OccurrenceDetail project={project} line={line} request={{ trace, found: requestOf(answer, line.span) }} />
+          <OccurrenceDetail project={project} line={line} run={{ trace, found: runOf(answer, line.span) }} />
         </div>
       )}
     </Loaded>
@@ -232,7 +232,7 @@ function TracedOccurrence({
 /**
  * One error full screen: how often it happened over the period; then one of its latest occurrences,
  * the newest first, stepped through with one click: the exception as it was thrown, with every
- * exception inside it and every frame, beside the request it happened in, and everything it was sent
+ * exception inside it and every frame, beside the run it happened in, and everything it was sent
  * with.
  */
 export function ErrorPage({
@@ -361,7 +361,7 @@ export function ErrorPage({
                     </span>
                   </div>
                   {occurrence.trace === undefined ? (
-                    <OccurrenceDetail project={project} line={occurrence} request={undefined} />
+                    <OccurrenceDetail project={project} line={occurrence} run={undefined} />
                   ) : (
                     <TracedOccurrence
                       key={occurrence.id}

@@ -50,7 +50,7 @@ describe("start journey", () => {
     }),
   )
 
-  it.effect("says so for an address no page has, and for a request the archive doesn't keep", () =>
+  it.effect("says so for an address no page has, and for a trace the archive doesn't keep", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
       window.history.pushState(null, "", "/Notes!/errors")
@@ -61,7 +61,7 @@ describe("start journey", () => {
       yield* Effect.promise(() => screen.unmount())
       window.history.pushState(null, "", "/notes/traces/0123456789abcdef0123456789abcdef")
       const again = yield* Effect.promise(() => render(<App />))
-      yield* Effect.promise(() => expect.element(again.getByText("No steps of this request")).toBeVisible())
+      yield* Effect.promise(() => expect.element(again.getByText("No steps of this trace")).toBeVisible())
       yield* expectAccessible()
     }),
   )

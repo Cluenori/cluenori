@@ -98,30 +98,30 @@ const servedCalls = (project: ProjectKey): Readonly<Record<ProjectCallName, Serv
       }),
     new IngestKeyRejected(),
   ),
-  endpoints: served(
-    projectCalls.endpoints,
+  operations: served(
+    projectCalls.operations,
     (query) =>
       Effect.gen(function* () {
         const signals = yield* Signals
-        return yield* signals.endpoints(query)
+        return yield* signals.operations(query)
       }),
     new ProjectNotFound({ project }),
   ),
-  requestsOverTime: served(
-    projectCalls.requestsOverTime,
+  runsOverTime: served(
+    projectCalls.runsOverTime,
     ({ query, step }) =>
       Effect.gen(function* () {
         const signals = yield* Signals
-        return yield* signals.requestsOverTime(query, step)
+        return yield* signals.runsOverTime(query, step)
       }),
     new ProjectNotFound({ project }),
   ),
-  keptRequests: served(
-    projectCalls.keptRequests,
+  keptRuns: served(
+    projectCalls.keptRuns,
     (query) =>
       Effect.gen(function* () {
         const signals = yield* Signals
-        return yield* signals.keptRequests(query)
+        return yield* signals.keptRuns(query)
       }),
     new ProjectNotFound({ project }),
   ),

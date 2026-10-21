@@ -6,10 +6,10 @@ import { duration } from "@/lib/format"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/views/ui/tooltip"
 
 /**
- * What a step of a request did: ran in an app, where the request started; answered a request; asked
- * the database; called another service; or worked.
+ * What a step of a trace did: ran in an app, where the trace started; answered a call or a message;
+ * asked the database; called another service; or worked.
  */
-export type StepKind = "app" | "request" | "database" | "call" | "work"
+export type StepKind = "app" | "server" | "database" | "call" | "work"
 
 /** A step's kind; `isApp` says which components are apps, whose steps are the app's own. */
 export const stepKindOf = (span: TraceSpan, isApp: (component: string) => boolean): StepKind => {
@@ -17,7 +17,7 @@ export const stepKindOf = (span: TraceSpan, isApp: (component: string) => boolea
     return "app"
   }
   if (span.kind === "server" || span.kind === "consumer") {
-    return "request"
+    return "server"
   }
   if (span.kind === "client" && "db.system.name" in span.attributes) {
     return "database"
@@ -28,7 +28,7 @@ export const stepKindOf = (span: TraceSpan, isApp: (component: string) => boolea
 /** Each kind of step's name and color; a failed step is red whatever its kind. */
 export const stepKinds: Readonly<Record<StepKind, { readonly label: string; readonly color: string }>> = {
   app: { label: "App", color: "var(--pink)" },
-  request: { label: "Server", color: "var(--blue)" },
+  server: { label: "Server", color: "var(--blue)" },
   database: { label: "Database", color: "var(--purple)" },
   call: { label: "External call", color: "var(--sky)" },
   work: { label: "Internal", color: "var(--mint)" },
@@ -56,7 +56,7 @@ const tickAlignment = (tick: number) => {
 }
 
 /**
- * A request's steps on one time line, as a tree: each row a step under the one that started it,
+ * A trace's steps on one time line, as a tree: each row a step under the one that started it,
  * its bar where and how long it ran, in its kind's color, or red if it failed. Log lines are marks
  * on their step's row. Choosing a row shows that step.
  */

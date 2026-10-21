@@ -28,7 +28,7 @@ const levelWord: Readonly<Record<LogLevel, string>> = {
 
 /**
  * Log lines, newest first, one line each: when, how serious, what it said. A line opens in place
- * with its logger and component, and a button to the request it belongs to.
+ * with its logger and component, and a button to the trace it belongs to.
  */
 export function LogList({
   project,
@@ -71,7 +71,7 @@ export function LogList({
                     to={{ page: "trace", project, trace: line.trace, around: line.time }}
                     className={buttonVariants({ variant: "outline", size: "sm", className: "ml-auto" })}
                   >
-                    Open the request
+                    Open the trace
                   </Link>
                 )}
               </div>

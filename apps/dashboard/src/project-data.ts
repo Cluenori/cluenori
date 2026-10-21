@@ -65,16 +65,16 @@ const kept = <A, E>(question: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
     focusSignal: Atom.windowFocusSignal,
   })
 
-/** What a question is about: a project, and optionally one of its components or endpoints. */
+/** What a question is about: a project, and optionally one of its components or operations. */
 export type Scope = {
   readonly project: ProjectKey
   readonly component?: ComponentKey
-  readonly endpoint?: EnvelopeName
+  readonly operation?: EnvelopeName
 }
 
 const filtersOf = (scope: Scope) => ({
   ...(scope.component === undefined ? {} : { component: scope.component }),
-  ...(scope.endpoint === undefined ? {} : { endpoint: scope.endpoint }),
+  ...(scope.operation === undefined ? {} : { operation: scope.operation }),
 })
 
 /** The workspace's projects. */
@@ -108,14 +108,14 @@ export const useComponentKeys = (project: ProjectKey): ReadonlyArray<ComponentKe
   return AsyncResult.isSuccess(detail) ? detail.value.components.map((component) => component.key) : []
 }
 
-/** Every endpoint's requests over the period, or one component's or endpoint's. */
-export const endpointsAtom = Atom.family((scope: Scope) =>
+/** Every operation's runs over the period, or one component's or operation's. */
+export const operationsAtom = Atom.family((scope: Scope) =>
   kept(
     CluenoriClient.runtime.atom((get) =>
       Effect.gen(function* () {
         const client = yield* CluenoriClient
         const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.endpoints({
+        return yield* client.signals.operations({
           params: { project: scope.project },
           query: { ...period, ...filtersOf(scope) },
         })
@@ -124,14 +124,14 @@ export const endpointsAtom = Atom.family((scope: Scope) =>
   ),
 )
 
-/** The slowest and the failed of the requests kept over the period, of one endpoint or every one. */
-export const keptRequestsAtom = Atom.family((scope: Scope) =>
+/** The slowest and the failed of the runs kept over the period, of one operation or every one. */
+export const keptRunsAtom = Atom.family((scope: Scope) =>
   kept(
     CluenoriClient.runtime.atom((get) =>
       Effect.gen(function* () {
         const client = yield* CluenoriClient
         const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.keptRequests({
+        return yield* client.signals.keptRuns({
           params: { project: scope.project },
           query: { ...period, ...filtersOf(scope) },
         })
@@ -141,10 +141,10 @@ export const keptRequestsAtom = Atom.family((scope: Scope) =>
 )
 
 /**
- * The endpoints over the last day and over the 7 days before, whatever the period: what "slower"
+ * The operations over the last day and over the 7 days before, whatever the period: what "slower"
  * compares (`slowerOf` in `src/project-facts.ts`). Both questions go at once.
  */
-export const usualEndpointsAtom = Atom.family((scope: Scope) =>
+export const usualOperationsAtom = Atom.family((scope: Scope) =>
   kept(
     CluenoriClient.runtime.atom(
       Effect.gen(function* () {
@@ -153,7 +153,7 @@ export const usualEndpointsAtom = Atom.family((scope: Scope) =>
         const lastDay = { from: DateTime.subtract(now, { days: 1 }), to: now }
         const weekBefore = { from: DateTime.subtract(now, { days: 8 }), to: lastDay.from }
         const ask = (period: typeof lastDay) =>
-          client.signals.endpoints({ params: { project: scope.project }, query: { ...period, ...filtersOf(scope) } })
+          client.signals.operations({ params: { project: scope.project }, query: { ...period, ...filtersOf(scope) } })
         const [last, usual] = yield* Effect.all([ask(lastDay), ask(weekBefore)], { concurrency: 2 })
         return { lastDay: last, usual }
       }),
@@ -161,15 +161,15 @@ export const usualEndpointsAtom = Atom.family((scope: Scope) =>
   ),
 )
 
-/** Requests and errors over the period, with their percentiles, in the period's steps. */
-export const requestsAtom = Atom.family((scope: Scope) =>
+/** Runs and errors over the period, with their percentiles, in the period's steps. */
+export const runsAtom = Atom.family((scope: Scope) =>
   kept(
     CluenoriClient.runtime.atom((get) =>
       Effect.gen(function* () {
         const client = yield* CluenoriClient
         const key = get(periodAtom)
         const period = yield* lastOf(periodMillis[key])
-        return yield* client.signals.requests({
+        return yield* client.signals.runs({
           params: { project: scope.project },
           query: { ...period, ...filtersOf(scope), step: stepOf[key] },
         })
@@ -261,7 +261,7 @@ export const logsAtom = Atom.family(
     ),
 )
 
-/** One request's trace, read from the archive around when it happened. */
+/** One trace, read from the archive around when it happened. */
 export const traceAtom = Atom.family(
   (key: { readonly project: ProjectKey; readonly trace: TraceId; readonly around?: DateTime.Utc }) =>
     kept(

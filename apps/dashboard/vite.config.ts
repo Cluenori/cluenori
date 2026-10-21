@@ -9,7 +9,7 @@ import { defineConfig } from "vite"
 // purpose, in the change that needs it, and lowered whenever a change makes room. Scripts were
 // raised from 180 KB when the pages began reading the API: the typed client derived from its
 // definition (Effect's runtime, Schema, and HTTP API client) is about 75 KB of it, and every page
-// needs it before it can show anything. Lowered to 240 KB when one error's page and a request's
+// needs it before it can show anything. Lowered to 240 KB when one error's page and a
 // trace began loading after start.
 const firstLoadBudget = { scriptKb: 240, styleKb: 36 }
 

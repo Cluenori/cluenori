@@ -86,7 +86,7 @@ const releases = [
     version: "2.14.0+412",
     component: "folio-api",
     shipped: sampleNow - 164 * minute,
-    requests: 48_210,
+    runs: 48_210,
     failed: 214,
     p95Ms: 64,
   },
@@ -94,7 +94,7 @@ const releases = [
     version: "2.14.0+412",
     component: "folio-ios",
     shipped: sampleNow - 20 * hour,
-    requests: 23_410,
+    runs: 23_410,
     failed: 31,
     p95Ms: 180,
   },
@@ -102,7 +102,7 @@ const releases = [
     version: "2.13.2+398",
     component: "folio-api",
     shipped: sampleNow - 3 * day,
-    requests: 302_118,
+    runs: 302_118,
     failed: 905,
     p95Ms: 58,
   },
@@ -110,7 +110,7 @@ const releases = [
     version: "2.13.1+390",
     component: "folio-web",
     shipped: sampleNow - 6 * day,
-    requests: 96_402,
+    runs: 96_402,
     failed: 12,
     p95Ms: 120,
   },
@@ -137,10 +137,10 @@ const people = [
 
 const faq = [
   {
-    value: "request",
-    question: "What counts as a request?",
+    value: "run",
+    question: "What counts as a run?",
     answer:
-      "One unit of work in a service: an HTTP request, a queue message or a scheduled job. Each is kept as one row, with how long it took and whether it failed.",
+      "One unit of work in a service: an HTTP request it answers, a message it processes, or a job it starts. Each is kept as one row, with how long it took and whether it failed.",
   },
   {
     value: "exports",
@@ -203,7 +203,7 @@ function CarouselSample() {
               <span className="text-xs text-muted-foreground">{release.component}</span>
               <span className="text-lg font-semibold tracking-tight">{release.version}</span>
               <span className="text-sm text-muted-foreground tabular-nums">
-                Shipped {ago(release.shipped, sampleNow)}, {count(release.requests)} requests since.
+                Shipped {ago(release.shipped, sampleNow)}, {count(release.runs)} runs since.
               </span>
             </div>
           </CarouselItem>
@@ -453,7 +453,7 @@ export function KitDisplay() {
           description="More words that open in place."
           files={["accordion.tsx", "collapsible.tsx"]}
         >
-          <Accordion defaultValue={["request"]}>
+          <Accordion defaultValue={["run"]}>
             {faq.map((entry) => (
               <AccordionItem key={entry.value} value={entry.value}>
                 <AccordionTrigger>{entry.question}</AccordionTrigger>
@@ -483,7 +483,7 @@ export function KitDisplay() {
               <TableHead>Release</TableHead>
               <TableHead>Component</TableHead>
               <TableHead>Shipped</TableHead>
-              <TableHead className="text-right">Requests</TableHead>
+              <TableHead className="text-right">Runs</TableHead>
               <TableHead className="text-right">Failed</TableHead>
               <TableHead className="text-right">p95</TableHead>
             </TableRow>
@@ -494,8 +494,8 @@ export function KitDisplay() {
                 <TableCell className="font-medium">{release.version}</TableCell>
                 <TableCell className="text-muted-foreground">{release.component}</TableCell>
                 <TableCell className="text-muted-foreground">{ago(release.shipped, sampleNow)}</TableCell>
-                <TableCell className="text-right tabular-nums">{count(release.requests)}</TableCell>
-                <TableCell className="text-right tabular-nums">{share(release.failed, release.requests)}</TableCell>
+                <TableCell className="text-right tabular-nums">{count(release.runs)}</TableCell>
+                <TableCell className="text-right tabular-nums">{share(release.failed, release.runs)}</TableCell>
                 <TableCell className="text-right tabular-nums">{duration(release.p95Ms)}</TableCell>
               </TableRow>
             ))}
@@ -513,7 +513,7 @@ export function KitDisplay() {
             <ProgressValue>{(_formatted, value) => (value === null ? "Unknown" : share(value, 100))}</ProgressValue>
           </Progress>
           <Progress value={null}>
-            <ProgressLabel>Counting requests</ProgressLabel>
+            <ProgressLabel>Counting runs</ProgressLabel>
           </Progress>
           <KitSample label="Skeleton">
             <div className="flex w-full items-center gap-3">
@@ -540,17 +540,17 @@ export function KitDisplay() {
             <Tabs defaultValue="overview" className="w-full">
               <TabsList>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="requests">Requests</TabsTrigger>
+                <TabsTrigger value="runs">Runs</TabsTrigger>
                 <TabsTrigger value="errors">Errors</TabsTrigger>
                 <TabsTrigger value="settings" disabled>
                   Settings
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="overview" className="text-muted-foreground">
-                folio-api answered {count(141_211)} requests today.
+                folio-api had {count(141_211)} runs today.
               </TabsContent>
-              <TabsContent value="requests" className="text-muted-foreground">
-                The busiest endpoint is {"GET /api/notes/{id}"}.
+              <TabsContent value="runs" className="text-muted-foreground">
+                The busiest operation is {"GET /api/notes/{id}"}.
               </TabsContent>
               <TabsContent value="errors" className="text-muted-foreground">
                 6 kinds of errors, 1 of them new today.
@@ -574,7 +574,7 @@ export function KitDisplay() {
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="traces" className="pt-2 text-muted-foreground">
-                Every request, step by step.
+                Every trace, step by step.
               </TabsContent>
               <TabsContent value="logs" className="pt-2 text-muted-foreground">
                 What the services wrote down.
@@ -704,7 +704,7 @@ export function KitDisplay() {
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>Request {sampleTrace.trace.slice(0, 8)}</BreadcrumbPage>
+                  <BreadcrumbPage>Trace {sampleTrace.trace.slice(0, 8)}</BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>

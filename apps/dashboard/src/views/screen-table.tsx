@@ -1,9 +1,9 @@
 import { cn } from "cn"
 
 import { compact, count } from "@/lib/format"
-import { EndpointName } from "@/views/endpoint-name"
-import type { Latency, Slower } from "@/views/endpoint-table"
-import { LatencyCell, percentiles, SlowerTag } from "@/views/endpoint-table"
+import { OperationName } from "@/views/operation-name"
+import type { Latency, Slower } from "@/views/operation-table"
+import { LatencyCell, percentiles, SlowerTag } from "@/views/operation-table"
 
 /** One screen of an app, or a page in a browser: how often it was shown, and how long it took. */
 export type ScreenLatency = Latency & {
@@ -15,7 +15,7 @@ export type ScreenLatency = Latency & {
 
 /**
  * An app's screens by how long they took to show: p50, p80, p95, and p99, each a value beside a
- * filled cell, as in the endpoint table, then how often each was shown. A screen that got slower
+ * filled cell, as in the operation table, then how often each was shown. A screen that got slower
  * says so beside its name.
  */
 export function ScreenTable({
@@ -45,7 +45,7 @@ export function ScreenTable({
       {rows.map((row) => (
         <div key={row.screen} className={cn(grid, "min-h-12 items-center border-b py-2")}>
           <span className="flex min-w-0 items-baseline gap-2.5">
-            <EndpointName endpoint={row.screen} className="text-[15px]" />
+            <OperationName name={row.screen} className="text-[15px]" />
             {row.slower !== undefined && <SlowerTag slower={row.slower} />}
           </span>
           {percentiles.map((column) => (

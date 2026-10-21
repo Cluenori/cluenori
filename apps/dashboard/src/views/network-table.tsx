@@ -1,7 +1,7 @@
 import { compact, count, duration } from "@/lib/format"
 import type { Route } from "@/router"
 import { Link } from "@/router"
-import { EndpointName } from "@/views/endpoint-name"
+import { OperationName } from "@/views/operation-name"
 
 /** A backend endpoint as an app saw it: how often it called it, and its p95 there and at the backend. */
 export type NetworkCall = {
@@ -46,7 +46,7 @@ export function NetworkTable({
             to={linkOf(row)}
             className={`${grid} min-h-12 items-center border-b py-2 outline-none hover:bg-accent/60 focus-visible:bg-accent`}
           >
-            <EndpointName endpoint={row.endpoint} className="text-[15px]" />
+            <OperationName name={row.endpoint} className="text-[15px]" />
             <span className="font-mono text-[13px]">{duration(row.p95Ms)}</span>
             <span
               className="hidden h-3 md:flex"

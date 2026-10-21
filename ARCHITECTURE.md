@@ -149,11 +149,11 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 
 | Part | Package | Purpose | Status |
 |---|---|---|---|
-| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, endpoints, requests, errors and logs over time, kept requests, logs, traces), OTLP ingest of traces, logs and metrics, the archive in R2, each project's Durable Object and the workspace's, and the dashboard's files |
+| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, operations, runs, errors and logs over time, kept runs, logs, traces), OTLP ingest of traces, logs and metrics, the archive in R2, each project's Durable Object and the workspace's, and the dashboard's files |
 | CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, questions about them, and the repository's check and generate | Built |
-| Dashboard | `apps/dashboard` | The web app over the public API | Built: served by the Worker, signed in with the API token; reads the public API for a project's overview, its performance, endpoints, errors, and logs by component, and a request's trace; the views waiting for app data are in its design kit, on sample data |
+| Dashboard | `apps/dashboard` | The web app over the public API | Built: served by the Worker, signed in with the API token; reads the public API for a project's overview, its performance, operations, errors, and logs by component, and a trace; the views waiting for app data are in its design kit, on sample data |
 | Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, and `ActivityLog`, which commits a write with its activity. Delivery to Queues comes with the first reaction, the module contract with the first module |
-| Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys) and `signals` (the archive, request counts, kept requests, warnings and errors, error groups, traces); Actions and policy come with the first module |
+| Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys) and `signals` (the archive, run counts, kept runs, warnings and errors, error groups, traces); Actions and policy come with the first module |
 | Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Planned |
 | Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | Built: `workspace-rules`, for the architecture check; `web-crypto`, for `Crypto` in workerd; `otlp`, for OpenTelemetry exports; `quantile-sketch`, for percentiles; `scrub`, to remove secrets and personal data |
 | Web SDK | `sdks/web` | Init, identify, consent, track, feature, flags, and the client kit views, for browsers and JavaScript backends | Planned |
@@ -202,7 +202,7 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
   |---|---|---|
   | Records | SQLite in a Durable Object: one per project, one for the workspace | The engine or module that owns the table |
   | Activity | Committed with its record, delivered through Queues, archived to R2 | Foundation |
-  | Signals: counts | SQLite in each project's Durable Object: requests by endpoint and environment, with a quantile sketch of their durations, by the minute for 14 days and by the hour for 15 months; no person IDs | Signals: added up where an export arrives, recorded by the project's object |
+  | Signals: counts | SQLite in each project's Durable Object: runs by operation and environment, with a quantile sketch of their durations, by the minute for 14 days and by the hour for 15 months; no person IDs | Signals: added up where an export arrives, recorded by the project's object |
   | Signals: archive | Every export as received, with secrets and personal data removed, as gzip OTLP protobuf in R2 (`cluenori-archive`), kept 90 days by the bucket's lifecycle rule; indexed by time in the project's object | Signals |
   | Signals: warnings and errors | SQLite in each project's Durable Object, searchable, 90 days; errors grouped by type and stack, groups kept 15 months | Signals |
   | Signals: duplicate window | The digest of each export, kept an hour in the project's object | Signals |
@@ -230,8 +230,8 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
   person's data.
 - The jurisdiction (global or EU) is chosen once, at setup, because a store's jurisdiction can't
   change after it is made. Local runs use none: workerd doesn't implement jurisdictions.
-- Backends send OpenTelemetry traces and logs, not metrics (yet). Ingest turns each request's trace
-  into one row, counts it, and keeps the full trace only for failed, slow, and sampled requests
+- Backends send OpenTelemetry traces and logs, not metrics (yet). Ingest turns each run's trace
+  into one row, counts it, and keeps the full trace only for failed, slow, and sampled runs
   (`concept/Modules.md`, "Performance, errors and logs").
 
 ## Communication
@@ -285,7 +285,7 @@ From `concept/`; each gets its pattern when it is built.
     deployment an API token. It saves the choice, the URL and the token for this computer in
     `~/.config/cluenori/deployment.json`; `./update` deploys with the same choice.
   - `./cluenori` asks the deployment, or with `--local` the Cluenori `./run` serves, about projects:
-    `project create`, `component add`, `endpoints`, `requests`, `errors`, `error`, `logs`, `trace`.
+    `project create`, `component add`, `operations`, `operation`, `runs`, `errors`, `error`, `logs`, `trace`.
   - `./update` pulls the new version (fast-forward only: a clone with commits of its own is left for
     its owner to merge), installs it, and deploys. With the first tables it also wakes every
     project's object, so each one migrates and a failed migration shows during the update.
@@ -350,8 +350,8 @@ These are choices, not omissions. Change them only through `PATTERNS.md`, with a
   exactly rather than sampled, and can be deleted. Counts are kept by the minute for 14 days, for
   incidents, and by the hour for 15 months, for trends, as CloudWatch does; both are written as an
   export arrives, so they always agree. It costs one writer per project, which a founder's traffic
-  is far below, and SQLite row writes: two per endpoint and environment in each export, about 20
-  million a month for a service with a million requests a day (50 million are included per
+  is far below, and SQLite row writes: two per operation and environment in each export, about 20
+  million a month for a service with a million runs a day (50 million are included per
   account). Rolling hours up from minutes in an alarm would halve that, at the cost of tracking
   late data; a project that outgrows either can count in Analytics Engine behind the same `Signals`
   contract.
@@ -408,4 +408,4 @@ updates this table in the same change.
 | Package | Kind | Owns | Uses | Reacts to |
 |---|---|---|---|---|
 | `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests; the workspace's index of its projects | Foundation's `ActivityLog` | — |
-| `@cluenori/signals` | Engine | The archive of every export and its index; requests counted by endpoint and environment; warnings and errors; error groups; the duplicate window | `@bagatka/otlp`, `@bagatka/quantile-sketch`, `@bagatka/scrub`; an `ArchiveStore` the host provides; `projects` for its API's errors | — |
+| `@cluenori/signals` | Engine | The archive of every export and its index; runs counted by operation and environment; warnings and errors; error groups; the duplicate window | `@bagatka/otlp`, `@bagatka/quantile-sketch`, `@bagatka/scrub`; an `ArchiveStore` the host provides; `projects` for its API's errors | — |

@@ -19,8 +19,8 @@ The sidebar shows each module by name, as in PostHog. Above the sidebar are a wo
 | Product | Experiments | Find the variant that gives more revenue and retention | Experiments, holdouts, results | v3 |
 | Product | Surveys | Ask users questions | Surveys, NPS, cancellation reasons | v3 |
 | Engineering | Errors | Find crashes and exceptions | Error groups, readable stack traces, affected customers | v1 |
-| Engineering | Logs | See what your apps report as wrong | Errors and warnings with how often each occurs, search, the logs of one request | v1 |
-| Engineering | Performance | See the load, and what got slower: each route, screen and query against its usual | Requests over time, routes, database queries, external calls, screens, the trace of one request | v1 |
+| Engineering | Logs | See what your apps report as wrong | Errors and warnings with how often each occurs, search, the logs of one trace | v1 |
+| Engineering | Performance | See the load, and what got slower: each operation, screen and query against its usual | Runs over time, operations, database queries, external calls, screens, the trace of one run | v1 |
 | Engineering | Uptime | Make sure that apps are available and jobs run | Monitors, cron check-ins, certificates | v2 |
 | Engineering | Issues | Track bugs and tasks | List, statuses, links | v2 |
 | Delivery | Releases | See what you shipped, who updated, and what changed | Releases, store rollout, impact | v1 |
@@ -62,7 +62,7 @@ Today uses a fixed set of detectors, not a query builder. Each item shows the ev
 | Insight | Evidence | Action |
 | --- | --- | --- |
 | A new crash in a release affects paying customers | Crash count, customers, MRR at risk, release | Turn off the flag. Open a task for an agent with the stack trace and the customer timelines. |
-| An endpoint or query is slower after a release | p95 before and after, the release, the slowest traces | Open the traces. Turn off the flag. |
+| An operation or query is slower after a release | p95 before and after, the release, the slowest traces | Open the traces. Turn off the flag. |
 | Most reporting devices are on an old version | Version adoption, MRR on old versions | Set a recommended or minimum version. Send an update message. |
 | The usage of a customer decreased a lot | Weekly usage of the customer | Open the customer page. Send an email. |
 | You can recover failed payments | Failed charges for each customer | Try the payment again. Send a reminder. |
@@ -86,7 +86,7 @@ I and the agents use these pages most: the customer page, the feature scorecard 
 ### Customer page
 
 - **Header:** plan, MRR, lifetime revenue, margin, health score, acquisition source, platforms and app version.
-- **Timeline:** one list of all customer activity: events, sessions, errors, slow requests, payments, failed charges, plan changes, flag exposures, messages, feedback, survey answers and support messages.
+- **Timeline:** one list of all customer activity: events, sessions, errors, slow runs, payments, failed charges, plan changes, flag exposures, messages, feedback, survey answers and support messages.
 - **Session trail:** the screens and actions before an error. This is a list of events, not a video.
 - **Cost to serve:** the AI tokens, emails, storage and requests of this month, compared with what the customer pays.
 - **Other projects:** my other projects linked to this person by a verified link, with the purposes that the person agreed to.
@@ -114,7 +114,7 @@ A row can show "insufficient evidence". A retention difference is a correlation,
 A feature page shows one feature across all modules. A switch at the top selects all components or one component, for example the iOS app.
 
 - **Usage:** the funnel from availability to repeat use, and adoption among eligible users.
-- **Engineering:** the endpoints, screens, queries and jobs of the feature, with p95 and error rate. Its error groups, logs and slowest traces.
+- **Engineering:** the operations, screens and queries of the feature, with p95 and error rate. Its error groups, logs and slowest traces.
 - **Delivery:** its flags and their exposure, the releases that changed it, and its changelog entries.
 - **Voice:** its ideas, votes, bug reports and store reviews.
 - **Money:** its cost and associated revenue, with precision labels.
@@ -124,23 +124,23 @@ The feature catalog lists each feature with its key, stage and tagging rules. Fo
 
 ## Performance, errors and logs
 
-Three engineering modules answer three questions. Each module links to the other two. They read three kinds of data: product events (what people did), requests (what your services did) and errors (what broke).
+Three engineering modules answer three questions. Each module links to the other two. They read three kinds of data: product events (what people did), runs (what your services did) and errors (what broke).
 
 | Module | Question | Views |
 | --- | --- | --- |
-| Performance | How much load is there, and is each endpoint, screen and query fast? | Requests over time; endpoints, database queries, external calls, screens and web vitals; the trace of one request |
+| Performance | How much load is there, and is each operation, screen and query fast? | Runs over time; operations, database queries, external calls, screens and web vitals; the trace of one run |
 | Errors | What broke, and whom did it affect? | Error groups, readable stack traces, affected customers |
-| Logs | What did the apps report as wrong? | Errors and warnings with how often each occurs, search, and the logs of one request |
+| Logs | What did the apps report as wrong? | Errors and warnings with how often each occurs, search, and the logs of one trace |
 
-There is no separate page to search traces. The trace of a request opens from an error, from a slow point on a chart, or from a customer timeline. It is a waterfall of the steps, with their queries, external calls, logs and error. This is the evidence that an agent gets to find a root cause.
+There is no separate page to search traces. The trace of a run opens from an error, from a slow point on a chart, or from a customer timeline. It is a waterfall of the steps, with their queries, external calls, logs and error. This is the evidence that an agent gets to find a root cause.
 
-Metrics (CPU, memory, queue depth and custom counters) comes later, when a need shows. Hosts such as Cloudflare report their own runtime metrics, and a custom counter is a product event or a field of a request. Live tail and log patterns also come later.
+Metrics (CPU, memory, queue depth and custom counters) comes later, when a need shows. Hosts such as Cloudflare report their own runtime metrics, and a custom counter is a product event or a field of a run. Live tail and log patterns also come later.
 
 ### Performance in detail
 
-- **Load:** requests per minute over time, for the project, one component or one route.
-- **Endpoints:** one row for each route with calls, average, p50, p80, p95, p99, error rate and total time (calls × average). Sort by total time to find the endpoint that uses the most time in total, not only the slowest endpoint.
-- **Database queries:** queries in groups by shape, without values. Each group shows calls, total time, p95, rows returned and the endpoints that use it. A warning shows N+1 patterns: one request that repeats the same query many times.
+- **Load:** runs per minute over time, for the project, one component or one operation.
+- **Operations:** one row for each operation with runs, average, p50, p80, p95, p99, error rate and total time (runs × average). Sort by total time to find the operation that uses the most time in total, not only the slowest one.
+- **Database queries:** queries in groups by shape, without values. Each group shows calls, total time, p95, rows returned and the operations that use it. A warning shows N+1 patterns: one run that repeats the same query many times.
 - **External calls:** third-party APIs, for example Stripe, OpenAI or email providers, with latency and error rate. This shows which provider has the outage.
 - **Screens:** screen load time and app start time on mobile, and Core Web Vitals on the web.
 
@@ -150,16 +150,16 @@ Each row shows whether it got slower than usual, the change from the previous re
 
 Backends send standard OpenTelemetry traces and logs. Web frameworks, HTTP clients and database drivers send them without more code, for example ASP.NET Core and Entity Framework Core in .NET. The mobile and web SDKs add screens and web vitals. Cluenori keeps OpenTelemetry metrics in its archive but does not show them yet.
 
-A request is one unit of work in a service: an HTTP request, a queue message or a scheduled job. When its trace arrives, Cluenori turns it into one row: route, status, duration, database time, query count, slowest query, external calls, error, person, feature and release. The charts come from these rows: request counts, error counts and latency distributions for each normalized route, environment and release. Counts are exact, and percentiles are within 2% of the true value, which the charts say.
+A run is one unit of work in a service: an HTTP request it answers, a message it processes, or a job it starts. Its operation is its name, such as a normalized route. When its trace arrives, Cluenori turns it into one row: operation, status, duration, database time, query count, slowest query, external calls, error, person, feature and release. The charts come from these rows: run counts, error counts and latency distributions for each operation, environment and release. Counts are exact, and percentiles are within 2% of the true value, which the charts say.
 
-Cluenori keeps every export it receives in an archive for 90 days, with emails, tokens and card numbers removed. Thus the full trace and every log line of any request, failed or not, can be opened for 90 days, and new views can be built from data that arrived before them.
+Cluenori keeps every export it receives in an archive for 90 days, with emails, tokens and card numbers removed. Thus the full trace and every log line of any run, failed or not, can be opened for 90 days, and new views can be built from data that arrived before them.
 
 | Data | Kept for |
 | --- | --- |
 | Product events | 5 years |
 | Every export: traces, logs and metrics, in the archive | 90 days |
 | Warnings and errors, searchable | 90 days |
-| Counts (requests by endpoint) | By the minute for 14 days, and by the hour for 15 months, in the database of each project |
+| Counts (runs by operation) | By the minute for 14 days, and by the hour for 15 months, in the database of each project |
 | Error groups | 15 months after they were last seen |
 | Other records | Until you delete them |
 

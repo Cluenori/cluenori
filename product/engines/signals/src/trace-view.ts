@@ -33,7 +33,7 @@ export const TraceLog = Schema.Struct({
 export type TraceLog = typeof TraceLog.Type
 
 /**
- * One request across services, from the archive: its spans in tree order, each subtree by start
+ * One trace across services, from the archive: its spans in tree order, each subtree by start
  * time, and its logs, oldest first. `searched` is when the records of the archive files that hold
  * it span, or, when none is kept, the 90 days the archive keeps; `files` says how many of those
  * files were read, and how many weren't because there were too many.
