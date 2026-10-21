@@ -61,7 +61,13 @@ export default defineConfig(() =>
             },
           }),
         ],
-        test: { name: "@cluenori/journeys: alerts", include: ["test/alerts-journey.test.ts"] },
+        // No on-disk module cache: with it, the Cloudflare plugin sends a test worker every cached module in
+        // one message, which outgrows workerd's 32 MiB limit (PATTERNS.md, "Testing").
+        test: {
+          fsModuleCache: false,
+          name: "@cluenori/journeys: alerts",
+          include: ["test/alerts-journey.test.ts"],
+        },
       }
     }),
   ),

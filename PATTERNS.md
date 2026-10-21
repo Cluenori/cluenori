@@ -609,6 +609,11 @@ describe("FeatureKey", () => {
   money, bucketing, catalog rules.
 - **Product packages test inside a Durable Object,** in workerd with `@cloudflare/vitest-plugin`
   and the object's real SQLite, each test in an object of its own.
+- **Tests in workerd keep Vitest's on-disk module cache off** (`fsModuleCache: false` in each such
+  `vitest.config.ts`). With it, a new test worker asks Vitest for every module it already has on
+  disk, and the plugin, as workerd can't read files, sends their code in one WebSocket message. That
+  message grows with the code, and past workerd's 32 MiB limit the test worker dies with "Message is
+  too large". Without the cache, each module comes in a message of its own; a full run is no slower.
 - **Fakes only for paid or external services,** at `HttpClient` (entry 18). Everything we run
   ourselves, including the database and queues, is real.
 - **Capabilities test against Effect's in-memory platform.** A capability that reads files or time

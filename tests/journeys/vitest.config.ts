@@ -16,5 +16,11 @@ export default defineConfig({
     }),
   ],
   // The alerts journey runs with push set up and a fake APNs (vitest.alerts.config.ts).
-  test: { include: ["test/**/*.test.ts"], exclude: ["test/alerts-journey.test.ts"] },
+  // No on-disk module cache: with it, the Cloudflare plugin sends a test worker every cached module in
+  // one message, which outgrows workerd's 32 MiB limit (PATTERNS.md, "Testing").
+  test: {
+    fsModuleCache: false,
+    include: ["test/**/*.test.ts"],
+    exclude: ["test/alerts-journey.test.ts"],
+  },
 })

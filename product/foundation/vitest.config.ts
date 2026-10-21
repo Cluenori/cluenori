@@ -5,5 +5,10 @@ import { defineConfig } from "vitest/config"
 // Durable Object that test/wrangler.jsonc describes.
 export default defineConfig({
   plugins: [cloudflareTest({ wrangler: { configPath: "./test/wrangler.jsonc" } })],
-  test: { include: ["test/**/*.test.ts"] },
+  // No on-disk module cache: with it, the Cloudflare plugin sends a test worker every cached module in
+  // one message, which outgrows workerd's 32 MiB limit (PATTERNS.md, "Testing").
+  test: {
+    fsModuleCache: false,
+    include: ["test/**/*.test.ts"],
+  },
 })
