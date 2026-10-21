@@ -1,3 +1,5 @@
+import type { Span } from "@bagatka/otlp"
+import { encodeTraces } from "@bagatka/otlp"
 import { SketchValue, sketchOf } from "@bagatka/quantile-sketch"
 import { ComponentKey, EnvelopeName, EnvironmentKey, Period, TraceId } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
@@ -63,6 +65,26 @@ const keptOf = (durationMs: number, ago: number, failed = false): KeptRequest =>
   failed,
   status: failed ? 500 : 200,
 })
+// A span of 1.2 s from when the fixture's started, its IDs made of repeated hex digits.
+const span = (
+  trace: string,
+  id: string,
+  name: string,
+  kind: Span["kind"],
+  parent: string | undefined,
+  failed = false,
+): Span => ({
+  traceId: trace.repeat(32),
+  spanId: id.repeat(16),
+  parentSpanId: parent === undefined ? undefined : parent.repeat(16),
+  name,
+  kind,
+  startTimeUnixNano: BigInt(capturedAt) * 1_000_000n,
+  endTimeUnixNano: BigInt(capturedAt + 1_200) * 1_000_000n,
+  attributes: new Map(),
+  events: [],
+  status: { code: failed ? "error" : "unset", message: "" },
+})
 const lastDay = new Period({ from: DateTime.makeUnsafe(now - days(1)), to: DateTime.makeUnsafe(now) })
 
 describe("readTraces", () => {
@@ -104,6 +126,46 @@ describe("readTraces", () => {
         [
           [EnvelopeName.make("GET /api/fail"), 500],
           [EnvelopeName.make("GET /api/fail"), 500],
+        ],
+      )
+    }),
+  )
+
+  it.effect("counts a job, an internal span that starts its trace, and not the spans under it", () =>
+    Effect.gen(function* () {
+      // A cleanup job's two runs, one failed, each with a step under it; a database call no request
+      // made; and an internal span whose parent is in another service.
+      const body = encodeTraces([
+        {
+          resource: new Map([["service.name", "notes-api"]]),
+          scopeSpans: [
+            {
+              scope: { name: "Notes.Cleanup", version: "" },
+              spans: [
+                span("a", "1", "cleanup.run", "internal", undefined),
+                span("a", "2", "cleanup.batch", "internal", "1"),
+                span("b", "3", "cleanup.run", "unspecified", undefined, true),
+                span("c", "4", "SELECT jobs", "client", undefined),
+                span("d", "5", "render.page", "internal", "9"),
+              ],
+            },
+          ],
+        },
+      ])
+      const { export: batch } = yield* TestClock.setTime(now).pipe(
+        Effect.andThen(readTraces(body)),
+        Effect.provide(WebCrypto),
+      )
+
+      assert.deepStrictEqual(
+        batch.counts.map((entry) => [entry.endpoint, entry.requests, entry.errors]),
+        [[EnvelopeName.make("cleanup.run"), 2, 1]],
+      )
+      assert.deepStrictEqual(
+        batch.kept.map((request) => [request.trace, request.failed, request.status]),
+        [
+          [TraceId.make("a".repeat(32)), false, undefined],
+          [TraceId.make("b".repeat(32)), true, undefined],
         ],
       )
     }),

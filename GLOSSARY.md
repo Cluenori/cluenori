@@ -28,7 +28,7 @@ its exact rule.
 | Activity log | The activity of one database, and the only way to change its records | `ActivityLog`, its `commit` | event store, outbox, journal |
 | Ingest key | The credential a component sends its telemetry with: `cluenori.<project>.<component>.<secret>` | `IngestKey`, `@cluenori/projects` | API key, API token; SDK key (the apps' key, later) |
 | API token | The credential that lets someone use a deployment's public API | `CLUENORI_API_TOKEN`, `MemberAuthorization` in `apps/worker` | API key, password |
-| Endpoint | A request's name in its component, its server span's name: `GET /api/notes/{id}` | `endpoint`, `@cluenori/signals` | route (the template inside it), URL, path |
+| Endpoint | A request's name in its component, the name of the span it is: `GET /api/notes/{id}`, or a job's, `cleanup.run` | `endpoint`, `@cluenori/signals` | route (the template inside it), URL, path |
 | Counts | Requests added up by endpoint and environment, by the minute and by the hour, with a sketch of their durations | `RequestCounts`, `Signals`, `@cluenori/signals` | metrics (a separate signal, later), counters |
 | Kept request | A single request Cluenori keeps so it can be opened: of each endpoint, environment and hour, the five slowest and the five slowest failed, 14 days | `KeptRequest`, `KeptRequests`, `@cluenori/signals` | sample (it isn't random), exemplar, slow request |
 | Covered period | The part of an asked-for period that counts answer for: no earlier than they are kept, no later than now | `covered` | — |

@@ -42,13 +42,14 @@ again. An unknown error ID fails with `ErrorGroupNotFound`.
 
 ## Owns
 
-- **Rules:** what a request is (a server or consumer span), its endpoint, whether it failed, and its
-  HTTP status; which requests are kept to open (of each endpoint, environment and hour, the five
-  slowest and the five slowest failed); a log record's level; which records are indexed (warnings
-  and up); which errors are the same error (exception type and the top five frames of the app's own
-  code in its stack, those with a source location, and, when it was thrown outside that code, its
-  message without numbers and IDs; or logger and message template); and how each question's period
-  is cut to what is kept.
+- **Rules:** what a request is (a server or consumer span, or an internal span that starts its
+  trace: a job the service started itself, such as a scheduled one), its endpoint, whether it
+  failed, and its HTTP status; which requests are kept to open (of each endpoint, environment and
+  hour, the five slowest and the five slowest failed); a log record's level; which records are
+  indexed (warnings and up); which errors are the same error (exception type and the top five
+  frames of the app's own code in its stack, those with a source location, and, when it was thrown
+  outside that code, its message without numbers and IDs; or logger and message template); and how
+  each question's period is cut to what is kept.
 - **Data,** in each project's database:
   - requests counted by endpoint and environment, by the minute (`signals_minute_counts`, 14 days)
     and by the hour (`signals_hour_counts`, 15 months), each component's endpoints, at most 500
@@ -108,5 +109,5 @@ in the project's object; `SignalsGroup` is the API's part.
 - **An answer's schemas live apart from the code that makes them** (`trace-view.ts` from
   `read-archived-trace.ts`, `request-queries.ts` from `request-store.ts`), and the package is
   side-effect free, so a client of the API, such as the dashboard, bundles the schemas alone.
-- **Not yet:** scheduled jobs whose root spans are internal, errors from failed spans of services
-  that send no logs, and the feature and release of each request.
+- **Not yet:** errors from failed spans of services that send no logs, and the feature and release
+  of each request.

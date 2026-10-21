@@ -87,6 +87,17 @@ const toKeep = (requests: ReadonlyArray<KeptRequest>) => {
   ]
 }
 
+/**
+ * Whether a span is a request: one unit of work in a service. A server span answers a call, a
+ * consumer span a message; an internal span that starts its trace is work the service started
+ * itself, such as a scheduled job. A span of unspecified kind counts as internal, as OpenTelemetry
+ * says receivers may assume.
+ */
+const isRequest = (span: Span) =>
+  span.kind === "server" ||
+  span.kind === "consumer" ||
+  ((span.kind === "internal" || span.kind === "unspecified") && span.parentSpanId === undefined)
+
 interface Group {
   readonly bucket: number
   readonly endpoint: EnvelopeName
@@ -100,9 +111,10 @@ interface Group {
 /**
  * Reads the body of an OTLP/HTTP protobuf trace export: removes credentials and personal data,
  * writes the file the archive keeps, adds its requests up by endpoint, environment, and minute, and
- * picks those that may be kept. A request is a server or consumer span, named by the span's name
- * (`GET /api/notes/{id}`); it failed when its status is an error. Pure apart from the clock and the
- * digest; runs where the export arrives, so a project's object only stores.
+ * picks those that may be kept. A request is a server or consumer span, or an internal span that
+ * starts its trace, a job (`isRequest`), named by the span's name (`GET /api/notes/{id}`,
+ * `cleanup.run`); it failed when its status is an error. Pure apart from the clock and the digest;
+ * runs where the export arrives, so a project's object only stores.
  */
 export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   const crypto = yield* Crypto.Crypto
@@ -120,13 +132,13 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
     const environment = environmentOf(resource)
     for (const { spans } of scopeSpans) {
       for (const span of spans) {
-        const isRequest = span.kind === "server" || span.kind === "consumer"
-        const problem = isRequest ? problemOf(span, nowMillis) : undefined
+        const counted = isRequest(span)
+        const problem = counted ? problemOf(span, nowMillis) : undefined
         if (problem !== undefined) {
           rejectedCount += 1
           firstProblem ??= problem
         }
-        if (isRequest && problem === undefined) {
+        if (counted && problem === undefined) {
           const start = Number(span.startTimeUnixNano / 1_000_000n)
           const bucket = start - (start % bucketMillis)
           const endpoint = EnvelopeName.make(span.name)
