@@ -1,6 +1,6 @@
-import type { LogRecord, ResourceLogs } from "@bagatka/otlp"
-import { decodeLogs, encodeLogs } from "@bagatka/otlp"
 import { ComponentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import type { LogRecord, ResourceLogs } from "@cluenori/otlp"
+import { decodeLogs, encodeLogs } from "@cluenori/otlp"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Duration, Effect, Layer } from "effect"
 import { Base64 } from "effect/encoding"

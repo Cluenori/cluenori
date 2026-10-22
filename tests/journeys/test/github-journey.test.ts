@@ -1,5 +1,5 @@
-import { CommitSha, Repository, WorkflowFile } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import { CommitSha, Repository, WorkflowFile } from "@cluenori/github"
 import { ComponentName, ProjectName } from "@cluenori/projects"
 import { PromotionReason, SemanticVersion } from "@cluenori/releases"
 import { assert, layer } from "@effect/vitest"

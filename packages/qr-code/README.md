@@ -1,4 +1,4 @@
-# @bagatka/qr-code
+# @cluenori/qr-code
 
 Encodes text, such as a link a phone's camera opens, as a QR code (ISO/IEC 18004), and draws it as
 SVG path data.
@@ -6,7 +6,7 @@ SVG path data.
 ## Use it
 
 ```ts
-import { encodeQrCode, qrCodePath } from "@bagatka/qr-code"
+import { encodeQrCode, qrCodePath } from "@cluenori/qr-code"
 import { Result } from "effect"
 
 const encoded = encodeQrCode("https://example.com/pair?code=Zk3Pq9TzX2mV8wYb4LdR7nHs1cFgJ0uE")

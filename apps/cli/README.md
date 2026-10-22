@@ -81,7 +81,7 @@ Write its notes for each of the app's languages: ./cluenori notes notes notes-io
 
 ## Does not own
 
-- **How dependency rules are checked:** `@bagatka/workspace-rules`.
+- **How dependency rules are checked:** `@cluenori/workspace-rules`.
 - **Signing in, prompts, deploying, and secrets:** Wrangler. The CLI runs it attached to the
   terminal.
 - **Any rule about projects or operations:** the Worker's API, which the CLI calls with its typed
@@ -89,7 +89,7 @@ Write its notes for each of the app's languages: ./cluenori notes notes notes-io
 
 ## Depends on
 
-- `@bagatka/workspace-rules`, to check the dependency rules.
+- `@cluenori/workspace-rules`, to check the dependency rules.
 - `@cluenori/worker`, for the API definition: the typed client and the OpenAPI document.
 - `@cluenori/foundation`, `@cluenori/projects`, `@cluenori/releases`, and `@cluenori/signals`, for
   the Schemas of what the commands send (ARCHITECTURE.md, open decision "How clients import the API

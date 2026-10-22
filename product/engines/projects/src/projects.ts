@@ -1,7 +1,7 @@
-import { Repository } from "@bagatka/github"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, Instant, Source } from "@cluenori/foundation"
 import type { ProjectKey } from "@cluenori/foundation"
+import { Repository } from "@cluenori/github"
 import { Context, Crypto, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Base64Url, Hex } from "effect/encoding"
 import { SqlClient, SqlSchema } from "effect/sql"

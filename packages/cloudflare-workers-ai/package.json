@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/cloudflare-workers-ai",
+  "name": "@cluenori/cloudflare-workers-ai",
   "private": true,
   "type": "module",
   "sideEffects": false,

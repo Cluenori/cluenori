@@ -1,6 +1,6 @@
-import { CommitSha, GitHub, GitHubRefused, Repository } from "@bagatka/github"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvironmentKey, MemberId, ReleaseVersion } from "@cluenori/foundation"
+import { CommitSha, GitHub, GitHubRefused, Repository } from "@cluenori/github"
 import { ComponentName, ProjectName, Projects } from "@cluenori/projects"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Layer, Option } from "effect"

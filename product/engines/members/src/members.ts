@@ -1,14 +1,14 @@
+import type { Actor, Caller } from "@cluenori/foundation"
+import { ActivityLog, Instant, MemberId, NotAllowed, ProjectKey, Source } from "@cluenori/foundation"
+import { ProjectIndex, ProjectNotFound } from "@cluenori/projects"
 import type {
   AssertionResponse,
   CreationOptions,
   RegistrationResponse,
   RequestOptions,
   WebAuthnCrypto,
-} from "@bagatka/webauthn"
-import { challengeOf, creationOptions, requestOptions, verifyAssertion, verifyRegistration } from "@bagatka/webauthn"
-import type { Actor, Caller } from "@cluenori/foundation"
-import { ActivityLog, Instant, MemberId, NotAllowed, ProjectKey, Source } from "@cluenori/foundation"
-import { ProjectIndex, ProjectNotFound } from "@cluenori/projects"
+} from "@cluenori/webauthn"
+import { challengeOf, creationOptions, requestOptions, verifyAssertion, verifyRegistration } from "@cluenori/webauthn"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Base64Url, Hex } from "effect/encoding"
 import { SqlClient, SqlSchema } from "effect/sql"

@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/otlp",
+  "name": "@cluenori/otlp",
   "private": true,
   "type": "module",
   "sideEffects": false,

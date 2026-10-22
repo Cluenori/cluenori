@@ -1,4 +1,4 @@
-# @bagatka/cloudflare-workers-ai
+# @cluenori/cloudflare-workers-ai
 
 Effect's provider-neutral `LanguageModel` (`effect/ai`) on Cloudflare Workers AI: a product writes
 text with `LanguageModel.generateText`, streams it with `streamText`, or decodes an object with
@@ -7,7 +7,7 @@ text with `LanguageModel.generateText`, streams it with `streamText`, or decodes
 ## Use it
 
 ```ts
-import { WorkersAi, WorkersAiModel } from "@bagatka/cloudflare-workers-ai"
+import { WorkersAi, WorkersAiModel } from "@cluenori/cloudflare-workers-ai"
 import { Config, Effect, Layer } from "effect"
 import { LanguageModel } from "effect/ai"
 

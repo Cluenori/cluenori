@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/qr-code",
+  "name": "@cluenori/qr-code",
   "private": true,
   "type": "module",
   "sideEffects": false,

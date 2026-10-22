@@ -1,5 +1,5 @@
-import type { AppStoreVersion, Build } from "@bagatka/app-store-connect"
-import type { Tag } from "@bagatka/github"
+import type { AppStoreVersion, Build } from "@cluenori/app-store-connect"
+import type { Tag } from "@cluenori/github"
 
 import type { StoreStage } from "./release.ts"
 

@@ -1,4 +1,4 @@
-# @bagatka/web-crypto
+# @cluenori/web-crypto
 
 Effect's `Crypto` service (random values, UUIDs, digests) on the Web Crypto API, for runtimes that
 have Web Crypto but no Effect platform package, such as Cloudflare Workers.
@@ -6,7 +6,7 @@ have Web Crypto but no Effect platform package, such as Cloudflare Workers.
 ## Use it
 
 ```ts
-import { webCryptoLayer } from "@bagatka/web-crypto"
+import { webCryptoLayer } from "@cluenori/web-crypto"
 import { Crypto, Effect } from "effect"
 
 // In a host, where the platform's globals are known:

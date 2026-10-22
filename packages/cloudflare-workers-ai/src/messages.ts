@@ -10,7 +10,7 @@ export interface WorkersAiMessage {
 
 /** Tools aren't supported: a prompt or request that has them is refused with this. */
 export const toolsUnsupported =
-  "Workers AI tool calls aren't supported by @bagatka/cloudflare-workers-ai: ask without a toolkit, and without tool calls or results in the prompt"
+  "Workers AI tool calls aren't supported by @cluenori/cloudflare-workers-ai: ask without a toolkit, and without tool calls or results in the prompt"
 
 /**
  * The prompt's messages as Workers AI's `messages`: system, user and assistant messages with their

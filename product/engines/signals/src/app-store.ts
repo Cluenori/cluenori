@@ -1,5 +1,3 @@
-import type { QuantileSketch as Sketch } from "@bagatka/quantile-sketch"
-import { countOf, mergeSketches, Quantile, QuantileSketch, quantileOf, sketchOf } from "@bagatka/quantile-sketch"
 import {
   calendarDayOfNumber,
   ComponentKey,
@@ -12,6 +10,8 @@ import {
   PersonId,
   ReleaseVersion,
 } from "@cluenori/foundation"
+import type { QuantileSketch as Sketch } from "@cluenori/quantile-sketch"
+import { countOf, mergeSketches, Quantile, QuantileSketch, quantileOf, sketchOf } from "@cluenori/quantile-sketch"
 import { DateTime, Duration, Effect, Option, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 

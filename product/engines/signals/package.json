@@ -10,16 +10,16 @@
     "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
   },
   "dependencies": {
-    "@bagatka/otlp": "workspace:*",
-    "@bagatka/quantile-sketch": "workspace:*",
-    "@bagatka/scrub": "workspace:*",
     "@cluenori/foundation": "workspace:*",
+    "@cluenori/otlp": "workspace:*",
     "@cluenori/projects": "workspace:*",
+    "@cluenori/quantile-sketch": "workspace:*",
+    "@cluenori/scrub": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@bagatka/web-crypto": "workspace:*",
     "@cloudflare/vitest-plugin": "catalog:",
+    "@cluenori/web-crypto": "workspace:*",
     "@effect/sql-sqlite-do": "catalog:",
     "@effect/vitest": "catalog:",
     "vitest": "catalog:",

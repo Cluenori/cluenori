@@ -1,11 +1,11 @@
 import { NotAllowed } from "@cluenori/foundation"
-import type { GitHubStatus } from "@cluenori/github"
+import type { GitHubStatus } from "@cluenori/github-app"
 import {
   GitHubAccount,
   GitHubAlreadyConnected,
   GitHubAppForm,
   GitHubStatus as GitHubStatusSchema,
-} from "@cluenori/github"
+} from "@cluenori/github-app"
 import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { render } from "vitest-browser-react"

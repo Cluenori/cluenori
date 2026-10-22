@@ -1,5 +1,5 @@
-import { QuantileSketch } from "@bagatka/quantile-sketch"
 import { EnvelopeName, EnvironmentKey, Instant, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import { QuantileSketch } from "@cluenori/quantile-sketch"
 import { Schema } from "effect"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))

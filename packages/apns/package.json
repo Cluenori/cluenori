@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/apns",
+  "name": "@cluenori/apns",
   "private": true,
   "type": "module",
   "sideEffects": false,
@@ -10,7 +10,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@bagatka/es256-jwt": "workspace:*",
+    "@cluenori/es256-jwt": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

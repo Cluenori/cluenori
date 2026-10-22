@@ -1,6 +1,6 @@
-import type { Attributes, ResourceLogs, ResourceSpans, Span, SpanKind } from "@bagatka/otlp"
-import { decodeLogs, decodeTraces } from "@bagatka/otlp"
 import type { ComponentKey, Period, TraceId } from "@cluenori/foundation"
+import type { Attributes, ResourceLogs, ResourceSpans, Span, SpanKind } from "@cluenori/otlp"
+import { decodeLogs, decodeTraces } from "@cluenori/otlp"
 import { DateTime, Effect, Schema } from "effect"
 
 import type { ExportSignal } from "./exports.ts"

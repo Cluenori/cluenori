@@ -1,4 +1,4 @@
-import { swiftClient } from "@bagatka/openapi-swift"
+import { swiftClient } from "@cluenori/openapi-swift"
 import { CluenoriApi, CluenoriIngestApi } from "@cluenori/worker"
 import { Effect, Schema } from "effect"
 import { OpenApi } from "effect/http-api"

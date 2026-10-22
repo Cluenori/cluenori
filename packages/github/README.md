@@ -1,4 +1,4 @@
-# @bagatka/github
+# @cluenori/github
 
 Reaches GitHub through its REST API, with a token or as a GitHub App: a repository's tags, commits,
 comparisons, pull requests and default branch; its releases, published; its workflows, started and
@@ -10,7 +10,7 @@ installations, tokens, creation from a manifest, and webhooks' signatures.
 Reading with one token:
 
 ```ts
-import { GitHub, Repository } from "@bagatka/github"
+import { GitHub, Repository } from "@cluenori/github"
 import { Effect, Option, Redacted } from "effect"
 
 // In a host, on the HttpClient it provides (fetch's, in Workers):
@@ -35,7 +35,7 @@ const program = Effect.gen(function* () {
 Acting as a GitHub App, and starting a workflow:
 
 ```ts
-import { GitHub, GitHubApp, Repository, WorkflowFile } from "@bagatka/github"
+import { GitHub, GitHubApp, Repository, WorkflowFile } from "@cluenori/github"
 import { DateTime, Effect, Layer, Redacted } from "effect"
 
 // In a host: the app, and GitHub with each repository's installation token.
@@ -109,7 +109,7 @@ too: the `installation_id` GitHub adds to the setup URL can be forged, so a prod
 
 ## Depends on
 
-`@bagatka/rs256-jwt`, to sign the app's JWTs; `effect`; an `HttpClient` the host provides; and,
+`@cluenori/rs256-jwt`, to sign the app's JWTs; `effect`; an `HttpClient` the host provides; and,
 for an app and webhooks, the platform's Web Crypto, which the host passes.
 
 ## Settings
@@ -138,7 +138,7 @@ them Actions: read; to publish releases, Contents: write. They differ per deploy
   sorted newest first, as GitHub lists them though it doesn't document its order.
 - **The app's JWT** is RS256 through Web Crypto, `iat` 60 s in the past and `exp` 9 minutes ahead,
   inside GitHub's 10 even on a clock a minute fast, and signed again after 8 minutes. GitHub gives
-  PKCS #1 keys, which `@bagatka/rs256-jwt` wraps in the PKCS #8 Web Crypto imports.
+  PKCS #1 keys, which `@cluenori/rs256-jwt` wraps in the PKCS #8 Web Crypto imports.
 - **Installation tokens are kept** until 5 minutes before they expire (an hour after issue), one
   per installation, and calls at the same time share one request. Which installation reaches a
   repository is kept a minute, so one task's requests ask once, and a reinstalled app, which has a

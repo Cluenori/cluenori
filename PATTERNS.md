@@ -83,7 +83,7 @@ Every package has the same shape, so people and agents know where to look before
 
 ```
 packages/feature-keys/
-  package.json      { "name": "@bagatka/feature-keys", "private": true, "type": "module",
+  package.json      { "name": "@cluenori/feature-keys", "private": true, "type": "module",
                       "exports": { ".": "./src/index.ts" }, "scripts": { "typecheck": "tsc" },
                       "dependencies": { "effect": "catalog:" } }
   tsconfig.json     { "extends": "../../tsconfig.base.json", "include": ["src", "test"] }
@@ -207,7 +207,7 @@ export class FeatureCatalog extends Context.Service<FeatureCatalog, {
 - **Only hosts and tests provide layers.** `Effect.provide` appears in `apps/` and `test/`, never
   inside a package (`strictEffectProvide`).
 - **Effect's platform services in workerd.** Effect has no platform package for Workers. `Crypto`
-  comes from `@bagatka/web-crypto`, which the host provides with `webCryptoLayer(crypto)`; `Clock`
+  comes from `@cluenori/web-crypto`, which the host provides with `webCryptoLayer(crypto)`; `Clock`
   and `Random` are Effect's defaults.
 - Canonical example: `product/foundation/src/activity-log.ts`, a service whose layer takes its
   settings and does its setup (migrations) once, when it is built.
@@ -592,7 +592,7 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
 
 ## 18. External APIs
 
-- **A vendor's API gets one client package,** `@bagatka/<vendor>`, built on `effect/http`'s
+- **A vendor's API gets one client package,** `@cluenori/<vendor>`, built on `effect/http`'s
   `HttpClient`, with Schemas for what we read. Prefer a vendor's official SDK only when it runs in
   workerd and saves real work.
 - **Vendors stay inside the package that uses them.** Their types never appear in a product
@@ -604,13 +604,13 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   service instead (`product/modules/releases/test/sources.test.ts`), since the client's tests
   already cover the wire.
 - **A language model is `effect/ai`'s `LanguageModel`,** which the host provides
-  (`@bagatka/cloudflare-workers-ai` on the Worker's `AI` binding); product code asks it with
+  (`@cluenori/cloudflare-workers-ai` on the Worker's `AI` binding); product code asks it with
   `generateText` and never names a provider. Text from commits, logs or people goes in the prompt
   as data, with the instruction not to follow it, and what the model writes reaches the outside
   only after a person saves it (`product/modules/releases/src/notes.ts`). Tests fake it with
   `LanguageModel.make` (`product/modules/releases/test/in-object.ts`).
-- **JSON Web Tokens are signed with `@bagatka/es256-jwt`,** such as Apple's tokens from a `.p8` key:
-  APNs's and App Store Connect's; and with `@bagatka/rs256-jwt` for RSA keys, such as a GitHub
+- **JSON Web Tokens are signed with `@cluenori/es256-jwt`,** such as Apple's tokens from a `.p8` key:
+  APNs's and App Store Connect's; and with `@cluenori/rs256-jwt` for RSA keys, such as a GitHub
   App's.
   A journey fakes them with Miniflare's `outboundService`, in a Vitest project of its own, so the
   other journeys' requests aren't affected.
@@ -717,7 +717,7 @@ The configuration files are the specification; this entry says what each one own
   in `feature-key.ts`, `FeatureCatalog` in `feature-catalog.ts`.
 - **Names:** values and functions `camelCase`; types, Schemas, services, and errors `PascalCase`; a
   Schema and its type share one name (`FeatureKey`).
-- **Package names** are the folder's name under the scope: `packages/web-push` is `@bagatka/web-push`,
+- **Package names** are the folder's name under the scope: `packages/web-push` is `@cluenori/web-push`,
   `product/engines/audiences` is `@cluenori/audiences`.
 - **Tests** sit in the package's `test/`, named after the file or journey they cover:
   `feature-key.test.ts`, `release-journey.test.ts`.
@@ -728,7 +728,7 @@ The configuration files are the specification; this entry says what each one own
 
 - **A credential is `Redacted` from the moment it is read** (entry 11), and never logged.
 - **Telemetry is scrubbed before anything stores it:** every text value goes through
-  `@bagatka/scrub`'s `scrubText`, and a value whose name `isSecretName` is removed whole. The
+  `@cluenori/scrub`'s `scrubText`, and a value whose name `isSecretName` is removed whole. The
   canonical example is `product/engines/signals/src/scrubbed.ts`.
 - **Stores keep a digest, never the credential.** Keys and tokens are compared by their SHA-256
   digests, which also makes the comparison take the same time whatever is presented. The one
@@ -738,7 +738,7 @@ The configuration files are the specification; this entry says what each one own
 - **A credential Cluenori uses, rather than checks, is a Worker secret** when it is given at setup,
   such as APNs's key. One a vendor hands over while running, such as the private key GitHub gives
   the workspace's app, is kept only in the workspace's object: never returned by a route, logged,
-  or put in activity. Others get short-lived tokens from it (`product/engines/github`).
+  or put in activity. Others get short-lived tokens from it (`product/engines/github-app`).
 - **Refusals say nothing about which part was wrong:** an unknown project, component, or secret
   fails the same way.
 - **A key that names where it belongs** (`cluenori.<project>.<component>.<secret>`) lets the Worker
@@ -748,7 +748,7 @@ The configuration files are the specification; this entry says what each one own
   through `MemberProjects`, which answers "not found" for a project the member doesn't see, as for
   one that doesn't exist. A lint rule keeps handlers from importing `ProjectObjects`. Owner-only
   actions fail with Foundation's `NotAllowed`.
-- **People sign in with passkeys** (`@bagatka/webauthn`); a browser keeps a sign-in token, stored
+- **People sign in with passkeys** (`@cluenori/webauthn`); a browser keeps a sign-in token, stored
   as a digest like every key, and a refused passkey says nothing about why.
 - Canonical examples: ingest keys, `product/engines/projects/src/ingest-key.ts` and `projects.ts`;
   the API token and sign-ins, `apps/worker/src/member-authorization-layer.ts`; access,

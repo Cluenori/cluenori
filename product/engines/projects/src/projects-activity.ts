@@ -1,5 +1,5 @@
-import { Repository } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, ProjectKey } from "@cluenori/foundation"
+import { Repository } from "@cluenori/github"
 import { Schema } from "effect"
 
 import { BundleId, ComponentName, DeployTarget } from "./component.ts"

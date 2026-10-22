@@ -1,5 +1,5 @@
-import { GitHub } from "@bagatka/github"
 import type { ComponentKey } from "@cluenori/foundation"
+import { GitHub } from "@cluenori/github"
 import { Projects } from "@cluenori/projects"
 import { Effect } from "effect"
 

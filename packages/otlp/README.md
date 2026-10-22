@@ -1,4 +1,4 @@
-# @bagatka/otlp
+# @cluenori/otlp
 
 Reads OpenTelemetry's OTLP/HTTP exports, protobuf bodies, into plain data, writes such data back as
 exports, and writes the answers exporters expect. Traces and logs; metrics only by their framing.
@@ -6,7 +6,7 @@ exports, and writes the answers exporters expect. Traces and logs; metrics only 
 ## Use it
 
 ```ts
-import { decodeTraces, exportResponse, protobufContentType } from "@bagatka/otlp"
+import { decodeTraces, exportResponse, protobufContentType } from "@cluenori/otlp"
 
 const resources = yield* decodeTraces(body) // the bytes of POST /v1/traces
 for (const { resource, scopeSpans } of resources) {

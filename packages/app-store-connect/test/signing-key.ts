@@ -1,4 +1,4 @@
-import type { Es256Signing } from "@bagatka/es256-jwt"
+import type { Es256Signing } from "@cluenori/es256-jwt"
 import { Effect, Redacted } from "effect"
 import { Base64 } from "effect/encoding"
 

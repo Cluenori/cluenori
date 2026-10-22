@@ -1,5 +1,5 @@
-import type { Rs256Signing } from "@bagatka/rs256-jwt"
-import { signRs256 } from "@bagatka/rs256-jwt"
+import type { Rs256Signing } from "@cluenori/rs256-jwt"
+import { signRs256 } from "@cluenori/rs256-jwt"
 import { Cache, Clock, Context, DateTime, Duration, Effect, Exit, Layer, Option, Redacted, Ref } from "effect"
 import { HttpClient } from "effect/http"
 
@@ -26,7 +26,7 @@ export interface GitHubAppCredentials {
 
 /**
  * The part of the Web Crypto API a GitHub App signs its JWTs with: `globalThis.crypto.subtle` in
- * Workers, browsers, Bun, and Node. The same shape `@bagatka/rs256-jwt` signs with.
+ * Workers, browsers, Bun, and Node. The same shape `@cluenori/rs256-jwt` signs with.
  */
 export type GitHubAppSigning = Rs256Signing
 
@@ -99,7 +99,7 @@ export class GitHubApp extends Context.Service<
      */
     readonly tokenFor: (repository: Repository) => Effect.Effect<IssuedToken, GitHubRefused | GitHubUnavailable>
   }
->()("@bagatka/github/github-app/GitHubApp") {
+>()("@cluenori/github/github-app/GitHubApp") {
   /**
    * A client of the app with `credentials`, signing its JWTs with `signing`, on the `HttpClient`
    * the host provides, with caches of its own: for an app whose credentials come while a product

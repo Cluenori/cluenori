@@ -47,7 +47,7 @@ ceremonies, and serves `MembersGroup` and `PasskeysGroup`.
 
 ## Depends on
 
-`@bagatka/webauthn` for passkeys, `@cluenori/projects`' index to check projects, Foundation's
+`@cluenori/webauthn` for passkeys, `@cluenori/projects`' index to check projects, Foundation's
 `ActivityLog`, and `Crypto` for codes, tokens, IDs and digests.
 
 ## Activity

@@ -1,4 +1,4 @@
-# @bagatka/openapi-swift
+# @cluenori/openapi-swift
 
 Writes a typed Swift client of an HTTP API from its OpenAPI 3.1 document: one file of `Codable`
 value types, a typed error, and one `async` method per operation, on Foundation alone.
@@ -6,7 +6,7 @@ value types, a typed error, and one `async` method per operation, on Foundation 
 ## Use it
 
 ```ts
-import { swiftClient } from "@bagatka/openapi-swift"
+import { swiftClient } from "@cluenori/openapi-swift"
 
 const swift = yield* swiftClient(document) // the Swift file's text
 // An inline object fails with UnsupportedOpenApi:

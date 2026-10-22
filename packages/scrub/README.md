@@ -1,4 +1,4 @@
-# @bagatka/scrub
+# @cluenori/scrub
 
 Removes credentials and personal data from text before it is stored: tokens, keys, secrets in URLs,
 emails, and card numbers.
@@ -6,7 +6,7 @@ emails, and card numbers.
 ## Use it
 
 ```ts
-import { isSecretName, scrubText } from "@bagatka/scrub"
+import { isSecretName, scrubText } from "@cluenori/scrub"
 
 scrubText("Invite to anna@example.com failed: Bearer abcDEF1234567890")
 // "Invite to [email] failed: Bearer [token]"

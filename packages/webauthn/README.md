@@ -1,4 +1,4 @@
-# @bagatka/webauthn
+# @cluenori/webauthn
 
 Passkeys for a site: the options a browser or an app makes or uses one with, and the checks of what
 it returns, on the platform's Web Crypto. Stateless: the caller keeps challenges and passkeys.
@@ -6,7 +6,7 @@ it returns, on the platform's Web Crypto. Stateless: the caller keeps challenges
 ## Use it
 
 ```ts
-import { challengeOf, creationOptions, verifyRegistration } from "@bagatka/webauthn"
+import { challengeOf, creationOptions, verifyRegistration } from "@cluenori/webauthn"
 
 // Registering: give the browser options with a fresh challenge, kept for the answer.
 const options = creationOptions({

@@ -1,5 +1,5 @@
-import { CommitSha } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, Instant, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import { CommitSha } from "@cluenori/github"
 import { ProjectNotFound } from "@cluenori/projects"
 import { DateTime, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"

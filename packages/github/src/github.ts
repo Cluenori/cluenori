@@ -246,7 +246,7 @@ export class GitHub extends Context.Service<
       repository: Repository,
     ) => Effect.Effect<ReadonlyArray<SelfHostedRunner>, GitHubRefused | GitHubUnavailable>
   }
->()("@bagatka/github/github") {
+>()("@cluenori/github/github") {
   /**
    * GitHub's API with the token `tokenFor` gives for each call's repository, asked on every call,
    * such as a GitHub App's installation token (`GitHubApp.tokenFor`, mapped to its token). A

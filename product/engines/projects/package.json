@@ -10,13 +10,13 @@
     "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
   },
   "dependencies": {
-    "@bagatka/github": "workspace:*",
     "@cluenori/foundation": "workspace:*",
+    "@cluenori/github": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@bagatka/web-crypto": "workspace:*",
     "@cloudflare/vitest-plugin": "catalog:",
+    "@cluenori/web-crypto": "workspace:*",
     "@effect/sql-sqlite-do": "catalog:",
     "@effect/vitest": "catalog:",
     "vitest": "catalog:",

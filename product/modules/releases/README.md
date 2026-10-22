@@ -91,7 +91,7 @@ const policy = yield* versionPolicyFor(ios, { environment: production, release: 
 
 - **Counting by release, each release's span, and errors by release:** `@cluenori/signals`.
 - **Which repository and deploy targets a component has:** `@cluenori/projects`, its links.
-- **GitHub's credentials:** `@cluenori/github` keeps the workspace's app; the host gives this module the `GitHub` client that acts as it.
+- **GitHub's credentials:** `@cluenori/github-app` keeps the workspace's app; the host gives this module the `GitHub` client that acts as it.
 - **Which model writes drafts:** the host provides `effect/ai`'s `LanguageModel`.
 - **What a deploy does:** the repository's workflow; its `cluenori-release` step reports it.
 - **The changelog, flags and rollouts:** later modules; the notes are their first part.
@@ -118,9 +118,9 @@ const policy = yield* versionPolicyFor(ios, { environment: production, release: 
   - `@cluenori/projects`: components' links and deploy targets, the project's production environments, and their keys for CI's writes;
   - `@cluenori/manifest`: the version policy's Schemas, `StoreVersion` and `VersionPolicy`.
 - **Capabilities:**
-  - `@bagatka/github`: tags, commits, comparisons, pull requests, starting workflows and following their runs, and organizations' self-hosted runners, through the `GitHub` service the host provides;
-  - `@bagatka/app-store-connect`: builds, versions and languages; preparing, submitting and releasing versions; What to Test;
-  - `@bagatka/es256-jwt`: App Store Connect's tokens;
+  - `@cluenori/github`: tags, commits, comparisons, pull requests, starting workflows and following their runs, and organizations' self-hosted runners, through the `GitHub` service the host provides;
+  - `@cluenori/app-store-connect`: builds, versions and languages; preparing, submitting and releasing versions; What to Test;
+  - `@cluenori/es256-jwt`: App Store Connect's tokens;
   - `effect/ai`'s `LanguageModel`, which the host provides, for drafts.
 - **Foundation:** `@cluenori/foundation`, for `defineModule`.
 

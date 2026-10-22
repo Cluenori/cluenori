@@ -1,4 +1,4 @@
-# @bagatka/workspace-rules
+# @cluenori/workspace-rules
 
 Checks that a JavaScript workspace's packages follow your rules: what each is named, whether others
 may import it, and which packages it may depend on, at which versions.
@@ -6,8 +6,8 @@ may import it, and which packages it may depend on, at which versions.
 ## Use it
 
 ```ts
-import { checkWorkspace } from "@bagatka/workspace-rules"
-import type { PackageRule } from "@bagatka/workspace-rules"
+import { checkWorkspace } from "@cluenori/workspace-rules"
+import type { PackageRule } from "@cluenori/workspace-rules"
 
 const rules: ReadonlyArray<PackageRule> = [
   {

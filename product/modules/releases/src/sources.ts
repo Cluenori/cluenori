@@ -1,6 +1,6 @@
-import type { AppStoreConnectCredentials } from "@bagatka/app-store-connect"
-import { AppStoreConnect } from "@bagatka/app-store-connect"
-import type { Es256Signing } from "@bagatka/es256-jwt"
+import type { AppStoreConnectCredentials } from "@cluenori/app-store-connect"
+import { AppStoreConnect } from "@cluenori/app-store-connect"
+import type { Es256Signing } from "@cluenori/es256-jwt"
 import { Context, Effect, Layer, Option } from "effect"
 import type { HttpClient } from "effect/http"
 

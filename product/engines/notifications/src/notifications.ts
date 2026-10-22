@@ -1,5 +1,5 @@
-import type { ApnsCredentials, ApnsPush, ApnsSigning } from "@bagatka/apns"
-import { Apns } from "@bagatka/apns"
+import type { ApnsCredentials, ApnsPush, ApnsSigning } from "@cluenori/apns"
+import { Apns } from "@cluenori/apns"
 import type { Envelope, MemberId, ProjectKey } from "@cluenori/foundation"
 import type { Access } from "@cluenori/members"
 import { canSee, Members } from "@cluenori/members"

@@ -1,5 +1,5 @@
-import { CommitSha } from "@bagatka/github"
 import { Instant, ComponentKey, ReleaseVersion } from "@cluenori/foundation"
+import { CommitSha } from "@cluenori/github"
 import { Schema } from "effect"
 
 /** A component version, `MAJOR.MINOR.PATCH`, such as `1.4.0`: what its next builds are a release of. */

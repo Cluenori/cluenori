@@ -12,7 +12,7 @@ import type {
   ReleaseVersion,
   TraceId,
 } from "@cluenori/foundation"
-import type { ConnectGitHub } from "@cluenori/github"
+import type { ConnectGitHub } from "@cluenori/github-app"
 import type { Email, InviteCode, SignInId } from "@cluenori/members"
 import type { PhoneId } from "@cluenori/phones"
 import type { ComponentLinks, ProjectSettings, SdkKey } from "@cluenori/projects"

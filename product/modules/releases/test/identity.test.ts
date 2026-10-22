@@ -1,6 +1,6 @@
-import type { AppStoreVersion, Build } from "@bagatka/app-store-connect"
-import type { Tag } from "@bagatka/github"
-import { CommitSha } from "@bagatka/github"
+import type { AppStoreVersion, Build } from "@cluenori/app-store-connect"
+import type { Tag } from "@cluenori/github"
+import { CommitSha } from "@cluenori/github"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 

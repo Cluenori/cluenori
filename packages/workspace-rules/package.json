@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/workspace-rules",
+  "name": "@cluenori/workspace-rules",
   "private": true,
   "type": "module",
   "exports": {

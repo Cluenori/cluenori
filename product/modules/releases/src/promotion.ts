@@ -1,5 +1,5 @@
-import { CommitSha, Repository, WorkflowFile } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, Instant, MemberId, ReleaseVersion, Uuidv7 } from "@cluenori/foundation"
+import { CommitSha, Repository, WorkflowFile } from "@cluenori/github"
 import { AppStoreTarget } from "@cluenori/projects"
 import { Schema } from "effect"
 

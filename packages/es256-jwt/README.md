@@ -1,4 +1,4 @@
-# @bagatka/es256-jwt
+# @cluenori/es256-jwt
 
 Signs JSON Web Tokens with ES256 keys, such as the `.p8` keys Apple gives for APNs and the App
 Store Connect API, through the platform's Web Crypto.
@@ -6,7 +6,7 @@ Store Connect API, through the platform's Web Crypto.
 ## Use it
 
 ```ts
-import { signEs256 } from "@bagatka/es256-jwt"
+import { signEs256 } from "@cluenori/es256-jwt"
 import { Effect, Redacted } from "effect"
 
 // In a host, where the platform's globals are known, Web Crypto is `globalThis.crypto.subtle`.
@@ -31,8 +31,8 @@ compact JWS whose header names ES256 first and whose claims are as given.
 
 ## Does not own
 
-What a token says and how long it is kept: each caller (`@bagatka/apns`,
-`@bagatka/app-store-connect`) chooses its claims and when to sign a new one.
+What a token says and how long it is kept: each caller (`@cluenori/apns`,
+`@cluenori/app-store-connect`) chooses its claims and when to sign a new one.
 
 ## Depends on
 

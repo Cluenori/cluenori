@@ -118,7 +118,7 @@ describe("GitHub", () => {
         assert.strictEqual(asked?.headers["authorization"], `Bearer ${token}`)
         assert.strictEqual(asked?.headers["accept"], "application/vnd.github+json")
         assert.strictEqual(asked?.headers["x-github-api-version"], "2022-11-28")
-        assert.strictEqual(asked?.headers["user-agent"], "@bagatka/github")
+        assert.strictEqual(asked?.headers["user-agent"], "@cluenori/github")
       }),
   )
 

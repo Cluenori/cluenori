@@ -1,6 +1,6 @@
-import type { QuantileSketch as Sketch } from "@bagatka/quantile-sketch"
-import { mergeSketches, Quantile, QuantileSketch, quantileOf } from "@bagatka/quantile-sketch"
 import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import type { QuantileSketch as Sketch } from "@cluenori/quantile-sketch"
+import { mergeSketches, Quantile, QuantileSketch, quantileOf } from "@cluenori/quantile-sketch"
 import { DateTime, Duration, Effect, Option, Order, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 

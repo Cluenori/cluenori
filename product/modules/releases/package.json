@@ -10,10 +10,10 @@
     "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
   },
   "dependencies": {
-    "@bagatka/app-store-connect": "workspace:*",
-    "@bagatka/es256-jwt": "workspace:*",
-    "@bagatka/github": "workspace:*",
+    "@cluenori/app-store-connect": "workspace:*",
+    "@cluenori/es256-jwt": "workspace:*",
     "@cluenori/foundation": "workspace:*",
+    "@cluenori/github": "workspace:*",
     "@cluenori/incidents": "workspace:*",
     "@cluenori/manifest": "workspace:*",
     "@cluenori/projects": "workspace:*",
@@ -21,9 +21,9 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@bagatka/quantile-sketch": "workspace:*",
-    "@bagatka/web-crypto": "workspace:*",
     "@cloudflare/vitest-plugin": "catalog:",
+    "@cluenori/quantile-sketch": "workspace:*",
+    "@cluenori/web-crypto": "workspace:*",
     "@effect/sql-sqlite-do": "catalog:",
     "@effect/vitest": "catalog:",
     "vitest": "catalog:",

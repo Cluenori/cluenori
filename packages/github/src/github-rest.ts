@@ -13,7 +13,7 @@ import { GitHubRefused, GitHubUnavailable } from "./github-errors.ts"
 const api = "https://api.github.com"
 const apiVersion = "2022-11-28"
 // GitHub refuses a request without a User-Agent, and asks for the application's name in it.
-const userAgent = "@bagatka/github"
+const userAgent = "@cluenori/github"
 const answerTimeout = Duration.seconds(15)
 
 /** One request to GitHub's REST API. */

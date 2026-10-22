@@ -1,6 +1,6 @@
-import { Repository } from "@bagatka/github"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, MemberId, ProjectKey } from "@cluenori/foundation"
+import { Repository } from "@cluenori/github"
 import type { Access } from "@cluenori/members"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Layer, Redacted, Schema } from "effect"

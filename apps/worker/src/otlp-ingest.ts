@@ -1,6 +1,6 @@
-import { exportResponse, protobufContentType } from "@bagatka/otlp"
-import type { OtlpInvalid } from "@bagatka/otlp"
 import type { ProjectKey } from "@cluenori/foundation"
+import { exportResponse, protobufContentType } from "@cluenori/otlp"
+import type { OtlpInvalid } from "@cluenori/otlp"
 import type { IngestKeyRejected } from "@cluenori/projects"
 import { IngestKey, ingestKeyScope } from "@cluenori/projects"
 import type { ArchiveUnavailable, Rejected } from "@cluenori/signals"

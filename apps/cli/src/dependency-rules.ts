@@ -1,4 +1,4 @@
-import type { PackageRule } from "@bagatka/workspace-rules"
+import type { PackageRule } from "@cluenori/workspace-rules"
 
 const forTests = ["@effect/vitest", "vitest"]
 
@@ -35,7 +35,7 @@ const forTheBrowser = [
 export const dependencyRules: ReadonlyArray<PackageRule> = [
   {
     folders: "packages/*",
-    name: "@bagatka/*",
+    name: "@cluenori/*",
     contract: true,
     mayUse: ["packages/*"],
     mayInstall: ["effect"],

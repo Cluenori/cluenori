@@ -1,7 +1,5 @@
-import { WorkersAi, WorkersAiModel } from "@bagatka/cloudflare-workers-ai"
-import type { GitHub } from "@bagatka/github"
-import { webCryptoLayer } from "@bagatka/web-crypto"
 import { analyticsModule } from "@cluenori/analytics"
+import { WorkersAi, WorkersAiModel } from "@cluenori/cloudflare-workers-ai"
 import type {
   ErrorSchema,
   ModuleAction,
@@ -10,13 +8,15 @@ import type {
   PlainSchema as QuerySchema,
 } from "@cluenori/foundation"
 import { ActivityLog, Period, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
-import { gitHubAsApp } from "@cluenori/github"
+import type { GitHub } from "@cluenori/github"
+import { gitHubAsApp } from "@cluenori/github-app"
 import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
 import type { ReleaseRecords, ReleaseSources } from "@cluenori/releases"
 import { releasesLayer, releasesModule, versionPolicyFor } from "@cluenori/releases"
 import { AppSignals, SdkKeyRejected, Signals } from "@cluenori/signals"
 import { Today } from "@cluenori/today"
+import { webCryptoLayer } from "@cluenori/web-crypto"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
 import type { Crypto } from "effect"

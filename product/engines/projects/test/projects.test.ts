@@ -1,6 +1,6 @@
-import { Repository, WorkflowFile } from "@bagatka/github"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvironmentKey, MemberId, ProjectKey } from "@cluenori/foundation"
+import { Repository, WorkflowFile } from "@cluenori/github"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Redacted, Schema } from "effect"
 import { SqlClient } from "effect/sql"

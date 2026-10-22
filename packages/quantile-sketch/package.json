@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/quantile-sketch",
+  "name": "@cluenori/quantile-sketch",
   "private": true,
   "type": "module",
   "sideEffects": false,

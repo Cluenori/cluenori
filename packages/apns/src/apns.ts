@@ -1,5 +1,5 @@
-import type { Es256Signing } from "@bagatka/es256-jwt"
-import { InvalidSigningKey, signEs256 } from "@bagatka/es256-jwt"
+import type { Es256Signing } from "@cluenori/es256-jwt"
+import { InvalidSigningKey, signEs256 } from "@cluenori/es256-jwt"
 import type { Redacted } from "effect"
 import { Clock, Context, Duration, Effect, Layer, Option, Ref, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
@@ -16,7 +16,7 @@ export interface ApnsCredentials {
 
 /**
  * The part of the Web Crypto API this package signs with: `globalThis.crypto.subtle` in Workers,
- * browsers, Bun, and Node. The same shape `@bagatka/es256-jwt` signs with.
+ * browsers, Bun, and Node. The same shape `@cluenori/es256-jwt` signs with.
  */
 export type ApnsSigning = Es256Signing
 
@@ -77,7 +77,7 @@ export class Apns extends Context.Service<
      */
     readonly send: (push: ApnsPush) => Effect.Effect<ApnsAnswer, ApnsUnavailable>
   }
->()("@bagatka/apns/apns") {
+>()("@cluenori/apns/apns") {
   /**
    * APNs with `credentials`, signing with `signing`, on the `HttpClient` the host provides, which
    * must speak HTTP/2, as `fetch` does in Workers. A key that isn't a P-256 key in PKCS #8 fails

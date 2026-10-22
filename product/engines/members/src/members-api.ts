@@ -1,6 +1,6 @@
-import { AssertionResponse, CreationOptions, RegistrationResponse, RequestOptions } from "@bagatka/webauthn"
 import { MemberId, NotAllowed, ProjectKey } from "@cluenori/foundation"
 import { ProjectNotFound } from "@cluenori/projects"
+import { AssertionResponse, CreationOptions, RegistrationResponse, RequestOptions } from "@cluenori/webauthn"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 

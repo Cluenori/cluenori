@@ -8,7 +8,7 @@
 export interface PackageRule {
   /** The folders this rule covers. The first rule that matches a package's folder applies. */
   readonly folders: string
-  /** The package's name. A `*` stands for the folder's own name: `@bagatka/*`. */
+  /** The package's name. A `*` stands for the folder's own name: `@cluenori/*`. */
   readonly name: string
   /**
    * Whether other packages may import this one. A package with a contract exports exactly

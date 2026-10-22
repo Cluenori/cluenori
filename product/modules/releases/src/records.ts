@@ -1,5 +1,5 @@
-import { CommitSha } from "@bagatka/github"
 import { Actor, ComponentKey, EnvironmentKey, ReleaseVersion } from "@cluenori/foundation"
+import { CommitSha } from "@cluenori/github"
 import { Context, DateTime, Effect, Layer, Option, Schema } from "effect"
 import { Migrator, SqlClient, SqlSchema } from "effect/sql"
 

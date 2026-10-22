@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/web-crypto",
+  "name": "@cluenori/web-crypto",
   "private": true,
   "type": "module",
   "sideEffects": false,

@@ -16,19 +16,19 @@
     "apps/cli": {
       "name": "@cluenori/cli",
       "dependencies": {
-        "@bagatka/github": "workspace:*",
-        "@bagatka/openapi-swift": "workspace:*",
-        "@bagatka/workspace-rules": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/github": "workspace:*",
+        "@cluenori/github-app": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/members": "workspace:*",
+        "@cluenori/openapi-swift": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/today": "workspace:*",
         "@cluenori/worker": "workspace:*",
+        "@cluenori/workspace-rules": "workspace:*",
         "@effect/platform-bun": "catalog:",
         "effect": "catalog:",
       },
@@ -40,19 +40,19 @@
     "apps/dashboard": {
       "name": "@cluenori/dashboard",
       "dependencies": {
-        "@bagatka/qr-code": "workspace:*",
-        "@bagatka/webauthn": "workspace:*",
         "@base-ui/react": "catalog:",
         "@cluenori/analytics": "workspace:*",
         "@cluenori/foundation": "workspace:*",
-        "@cluenori/github": "workspace:*",
+        "@cluenori/github-app": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/manifest": "workspace:*",
         "@cluenori/members": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
+        "@cluenori/qr-code": "workspace:*",
         "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
+        "@cluenori/webauthn": "workspace:*",
         "@cluenori/worker": "workspace:*",
         "@effect/atom-react": "catalog:",
         "@fontsource-variable/geist-mono": "catalog:",
@@ -92,23 +92,23 @@
     "apps/worker": {
       "name": "@cluenori/worker",
       "dependencies": {
-        "@bagatka/cloudflare-workers-ai": "workspace:*",
-        "@bagatka/github": "workspace:*",
-        "@bagatka/otlp": "workspace:*",
-        "@bagatka/web-crypto": "workspace:*",
-        "@bagatka/webauthn": "workspace:*",
         "@cluenori/analytics": "workspace:*",
+        "@cluenori/cloudflare-workers-ai": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/github": "workspace:*",
+        "@cluenori/github-app": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/manifest": "workspace:*",
         "@cluenori/members": "workspace:*",
         "@cluenori/notifications": "workspace:*",
+        "@cluenori/otlp": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/today": "workspace:*",
+        "@cluenori/web-crypto": "workspace:*",
+        "@cluenori/webauthn": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "effect": "catalog:",
       },
@@ -117,9 +117,9 @@
       },
     },
     "packages/apns": {
-      "name": "@bagatka/apns",
+      "name": "@cluenori/apns",
       "dependencies": {
-        "@bagatka/es256-jwt": "workspace:*",
+        "@cluenori/es256-jwt": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -128,9 +128,9 @@
       },
     },
     "packages/app-store-connect": {
-      "name": "@bagatka/app-store-connect",
+      "name": "@cluenori/app-store-connect",
       "dependencies": {
-        "@bagatka/es256-jwt": "workspace:*",
+        "@cluenori/es256-jwt": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -139,7 +139,7 @@
       },
     },
     "packages/cloudflare-workers-ai": {
-      "name": "@bagatka/cloudflare-workers-ai",
+      "name": "@cluenori/cloudflare-workers-ai",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -149,7 +149,7 @@
       },
     },
     "packages/es256-jwt": {
-      "name": "@bagatka/es256-jwt",
+      "name": "@cluenori/es256-jwt",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -159,9 +159,9 @@
       },
     },
     "packages/github": {
-      "name": "@bagatka/github",
+      "name": "@cluenori/github",
       "dependencies": {
-        "@bagatka/rs256-jwt": "workspace:*",
+        "@cluenori/rs256-jwt": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -170,7 +170,7 @@
       },
     },
     "packages/openapi-swift": {
-      "name": "@bagatka/openapi-swift",
+      "name": "@cluenori/openapi-swift",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -180,7 +180,7 @@
       },
     },
     "packages/otlp": {
-      "name": "@bagatka/otlp",
+      "name": "@cluenori/otlp",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -190,7 +190,7 @@
       },
     },
     "packages/qr-code": {
-      "name": "@bagatka/qr-code",
+      "name": "@cluenori/qr-code",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -200,7 +200,7 @@
       },
     },
     "packages/quantile-sketch": {
-      "name": "@bagatka/quantile-sketch",
+      "name": "@cluenori/quantile-sketch",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -210,7 +210,7 @@
       },
     },
     "packages/rs256-jwt": {
-      "name": "@bagatka/rs256-jwt",
+      "name": "@cluenori/rs256-jwt",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -220,7 +220,7 @@
       },
     },
     "packages/scrub": {
-      "name": "@bagatka/scrub",
+      "name": "@cluenori/scrub",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -230,7 +230,7 @@
       },
     },
     "packages/web-crypto": {
-      "name": "@bagatka/web-crypto",
+      "name": "@cluenori/web-crypto",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -240,7 +240,7 @@
       },
     },
     "packages/webauthn": {
-      "name": "@bagatka/webauthn",
+      "name": "@cluenori/webauthn",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -250,7 +250,7 @@
       },
     },
     "packages/workspace-rules": {
-      "name": "@bagatka/workspace-rules",
+      "name": "@cluenori/workspace-rules",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -259,18 +259,18 @@
         "vitest": "catalog:",
       },
     },
-    "product/engines/github": {
-      "name": "@cluenori/github",
+    "product/engines/github-app": {
+      "name": "@cluenori/github-app",
       "dependencies": {
-        "@bagatka/github": "workspace:*",
-        "@bagatka/rs256-jwt": "workspace:*",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/github": "workspace:*",
         "@cluenori/members": "workspace:*",
+        "@cluenori/rs256-jwt": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -286,9 +286,9 @@
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/quantile-sketch": "workspace:*",
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/quantile-sketch": "workspace:*",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -305,14 +305,14 @@
     "product/engines/members": {
       "name": "@cluenori/members",
       "dependencies": {
-        "@bagatka/webauthn": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/projects": "workspace:*",
+        "@cluenori/webauthn": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -322,7 +322,7 @@
     "product/engines/notifications": {
       "name": "@cluenori/notifications",
       "dependencies": {
-        "@bagatka/apns": "workspace:*",
+        "@cluenori/apns": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/members": "workspace:*",
@@ -331,9 +331,9 @@
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/web-crypto": "workspace:*",
-        "@bagatka/webauthn": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/web-crypto": "workspace:*",
+        "@cluenori/webauthn": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -347,8 +347,8 @@
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -358,13 +358,13 @@
     "product/engines/projects": {
       "name": "@cluenori/projects",
       "dependencies": {
-        "@bagatka/github": "workspace:*",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/github": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -374,16 +374,16 @@
     "product/engines/signals": {
       "name": "@cluenori/signals",
       "dependencies": {
-        "@bagatka/otlp": "workspace:*",
-        "@bagatka/quantile-sketch": "workspace:*",
-        "@bagatka/scrub": "workspace:*",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/otlp": "workspace:*",
         "@cluenori/projects": "workspace:*",
+        "@cluenori/quantile-sketch": "workspace:*",
+        "@cluenori/scrub": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -400,9 +400,9 @@
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/quantile-sketch": "workspace:*",
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/quantile-sketch": "workspace:*",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -415,8 +415,8 @@
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -432,8 +432,8 @@
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -443,10 +443,10 @@
     "product/modules/releases": {
       "name": "@cluenori/releases",
       "dependencies": {
-        "@bagatka/app-store-connect": "workspace:*",
-        "@bagatka/es256-jwt": "workspace:*",
-        "@bagatka/github": "workspace:*",
+        "@cluenori/app-store-connect": "workspace:*",
+        "@cluenori/es256-jwt": "workspace:*",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/github": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/manifest": "workspace:*",
         "@cluenori/projects": "workspace:*",
@@ -454,9 +454,9 @@
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@bagatka/quantile-sketch": "workspace:*",
-        "@bagatka/web-crypto": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/quantile-sketch": "workspace:*",
+        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -466,11 +466,10 @@
     "tests/journeys": {
       "name": "@cluenori/journeys",
       "devDependencies": {
-        "@bagatka/github": "workspace:*",
-        "@bagatka/webauthn": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/github": "workspace:*",
+        "@cluenori/github-app": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/manifest": "workspace:*",
         "@cluenori/members": "workspace:*",
@@ -479,6 +478,7 @@
         "@cluenori/projects": "workspace:*",
         "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
+        "@cluenori/webauthn": "workspace:*",
         "@cluenori/worker": "workspace:*",
         "@effect/vitest": "catalog:",
         "effect": "catalog:",
@@ -534,34 +534,6 @@
   "packages": {
     "@babel/runtime": ["@babel/runtime@8.0.7", "", {}, "sha512-k0hagDDq/6w4v+0Sp4wFvIz/yswH5O7Va6aRTnD7N62Tnborp4X+YB+H3XUcWVSR4aE47WPEXiIIZchBs0GmYg=="],
 
-    "@bagatka/apns": ["@bagatka/apns@workspace:packages/apns"],
-
-    "@bagatka/app-store-connect": ["@bagatka/app-store-connect@workspace:packages/app-store-connect"],
-
-    "@bagatka/cloudflare-workers-ai": ["@bagatka/cloudflare-workers-ai@workspace:packages/cloudflare-workers-ai"],
-
-    "@bagatka/es256-jwt": ["@bagatka/es256-jwt@workspace:packages/es256-jwt"],
-
-    "@bagatka/github": ["@bagatka/github@workspace:packages/github"],
-
-    "@bagatka/openapi-swift": ["@bagatka/openapi-swift@workspace:packages/openapi-swift"],
-
-    "@bagatka/otlp": ["@bagatka/otlp@workspace:packages/otlp"],
-
-    "@bagatka/qr-code": ["@bagatka/qr-code@workspace:packages/qr-code"],
-
-    "@bagatka/quantile-sketch": ["@bagatka/quantile-sketch@workspace:packages/quantile-sketch"],
-
-    "@bagatka/rs256-jwt": ["@bagatka/rs256-jwt@workspace:packages/rs256-jwt"],
-
-    "@bagatka/scrub": ["@bagatka/scrub@workspace:packages/scrub"],
-
-    "@bagatka/web-crypto": ["@bagatka/web-crypto@workspace:packages/web-crypto"],
-
-    "@bagatka/webauthn": ["@bagatka/webauthn@workspace:packages/webauthn"],
-
-    "@bagatka/workspace-rules": ["@bagatka/workspace-rules@workspace:packages/workspace-rules"],
-
     "@base-ui/react": ["@base-ui/react@1.9.0", "", { "dependencies": { "@babel/runtime": "^7.29.7 || ^8.0.0", "@base-ui/utils": "0.5.0", "@floating-ui/react-dom": "^2.1.9", "@floating-ui/utils": "^0.2.12", "use-sync-external-store": "^1.7.0" }, "peerDependencies": { "@date-fns/tz": "^1.2.0", "@types/react": "^17 || ^18 || ^19", "date-fns": "^4.0.0", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" }, "optionalPeers": ["@date-fns/tz", "@types/react", "date-fns"] }, "sha512-S8CSYosASBKtpL8SWUfS78rFElfLijiCgA7oHOK22jCJ95FULsYyKwBNFOgudt0RA+/7yNc7F81bOvQnRgbBiQ=="],
 
     "@base-ui/utils": ["@base-ui/utils@0.5.0", "", { "dependencies": { "@babel/runtime": "^7.29.7 || ^8.0.0", "@floating-ui/utils": "^0.2.12", "reselect": "^5.3.0", "use-sync-external-store": "^1.7.0" }, "peerDependencies": { "@types/react": "^17 || ^18 || ^19", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" }, "optionalPeers": ["@types/react"] }, "sha512-dYGGcEttjkYiMoa5nHm8vLaJ2UcuTWxo3BFAwOYXeRg/q7UVVvA6cacEIXEs3FgBfK1CGtW1ptElqs7wsx+t9A=="],
@@ -586,13 +558,23 @@
 
     "@cluenori/analytics": ["@cluenori/analytics@workspace:product/modules/analytics"],
 
+    "@cluenori/apns": ["@cluenori/apns@workspace:packages/apns"],
+
+    "@cluenori/app-store-connect": ["@cluenori/app-store-connect@workspace:packages/app-store-connect"],
+
     "@cluenori/cli": ["@cluenori/cli@workspace:apps/cli"],
+
+    "@cluenori/cloudflare-workers-ai": ["@cluenori/cloudflare-workers-ai@workspace:packages/cloudflare-workers-ai"],
 
     "@cluenori/dashboard": ["@cluenori/dashboard@workspace:apps/dashboard"],
 
+    "@cluenori/es256-jwt": ["@cluenori/es256-jwt@workspace:packages/es256-jwt"],
+
     "@cluenori/foundation": ["@cluenori/foundation@workspace:product/foundation"],
 
-    "@cluenori/github": ["@cluenori/github@workspace:product/engines/github"],
+    "@cluenori/github": ["@cluenori/github@workspace:packages/github"],
+
+    "@cluenori/github-app": ["@cluenori/github-app@workspace:product/engines/github-app"],
 
     "@cluenori/incidents": ["@cluenori/incidents@workspace:product/engines/incidents"],
 
@@ -604,17 +586,35 @@
 
     "@cluenori/notifications": ["@cluenori/notifications@workspace:product/engines/notifications"],
 
+    "@cluenori/openapi-swift": ["@cluenori/openapi-swift@workspace:packages/openapi-swift"],
+
+    "@cluenori/otlp": ["@cluenori/otlp@workspace:packages/otlp"],
+
     "@cluenori/phones": ["@cluenori/phones@workspace:product/engines/phones"],
 
     "@cluenori/projects": ["@cluenori/projects@workspace:product/engines/projects"],
 
+    "@cluenori/qr-code": ["@cluenori/qr-code@workspace:packages/qr-code"],
+
+    "@cluenori/quantile-sketch": ["@cluenori/quantile-sketch@workspace:packages/quantile-sketch"],
+
     "@cluenori/releases": ["@cluenori/releases@workspace:product/modules/releases"],
+
+    "@cluenori/rs256-jwt": ["@cluenori/rs256-jwt@workspace:packages/rs256-jwt"],
+
+    "@cluenori/scrub": ["@cluenori/scrub@workspace:packages/scrub"],
 
     "@cluenori/signals": ["@cluenori/signals@workspace:product/engines/signals"],
 
     "@cluenori/today": ["@cluenori/today@workspace:product/engines/today"],
 
+    "@cluenori/web-crypto": ["@cluenori/web-crypto@workspace:packages/web-crypto"],
+
+    "@cluenori/webauthn": ["@cluenori/webauthn@workspace:packages/webauthn"],
+
     "@cluenori/worker": ["@cluenori/worker@workspace:apps/worker"],
+
+    "@cluenori/workspace-rules": ["@cluenori/workspace-rules@workspace:packages/workspace-rules"],
 
     "@cspotcode/source-map-support": ["@cspotcode/source-map-support@0.8.1", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.9" } }, "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw=="],
 

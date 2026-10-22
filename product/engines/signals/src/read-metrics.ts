@@ -1,4 +1,4 @@
-import { countResourceMetrics } from "@bagatka/otlp"
+import { countResourceMetrics } from "@cluenori/otlp"
 import { Crypto, DateTime, Effect } from "effect"
 import { Hex } from "effect/encoding"
 

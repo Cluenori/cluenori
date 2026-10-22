@@ -1,5 +1,5 @@
-import type { AppStoreConnect } from "@bagatka/app-store-connect"
-import { AppStoreConnectUnavailable } from "@bagatka/app-store-connect"
+import type { AppStoreConnect } from "@cluenori/app-store-connect"
+import { AppStoreConnectUnavailable } from "@cluenori/app-store-connect"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvironmentKey, MemberId, ReleaseVersion } from "@cluenori/foundation"
 import type { ManifestQuery } from "@cluenori/manifest"

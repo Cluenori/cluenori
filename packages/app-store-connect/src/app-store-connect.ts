@@ -1,4 +1,4 @@
-import type { Es256Signing } from "@bagatka/es256-jwt"
+import type { Es256Signing } from "@cluenori/es256-jwt"
 import { Array as Arr, Context, DateTime, Effect, Layer, Order } from "effect"
 import type { Option } from "effect"
 import type { HttpClient } from "effect/http"
@@ -130,7 +130,7 @@ export class AppStoreConnect extends Context.Service<
      */
     readonly setWhatToTest: (buildId: string, notes: ReadonlyArray<LocalizedText>) => Effect.Effect<void, Failure>
   }
->()("@bagatka/app-store-connect/app-store-connect/AppStoreConnect") {
+>()("@cluenori/app-store-connect/app-store-connect/AppStoreConnect") {
   /**
    * A client with `credentials`, signing with `signing`, on the `HttpClient` the host provides,
    * with a token of its own: for a product that holds several, such as one with a Developer key

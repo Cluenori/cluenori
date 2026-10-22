@@ -1,5 +1,5 @@
-import type { GitHubRefused, GitHubUnavailable, IssuedToken, Repository } from "@bagatka/github"
-import { GitHub } from "@bagatka/github"
+import type { GitHubRefused, GitHubUnavailable, IssuedToken, Repository } from "@cluenori/github"
+import { GitHub } from "@cluenori/github"
 import { DateTime, Duration, Effect, Layer } from "effect"
 
 // A token is used until this long before it expires.

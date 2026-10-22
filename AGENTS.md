@@ -148,13 +148,13 @@ Prefer additive changes. Never change a contract silently as a side effect of ot
 Build subsystems as if they will serve a product you haven't written yet. The product-specific part
 of the system should be a thin layer of composition on top of general capabilities.
 
-Here this is literal. A general capability is its own small package, `@bagatka/<name>` in
-`packages/`, that never imports Cluenori and could be published to npm unchanged. Small packages are
+Here this is literal. A general capability is its own small package, `@cluenori/<name>` in
+`packages/`, that never imports Cluenori's product code and could be published to npm unchanged. Small packages are
 also how agents work well: a package an agent can read whole, with a contract on one screen, is a
 package it changes correctly.
 
 - **A capability doesn't know which product it lives in.** Product names, screens, campaigns, and
-  business flows stay out of its vocabulary: `@bagatka/web-push`, not `CluenoriPushSender`.
+  business flows stay out of its vocabulary: `@cluenori/web-push`, not `CluenoriPushSender`.
 - **Product decisions live in the composition layer.** That covers which capabilities run, in what
   order, and under which policies. Glue code is expected; it is the cheapest code to understand and
   change.
@@ -515,7 +515,7 @@ conflict.
   component's version; promotes a release by its deploy target, starting its workflow on GitHub and
   taking an app's build through App Store review, the first actions; and keeps release notes, which
   the project's language model (Workers AI) drafts. GitHub is reached through the workspace's own
-  GitHub App, which an owner connects from the web (`product/engines/github`);
+  GitHub App, which an owner connects from the web (`product/engines/github-app`);
   only the environments a project calls production alert, and Today counts only them.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
@@ -546,7 +546,7 @@ conflict.
 - **Package maps:** `<package>/README.md`, from `docs/templates/package-readme.md`
 - **Contracts and enforcement:**
   - A package's contract is its `src/index.ts`. Its `package.json` `exports` names only that file.
-  - `@bagatka/*` packages in `packages/` are general-purpose: no Cluenori in them; product packages
+  - Packages in `packages/` are general-purpose: no product code in them; product packages
     compose them with a little glue (`ARCHITECTURE.md`, "Layers").
   - Allowed dependencies are in `ARCHITECTURE.md`, "Dependency rules", and checked by
     `bun run check` from the same table as data, `apps/cli/src/dependency-rules.ts`. Change both

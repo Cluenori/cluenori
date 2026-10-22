@@ -1,4 +1,4 @@
-import { ManifestCode } from "@cluenori/github"
+import { ManifestCode } from "@cluenori/github-app"
 import { Effect, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"

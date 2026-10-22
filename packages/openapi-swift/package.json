@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/openapi-swift",
+  "name": "@cluenori/openapi-swift",
   "private": true,
   "type": "module",
   "sideEffects": false,

@@ -1,7 +1,6 @@
-import { GitHubRefused, GitHubUnavailable, Repository } from "@bagatka/github"
-import { CreationOptions, RegistrationResponse, RequestOptions, AssertionResponse } from "@bagatka/webauthn"
 import { Actor, Envelope, Instant, MemberId, NotAllowed, ProjectKey } from "@cluenori/foundation"
 import { Caller } from "@cluenori/foundation"
+import { GitHubRefused, GitHubUnavailable, Repository } from "@cluenori/github"
 import {
   ConnectRejected,
   GitHubAccount,
@@ -10,7 +9,7 @@ import {
   GitHubAppSummary,
   GitHubStatus,
   ManifestCode,
-} from "@cluenori/github"
+} from "@cluenori/github-app"
 import {
   Access,
   Invite,
@@ -44,6 +43,7 @@ import {
   RegisterPush,
 } from "@cluenori/phones"
 import { Project, ProjectList, ProjectNotFound } from "@cluenori/projects"
+import { CreationOptions, RegistrationResponse, RequestOptions, AssertionResponse } from "@cluenori/webauthn"
 import { Schema } from "effect"
 
 import type { ObjectCall, PlainSchema } from "./object-calls.ts"

@@ -76,7 +76,7 @@ issuing, listing and revoking their SDK keys; `IngestKey` and `ingestKeyScope`, 
 ## Depends on
 
 `@cluenori/foundation`, for the scope keys and `ActivityLog`, through which every write commits;
-`@bagatka/github`, for what a repository's and a workflow file's names may be.
+`@cluenori/github`, for what a repository's and a workflow file's names may be.
 
 ## Activity
 

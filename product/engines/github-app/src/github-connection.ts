@@ -1,8 +1,8 @@
-import type { GitHubRefused, GitHubUnavailable, IssuedToken, Repository } from "@bagatka/github"
-import { appManifest, convertManifest, GitHubApp, GitHubRefused as Refused, installLink } from "@bagatka/github"
-import type { Rs256Signing } from "@bagatka/rs256-jwt"
 import { ActivityLog, Actor, Instant, NotAllowed, Source } from "@cluenori/foundation"
+import type { GitHubRefused, GitHubUnavailable, IssuedToken, Repository } from "@cluenori/github"
+import { appManifest, convertManifest, GitHubApp, GitHubRefused as Refused, installLink } from "@cluenori/github"
 import type { Access } from "@cluenori/members"
+import type { Rs256Signing } from "@cluenori/rs256-jwt"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Base64Url, Hex } from "effect/encoding"
 import { HttpClient } from "effect/http"
@@ -127,7 +127,7 @@ export class GitHubConnection extends Context.Service<
      */
     readonly tokenFor: (repository: Repository) => Effect.Effect<IssuedToken, GitHubRefused | GitHubUnavailable>
   }
->()("@cluenori/github/github-connection/GitHubConnection") {
+>()("@cluenori/github-app/github-connection/GitHubConnection") {
   /** Builds the engine on the object's database, first creating or updating its tables. */
   static readonly layer = (settings: GitHubConnectionSettings) =>
     Layer.effect(

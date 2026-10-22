@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/github",
+  "name": "@cluenori/github",
   "private": true,
   "type": "module",
   "sideEffects": false,
@@ -10,7 +10,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@bagatka/rs256-jwt": "workspace:*",
+    "@cluenori/rs256-jwt": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

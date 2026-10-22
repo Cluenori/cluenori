@@ -1,5 +1,5 @@
-import type { Es256Signing } from "@bagatka/es256-jwt"
-import { signEs256 } from "@bagatka/es256-jwt"
+import type { Es256Signing } from "@cluenori/es256-jwt"
+import { signEs256 } from "@cluenori/es256-jwt"
 import type { Redacted } from "effect"
 import { Clock, Duration, Effect, Option, Ref, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"

@@ -1,7 +1,7 @@
-import type { SketchValue } from "@bagatka/quantile-sketch"
-import { SketchValue as SketchValueSchema } from "@bagatka/quantile-sketch"
 import type { FeatureKey, PersonId, ReleaseVersion, SessionId } from "@cluenori/foundation"
 import { dayNumberOf } from "@cluenori/foundation"
+import type { SketchValue } from "@cluenori/quantile-sketch"
+import { SketchValue as SketchValueSchema } from "@cluenori/quantile-sketch"
 import { DateTime } from "effect"
 
 import type { AppSignal, AppUserId } from "./app-batch.ts"

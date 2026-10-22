@@ -1,4 +1,4 @@
-# @bagatka/rs256-jwt
+# @cluenori/rs256-jwt
 
 Signs JSON Web Tokens with RS256 keys, such as a GitHub App's private key, through the platform's
 Web Crypto.
@@ -6,7 +6,7 @@ Web Crypto.
 ## Use it
 
 ```ts
-import { signRs256 } from "@bagatka/rs256-jwt"
+import { signRs256 } from "@cluenori/rs256-jwt"
 import { Effect, Redacted } from "effect"
 
 // In a host, where the platform's globals are known, Web Crypto is `globalThis.crypto.subtle`.
@@ -31,8 +31,8 @@ compact JWS whose header names RS256 first and whose claims are as given.
 
 ## Does not own
 
-What a token says and how long it is kept: each caller (`@bagatka/github`'s `GitHubApp`) chooses
-its claims and when to sign a new one. ES256 tokens, such as Apple's, are `@bagatka/es256-jwt`'s.
+What a token says and how long it is kept: each caller (`@cluenori/github`'s `GitHubApp`) chooses
+its claims and when to sign a new one. ES256 tokens, such as Apple's, are `@cluenori/es256-jwt`'s.
 
 ## Depends on
 
@@ -44,9 +44,9 @@ its claims and when to sign a new one. ES256 tokens, such as Apple's, are `@baga
   GitHub gives PKCS #1 (`BEGIN RSA PRIVATE KEY`), so a PKCS #1 key is wrapped in PKCS #8's
   PrivateKeyInfo with a few bytes of DER (RFC 5208): version 0, rsaEncryption, the key as an
   OCTET STRING. Which one a key is comes from its DER, not its armor, so the base64 alone works too.
-- **The same shape as `@bagatka/es256-jwt`:** the host passes Web Crypto, typed as only the two
+- **The same shape as `@cluenori/es256-jwt`:** the host passes Web Crypto, typed as only the two
   functions signing uses; `alg` is always RS256, whatever the header says; the key is imported on
-  every call. The two share the compact JWS's few lines and could become one `@bagatka/jwt`; they
+  every call. The two share the compact JWS's few lines and could become one `@cluenori/jwt`; they
   are kept apart while each algorithm has callers of its own and nothing else to share.
 - **Two-prime keys.** A multi-prime PKCS #1 key (version 1), which neither GitHub nor OpenSSL makes
   by default, isn't recognized, and fails with `InvalidSigningKey`.

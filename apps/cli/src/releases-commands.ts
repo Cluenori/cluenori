@@ -1,5 +1,5 @@
-import { CommitSha } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, Period, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import { CommitSha } from "@cluenori/github"
 import type { AppStoreTarget } from "@cluenori/projects"
 import type {
   AppStoreSubmission,

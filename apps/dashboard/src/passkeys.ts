@@ -1,5 +1,5 @@
-import type { CreationOptions, RequestOptions } from "@bagatka/webauthn"
-import { AssertionResponse, RegistrationResponse } from "@bagatka/webauthn"
+import type { CreationOptions, RequestOptions } from "@cluenori/webauthn"
+import { AssertionResponse, RegistrationResponse } from "@cluenori/webauthn"
 import { Effect, Schema } from "effect"
 
 /**

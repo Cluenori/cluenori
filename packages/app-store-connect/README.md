@@ -1,4 +1,4 @@
-# @bagatka/app-store-connect
+# @cluenori/app-store-connect
 
 Follows and publishes an app's releases through the App Store Connect API: an app by its bundle ID,
 its builds and their TestFlight states, and its App Store versions with the build each ships and its
@@ -8,7 +8,7 @@ for review, releases it, steers its phased release, and writes a build's What to
 ## Use it
 
 ```ts
-import { AppStoreConnect } from "@bagatka/app-store-connect"
+import { AppStoreConnect } from "@cluenori/app-store-connect"
 import { Effect, Option, Redacted } from "effect"
 
 // In a host, where the platform's globals are known, on the HttpClient it provides:
@@ -72,7 +72,7 @@ and other platforms' versions: App Store Connect.
 
 ## Depends on
 
-`@bagatka/es256-jwt`, to sign its tokens; `effect`; and an `HttpClient` the host provides.
+`@cluenori/es256-jwt`, to sign its tokens; `effect`; and an `HttpClient` the host provides.
 
 ## Settings
 

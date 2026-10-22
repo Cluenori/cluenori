@@ -13,8 +13,8 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@bagatka/web-crypto": "workspace:*",
     "@cloudflare/vitest-plugin": "catalog:",
+    "@cluenori/web-crypto": "workspace:*",
     "@effect/sql-sqlite-do": "catalog:",
     "@effect/vitest": "catalog:",
     "vitest": "catalog:",

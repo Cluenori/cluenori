@@ -1,5 +1,5 @@
-import { Repository } from "@bagatka/github"
 import { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import { Repository } from "@cluenori/github"
 import { ComponentName, ProjectName } from "@cluenori/projects"
 import { assert, layer } from "@effect/vitest"
 import { DateTime, Effect } from "effect"

@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/rs256-jwt",
+  "name": "@cluenori/rs256-jwt",
   "private": true,
   "type": "module",
   "sideEffects": false,

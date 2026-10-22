@@ -1,5 +1,5 @@
-import type { AnyValue, Attributes, ResourceLogs, ResourceSpans } from "@bagatka/otlp"
-import { isSecretName, scrubText } from "@bagatka/scrub"
+import type { AnyValue, Attributes, ResourceLogs, ResourceSpans } from "@cluenori/otlp"
+import { isSecretName, scrubText } from "@cluenori/scrub"
 
 const isAttributes = (value: AnyValue): value is Attributes => value instanceof Map
 

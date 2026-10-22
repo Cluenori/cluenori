@@ -1,4 +1,4 @@
-import { encodeQrCode, qrCodePath } from "@bagatka/qr-code"
+import { encodeQrCode, qrCodePath } from "@cluenori/qr-code"
 import { Result } from "effect"
 
 /**

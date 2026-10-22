@@ -1,7 +1,7 @@
-import { webCryptoLayer } from "@bagatka/web-crypto"
 import type { MemberId } from "@cluenori/foundation"
 import { ActivityLog, WorkspaceKey } from "@cluenori/foundation"
 import { ProjectIndex } from "@cluenori/projects"
+import { webCryptoLayer } from "@cluenori/web-crypto"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"

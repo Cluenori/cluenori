@@ -1,8 +1,8 @@
-import type { Attributes, Span } from "@bagatka/otlp"
-import { decodeTraces, encodeTraces } from "@bagatka/otlp"
-import type { SketchValue } from "@bagatka/quantile-sketch"
-import { SketchValue as SketchValueSchema, sketchOf } from "@bagatka/quantile-sketch"
 import { EnvelopeName, EnvironmentKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import type { Attributes, Span } from "@cluenori/otlp"
+import { decodeTraces, encodeTraces } from "@cluenori/otlp"
+import type { SketchValue } from "@cluenori/quantile-sketch"
+import { SketchValue as SketchValueSchema, sketchOf } from "@cluenori/quantile-sketch"
 import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Hex } from "effect/encoding"
 

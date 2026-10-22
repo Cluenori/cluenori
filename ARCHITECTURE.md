@@ -66,14 +66,14 @@ product       product/modules/<module>                pages: Releases, Flags, Fe
                     │
               product/foundation                      scope keys, envelope, activity, the module contract
                     │
-capabilities  packages/<capability>                   general: @bagatka/<capability>, no Cluenori in them
+capabilities  packages/<capability>                   general: @cluenori/<capability>, no product code in them
                     │
 platform      effect, Cloudflare                      the standard library and the runtime
 ```
 
 - **A capability is general and deep.** It knows nothing of Cluenori (projects, features, people),
   hides much behind a small contract, runs on any runtime with web standards (Workers, Bun, Node,
-  browsers) unless its name says otherwise (`@bagatka/cloudflare-<x>`), and is tested on its own.
+  browsers) unless its name says otherwise (`@cluenori/cloudflare-<x>`), and is tested on its own.
   Another product could use it with glue of its own. Examples it will likely hold: APNs and Web Push
   senders, exact money with currencies, stable hash bucketing, an OTLP decoder, vendor clients.
 - **Foundation is the shared product model.** The concepts every module uses: the scope keys and
@@ -92,10 +92,11 @@ platform      effect, Cloudflare                      the standard library and t
 
 ## Naming rule
 
-`@bagatka/*` is general-purpose: it never imports `@cluenori/*` and could serve another product
-unchanged. `@cluenori/*` belongs to this product. The folder says the same thing as the name:
-`packages/` is general, `product/` is Cluenori, `apps/` are hosts, `sdks/` run in founders' apps.
-The name tells you which rules apply before you open the package.
+Every package is `@cluenori/<its folder's name>`; the folder says which rules apply: `packages/` is
+general-purpose, never imports `product/` or `apps/`, and is published to npm as it is; `product/`
+is Cluenori, and private; `apps/` are hosts; `sdks/` run in founders' apps. One scope, because
+everything published is Cluenori's; the folder, which the architecture check reads, tells the kinds
+apart.
 
 ## Repository layout
 
@@ -114,7 +115,7 @@ tsconfig.base.json             compiler settings and Effect diagnostics every pa
 vitest.config.ts               every package's tests, run as one
 docs/templates/                package-readme.md
 packages/
-  <capability>/                @bagatka/<capability>
+  <capability>/                @cluenori/<capability>
     package.json               exports: { ".": "./src/index.ts" }; scripts: { "typecheck": "tsc" }
     tsconfig.json              extends tsconfig.base.json
     vitest.config.ts           when it has tests
@@ -122,23 +123,23 @@ packages/
     src/index.ts               the contract: the only file other packages import
     src/                       everything else, private
     test/
-  workspace-rules/             @bagatka/workspace-rules: checks packages' names, entries, and dependencies
-  web-crypto/                  @bagatka/web-crypto: Effect's Crypto service on the Web Crypto API
-  otlp/                        @bagatka/otlp: reads OTLP/HTTP protobuf exports
-  quantile-sketch/             @bagatka/quantile-sketch: percentiles from small mergeable sketches
-  scrub/                       @bagatka/scrub: removes credentials and personal data from text
-  qr-code/                     @bagatka/qr-code: encodes text as a QR code, drawn as SVG path data
-  openapi-swift/               @bagatka/openapi-swift: writes a typed Swift client from an OpenAPI document
-  es256-jwt/                   @bagatka/es256-jwt: signs JSON Web Tokens with ES256 keys, such as Apple's
-  rs256-jwt/                   @bagatka/rs256-jwt: signs JSON Web Tokens with RS256 keys, such as a GitHub App's
-  apns/                        @bagatka/apns: sends pushes to Apple devices through APNs
-  app-store-connect/           @bagatka/app-store-connect: apps' builds and App Store versions; submits, releases, What to Test
-  cloudflare-workers-ai/       @bagatka/cloudflare-workers-ai: effect/ai's LanguageModel on Cloudflare Workers AI
-  github/                      @bagatka/github: a repository's tags, commits, changes and workflows, with a token or as a GitHub App
-  webauthn/                    @bagatka/webauthn: makes and checks passkeys
+  workspace-rules/             @cluenori/workspace-rules: checks packages' names, entries, and dependencies
+  web-crypto/                  @cluenori/web-crypto: Effect's Crypto service on the Web Crypto API
+  otlp/                        @cluenori/otlp: reads OTLP/HTTP protobuf exports
+  quantile-sketch/             @cluenori/quantile-sketch: percentiles from small mergeable sketches
+  scrub/                       @cluenori/scrub: removes credentials and personal data from text
+  qr-code/                     @cluenori/qr-code: encodes text as a QR code, drawn as SVG path data
+  openapi-swift/               @cluenori/openapi-swift: writes a typed Swift client from an OpenAPI document
+  es256-jwt/                   @cluenori/es256-jwt: signs JSON Web Tokens with ES256 keys, such as Apple's
+  rs256-jwt/                   @cluenori/rs256-jwt: signs JSON Web Tokens with RS256 keys, such as a GitHub App's
+  apns/                        @cluenori/apns: sends pushes to Apple devices through APNs
+  app-store-connect/           @cluenori/app-store-connect: apps' builds and App Store versions; submits, releases, What to Test
+  cloudflare-workers-ai/       @cluenori/cloudflare-workers-ai: effect/ai's LanguageModel on Cloudflare Workers AI
+  github/                      @cluenori/github: a repository's tags, commits, changes and workflows, with a token or as a GitHub App
+  webauthn/                    @cluenori/webauthn: makes and checks passkeys
 product/
   foundation/                  @cluenori/foundation
-  engines/<engine>/            @cluenori/<engine>: projects, signals, manifest, incidents, phones, today, notifications, members, github
+  engines/<engine>/            @cluenori/<engine>: projects, signals, manifest, incidents, phones, today, notifications, members, github-app
   modules/<module>/            @cluenori/<module>: releases, analytics
 apps/
   worker/                      @cluenori/worker: the deployable Worker and composition root
@@ -183,17 +184,17 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 
 | Package | May import | Must not import |
 |---|---|---|
-| `@bagatka/*` | `effect`, other `@bagatka/*` (no cycles), approved dependencies; Cloudflare's runtime types only when its name says `cloudflare` | `@cluenori/*`; Bun, Node, or DOM APIs |
-| `@cluenori/foundation` | `effect`, `@bagatka/*` | engines, modules, hosts |
-| Engine | foundation, other engines (no cycles), `@bagatka/*`, `effect` | modules, hosts |
-| Module | foundation, engines, `@bagatka/*`, `effect` | other modules, hosts |
+| Capability (`packages/*`) | `effect`, other capabilities (no cycles), approved dependencies; Cloudflare's runtime types only when its name says `cloudflare` | `product/`, `apps/`; Bun, Node, or DOM APIs |
+| `@cluenori/foundation` | `effect`, capabilities | engines, modules, hosts |
+| Engine | foundation, other engines (no cycles), capabilities, `effect` | modules, hosts |
+| Module | foundation, engines, capabilities, `effect` | other modules, hosts |
 | `apps/worker` | everything above, `@effect/sql-*` drivers, Cloudflare packages | — |
-| `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; foundation's, engines' and modules' contracts, for the Schemas of what they send (open decision: "How clients import the API definition"); `@bagatka/*`, `effect`; the CLI also `@effect/platform-bun`; the dashboard also React, Vite, Tailwind CSS, and the libraries of shadcn/ui's views, and for its build and tests React Compiler, Playwright, and axe (its README) | engine and module implementations |
+| `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; foundation's, engines' and modules' contracts, for the Schemas of what they send (open decision: "How clients import the API definition"); capabilities, `effect`; the CLI also `@effect/platform-bun`; the dashboard also React, Vite, Tailwind CSS, and the libraries of shadcn/ui's views, and for its build and tests React Compiler, Playwright, and axe (its README) | engine and module implementations |
 | `apps/ios` | Its own layers, each only the one beneath: the app's Xcode target, `CluenoriViews` (SwiftUI), `CluenoriScreens` (Observation), `CluenoriClient` (Foundation); Apple's SDKs, no third-party code. The API's contract only as `CluenoriAPI.swift`, generated from it | Apple-only frameworks in `CluenoriClient` and `CluenoriScreens`, which build on Linux too |
-| `@cluenori/sdk` | `@bagatka/*`, `effect`, the API definition of what it calls | server packages |
+| `@cluenori/sdk` | capabilities, `effect`, the API definition of what it calls | server packages |
 | `sdks/swift` | Its own libraries, each only the core beneath it, and the core only `CluenoriIngest`; Apple's SDKs, no third-party code. The ingest API's contract only as `CluenoriIngestAPI.swift`, generated from it; `CluenoriIngest` imports Foundation alone. Checked by `bun run check:sdk-swift`: it isn't a workspace package, so the architecture check doesn't read it | third-party code, server packages, anything else in this repository |
 | Package tests | the package they test, `@effect/vitest`, Vitest; product packages also `@cloudflare/vitest-plugin`, Wrangler, and `@effect/sql-sqlite-do`, to run inside a Durable Object | other packages' private files |
-| `tests/journeys` | `apps/worker`, foundation's, engines' and modules' contracts, `@bagatka/*`, for what a journey plays a client with (a passkey's authenticator), `effect`, `@cloudflare/vitest-plugin`, Wrangler, Vitest | the Worker's private files |
+| `tests/journeys` | `apps/worker`, foundation's, engines' and modules' contracts, capabilities, for what a journey plays a client with (a passkey's authenticator), `effect`, `@cloudflare/vitest-plugin`, Wrangler, Vitest | the Worker's private files |
 
 - A module reaches another module only through activity and its declared actions, never by
   importing it. Reacting to activity is the sanctioned reverse direction, as it is between engines.
@@ -298,7 +299,7 @@ From `concept/`; each gets its pattern when it is built.
   Secure, SameSite=Strict, for `/api`.
 - **Agents** get a scoped key or an OIDC token per run: one project, read-only unless policy grants
   more, within a spend limit.
-- **GitHub** is reached through the workspace's own GitHub App (`@cluenori/github`): an owner
+- **GitHub** is reached through the workspace's own GitHub App (`@cluenori/github-app`): an owner
   connects it from the web with GitHub's manifest flow, and its private key stays in the
   workspace's object. Projects' objects get installation tokens, good for an hour, for the
   repositories their components link; it may read code and pull requests, and start workflows.
@@ -307,7 +308,7 @@ From `concept/`; each gets its pattern when it is built.
   that reads it gets only read and draft tools.
 - **Telemetry is scrubbed before it is stored:** tokens, keys, secrets in URLs, emails, and card
   numbers are removed from every text value, and values named like credentials are removed whole
-  (`@bagatka/scrub`). Metrics are archived as received until Cluenori reads them.
+  (`@cluenori/scrub`). Metrics are archived as received until Cluenori reads them.
 
 ## Toolchain and entry points
 
@@ -341,7 +342,7 @@ The tools do most of the work, and `bun run check` runs all of them.
   from every package; the root declares only command-line tools, and Vitest, which every package
   with tests declares too.
 - **Package `exports`:** only `src/index.ts` is importable from outside a package.
-- **The architecture check,** `cluenori check` on `@bagatka/workspace-rules`, reads every
+- **The architecture check,** `cluenori check` on `@cluenori/workspace-rules`, reads every
   `package.json` and fails on a dependency the rules above don't allow, a wrong name or entry, a
   version outside the catalog, or a cycle. It also refuses comments that silence the compiler or the
   linter, and an OpenAPI document that is out of date.
@@ -441,7 +442,7 @@ Each needs evidence or a product choice before the code that depends on it.
    Converting archive files into Iceberg tables in R2 works the same locally. Decide with the first
    question that needs it.
 5. **Publishing.** The build for published packages (TypeScript's own emit or a bundler), the
-   versioning tool, and the npm scope and license of `@bagatka/*` (assumed MIT, like the SDKs).
+   versioning tool. The scope is `@cluenori` and the license MIT, like the SDKs (decided 2026-10-22).
 
 ## Module map
 
@@ -451,12 +452,12 @@ updates this table in the same change.
 | Package | Kind | Owns | Uses | Reacts to |
 |---|---|---|---|---|
 | `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests and their SDK keys; the workspace's index of its projects | Foundation's `ActivityLog` | — |
-| `@cluenori/signals` | Engine | The archive of every export and its index; operations counted by name and environment; warnings and errors; error groups; the duplicate window; what "slower", "new" and "happening now" mean; apps' signals: people and their user IDs, installations, activity and measures by day, sessions, timelines, apps' batches, and the limits on how much they take | `@bagatka/otlp`, `@bagatka/quantile-sketch`, `@bagatka/scrub`; an `ArchiveStore` and an `AppBatchStore` the host provides; `projects` for its API's errors and SDK keys | — |
+| `@cluenori/signals` | Engine | The archive of every export and its index; operations counted by name and environment; warnings and errors; error groups; the duplicate window; what "slower", "new" and "happening now" mean; apps' signals: people and their user IDs, installations, activity and measures by day, sessions, timelines, apps' batches, and the limits on how much they take | `@cluenori/otlp`, `@cluenori/quantile-sketch`, `@cluenori/scrub`; an `ArchiveStore` and an `AppBatchStore` the host provides; `projects` for its API's errors and SDK keys | — |
 | `@cluenori/manifest` | Engine | The manifest's shape and its route: what an app's SDK reads at launch and on resume | Foundation | — |
 | `@cluenori/incidents` | Engine | Its project's incidents and monitors; the detectors and what they learn: usual error rates and schedules | `@cluenori/signals`, `@cluenori/projects`; Foundation's `ActivityLog`; an `HttpClient` the host provides, for monitors | — |
 | `@cluenori/phones` | Engine | The workspace's paired phones, their keys' digests, when and where each last called, their push tokens, and open pairings; the names of Apple's models | Foundation's `ActivityLog` | — |
 | `@cluenori/today` | Engine | Today's detectors and order: what needs attention now in each project, from its incidents and counts | `@cluenori/incidents`, `@cluenori/signals`, `@cluenori/projects` | — |
-| `@cluenori/notifications` | Engine | Each alert's level and words; which activity reached which phone | `@cluenori/phones`, `@cluenori/members`, `@cluenori/projects`' index, `@bagatka/apns`; an `HttpClient` the host provides | `incident.*`, from the activity queue |
-| `@cluenori/members` | Engine | The workspace's members, what each sees, invitations, passkeys, and browsers' sign-ins | `@cluenori/projects`' index, `@bagatka/webauthn`; Foundation's `ActivityLog` | — |
-| `@cluenori/releases` | Module | Releases' commits, changes, store builds, deploys, numbering, promotions and notes; each app component's version policy, and what one release gets from it (`versionPolicyFor`) | `@cluenori/signals`, `@cluenori/projects`, `@cluenori/incidents`, `@cluenori/manifest`'s Schemas; `@bagatka/github`, `@bagatka/app-store-connect` | — |
+| `@cluenori/notifications` | Engine | Each alert's level and words; which activity reached which phone | `@cluenori/phones`, `@cluenori/members`, `@cluenori/projects`' index, `@cluenori/apns`; an `HttpClient` the host provides | `incident.*`, from the activity queue |
+| `@cluenori/members` | Engine | The workspace's members, what each sees, invitations, passkeys, and browsers' sign-ins | `@cluenori/projects`' index, `@cluenori/webauthn`; Foundation's `ActivityLog` | — |
+| `@cluenori/releases` | Module | Releases' commits, changes, store builds, deploys, numbering, promotions and notes; each app component's version policy, and what one release gets from it (`versionPolicyFor`) | `@cluenori/signals`, `@cluenori/projects`, `@cluenori/incidents`, `@cluenori/manifest`'s Schemas; `@cluenori/github`, `@cluenori/app-store-connect` | — |
 | `@cluenori/analytics` | Module | Nothing stored: apps' usage, retention, features and people as Signals counts them, and what makes a release's app health worse or better than the release before it's | `@cluenori/signals`, `@cluenori/projects` | — |

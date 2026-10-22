@@ -1,5 +1,5 @@
-import { CommitSha, Repository } from "@bagatka/github"
 import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, Period, ReleaseVersion } from "@cluenori/foundation"
+import { CommitSha, Repository } from "@cluenori/github"
 import { Incident } from "@cluenori/incidents"
 import { DeployTarget } from "@cluenori/projects"
 import { ErrorGroup } from "@cluenori/signals"

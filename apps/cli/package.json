@@ -6,19 +6,19 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@bagatka/github": "workspace:*",
-    "@bagatka/openapi-swift": "workspace:*",
-    "@bagatka/workspace-rules": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github": "workspace:*",
+    "@cluenori/github-app": "workspace:*",
     "@cluenori/incidents": "workspace:*",
     "@cluenori/members": "workspace:*",
+    "@cluenori/openapi-swift": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/today": "workspace:*",
     "@cluenori/worker": "workspace:*",
+    "@cluenori/workspace-rules": "workspace:*",
     "@effect/platform-bun": "catalog:",
     "effect": "catalog:"
   },

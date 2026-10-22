@@ -1,5 +1,5 @@
-import type { GitHubRefused } from "@bagatka/github"
-import { GitHub } from "@bagatka/github"
+import type { GitHubRefused } from "@cluenori/github"
+import { GitHub } from "@cluenori/github"
 import { Projects } from "@cluenori/projects"
 import { DateTime, Effect, Option } from "effect"
 

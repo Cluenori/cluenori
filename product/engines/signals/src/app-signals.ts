@@ -1,4 +1,3 @@
-import { isSecretName, scrubText } from "@bagatka/scrub"
 import type { ComponentKey } from "@cluenori/foundation"
 import {
   calendarDayOf,
@@ -11,6 +10,7 @@ import {
   ReleaseVersion,
 } from "@cluenori/foundation"
 import type { SdkKey } from "@cluenori/projects"
+import { isSecretName, scrubText } from "@cluenori/scrub"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Ref, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 

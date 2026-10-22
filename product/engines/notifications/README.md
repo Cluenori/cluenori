@@ -31,7 +31,7 @@ yield* notifications.testAlert(phone)
   - **What a push says:** "<project> · <what happened>", and the incident's title.
   - **Tokens that are gone:** a token APNs calls `BadDeviceToken`, `Unregistered` or
     `DeviceTokenNotForTopic` is forgotten, through Phones.
-- **Integrations:** APNs, through `@bagatka/apns`.
+- **Integrations:** APNs, through `@cluenori/apns`.
 
 ## Does not own
 
@@ -49,7 +49,7 @@ alarm through `NotificationsGroup`.
 
 `@cluenori/phones` for push targets, `@cluenori/members` for what each phone's member sees,
 `@cluenori/projects`' index for project names,
-`@cluenori/incidents` for the activity it reads, `@bagatka/apns`, and an `HttpClient` the host
+`@cluenori/incidents` for the activity it reads, `@cluenori/apns`, and an `HttpClient` the host
 provides.
 
 ## Activity

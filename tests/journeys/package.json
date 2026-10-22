@@ -6,11 +6,10 @@
     "typecheck": "tsc"
   },
   "devDependencies": {
-    "@bagatka/github": "workspace:*",
-    "@bagatka/webauthn": "workspace:*",
     "@cloudflare/vitest-plugin": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github": "workspace:*",
+    "@cluenori/github-app": "workspace:*",
     "@cluenori/incidents": "workspace:*",
     "@cluenori/manifest": "workspace:*",
     "@cluenori/members": "workspace:*",
@@ -19,6 +18,7 @@
     "@cluenori/projects": "workspace:*",
     "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
+    "@cluenori/webauthn": "workspace:*",
     "@cluenori/worker": "workspace:*",
     "@effect/vitest": "catalog:",
     "effect": "catalog:",

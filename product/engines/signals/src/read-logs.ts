@@ -1,6 +1,6 @@
-import type { AnyValue, Attributes, LogRecord } from "@bagatka/otlp"
-import { decodeLogs, encodeLogs } from "@bagatka/otlp"
 import { TraceId } from "@cluenori/foundation"
+import type { AnyValue, Attributes, LogRecord } from "@cluenori/otlp"
+import { decodeLogs, encodeLogs } from "@cluenori/otlp"
 import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Base64, Hex } from "effect/encoding"
 

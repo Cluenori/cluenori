@@ -1,5 +1,5 @@
 {
-  "name": "@bagatka/es256-jwt",
+  "name": "@cluenori/es256-jwt",
   "private": true,
   "type": "module",
   "sideEffects": false,

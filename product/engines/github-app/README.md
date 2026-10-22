@@ -1,4 +1,4 @@
-# @cluenori/github
+# @cluenori/github-app
 
 Cluenori's connection to GitHub: the workspace's own GitHub App, which an owner connects from the
 web in one step and installs on their accounts, and the client a project reads and acts with as
@@ -41,7 +41,7 @@ yield* github.dispatchWorkflow(repository, workflow, "main", { release, environm
     it; installed on an account whose repositories no component links, it does nothing.
   - A token acts on the repository asked about, through the installation that reaches it; it is
     reused until 5 minutes before it expires, in the workspace and in each project.
-- **Integrations:** GitHub, through `@bagatka/github`.
+- **Integrations:** GitHub, through `@cluenori/github`.
 
 ## Does not own
 
@@ -59,8 +59,8 @@ return, `/api/github/connected`, itself.
 
 ## Depends on
 
-- `@bagatka/github`: the app's tokens, the manifest flow, and the client.
-- `@bagatka/rs256-jwt`: the app's JSON Web Tokens, with its private key.
+- `@cluenori/github`: the app's tokens, the manifest flow, and the client.
+- `@cluenori/rs256-jwt`: the app's JSON Web Tokens, with its private key.
 - `@cluenori/members`: `Access`, to tell an owner.
 - Foundation's `ActivityLog`, and `Crypto` for states and digests.
 

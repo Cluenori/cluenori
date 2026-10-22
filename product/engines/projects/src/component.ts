@@ -1,5 +1,5 @@
-import { Repository, WorkflowFile } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, Instant } from "@cluenori/foundation"
+import { Repository, WorkflowFile } from "@cluenori/github"
 import { Schema } from "effect"
 
 /** What people call a component: 1 to 100 characters, without space at either end. */

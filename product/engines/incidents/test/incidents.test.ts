@@ -1,7 +1,7 @@
-import { SketchValue, sketchOf } from "@bagatka/quantile-sketch"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvelopeName, EnvironmentKey, MemberId } from "@cluenori/foundation"
 import { ComponentName, ProjectName, Projects } from "@cluenori/projects"
+import { SketchValue, sketchOf } from "@cluenori/quantile-sketch"
 import type { OperationCounts } from "@cluenori/signals"
 import { BatchDigest, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"

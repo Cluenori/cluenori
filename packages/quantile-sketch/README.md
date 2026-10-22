@@ -1,4 +1,4 @@
-# @bagatka/quantile-sketch
+# @cluenori/quantile-sketch
 
 Quantiles (p50, p95, p99) of large sets of values, such as request durations, from small sketches
 that merge: sketch each batch, store the sketches, and read any quantile of any span of them later.
@@ -6,7 +6,7 @@ that merge: sketch each batch, store the sketches, and read any quantile of any 
 ## Use it
 
 ```ts
-import { mergeSketches, Quantile, quantileOf, SketchValue, sketchOf } from "@bagatka/quantile-sketch"
+import { mergeSketches, Quantile, quantileOf, SketchValue, sketchOf } from "@cluenori/quantile-sketch"
 
 // At ingest: one sketch per batch, stored as plain data.
 const batch = sketchOf(durationsInMs.map((ms) => SketchValue.make(ms)))

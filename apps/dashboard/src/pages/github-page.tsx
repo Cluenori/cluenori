@@ -1,6 +1,6 @@
 import { NotAllowed } from "@cluenori/foundation"
-import type { GitHubAppForm, GitHubAppSummary, GitHubInstallation, GitHubStatus } from "@cluenori/github"
-import { GitHubAccount } from "@cluenori/github"
+import type { GitHubAppForm, GitHubAppSummary, GitHubInstallation, GitHubStatus } from "@cluenori/github-app"
+import { GitHubAccount } from "@cluenori/github-app"
 import { useAtom, useAtomValue } from "@effect/atom-react"
 import { cn } from "cn"
 import { Cause, DateTime, Option, Result, Schema } from "effect"
