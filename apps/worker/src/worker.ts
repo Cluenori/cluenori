@@ -88,7 +88,9 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
 )
 
 // Built once per isolate, at module scope, and reused for every request (PATTERNS.md, "The Worker
-// entry"). Building does no I/O, which Workers don't allow outside a request.
+// entry"). Building does no I/O, which Workers don't allow outside a request. Each route's path
+// prefix is in wrangler.jsonc's `run_worker_first`, in every environment; any other path is the
+// dashboard's, whose files answer a POST with 405. Tests call the Worker directly, past that.
 const app = HttpRouter.toWebHandler(
   Layer.mergeAll(
     ApiRoutes,

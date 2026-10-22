@@ -65,7 +65,8 @@ export the archive can't take is answered 503, so the exporter sends it again.
   `src/worker.ts` hands each batch to the workspace's notifications, and has the queue try it all
   again, 30 seconds on, up to 10 times, when APNs may take it later.
 - **Serving the dashboard,** from `wrangler.jsonc`'s `assets`: its built files, and any other path,
-  so a page's address opens it; `/api/*` and `/otlp/*` always reach the Worker.
+  so a page's address opens it; `/api/*`, `/otlp/*`, `/ingest/*` and `/.well-known/*` always reach
+  the Worker.
 - **`wrangler.jsonc`:** the Worker's name, compatibility date, the dashboard's files, and bindings:
   `PROJECT`, the projects' Durable Objects, `WORKSPACE`, the workspace's, `ARCHIVE`, the
   archive's bucket, and `ACTIVITY`, the activity queue, of which the Worker is also the consumer.
