@@ -169,6 +169,28 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("apps", (it) => {
         // A body over 1 MB is refused before it is read.
         const oversized = yield* postBatch("x".repeat(1024 * 1024 + 1), `Bearer ${iosKey}`)
         assert.strictEqual(oversized, 413)
+        // And one sent without its length is read only until it passes 1 MB.
+        const chunk = new Uint8Array(64 * 1024).fill(120)
+        let chunksLeft = 64
+        const unmeasured = new ReadableStream<Uint8Array>({
+          pull: (controller) => {
+            if (chunksLeft === 0) {
+              controller.close()
+            } else {
+              chunksLeft -= 1
+              controller.enqueue(chunk)
+            }
+          },
+        })
+        const streamed = yield* Effect.promise(() =>
+          exports.default.fetch(`${baseUrl}/ingest/v1/app/batch`, {
+            method: "POST",
+            headers: { authorization: `Bearer ${iosKey}`, "content-type": "application/json" },
+            body: unmeasured,
+          }),
+        )
+        assert.strictEqual(streamed.status, 413)
+        assert.isAbove(chunksLeft, 0, "the Worker read all 4 MB")
 
         // The founder reads usage, the app's health, and what the person did, through the public API.
         const usage = yield* client.analytics.usage({ params: { project }, query: period })

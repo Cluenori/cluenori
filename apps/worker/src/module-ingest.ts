@@ -1,13 +1,16 @@
 import type { ModuleIngests } from "@cluenori/foundation"
 import { IngestKey, ingestKeyScope } from "@cluenori/projects"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 
+import { boundedBody } from "./bounded-body.ts"
 import { moduleIngestCall } from "./project-calls.ts"
 import { ProjectObjects } from "./project-objects.ts"
 
 // A write from a component's tooling is a small JSON document, far below this.
 const maxBodyBytes = 1024 * 1024
+
+const utf8 = new TextDecoder()
 
 const refuse = (status: number, message: string) => HttpServerResponse.text(`${message}\n`, { status })
 
@@ -35,13 +38,11 @@ export const moduleIngestRoute = <Ingests extends ModuleIngests<Ingests>>(
           "Send the component's ingest key: Authorization: Bearer cluenori.<project>.<component>.<secret>",
         )
       }
-      if (Number(request.headers["content-length"] ?? "0") > maxBodyBytes) {
+      const body = yield* boundedBody(request, maxBodyBytes)
+      if (Option.isNone(body)) {
         return refuse(413, `A write may be at most ${maxBodyBytes} bytes.`)
       }
-      const text = yield* request.text.pipe(Effect.orDie)
-      if (text.length > maxBodyBytes) {
-        return refuse(413, `A write may be at most ${maxBodyBytes} bytes.`)
-      }
+      const text = utf8.decode(body.value)
       const call = moduleIngestCall(module, name)
       const ingest = module.ingest[name]
       const json = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(text).pipe(Effect.result)

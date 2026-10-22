@@ -563,6 +563,9 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   once and serves each call on a visible line.
 - **The workspace's Durable Object is reached the same way,** through `workspaceCalls` and
   `WorkspaceObjects.call`; both kinds of object share `src/object-calls.ts`.
+- **A request's body is read through `boundedBody`, never whole,** with the route's limit: past it,
+  413, whether the sender declared its length or not, and nothing more is read
+  (`apps/worker/src/bounded-body.ts`).
 - **What callers may flood is limited where it is recorded:** in the project's object, fixed
   minutes counted in its memory, only the current one kept, refused with the seconds left to wait
   (429). Nothing is stored, and a restart forgets: right for keeping a project's writes bounded, not

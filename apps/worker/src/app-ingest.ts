@@ -6,6 +6,7 @@ import { HttpServerRespondable, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 
 import { CluenoriIngestApi } from "./app-ingest-api.ts"
+import { boundedBody } from "./bounded-body.ts"
 import { ManifestCache, manifestMaxAge } from "./manifest-cache.ts"
 import { projectCalls } from "./project-calls.ts"
 import { ProjectObjects } from "./project-objects.ts"
@@ -48,15 +49,13 @@ export const AppIngestHandlers = HttpApiBuilder.group(CluenoriIngestApi, "appIng
   handlers.handleRaw("sendBatch", ({ request }) =>
     Effect.gen(function* () {
       const sender = yield* CurrentSdkComponent
-      // Refused before reading when the SDK says the size, and after reading when it doesn't.
-      if (Number(request.headers["content-length"] ?? "0") > maxBodyBytes) {
+      const body = yield* boundedBody(request, maxBodyBytes)
+      if (Option.isNone(body)) {
         return tooLarge()
       }
-      const body = yield* request.arrayBuffer.pipe(Effect.orDie)
-      if (body.byteLength > maxBodyBytes) {
-        return tooLarge()
-      }
-      const decoded = yield* Schema.decodeEffect(Schema.fromJsonString(AppBatch))(utf8.decode(body)).pipe(Effect.result)
+      const decoded = yield* Schema.decodeEffect(Schema.fromJsonString(AppBatch))(utf8.decode(body.value)).pipe(
+        Effect.result,
+      )
       if (Result.isFailure(decoded)) {
         // The same 400 the API answers for any payload that isn't its Schema's.
         return yield* HttpServerRespondable.toResponse(

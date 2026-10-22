@@ -6,9 +6,10 @@ import { IngestKey, ingestKeyScope } from "@cluenori/projects"
 import type { ArchiveUnavailable, Rejected } from "@cluenori/signals"
 import { readLogs, readMetrics, readTraces } from "@cluenori/signals"
 import type { Crypto } from "effect"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 
+import { boundedBody } from "./bounded-body.ts"
 import { projectCalls } from "./project-calls.ts"
 import { ProjectObjects } from "./project-objects.ts"
 
@@ -37,8 +38,6 @@ const received = Effect.gen(function* () {
   const encoding = request.headers["content-encoding"] ?? "identity"
   const authorization = request.headers["authorization"] ?? ""
   const presented = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : ""
-  const declaredBytes = Number(request.headers["content-length"] ?? "0")
-
   if (!contentType.startsWith(protobufContentType)) {
     return refused(415, "Cluenori reads OTLP/HTTP with protobuf: set the exporter's protocol to http/protobuf.")
   }
@@ -53,17 +52,13 @@ const received = Effect.gen(function* () {
       "Send the component's ingest key: Authorization: Bearer cluenori.<project>.<component>.<secret>",
     )
   }
-  // Refused before reading when the sender says the size, and after reading when it doesn't.
-  if (declaredBytes > maxBodyBytes) {
-    return refused(413, `An export may be at most ${maxBodyBytes} bytes; send smaller batches.`)
-  }
-  const body = yield* request.arrayBuffer.pipe(Effect.orDie)
-  if (body.byteLength > maxBodyBytes) {
+  const body = yield* boundedBody(request, maxBodyBytes)
+  if (Option.isNone(body)) {
     return refused(413, `An export may be at most ${maxBodyBytes} bytes; send smaller batches.`)
   }
   const accepted: Received = {
     _tag: "Received",
-    body: new Uint8Array(body),
+    body: body.value,
     ingestKey: presented,
     project: ingestKeyScope(presented).project,
   }
