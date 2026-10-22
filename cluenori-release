@@ -110,7 +110,8 @@ fi
 if [ "$push_tag" = true ]; then
   [ -n "$tag" ] || { echo "cluenori-release: --push-tag needs --tag." >&2; exit 1; }
   if ! git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
-    git tag "$tag" "$commit"
+    # A plain tag, even where git is set to sign tags, which would ask for a message first.
+    git -c tag.gpgSign=false tag "$tag" "$commit"
   fi
   git push origin "refs/tags/$tag"
 fi
