@@ -3,7 +3,7 @@ import { Effect, FileSystem, Option, Path, Schema } from "effect"
 import { refuse } from "./api-client.ts"
 import { savedDeployment } from "./api-settings.ts"
 import { wrangler } from "./attached.ts"
-import { environmentFlags } from "./setup.ts"
+import { accountOf, environmentFlags } from "./setup.ts"
 
 const SecretsFile = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
 
@@ -21,13 +21,14 @@ export const setDeploymentSecrets = Effect.fn("setDeploymentSecrets")(function* 
   if (Option.isNone(saved)) {
     return yield* refuse("No deployment is saved on this computer: run ./setup first.")
   }
+  const account = yield* accountOf(saved.value)
   yield* Effect.scoped(
     Effect.gen(function* () {
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "cluenori-secrets-" }).pipe(Effect.orDie)
       const file = path.join(directory, "secrets.json")
       const encoded = yield* Schema.encodeEffect(SecretsFile)(secrets).pipe(Effect.orDie)
       yield* fs.writeFileString(file, encoded, { mode: 0o600 }).pipe(Effect.orDie)
-      yield* wrangler(["secret", "bulk", file, ...environmentFlags(saved.value.jurisdiction)])
+      yield* wrangler(["secret", "bulk", file, ...environmentFlags(saved.value.jurisdiction)], { account })
     }),
   )
 })

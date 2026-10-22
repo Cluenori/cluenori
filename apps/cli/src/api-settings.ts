@@ -75,13 +75,22 @@ export const Hostname = Schema.String.check(
 ).pipe(Schema.brand("Hostname"))
 export type Hostname = typeof Hostname.Type
 
+/** A Cloudflare account's ID, as Wrangler and the dashboard show it: 32 hexadecimal characters. */
+export const CloudflareAccountId = Schema.String.check(
+  Schema.isPattern(/^[0-9a-f]{32}$/, { expected: "a Cloudflare account's ID: 32 hexadecimal characters" }),
+).pipe(Schema.brand("CloudflareAccountId"))
+export type CloudflareAccountId = typeof CloudflareAccountId.Type
+
 /**
  * The deployment `./setup` made from this computer: where it keeps its data, saved as soon as it is
- * chosen; the domain it serves at besides workers.dev, if one was given; and, once deployed, where
- * commands reach it and its API token.
+ * chosen; the Cloudflare account it is in, which every Wrangler command names (absent from a
+ * deployment saved before it was kept, until the next `./setup` or `./update` saves it); the domain
+ * it serves at besides workers.dev, if one was given; and, once deployed, where commands reach it
+ * and its API token.
  */
 export const SavedDeployment = Schema.Struct({
   jurisdiction: Jurisdiction,
+  account: Schema.optionalKey(CloudflareAccountId),
   domain: Schema.optionalKey(Hostname),
   url: Schema.optionalKey(Schema.String),
   token: Schema.optionalKey(Schema.String),

@@ -1,10 +1,18 @@
 import { Console, Effect, FileSystem, Option, Path, Schema } from "effect"
 import { Command, Prompt } from "effect/cli"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 
 import { refuse } from "./api-client.ts"
 import type { Jurisdiction, SavedDeployment } from "./api-settings.ts"
-import { deploymentPath, Hostname, newApiSettings, saveDeployment, savedDeployment } from "./api-settings.ts"
-import { attachedExitCode, buildDashboard, wrangler } from "./attached.ts"
+import {
+  CloudflareAccountId,
+  deploymentPath,
+  Hostname,
+  newApiSettings,
+  saveDeployment,
+  savedDeployment,
+} from "./api-settings.ts"
+import { buildDashboard, wrangler, wranglerExitCode } from "./attached.ts"
 
 // The buckets wrangler.jsonc binds, and how long each keeps a file: every export 90 days, as ARCHIVE;
 // apps' batches, the product events their SDKs send, 5 years, as APP_BATCHES.
@@ -52,6 +60,62 @@ const jurisdictionFlags = (jurisdiction: Jurisdiction) => (jurisdiction === "eu"
 
 /** Wrangler's flags for a deployment's domain: a custom domain on its zone, besides workers.dev. */
 export const domainFlags = (domain: Hostname | undefined) => (domain === undefined ? [] : ["--domain", domain])
+
+// What `wrangler whoami --json` answers, of what choosing the account needs.
+const WhoAmI = Schema.fromJsonString(
+  Schema.Struct({
+    loggedIn: Schema.Boolean,
+    accounts: Schema.optionalKey(Schema.Array(Schema.Struct({ id: CloudflareAccountId, name: Schema.String }))),
+  }),
+)
+
+// The accounts Wrangler's sign-in reaches; none when it isn't signed in.
+const reachedAccounts = Effect.gen(function* () {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+  const answer = yield* spawner
+    .string(ChildProcess.make("bun", ["run", "--silent", "wrangler", "whoami", "--json"], { cwd: "apps/worker" }))
+    .pipe(Effect.orElseSucceed(() => ""))
+  const whoAmI = yield* Schema.decodeEffect(WhoAmI)(answer).pipe(Effect.option)
+  return Option.isSome(whoAmI) && whoAmI.value.loggedIn ? (whoAmI.value.accounts ?? []) : []
+})
+
+// The accounts Wrangler's sign-in reaches, signing in through the browser first when it isn't.
+const signedInAccounts = Effect.gen(function* () {
+  const reached = yield* reachedAccounts
+  if (reached.length > 0) {
+    return reached
+  }
+  yield* Console.log("Signing in to Cloudflare through the browser.\n")
+  yield* wrangler(["login"])
+  return yield* reachedAccounts
+})
+
+/**
+ * The Cloudflare account the deployment is in: the one saved; or, the first time, the one Wrangler's
+ * sign-in reaches, asked when it reaches several, and saved at once. Every Wrangler command names
+ * it, so a sign-in that reaches several accounts never acts in the wrong one.
+ */
+export const accountOf = Effect.fn("accountOf")(function* (deployment: SavedDeployment) {
+  if (deployment.account !== undefined) {
+    return deployment.account
+  }
+  const accounts = yield* signedInAccounts
+  const [only, ...others] = accounts
+  if (only === undefined) {
+    return yield* refuse("Wrangler's sign-in reaches no Cloudflare account: sign in with `bun x wrangler login`.")
+  }
+  const account =
+    others.length === 0
+      ? only.id
+      : yield* Prompt.run(
+          Prompt.Select({
+            message: "Which Cloudflare account is Cluenori in? Every deploy from this computer goes to it.",
+            choices: accounts.map((each) => ({ title: each.name, value: each.id, description: each.id })),
+          }),
+        ).pipe(Effect.catchTag("QuitError", () => refuse("Stopped before choosing the account; nothing changed.")))
+  yield* saveDeployment({ ...deployment, account })
+  return account
+})
 
 // Asked once, and saved at once: a bucket's and a Durable Object's jurisdiction can't change later.
 const askJurisdiction = Prompt.run(
@@ -112,19 +176,18 @@ const domainOf = Effect.fn("domainOf")(function* (saved: Hostname | undefined) {
 const ensureBucket = Effect.fn("ensureBucket")(function* (
   bucket: (typeof buckets)[number],
   jurisdiction: Jurisdiction,
+  account: CloudflareAccountId,
   directory: string,
 ) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const where = jurisdictionFlags(jurisdiction)
   yield* Console.log(`Looking for ${bucket.what}, ${bucket.name}:`)
-  const exists = yield* attachedExitCode("bun", ["run", "wrangler", "r2", "bucket", "info", bucket.name, ...where], {
-    cwd: "apps/worker",
-  })
+  const exists = yield* wranglerExitCode(["r2", "bucket", "info", bucket.name, ...where], { account })
   if (exists !== 0) {
     yield* Console.log("It isn't there yet, so it is made now.\n")
     // wrangler.jsonc binds it already; without the flag Wrangler offers to add it again.
-    yield* wrangler(["r2", "bucket", "create", bucket.name, "--update-config=false", ...where])
+    yield* wrangler(["r2", "bucket", "create", bucket.name, "--update-config=false", ...where], { account })
   }
   const rulesFile = path.join(directory, `${bucket.name}-lifecycle.json`)
   const rules = yield* Schema.encodeEffect(LifecycleFile)({
@@ -138,7 +201,9 @@ const ensureBucket = Effect.fn("ensureBucket")(function* (
     ],
   }).pipe(Effect.orDie)
   yield* fs.writeFileString(rulesFile, rules).pipe(Effect.orDie)
-  yield* wrangler(["r2", "bucket", "lifecycle", "set", bucket.name, "--file", rulesFile, "--force", ...where])
+  yield* wrangler(["r2", "bucket", "lifecycle", "set", bucket.name, "--file", rulesFile, "--force", ...where], {
+    account,
+  })
 })
 
 /**
@@ -146,11 +211,14 @@ const ensureBucket = Effect.fn("ensureBucket")(function* (
  * which can't change later, and its files' expiry set again: the archive's, 90 days, and apps'
  * batches', 5 years. A deploy before they exist would make them without either.
  */
-export const ensureBuckets = Effect.fn("ensureBuckets")(function* (jurisdiction: Jurisdiction) {
+export const ensureBuckets = Effect.fn("ensureBuckets")(function* (
+  jurisdiction: Jurisdiction,
+  account: CloudflareAccountId,
+) {
   const fs = yield* FileSystem.FileSystem
   const directory = yield* fs.makeTempDirectoryScoped({ prefix: "cluenori-buckets-" }).pipe(Effect.orDie)
   for (const bucket of buckets) {
-    yield* ensureBucket(bucket, jurisdiction, directory)
+    yield* ensureBucket(bucket, jurisdiction, account, directory)
   }
 }, Effect.scoped)
 
@@ -158,14 +226,15 @@ export const ensureBuckets = Effect.fn("ensureBuckets")(function* (jurisdiction:
  * The queue wrangler.jsonc binds as ACTIVITY, made the first time with the deployment's
  * jurisdiction, which can't change later. A deploy before it exists fails.
  */
-export const ensureActivityQueue = Effect.fn("ensureActivityQueue")(function* (jurisdiction: Jurisdiction) {
+export const ensureActivityQueue = Effect.fn("ensureActivityQueue")(function* (
+  jurisdiction: Jurisdiction,
+  account: CloudflareAccountId,
+) {
   yield* Console.log(`Looking for the activity queue, ${activityQueue}:`)
-  const exists = yield* attachedExitCode("bun", ["run", "wrangler", "queues", "info", activityQueue], {
-    cwd: "apps/worker",
-  })
+  const exists = yield* wranglerExitCode(["queues", "info", activityQueue], { account })
   if (exists !== 0) {
     yield* Console.log("It isn't there yet, so it is made now.\n")
-    yield* wrangler(["queues", "create", activityQueue, ...jurisdictionFlags(jurisdiction)])
+    yield* wrangler(["queues", "create", activityQueue, ...jurisdictionFlags(jurisdiction)], { account })
   }
 })
 
@@ -175,6 +244,7 @@ export const ensureActivityQueue = Effect.fn("ensureActivityQueue")(function* (j
  */
 const deploy = Effect.fn("deploy")(function* (
   jurisdiction: Jurisdiction,
+  account: CloudflareAccountId,
   domain: Hostname | undefined,
   directory: string,
 ) {
@@ -183,7 +253,8 @@ const deploy = Effect.fn("deploy")(function* (
   const outputFile = path.join(directory, "wrangler-output.json")
   yield* buildDashboard
   yield* wrangler(["deploy", ...environmentFlags(jurisdiction), ...domainFlags(domain)], {
-    WRANGLER_OUTPUT_FILE_PATH: outputFile,
+    account,
+    env: { WRANGLER_OUTPUT_FILE_PATH: outputFile },
   })
   const output = yield* fs.readFileString(outputFile).pipe(Effect.orDie)
   const entries = yield* Effect.forEach(
@@ -205,7 +276,7 @@ const deploy = Effect.fn("deploy")(function* (
  * computer's CLI. The secrets go through a file only this user can read, which is deleted after.
  */
 const giveApiToken = Effect.fn("giveApiToken")(function* (
-  deployment: Pick<SavedDeployment, "jurisdiction" | "domain">,
+  deployment: Pick<SavedDeployment, "jurisdiction" | "domain"> & { readonly account: CloudflareAccountId },
   url: string,
   directory: string,
 ) {
@@ -218,7 +289,9 @@ const giveApiToken = Effect.fn("giveApiToken")(function* (
     CLUENORI_OWNER: fresh.owner,
   }).pipe(Effect.orDie)
   yield* fs.writeFileString(secretsFile, secrets, { mode: 0o600 }).pipe(Effect.orDie)
-  yield* wrangler(["secret", "bulk", secretsFile, ...environmentFlags(deployment.jurisdiction)])
+  yield* wrangler(["secret", "bulk", secretsFile, ...environmentFlags(deployment.jurisdiction)], {
+    account: deployment.account,
+  })
   return yield* saveDeployment({ ...deployment, url, token: fresh.token })
 })
 
@@ -230,14 +303,15 @@ export const setup = Command.make("setup", {}, () =>
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "cluenori-setup-" }).pipe(Effect.orDie)
       const saved = yield* savedDeployment
       const jurisdiction = yield* jurisdictionOf(saved)
+      const account = yield* accountOf(Option.isSome(saved) ? saved.value : { jurisdiction })
       const domain = yield* domainOf(Option.isSome(saved) ? saved.value.domain : undefined)
-      const deployment = { jurisdiction, ...(domain === undefined ? {} : { domain }) }
+      const deployment = { jurisdiction, account, ...(domain === undefined ? {} : { domain }) }
       yield* Console.log(
-        `Deploying Cluenori to your Cloudflare account, keeping its data ${jurisdiction === "eu" ? "in the EU" : "wherever Cloudflare chooses"}. Wrangler signs you in first if it needs to.\n`,
+        `Deploying Cluenori to the Cloudflare account ${account}, keeping its data ${jurisdiction === "eu" ? "in the EU" : "wherever Cloudflare chooses"}.\n`,
       )
-      yield* ensureBuckets(jurisdiction)
-      yield* ensureActivityQueue(jurisdiction)
-      const { url, workersDev } = yield* deploy(jurisdiction, domain, directory)
+      yield* ensureBuckets(jurisdiction, account)
+      yield* ensureActivityQueue(jurisdiction, account)
+      const { url, workersDev } = yield* deploy(jurisdiction, account, domain, directory)
       // The token saved for this deployment, found at its domain or at its workers.dev URL, is kept.
       const token =
         Option.isSome(saved) && (saved.value.url === url || saved.value.url === workersDev)

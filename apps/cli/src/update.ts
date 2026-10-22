@@ -4,7 +4,7 @@ import { Command } from "effect/cli"
 import { refuse } from "./api-client.ts"
 import { savedDeployment } from "./api-settings.ts"
 import { attached, buildDashboard, wrangler } from "./attached.ts"
-import { domainFlags, ensureActivityQueue, ensureBuckets, environmentFlags } from "./setup.ts"
+import { accountOf, domainFlags, ensureActivityQueue, ensureBuckets, environmentFlags } from "./setup.ts"
 
 /** `./update`: the newest version of this clone's upstream branch, installed and deployed. */
 export const update = Command.make("update", {}, () =>
@@ -16,16 +16,20 @@ export const update = Command.make("update", {}, () =>
         "./update deploys the Cluenori ./setup made from this computer, and none is saved here. Run ./setup, giving the same answer about where data is kept as the first time.",
       )
     }
+    // Every Wrangler command names the deployment's account; one saved before accounts were is asked now.
+    const account = yield* accountOf(saved.value)
     yield* Console.log("Getting the new version.")
     // Not handled: a clone with commits of its own. `git pull --ff-only` refuses, says why, and
     // leaves the clone as it was; merging upstream into edited modules is the person's call.
     yield* attached("git", ["pull", "--ff-only"], {})
     yield* attached("bun", ["install", "--frozen-lockfile"], {})
     // A version may bind something earlier ones didn't, which is made first.
-    yield* ensureBuckets(saved.value.jurisdiction)
-    yield* ensureActivityQueue(saved.value.jurisdiction)
-    yield* Console.log("\nDeploying it.\n")
+    yield* ensureBuckets(saved.value.jurisdiction, account)
+    yield* ensureActivityQueue(saved.value.jurisdiction, account)
+    yield* Console.log(`\nDeploying it to the Cloudflare account ${account}.\n`)
     yield* buildDashboard
-    yield* wrangler(["deploy", ...environmentFlags(saved.value.jurisdiction), ...domainFlags(saved.value.domain)])
+    yield* wrangler(["deploy", ...environmentFlags(saved.value.jurisdiction), ...domainFlags(saved.value.domain)], {
+      account,
+    })
   }),
 ).pipe(Command.withDescription("Install a new version of Cluenori and deploy it."))
