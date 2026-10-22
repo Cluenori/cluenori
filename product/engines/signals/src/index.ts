@@ -1,9 +1,71 @@
 /**
- * Signals from a project's services: OpenTelemetry exports read where they arrive, every export kept
- * in the archive for 90 days, and in the project's Durable Object their operations counted by
- * environment and release (by the minute 14 days, by the hour 15 months), the traces of the slowest
- * and failed kept to open (14 days), their warnings and errors kept 90 days, and errors grouped.
+ * Signals from a project's services and apps. OpenTelemetry exports are read where they arrive,
+ * every export kept in the archive for 90 days, and in the project's Durable Object their operations
+ * counted by environment and release (by the minute 14 days, by the hour 15 months), the traces of
+ * the slowest and failed kept to open (14 days), their warnings and errors kept 90 days, and errors
+ * grouped (`Signals`). Apps' batches from their SDKs (`AppBatch`) are archived 5 years and counted
+ * by person, installation, day and release, with sessions and each person's timeline (`AppSignals`).
  */
+export {
+  AppBatch,
+  AppBatchAccepted,
+  AppDevice,
+  AppLaunched,
+  AppMemory,
+  AppPlatform,
+  AppSdk,
+  AppSignal,
+  AppSignalId,
+  AppUserId,
+  EventProperties,
+  EventTracked,
+  LaunchStart,
+  MemoryReason,
+  MetricKitKind,
+  MetricKitReport,
+  ScreenShown,
+  SdkKeyRejected,
+  SessionEnded,
+  SessionStarted,
+  signalsPerBatch,
+  TooManySignals,
+} from "./app-batch.ts"
+export { AppIngestGroup } from "./app-ingest-api.ts"
+export { AppBatchStore } from "./app-batch-store.ts"
+export {
+  AppDiagnostics,
+  AppHealth,
+  AppInstallation,
+  AppPerson,
+  AppQuery,
+  AppRelease,
+  AppReleaseKey,
+  AppReleaseList,
+  AppReleaseQuery,
+  AppRetention,
+  AppUsage,
+  CountryCode,
+  FeatureUse,
+  FeatureUseTable,
+  LaunchTimes,
+  MemoryUse,
+  MetricKitSummary,
+  PersonDay,
+  PersonLookup,
+  PersonNotFound,
+  ReadyTimes,
+  ReleaseUsage,
+  RetentionCohort,
+  RetentionQuery,
+  TimelineEntry,
+  TimelineSignal,
+  UsageDay,
+} from "./app-queries.ts"
+export type { AppRateLimits } from "./app-rate-limits.ts"
+export { defaultAppRateLimits } from "./app-rate-limits.ts"
+export { AppSignals } from "./app-signals.ts"
+export type { AppSender, AppSignalsSettings } from "./app-signals.ts"
+export { appDayRetention } from "./app-store.ts"
 export { archiveRetention } from "./archive-index.ts"
 export { ArchiveStore, ArchiveUnavailable } from "./archive-store.ts"
 export {

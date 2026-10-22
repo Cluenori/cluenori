@@ -7,6 +7,7 @@ import type { ReleaseNote } from "./note.ts"
 import { NoteLocale, NoteText } from "./note.ts"
 import { hasEnded, Promotion } from "./promotion.ts"
 import { ReleaseChanges, ReleaseCommit, StoreBuild } from "./release.ts"
+import { ComponentVersionPolicy } from "./version-policy.ts"
 import { SemanticVersion } from "./version.ts"
 
 /** Where a release's facts came from. */
@@ -217,6 +218,14 @@ const migrate = Migrator.make({})({
       yield* sql`ALTER TABLE releases_deploys ADD COLUMN last_deployed_at INTEGER NOT NULL DEFAULT 0`
       yield* sql`UPDATE releases_deploys SET last_deployed_at = deployed_at`
     }),
+    // Each component's version policy, as JSON, at most one.
+    "0007_version_policies": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE releases_version_policies (
+        component TEXT PRIMARY KEY,
+        policy_json TEXT NOT NULL
+      ) WITHOUT ROWID`
+    }),
   }),
 })
 
@@ -224,6 +233,7 @@ const CommitJson = Schema.fromJsonString(ReleaseCommit)
 const ChangesJson = Schema.fromJsonString(ReleaseChanges)
 const BuildJson = Schema.fromJsonString(StoreBuild)
 const PromotionJson = Schema.fromJsonString(Promotion)
+const PolicyJson = Schema.fromJsonString(ComponentVersionPolicy)
 
 // A release's promotions are listed up to this many, the latest first.
 const promotionsListed = 20
@@ -273,6 +283,14 @@ export class ReleaseRecords extends Context.Service<
     readonly versionLines: Effect.Effect<ReadonlyArray<VersionLine>>
     /** Sets a component's version, and its last build number. */
     readonly saveVersionLine: (line: VersionLine) => Effect.Effect<void>
+    /** Every component's version policy, by component. */
+    readonly versionPolicies: Effect.Effect<ReadonlyArray<ComponentVersionPolicy>>
+    /** A component's version policy, once set. One row. */
+    readonly versionPolicy: (component: ComponentKey) => Effect.Effect<Option.Option<ComponentVersionPolicy>>
+    /** Sets a component's version policy, replacing the one it had. */
+    readonly saveVersionPolicy: (policy: ComponentVersionPolicy) => Effect.Effect<void>
+    /** Removes a component's version policy; nothing for a component without one. */
+    readonly removeVersionPolicy: (component: ComponentKey) => Effect.Effect<void>
     /** The release `commit` was numbered as, if it was. */
     readonly numberOf: (component: ComponentKey, commit: CommitSha) => Effect.Effect<Option.Option<NumberedCommit>>
     /** Keeps the release a commit was numbered as. A commit or release numbered before is a defect. */
@@ -473,6 +491,18 @@ export class ReleaseRecords extends Context.Service<
           sql`SELECT component, commit_sha AS "commit", release, version, build FROM releases_numbers
             WHERE component = ${key.component} AND commit_sha = ${key.commit}`,
       })
+      const findPolicies = SqlSchema.findAll({
+        Request: Schema.Void,
+        Result: Schema.Struct({ policy: PolicyJson }),
+        execute: () => sql`SELECT policy_json AS "policy" FROM releases_version_policies ORDER BY component`,
+      })
+      const findPolicy = SqlSchema.findOneOption({
+        Request: ComponentKey,
+        Result: Schema.Struct({ policy: PolicyJson }),
+        execute: (component) =>
+          sql`SELECT policy_json AS "policy" FROM releases_version_policies WHERE component = ${component}`,
+      })
+      const encodePolicy = Schema.encodeEffect(PolicyJson)
       const encodeActor = Schema.encodeEffect(Schema.fromJsonString(Actor))
       const findPromotions = SqlSchema.findAll({
         Request: Schema.Struct({ component: ComponentKey, release: ReleaseVersion }),
@@ -615,6 +645,20 @@ export class ReleaseRecords extends Context.Service<
           })}
             ON CONFLICT (component) DO UPDATE SET version = excluded.version, last_build = excluded.last_build,
               set_at = excluded.set_at`.pipe(Effect.asVoid, Effect.orDie),
+        versionPolicies: findPolicies(undefined).pipe(
+          Effect.orDie,
+          Effect.map((rows) => rows.map((row) => row.policy)),
+        ),
+        versionPolicy: (component) =>
+          findPolicy(component).pipe(Effect.orDie, Effect.map(Option.map((row) => row.policy))),
+        saveVersionPolicy: (policy) =>
+          Effect.gen(function* () {
+            const json = yield* encodePolicy(policy)
+            yield* sql`INSERT INTO releases_version_policies ${sql.insert({ component: policy.component, policy_json: json })}
+              ON CONFLICT (component) DO UPDATE SET policy_json = excluded.policy_json`
+          }).pipe(Effect.orDie),
+        removeVersionPolicy: (component) =>
+          sql`DELETE FROM releases_version_policies WHERE component = ${component}`.pipe(Effect.asVoid, Effect.orDie),
         numberOf: (component, commit) => findNumber({ component, commit }).pipe(Effect.orDie),
         saveNumber: (numbered, at) =>
           sql`INSERT INTO releases_numbers ${sql.insert({

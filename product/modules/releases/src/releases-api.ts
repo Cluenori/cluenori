@@ -18,6 +18,7 @@ import {
   Runner,
 } from "./promotion.ts"
 import { ReleaseDetail, ReleaseList, ReleaseNotFound } from "./release.ts"
+import { ComponentVersionPolicy, VersionPolicies, VersionPolicyRefused, VersionPolicyTo } from "./version-policy.ts"
 import { BuildNumber, ComponentVersion, ComponentVersions, SemanticVersion, VersionRefused } from "./version.ts"
 
 /** The filters of a list of releases, as query parameters: `from` and `to` are ISO 8601 UTC. */
@@ -193,4 +194,35 @@ export class ReleasesGroup extends HttpApiGroup.make("releases")
       success: NotesStyle,
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(OpenApi.Description, "Sets how the project's release notes read, up to 2000 characters."),
+  )
+  .add(
+    HttpApiEndpoint.get("versionPolicies", "/projects/:project/version-policies", {
+      params: { project: ProjectKey },
+      success: VersionPolicies,
+      error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
+    }).annotate(
+      OpenApi.Description,
+      "Each app component's version policy: releases below `minimum` must update before they can be used, those below `recommended` are offered it in a sheet people can close; with the store page to update from, the oldest OS the update runs on, and the project's words for each decision by language. It applies in the project's production environments, to releases whose version (the part before `+`) is one to four numbers, compared part by part. A component without a policy isn't listed; its releases are never asked to update. Apps read it in their manifest within five minutes.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put("setVersionPolicy", "/projects/:project/version-policies/:component", {
+      params: { project: ProjectKey, component: ComponentKey },
+      payload: VersionPolicyTo,
+      success: ComponentVersionPolicy,
+      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), VersionPolicyRefused.pipe(HttpApiSchema.status(422))],
+    }).annotate(
+      OpenApi.Description,
+      "Replaces a component's version policy: what is left out is unset, so send every field to keep. `minimum`, `recommended`, or both, the recommended not lower; at most 40 `words`, one for each language and decision (`require` or `recommend`), which the app shows instead of its own. Without `storeUrl`, the App Store page of the app its App Store deploy target names (one in production first) is asked of App Store Connect. 422 for a component the project lacks, neither version, a recommended version lower than the minimum, or no store URL given or found.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete("clearVersionPolicy", "/projects/:project/version-policies/:component", {
+      params: { project: ProjectKey, component: ComponentKey },
+      success: HttpApiSchema.NoContent,
+      error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
+    }).annotate(
+      OpenApi.Description,
+      "Removes a component's version policy: its releases are no longer asked to update, once apps read their manifest again, within five minutes. Removing one that isn't set does nothing.",
+    ),
   ) {}

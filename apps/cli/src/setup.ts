@@ -6,9 +6,12 @@ import type { Jurisdiction, SavedDeployment } from "./api-settings.ts"
 import { deploymentPath, Hostname, newApiSettings, saveDeployment, savedDeployment } from "./api-settings.ts"
 import { attachedExitCode, buildDashboard, wrangler } from "./attached.ts"
 
-// The bucket wrangler.jsonc binds as ARCHIVE, and how long it keeps a file: 90 days.
-const archiveBucket = "cluenori-archive"
-const archiveDays = 90
+// The buckets wrangler.jsonc binds, and how long each keeps a file: every export 90 days, as ARCHIVE;
+// apps' batches, the product events their SDKs send, 5 years, as APP_BATCHES.
+const buckets = [
+  { name: "cluenori-archive", what: "the archive's bucket", days: 90 },
+  { name: "cluenori-app-batches", what: "the bucket of apps' batches", days: 1826 },
+] as const
 
 // The queue wrangler.jsonc binds as ACTIVITY.
 const activityQueue = "cluenori-activity"
@@ -23,8 +26,8 @@ const SecretsFile = Schema.fromJsonString(
   Schema.Struct({ CLUENORI_API_TOKEN: Schema.String, CLUENORI_OWNER: Schema.String }),
 )
 
-// R2's lifecycle rules as `wrangler r2 bucket lifecycle set` reads them: every file expires after
-// `archiveDays`. Setting them replaces any rules, so setup can run again.
+// R2's lifecycle rules as `wrangler r2 bucket lifecycle set` reads them: every file of a bucket
+// expires after its days. Setting them replaces any rules, so setup can run again.
 const LifecycleFile = Schema.fromJsonString(
   Schema.Struct({
     rules: Schema.Array(
@@ -105,34 +108,51 @@ const domainOf = Effect.fn("domainOf")(function* (saved: Hostname | undefined) {
   return answer === "" ? undefined : Hostname.make(answer)
 })
 
-/** The archive's bucket, made the first time with the deployment's jurisdiction, and its 90-day expiry. */
-const ensureArchive = Effect.fn("ensureArchive")(function* (jurisdiction: Jurisdiction, directory: string) {
+/** A bucket, made the first time with the deployment's jurisdiction, and the expiry of its files. */
+const ensureBucket = Effect.fn("ensureBucket")(function* (
+  bucket: (typeof buckets)[number],
+  jurisdiction: Jurisdiction,
+  directory: string,
+) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const where = jurisdictionFlags(jurisdiction)
-  yield* Console.log(`Looking for the archive's bucket, ${archiveBucket}:`)
-  const exists = yield* attachedExitCode("bun", ["run", "wrangler", "r2", "bucket", "info", archiveBucket, ...where], {
+  yield* Console.log(`Looking for ${bucket.what}, ${bucket.name}:`)
+  const exists = yield* attachedExitCode("bun", ["run", "wrangler", "r2", "bucket", "info", bucket.name, ...where], {
     cwd: "apps/worker",
   })
   if (exists !== 0) {
-    yield* Console.log("It isn't there yet, so setup makes it.\n")
-    // wrangler.jsonc binds it already, as ARCHIVE; without the flag Wrangler offers to add it again.
-    yield* wrangler(["r2", "bucket", "create", archiveBucket, "--update-config=false", ...where])
+    yield* Console.log("It isn't there yet, so it is made now.\n")
+    // wrangler.jsonc binds it already; without the flag Wrangler offers to add it again.
+    yield* wrangler(["r2", "bucket", "create", bucket.name, "--update-config=false", ...where])
   }
-  const rulesFile = path.join(directory, "lifecycle.json")
+  const rulesFile = path.join(directory, `${bucket.name}-lifecycle.json`)
   const rules = yield* Schema.encodeEffect(LifecycleFile)({
     rules: [
       {
-        id: `expire-after-${archiveDays}-days`,
+        id: `expire-after-${bucket.days}-days`,
         enabled: true,
         conditions: {},
-        deleteObjectsTransition: { condition: { maxAge: archiveDays * 86_400, type: "Age" } },
+        deleteObjectsTransition: { condition: { maxAge: bucket.days * 86_400, type: "Age" } },
       },
     ],
   }).pipe(Effect.orDie)
   yield* fs.writeFileString(rulesFile, rules).pipe(Effect.orDie)
-  yield* wrangler(["r2", "bucket", "lifecycle", "set", archiveBucket, "--file", rulesFile, "--force", ...where])
+  yield* wrangler(["r2", "bucket", "lifecycle", "set", bucket.name, "--file", rulesFile, "--force", ...where])
 })
+
+/**
+ * The buckets wrangler.jsonc binds, each made the first time with the deployment's jurisdiction,
+ * which can't change later, and its files' expiry set again: the archive's, 90 days, and apps'
+ * batches', 5 years. A deploy before they exist would make them without either.
+ */
+export const ensureBuckets = Effect.fn("ensureBuckets")(function* (jurisdiction: Jurisdiction) {
+  const fs = yield* FileSystem.FileSystem
+  const directory = yield* fs.makeTempDirectoryScoped({ prefix: "cluenori-buckets-" }).pipe(Effect.orDie)
+  for (const bucket of buckets) {
+    yield* ensureBucket(bucket, jurisdiction, directory)
+  }
+}, Effect.scoped)
 
 /**
  * The queue wrangler.jsonc binds as ACTIVITY, made the first time with the deployment's
@@ -215,7 +235,7 @@ export const setup = Command.make("setup", {}, () =>
       yield* Console.log(
         `Deploying Cluenori to your Cloudflare account, keeping its data ${jurisdiction === "eu" ? "in the EU" : "wherever Cloudflare chooses"}. Wrangler signs you in first if it needs to.\n`,
       )
-      yield* ensureArchive(jurisdiction, directory)
+      yield* ensureBuckets(jurisdiction)
       yield* ensureActivityQueue(jurisdiction)
       const { url, workersDev } = yield* deploy(jurisdiction, domain, directory)
       // The token saved for this deployment, found at its domain or at its workers.dev URL, is kept.

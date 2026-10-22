@@ -20,7 +20,7 @@ import {
 } from "../src/index.ts"
 import { dotnetLogs } from "./fixtures/dotnet-logs.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
-import { inProject, WebCrypto } from "./in-object.ts"
+import { dropAppTables, inProject, WebCrypto } from "./in-object.ts"
 
 // The fixtures' records happened from 2026-10-19T22:49:43.314Z; the tests ask a minute later.
 const capturedAt = 1792442983314
@@ -260,7 +260,8 @@ describe("Signals' warnings and errors", () => {
           yield* signals.recordLogs(api, { ...read, entries: read.entries.map((entry) => ({ ...entry, release })) })
           yield* sql`DROP INDEX signals_logs_release`
           yield* sql`ALTER TABLE signals_logs DROP COLUMN release`
-          yield* sql`DELETE FROM signals_migrations WHERE migration_id = 8`
+          yield* dropAppTables
+          yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 8`
         }).pipe(Effect.orDie),
       )
       const lines = yield* inProject(

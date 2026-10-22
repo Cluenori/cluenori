@@ -1,10 +1,11 @@
 # @cluenori/signals
 
-Signals from a project's services: OpenTelemetry exports read where they arrive, every export kept
-in the archive for 90 days, and, in the project's Durable Object, their operations counted by
-environment and release, the
-traces of the slowest and failed kept to open, their warnings and errors kept and grouped, and any
-trace and its logs read back from the archive by its ID.
+Signals from a project's services and apps. Services' OpenTelemetry exports are read where they
+arrive, every export kept in the archive for 90 days, and, in the project's Durable Object, their
+operations counted by environment and release, the traces of the slowest and failed kept to open,
+their warnings and errors kept and grouped, and any trace and its logs read back from the archive by
+its ID (`Signals`). Apps' batches from their SDKs are archived 5 years and counted by person,
+installation, day and release, with sessions and each person's timeline (`AppSignals`).
 
 ## Use it
 
@@ -46,6 +47,25 @@ const counts = yield* signals.logCounts({ period, step: "1h", by: "error" })
 // series: [{ key: "159dae307f199986", total: 41, points: [{ start, count: 3 }, ...] }, ...]
 ```
 
+Apps' signals, in the project's Durable Object, for the component whose SDK key sent them:
+
+```ts
+const apps = yield* AppSignals
+yield* apps.record({ component, key, country }, batch)
+// { accepted: 312, duplicates: 0 }; the same batch again: { accepted: 0, duplicates: 312 }
+// Past 20 batches a minute from one installation, or 1,200 from one key: TooManySignals { retryAfterSeconds: 45 }
+
+const usage = yield* apps.usage({ period, component: ComponentKey.make("notes-ios") })
+// days: [{ day: "2026-10-22", people: 812, weekPeople: 2390, monthPeople: 5105, sessions: 2210, ... }]
+// A day before the app first sent anything isn't listed; a week reaching before it has no weekPeople.
+const cohorts = yield* apps.retention({ period }) // [{ week: "2026-10-12", people: 140, active: [140, 61, 44] }]
+const { releases } = yield* apps.releases({ period }) // each with `previous`, the release before it
+const health = yield* apps.health(releases[0]) // launches cold and warm, memory, MetricKit's crashes and hangs
+const { features } = yield* apps.features({ period }) // people, events, screens and memory by feature key
+const person = yield* apps.person({ _tag: "ByUser", user: AppUserId.make("8c1f…") })
+// installations, the days they were active, and their latest 1,000 signals; PersonNotFound otherwise
+```
+
 An export that isn't one fails with `OtlpInvalid`. When the archive can't take an export,
 `record*` fails with `ArchiveUnavailable`, having stored nothing, and the exporter is told to send it
 again. An unknown error ID fails with `ErrorGroupNotFound`.
@@ -76,18 +96,42 @@ again. An unknown error ID fails with `ErrorGroupNotFound`.
     digests (`signals_batches`).
 - **The archive's layout:** `<workspace>/<project>/<signal>/<day>/<component>/<digest>.otlp`, OTLP
   protobuf with secrets removed.
+- **Apps' signals,** in each project's database (`signals_people`, `signals_person_users`,
+  `signals_installations` and `signals_app_*`):
+  - each person, Cluenori's ID for them, and the app's user IDs linked to them; each installation,
+    with its person, release, device, SDK, country and when it was last seen;
+  - by UTC day, release and feature, kept 15 months: who was active on which installation, with
+    their sessions and foreground time; who used each feature, with its events and screens; launch
+    times (cold and warm, to the first frame and to `appReady()`) and memory (peak and footprint)
+    as quantile sketches, prewarmed launches only counted; MetricKit's diagnostics by kind and the
+    release each names;
+  - each person's first day in each component and environment, for retention; each release's span;
+  - sessions, started and ended, with their foreground time (90 days);
+  - each person's timeline, their latest 1,000 signals but memory (15 months);
+  - the IDs of the signals of the last 14 days, by their own time, so a batch sent again counts once.
+- **Rules about people:** a user ID seen for the first time is linked to its installation's person
+  when that person has none, so what they did before signing in stays theirs, or else to a new
+  person; a signal without one is its installation's person's. The app's user ID is kept only in
+  the link, never in a timeline or the archive.
+- **The layout of apps' batches:** `<workspace>/<project>/<day>/<component>/<installation>/<first
+  signal>.json`, the new signals of one batch, scrubbed, each with its person.
 
 ## Does not own
 
 - **Which component sent an export:** `@cluenori/projects` checks its ingest key.
 - **Where the archive's files live:** the host provides an `ArchiveStore`; in the Worker, an R2
-  bucket whose lifecycle rule removes files after 90 days.
+  bucket whose lifecycle rule removes files after 90 days. Apps' batches likewise go to an
+  `AppBatchStore`: in the Worker, a bucket of their own, kept 5 years.
+- **Which component an app's batch is of:** `@cluenori/projects` checks its SDK key.
+- **What a release's app health means** (better, worse): the Analytics module, which compares
+  releases with these measures.
 - **What people decide about an error** (resolved, ignored): the Errors module, when it comes.
 
 ## Contract
 
-`src/index.ts`. `readTraces`, `readLogs` and `readMetrics` run where exports arrive; `Signals` runs
-in the project's object; `SignalsGroup` is the API's part.
+`src/index.ts`. `readTraces`, `readLogs` and `readMetrics` run where exports arrive; `Signals` and
+`AppSignals` run in the project's object; `SignalsGroup` is the API's part, and `AppIngestGroup`
+the ingest API's, which apps' SDKs call with an SDK key (`AppBatch` is its wire contract).
 
 ## Depends on
 
@@ -124,5 +168,26 @@ in the project's object; `SignalsGroup` is the API's part.
 - **An answer's schemas live apart from the code that makes them** (`trace-view.ts` from
   `read-archived-trace.ts`, `operation-queries.ts` from `operation-store.ts`), and the package is
   side-effect free, so a client of the API, such as the dashboard, bundles the schemas alone.
+- **Apps' batches are archived 5 years, apart from exports** (October 2026). They are the product
+  events, which `concept/Platform.md` keeps 5 years, while exports are diagnostic evidence kept 90
+  days; a bucket of their own lets each keep its rule. Only a batch's new signals are archived,
+  before they are counted, as exports are; what is counted by day is kept 15 months, as hourly
+  counts are, and older questions will read the lake built from the batches.
+- **Exact counts of people, bounded by kept rows.** Daily, weekly and monthly people are counted
+  exactly from one row per installation, person, release and day, and each day's week and month are
+  counted over those rows in SQL: about 30 days of rows read per day asked. A project with 10,000
+  people a day keeps about 4 million such rows a year.
+- **Timelines are bounded per person:** the latest 1,000 signals each, about 150 KB; a project with
+  10,000 people keeps up to 1.5 GB of them.
+- **Limits are kept in the object's memory:** fixed minutes, only the current one, so they cost
+  nothing to store and reset when the object restarts. 1,200 batches a minute from one key, about
+  20 a second, is what one object writes comfortably; an installation's SDK sends every 30 seconds
+  or so, far below 20 a minute.
+- **A device's clock is corrected by the batch's `sentAt`** when it is more than a minute off;
+  signals recorded offline keep their order and spacing.
+- **Not handled:** a signal sent again more than 14 days after its own time counts again; an
+  anonymous person's history before they signed in on a second installation stays a person of its
+  own; and sending a batch while another of the same new person is being archived may archive it
+  under a person ID the database doesn't have.
 - **Not yet:** errors from failed spans of services that send no logs, and the feature and release
   of each operation.

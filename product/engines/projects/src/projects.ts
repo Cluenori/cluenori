@@ -9,10 +9,20 @@ import { SqlClient, SqlSchema } from "effect/sql"
 import type { AddComponent, ComponentLinks } from "./component.ts"
 import { Component, ComponentExists, ComponentNotFound, ComponentName, DeployTarget } from "./component.ts"
 import { IngestKey, IngestKeyRejected, ingestKeyScope } from "./ingest-key.ts"
+import { IssuedSdkKey, SdkKeyNotFound } from "./issued-sdk-key.ts"
+import type { SdkKeyList } from "./issued-sdk-key.ts"
 import type { ProjectName } from "./project.ts"
 import { defaultProjectSettings, Project, ProjectExists, ProjectNotFound, ProjectSettings } from "./project.ts"
-import { ComponentAdded, ComponentLinked, ProjectCreated, ProjectSettingsChanged } from "./projects-activity.ts"
+import {
+  ComponentAdded,
+  ComponentLinked,
+  ProjectCreated,
+  ProjectSettingsChanged,
+  SdkKeyIssued,
+  SdkKeyRevoked,
+} from "./projects-activity.ts"
 import { migrateProjects } from "./projects-migrations.ts"
+import { SdkKey, sdkKeyScope } from "./sdk-key.ts"
 
 /** Which project the object holds: the key the host routed by. */
 export interface ProjectsSettings {
@@ -47,8 +57,24 @@ const componentOf = (row: typeof ComponentRow.Type) =>
     ...(row.shipsWith === null ? {} : { shipsWith: row.shipsWith }),
   })
 
+// An SDK key as its row holds it: revoked_at is null while it is active.
+const SdkKeyRow = Schema.Struct({
+  key: SdkKey,
+  component: ComponentKey,
+  issuedAt: Instant,
+  revokedAt: Schema.NullOr(Instant),
+})
+
+const issuedSdkKeyOf = (row: typeof SdkKeyRow.Type) =>
+  new IssuedSdkKey({
+    key: row.key,
+    component: row.component,
+    issuedAt: row.issuedAt,
+    ...(row.revokedAt === null ? {} : { revokedAt: row.revokedAt }),
+  })
+
 /**
- * The project of one Durable Object, its components, and their ingest keys. Runs inside the object
+ * The project of one Durable Object, its components, and their ingest keys and SDK keys. Runs inside the object
  * that holds the project's database.
  */
 export class Projects extends Context.Service<
@@ -91,6 +117,36 @@ export class Projects extends Context.Service<
       actor: Actor,
       settings: ProjectSettings,
     ) => Effect.Effect<ProjectSettings, ProjectNotFound>
+    /**
+     * Issues a new SDK key for `component`, with `sdk_key.issued`: the key its app's builds carry.
+     * Its other keys stay active, so keys rotate. The key is public and kept as it is, so it can be
+     * listed again. Fails with `ComponentNotFound` for a component the project lacks.
+     */
+    readonly issueSdkKey: (
+      actor: Actor,
+      component: ComponentKey,
+    ) => Effect.Effect<IssuedSdkKey, ComponentNotFound | ProjectNotFound>
+    /**
+     * The component's SDK keys, newest first, revoked ones too. Fails with `ComponentNotFound` for a
+     * component the project lacks.
+     */
+    readonly sdkKeys: (component: ComponentKey) => Effect.Effect<SdkKeyList, ComponentNotFound | ProjectNotFound>
+    /**
+     * Revokes `key`, with `sdk_key.revoked`: builds that carry it are refused from then on. A key
+     * revoked before is returned as it is, without new activity. Fails with `SdkKeyNotFound` for a
+     * key that isn't one of the component's, and for a component the project lacks.
+     */
+    readonly revokeSdkKey: (
+      actor: Actor,
+      component: ComponentKey,
+      key: SdkKey,
+    ) => Effect.Effect<IssuedSdkKey, SdkKeyNotFound | ProjectNotFound>
+    /**
+     * The component an active SDK key of this project belongs to. Fails with `SdkKeyNotFound`, the
+     * same way whatever is wrong, for a key that is unknown, revoked, or another project's. Reads one
+     * row.
+     */
+    readonly authenticateSdkKey: (key: SdkKey) => Effect.Effect<ComponentKey, SdkKeyNotFound>
   }
 >()("@cluenori/projects/projects") {
   /** Builds the engine on the object's database, first creating or updating its tables. */
@@ -294,6 +350,118 @@ export class Projects extends Context.Service<
           })
         })
 
+        const findSdkKey = SqlSchema.findOneOption({
+          Request: SdkKey,
+          Result: SdkKeyRow,
+          execute: (key) =>
+            sql`SELECT key, component, issued_at AS "issuedAt", revoked_at AS "revokedAt"
+              FROM projects_sdk_keys WHERE key = ${key}`,
+        })
+
+        // Newest first; keys issued in the same millisecond in the order they were issued, newest first.
+        const findSdkKeys = SqlSchema.findAll({
+          Request: ComponentKey,
+          Result: SdkKeyRow,
+          execute: (component) =>
+            sql`SELECT key, component, issued_at AS "issuedAt", revoked_at AS "revokedAt"
+              FROM projects_sdk_keys WHERE component = ${component} ORDER BY issued_at DESC, rowid DESC`,
+        })
+
+        const componentExists = Effect.fn("Projects.componentExists")(function* (component: ComponentKey) {
+          yield* project
+          const found = yield* findComponent(component).pipe(Effect.orDie)
+          if (found._tag === "None") {
+            return yield* new ComponentNotFound({ component })
+          }
+        })
+
+        const insertSdkKey = Effect.fn("Projects.insertSdkKey")(function* (component: ComponentKey, key: SdkKey) {
+          yield* componentExists(component)
+          const issuedAt = yield* DateTime.now
+          yield* sql`INSERT INTO projects_sdk_keys ${sql.insert({ key, component, issued_at: DateTime.formatIso(issuedAt) })}`.pipe(
+            Effect.orDie,
+          )
+          return new IssuedSdkKey({ key, component, issuedAt })
+        })
+
+        // The key is made before the write's transaction, which holds only SQL.
+        const issueSdkKey = Effect.fn("Projects.issueSdkKey")(function* (actor: Actor, component: ComponentKey) {
+          const id = yield* crypto.randomBytes(16).pipe(Effect.orDie)
+          const key = SdkKey.make(`cluenori-sdk.${settings.project}.${component}.${Base64Url.encode(id)}`)
+          return yield* log.commit({
+            source,
+            actor,
+            write: insertSdkKey(component, key),
+            activity: (issued) => [
+              {
+                payload: SdkKeyIssued.make({ component: issued.component, key: issued.key }),
+                component: issued.component,
+              },
+            ],
+          })
+        })
+
+        const sdkKeys = Effect.fn("Projects.sdkKeys")(function* (component: ComponentKey) {
+          yield* componentExists(component)
+          const rows = yield* findSdkKeys(component).pipe(Effect.orDie)
+          return { keys: rows.map(issuedSdkKeyOf) }
+        })
+
+        // The component's key, as stored; a key of another component, or of a component the
+        // project lacks, is not found.
+        const componentSdkKey = Effect.fn("Projects.componentSdkKey")(function* (component: ComponentKey, key: SdkKey) {
+          yield* project
+          const found = yield* findSdkKey(key).pipe(Effect.orDie)
+          if (found._tag === "None" || found.value.component !== component) {
+            return yield* new SdkKeyNotFound({ key })
+          }
+          return found.value
+        })
+
+        const markRevoked = Effect.fn("Projects.markRevoked")(function* (component: ComponentKey, key: SdkKey) {
+          const row = yield* componentSdkKey(component, key)
+          const revokedAt = yield* DateTime.now
+          yield* sql`UPDATE projects_sdk_keys SET revoked_at = ${DateTime.formatIso(revokedAt)}
+            WHERE key = ${key}`.pipe(Effect.orDie)
+          return issuedSdkKeyOf({ ...row, revokedAt })
+        })
+
+        // A key revoked before is answered from its row, with no commit: a commit emits activity.
+        const revokeSdkKey = Effect.fn("Projects.revokeSdkKey")(function* (
+          actor: Actor,
+          component: ComponentKey,
+          key: SdkKey,
+        ) {
+          const current = yield* componentSdkKey(component, key)
+          if (current.revokedAt !== null) {
+            return issuedSdkKeyOf(current)
+          }
+          return yield* log.commit({
+            source,
+            actor,
+            write: markRevoked(component, key),
+            activity: (revoked) => [
+              {
+                payload: SdkKeyRevoked.make({ component: revoked.component, key: revoked.key }),
+                component: revoked.component,
+              },
+            ],
+          })
+        })
+
+        const authenticateSdkKey = Effect.fn("Projects.authenticateSdkKey")(function* (key: SdkKey) {
+          const scope = sdkKeyScope(key)
+          if (scope.project !== settings.project) {
+            return yield* new SdkKeyNotFound({ key })
+          }
+          const found = yield* findSdkKey(key).pipe(Effect.orDie)
+          const active = found._tag === "Some" && found.value.revokedAt === null
+          if (!active) {
+            return yield* new SdkKeyNotFound({ key })
+          }
+          return found.value.component
+        })
+
         return Projects.of({
           create,
           project,
@@ -303,6 +471,10 @@ export class Projects extends Context.Service<
           linkComponent,
           settings: projectSettings,
           updateSettings,
+          issueSdkKey,
+          sdkKeys,
+          revokeSdkKey,
+          authenticateSdkKey,
         })
       }),
     )

@@ -124,5 +124,32 @@ export const ReleasesHandlers = HttpApiBuilder.group(CluenoriApi, "releases", (h
           input: payload,
         })
       }),
+    )
+    .handle("versionPolicies", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, moduleCall(releasesModule, "versionPolicies"), {})
+      }),
+    )
+    .handle("setVersionPolicy", ({ params, payload }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, moduleActionCall(releasesModule, "setVersionPolicy"), {
+          actor: member.actor,
+          input: { component: params.component, ...payload },
+        })
+      }),
+    )
+    .handle("clearVersionPolicy", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        yield* projects.call(member, params.project, moduleActionCall(releasesModule, "clearVersionPolicy"), {
+          actor: member.actor,
+          input: { component: params.component },
+        })
+      }),
     ),
 )

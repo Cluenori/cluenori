@@ -1,7 +1,8 @@
 # @cluenori/worker
 
-The one deployable Cloudflare Worker. It serves the public API and OTLP ingest, holds each
-project's Durable Object, and composes every engine and module; it holds no rules of its own.
+The one deployable Cloudflare Worker. It serves the public API, OTLP ingest, and the ingest API
+apps' SDKs call, holds each project's Durable Object, and composes every engine and module; it
+holds no rules of its own.
 
 ## Use it
 
@@ -30,6 +31,17 @@ Services send traces, logs and metrics to `POST /otlp/v1/traces`, `/v1/logs` and
 a component's ingest key: `Authorization: Bearer cluenori.<project>.<component>.<secret>`. An
 export the archive can't take is answered 503, so the exporter sends it again.
 
+Apps' SDKs call the ingest API, `CluenoriIngestApi`, with a component's SDK key,
+`Authorization: Bearer cluenori-sdk.<project>.<component>.<id>`:
+
+```ts
+// POST /ingest/v1/app/batch: { accepted: 4, duplicates: 0 }; the same batch again: { accepted: 0, duplicates: 4 }
+// 401 SdkKeyRejected: a key the project lacks or revoked. 413: a body over 1 MB. 429 TooManySignals
+// { retryAfterSeconds }: past 20 batches a minute from one installation or 1,200 from one key.
+// GET /ingest/v1/app/manifest?environment=production&release=0.3.0%2B20&locale=uk-UA
+// { versionPolicy: { decision: "require", update: { version: "0.4.1", storeUrl }, text }, maxAgeSeconds: 300 }
+```
+
 ## Owns
 
 - **The entry the platform runs,** `src/worker.ts`: every route group and layer on a visible line,
@@ -52,8 +64,17 @@ export the archive can't take is answered 503, so the exporter sends it again.
   API definition".
 - **OTLP ingest,** `src/otlp-ingest.ts`: checks each export's form and key, reads it where it arrives,
   and has the project's object archive and record it.
-- **The archive in R2,** `src/r2-archive.ts`: an `ArchiveStore` on the `ARCHIVE` bucket, its files
-  compressed with gzip.
+- **The ingest API apps' SDKs call,** `src/app-ingest-api.ts` (`CluenoriIngestApi`, from which
+  `bun run generate` writes `sdks/swift`'s OpenAPI document and Swift client), served by
+  `src/app-ingest.ts`: `SdkKeyAuthorization` (`src/sdk-key-authorization-layer.ts`) takes the key's
+  form and routes by the project it names; the project's object checks the key in the same call
+  that records the batch or composes the manifest. A batch's body is read by the handler, so one over
+  1 MB is refused before it is decoded; the country is `request.cf.country`, and the address is
+  never read. The manifest is kept at the edge five minutes (`src/manifest-cache.ts`), by
+  component, key, release, environment and locale; an answer from the cache says how much of its
+  time is left, so a policy change reaches every app within five minutes.
+- **The archive in R2,** `src/r2-archive.ts`: an `ArchiveStore` on the `ARCHIVE` bucket, and an
+  `AppBatchStore` on `APP_BATCHES`, their files compressed with gzip.
 - **Each project's Durable Object,** `src/project-object.ts`, named `<workspace>/<project>`: the
   engines' layers built once per object, and one served call per operation (`src/project-calls.ts`).
   An object builds no database before its project is created.
@@ -69,7 +90,8 @@ export the archive can't take is answered 503, so the exporter sends it again.
   the Worker.
 - **`wrangler.jsonc`:** the Worker's name, compatibility date, the dashboard's files, and bindings:
   `PROJECT`, the projects' Durable Objects, `WORKSPACE`, the workspace's, `ARCHIVE`, the
-  archive's bucket, and `ACTIVITY`, the activity queue, of which the Worker is also the consumer.
+  archive's bucket (90 days), `APP_BATCHES`, apps' batches' (5 years), and `ACTIVITY`, the activity
+  queue, of which the Worker is also the consumer.
   Its `eu` environment is the same Worker with them in the EU, which `./setup` deploys when the data
   stays there.
 - **`openapi.json`:** generated from the definition by `bun run generate`; `bun run check` fails when
@@ -83,8 +105,9 @@ export the archive can't take is answered 503, so the exporter sends it again.
 
 ## Contract
 
-`src/index.ts` exports `CluenoriApi`, the definition of the public API. Clients and journeys import
-it; nothing imports the entry.
+`src/index.ts` exports `CluenoriApi`, the definition of the public API, and `CluenoriIngestApi`, the
+ingest API's, with the middleware each requires. Clients, the generator and journeys import them;
+nothing imports the entry.
 
 ## Settings
 
@@ -115,6 +138,12 @@ A self-hosted deployment has one workspace, `main`.
   scripts can't read it. A new token signs every browser out; members with sessions of their own
   come with members as records.
 
+- **The SDK key is checked where it is used.** As for ingest keys, the Worker routes by the project
+  a key names and the project's object checks it, so a batch is one request to the object. The
+  manifest's cache entry is named by the key too, so only a key the object accepted ever reaches a
+  cached answer; a key revoked meanwhile is still answered from the cache until its entry ends. Where
+  the edge's cache keeps nothing, every manifest is composed in the project's object, correct but
+  uncached; whether a workers.dev subdomain's cache keeps anything wasn't checked.
 - **Built at module scope, without I/O.** `HttpRouter.toWebHandler` builds the layers once, when the
   isolate loads the module. Workers allow no I/O outside a request, so building a layer must not
   perform any.

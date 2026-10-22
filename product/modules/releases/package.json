@@ -15,6 +15,7 @@
     "@bagatka/github": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/incidents": "workspace:*",
+    "@cluenori/manifest": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "effect": "catalog:"

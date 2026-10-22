@@ -48,7 +48,8 @@ const envelope = yield* Schema.decodeUnknownEffect(Envelope)(body)
 
 - **Rules:** the format of every scope key, ID and name: project, component, environment and
   workspace keys; feature keys; release versions; trace IDs; envelope kinds, names and sources;
-  activity names. Keys are permanent: shipped app builds contain them.
+  activity names; and calendar days, UTC days as `YYYY-MM-DD`, which what is counted by day is
+  counted in, and stored as days since 1970-01-01 (`CalendarDay`). Keys are permanent: shipped app builds contain them.
 - **Data:** the `activity` table in each project's database and the workspace's, with its own
   migrations (`foundation_migrations`).
 - **Rules about writes:** a write and its activity commit in one transaction; every entry gets its

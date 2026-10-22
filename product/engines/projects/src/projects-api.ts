@@ -4,7 +4,9 @@ import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/ht
 
 import { AddComponent, Component, ComponentExists, ComponentLinks, ComponentNotFound } from "./component.ts"
 import { IngestKey } from "./ingest-key.ts"
+import { IssuedSdkKey, SdkKeyList, SdkKeyNotFound } from "./issued-sdk-key.ts"
 import { CreateProject, Project, ProjectExists, ProjectNotFound, ProjectSettings } from "./project.ts"
+import { SdkKey } from "./sdk-key.ts"
 
 /** A component just added, with the ingest key its telemetry is sent with: shown this once. */
 export const AddedComponentResponse = Schema.Struct({ component: Component, ingestKey: IngestKey }).annotate({
@@ -84,5 +86,35 @@ export class ProjectsGroup extends HttpApiGroup.make("projects")
     }).annotate(
       OpenApi.Description,
       "Replaces a component's links: `repository`, its GitHub repository as owner/name, whose commits its releases are; and `deployTargets`, where its releases go in each environment: the GitHub Actions workflow that builds and deploys a release there, started with the inputs `release`, `environment`, `commit` and `runner`, and, for an app, the App Store Connect app its builds go to, for TestFlight only or through to the App Store; and `shipsWith`, another of the project's components whose deploys deploy this one too, from the same commit with the same release, for a part such as a background service. One left out is unlinked. 404 for a component the project lacks, or one it ships with that the project lacks or that is itself. Returns the component.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("issueSdkKey", "/projects/:project/components/:component/sdk-keys", {
+      params: { project: ProjectKey, component: ComponentKey },
+      success: IssuedSdkKey.pipe(HttpApiSchema.status(201)),
+      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ComponentNotFound.pipe(HttpApiSchema.status(404))],
+    }).annotate(
+      OpenApi.Description,
+      "Issues a new SDK key for a component: the key its app's builds carry, in the app's SDK configuration, so the SDK can send the component's signals and read its manifest. It is public, as anything shipped in an app is, and grants nothing else. The component's other keys stay active until revoked, so a new build can carry the new key while older builds keep working. Listed again with sdkKeys. 404 for a project or a component that doesn't exist.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("sdkKeys", "/projects/:project/components/:component/sdk-keys", {
+      params: { project: ProjectKey, component: ComponentKey },
+      success: SdkKeyList,
+      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ComponentNotFound.pipe(HttpApiSchema.status(404))],
+    }).annotate(
+      OpenApi.Description,
+      "A component's SDK keys, newest first, revoked ones too: each key, when it was issued, and `revokedAt` once it is revoked. Active keys are those without `revokedAt`. 404 for a project or a component that doesn't exist.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("revokeSdkKey", "/projects/:project/components/:component/sdk-keys/:key/revoke", {
+      params: { project: ProjectKey, component: ComponentKey, key: SdkKey },
+      success: IssuedSdkKey,
+      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), SdkKeyNotFound.pipe(HttpApiSchema.status(404))],
+    }).annotate(
+      OpenApi.Description,
+      "Revokes one of a component's SDK keys: builds that carry it are refused from then on, so issue its replacement and ship it first. Revoking a key revoked before changes nothing and returns it. 404 for a project that doesn't exist, or a key that isn't one of the component's. Returns the key, with `revokedAt`.",
     ),
   ) {}

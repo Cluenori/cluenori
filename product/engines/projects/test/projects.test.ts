@@ -19,6 +19,8 @@ import {
   ProjectName,
   ProjectNotFound,
   Projects,
+  SdkKey,
+  SdkKeyNotFound,
 } from "../src/index.ts"
 import { inProject } from "./in-object.ts"
 
@@ -30,6 +32,9 @@ const createWithApi = Effect.gen(function* () {
   yield* projects.create(owner, ProjectName.make("Notes"))
   return yield* projects.addComponent(owner, notesApi)
 })
+
+// The same SDK key's ID under another project's or component's name.
+const renamed = (key: SdkKey, from: string, to: string) => SdkKey.make(key.replace(from, to))
 
 // Changes one character of the secret, keeping the key's form.
 const tampered = (key: IngestKey) => IngestKey.make(`${key.slice(0, -1)}${key.endsWith("A") ? "B" : "A"}`)
@@ -190,6 +195,7 @@ describe("Projects", () => {
           yield* sql`UPDATE projects_components SET app_store_bundle_id = 'com.example.notes', deploy_targets = NULL`
           yield* sql`ALTER TABLE projects_components DROP COLUMN deploy_targets`
           yield* sql`ALTER TABLE projects_components DROP COLUMN ships_with`
+          yield* sql`DROP TABLE projects_sdk_keys`
           yield* sql`DELETE FROM projects_migrations WHERE migration_id >= 4`
         }),
       )
@@ -276,6 +282,123 @@ describe("Projects", () => {
 
         assert.strictEqual(component, "notes-api")
         assert.deepStrictEqual(refusals, [new IngestKeyRejected(), new IngestKeyRejected(), new IngestKeyRejected()])
+      }),
+    ),
+  )
+
+  it.effect("issues SDK keys that each authenticate to their component, listed newest first, with sdk_key.issued", () =>
+    inProject(
+      "sdk-keys-issued",
+      Effect.gen(function* () {
+        yield* createWithApi
+        const projects = yield* Projects
+        const first = yield* projects.issueSdkKey(owner, notesApi.key)
+        const second = yield* projects.issueSdkKey(owner, notesApi.key)
+        const firstComponent = yield* projects.authenticateSdkKey(first.key)
+        const secondComponent = yield* projects.authenticateSdkKey(second.key)
+        const list = yield* projects.sdkKeys(notesApi.key)
+        const log = yield* ActivityLog
+        const [latest, before] = yield* log.latest
+
+        assert.match(first.key, /^cluenori-sdk\.sdk-keys-issued\.notes-api\.[A-Za-z0-9_-]{22}$/)
+        assert.notStrictEqual(first.key, second.key)
+        assert.strictEqual(firstComponent, notesApi.key)
+        assert.strictEqual(secondComponent, notesApi.key)
+        assert.deepStrictEqual(list, { keys: [second, first] })
+        assert.isUndefined(first.revokedAt)
+        assert.strictEqual(latest?.name, "sdk_key.issued")
+        assert.strictEqual(latest?.component, "notes-api")
+        assert.deepStrictEqual(latest?.attrs, { component: "notes-api", key: second.key })
+        assert.strictEqual(before?.name, "sdk_key.issued")
+        assert.deepStrictEqual(before?.attrs, { component: "notes-api", key: first.key })
+      }),
+    ),
+  )
+
+  it.effect(
+    "revokes an SDK key, which then fails to authenticate while the other still does, with sdk_key.revoked",
+    () =>
+      inProject(
+        "sdk-keys-revoked",
+        Effect.gen(function* () {
+          yield* createWithApi
+          const projects = yield* Projects
+          const old = yield* projects.issueSdkKey(owner, notesApi.key)
+          const current = yield* projects.issueSdkKey(owner, notesApi.key)
+          const revoked = yield* projects.revokeSdkKey(owner, notesApi.key, old.key)
+          const refused = yield* projects.authenticateSdkKey(old.key).pipe(Effect.flip)
+          const stillActive = yield* projects.authenticateSdkKey(current.key)
+          const log = yield* ActivityLog
+          const afterRevoke = yield* log.latest
+          const again = yield* projects.revokeSdkKey(owner, notesApi.key, old.key)
+          const afterAgain = yield* log.latest
+          const list = yield* projects.sdkKeys(notesApi.key)
+
+          assert.isDefined(revoked.revokedAt)
+          assert.deepStrictEqual(refused, new SdkKeyNotFound({ key: old.key }))
+          assert.strictEqual(stillActive, notesApi.key)
+          assert.strictEqual(afterRevoke[0]?.name, "sdk_key.revoked")
+          assert.strictEqual(afterRevoke[0]?.component, "notes-api")
+          assert.deepStrictEqual(afterRevoke[0]?.attrs, { component: "notes-api", key: old.key })
+          assert.deepStrictEqual(again, revoked)
+          assert.strictEqual(afterAgain.length, afterRevoke.length)
+          assert.deepStrictEqual(list, { keys: [current, revoked] })
+        }),
+      ),
+  )
+
+  it.effect("refuses an SDK key that is unknown, another project's, or for a component the project lacks, alike", () =>
+    inProject(
+      "sdk-keys-refused",
+      Effect.gen(function* () {
+        yield* createWithApi
+        const projects = yield* Projects
+        const issued = yield* projects.issueSdkKey(owner, notesApi.key)
+        const others = [
+          SdkKey.make("cluenori-sdk.sdk-keys-refused.notes-api.AAAAAAAAAAAAAAAAAAAAAA"),
+          renamed(issued.key, ".sdk-keys-refused.", ".other-project."),
+          renamed(issued.key, ".notes-api.", ".notes-ios."),
+        ]
+        const refusals = yield* Effect.forEach(others, (other) => projects.authenticateSdkKey(other).pipe(Effect.flip))
+
+        assert.deepStrictEqual(
+          refusals,
+          others.map((key) => new SdkKeyNotFound({ key })),
+        )
+      }),
+    ),
+  )
+
+  it.effect(
+    "issues and lists no SDK keys for a component the project lacks, and revokes only the component's own",
+    () =>
+      inProject(
+        "sdk-keys-missing",
+        Effect.gen(function* () {
+          yield* createWithApi
+          const projects = yield* Projects
+          const notesIos = ComponentKey.make("notes-ios")
+          const issueMissing = yield* projects.issueSdkKey(owner, notesIos).pipe(Effect.flip)
+          const listMissing = yield* projects.sdkKeys(notesIos).pipe(Effect.flip)
+          const issued = yield* projects.issueSdkKey(owner, notesApi.key)
+          const revokeElsewhere = yield* projects.revokeSdkKey(owner, notesIos, issued.key).pipe(Effect.flip)
+          const stillActive = yield* projects.authenticateSdkKey(issued.key)
+
+          assert.deepStrictEqual(issueMissing, new ComponentNotFound({ component: notesIos }))
+          assert.deepStrictEqual(listMissing, new ComponentNotFound({ component: notesIos }))
+          assert.deepStrictEqual(revokeElsewhere, new SdkKeyNotFound({ key: issued.key }))
+          assert.strictEqual(stillActive, notesApi.key)
+        }),
+      ),
+  )
+
+  it.effect("issues no SDK key in a project that doesn't exist", () =>
+    inProject(
+      "sdk-keys-no-project",
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const failure = yield* projects.issueSdkKey(owner, notesApi.key).pipe(Effect.flip)
+        assert.deepStrictEqual(failure, new ProjectNotFound({ project: ProjectKey.make("sdk-keys-no-project") }))
       }),
     ),
   )

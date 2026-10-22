@@ -26,8 +26,12 @@
     { "tag": "v1", "new_sqlite_classes": ["ProjectObject"] },
     { "tag": "v2", "new_sqlite_classes": ["WorkspaceObject"] },
   ],
-  // Every export, kept 90 days by the bucket's lifecycle rule, which ./setup adds.
-  "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "cluenori-archive" }],
+  // Every export, kept 90 days by the bucket's lifecycle rule; and apps' batches, the product events
+  // their SDKs send, kept 5 years by theirs. ./setup and ./update make both buckets and their rules.
+  "r2_buckets": [
+    { "binding": "ARCHIVE", "bucket_name": "cluenori-archive" },
+    { "binding": "APP_BATCHES", "bucket_name": "cluenori-app-batches" },
+  ],
   // Workers AI, which drafts release notes. It has no local copy: ./run calls the real models, billed
   // to your account, only when a draft is asked for.
   "ai": { "binding": "AI" },
@@ -62,7 +66,10 @@
           { "name": "WORKSPACE", "class_name": "WorkspaceObject" },
         ],
       },
-      "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "cluenori-archive", "jurisdiction": "eu" }],
+      "r2_buckets": [
+        { "binding": "ARCHIVE", "bucket_name": "cluenori-archive", "jurisdiction": "eu" },
+        { "binding": "APP_BATCHES", "bucket_name": "cluenori-app-batches", "jurisdiction": "eu" },
+      ],
       "ai": { "binding": "AI" },
       // The queue is made in the EU; its binding names it alone.
       "queues": {

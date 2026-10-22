@@ -257,6 +257,49 @@ public struct CluenoriAPI: Sendable {
         return try Self.decoded(Component.self, from: answer)
     }
 
+    /// Issues a new SDK key for a component: the key its app's builds carry, in the app's SDK
+    /// configuration, so the SDK can send the component's signals and read its manifest. It is
+    /// public, as anything shipped in an app is, and grants nothing else. The component's other
+    /// keys stay active until revoked, so a new build can carry the new key while older builds keep
+    /// working. Listed again with sdkKeys. 404 for a project or a component that doesn't exist.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.componentNotFound`, or as any call can.
+    @concurrent
+    public func issueSdkKey(
+        project: String,
+        component: String,
+    ) async throws(APIError) -> IssuedSdkKey {
+        let answer = try await self.send("POST", "/api/projects/\(Self.escaped(Self.text(project)))/components/\(Self.escaped(Self.text(component)))/sdk-keys")
+        return try Self.decoded(IssuedSdkKey.self, from: answer)
+    }
+
+    /// A component's SDK keys, newest first, revoked ones too: each key, when it was issued, and
+    /// `revokedAt` once it is revoked. Active keys are those without `revokedAt`. 404 for a project
+    /// or a component that doesn't exist.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.componentNotFound`, or as any call can.
+    @concurrent
+    public func sdkKeys(project: String, component: String) async throws(APIError) -> SdkKeyList {
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/components/\(Self.escaped(Self.text(component)))/sdk-keys")
+        return try Self.decoded(SdkKeyList.self, from: answer)
+    }
+
+    /// Revokes one of a component's SDK keys: builds that carry it are refused from then on, so
+    /// issue its replacement and ship it first. Revoking a key revoked before changes nothing and
+    /// returns it. 404 for a project that doesn't exist, or a key that isn't one of the
+    /// component's. Returns the key, with `revokedAt`.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.sdkKeyNotFound`, or as any call can.
+    @concurrent
+    public func revokeSdkKey(
+        project: String,
+        component: String,
+        key: String,
+    ) async throws(APIError) -> IssuedSdkKey {
+        let answer = try await self.send("POST", "/api/projects/\(Self.escaped(Self.text(project)))/components/\(Self.escaped(Self.text(component)))/sdk-keys/\(Self.escaped(Self.text(key)))/revoke")
+        return try Self.decoded(IssuedSdkKey.self, from: answer)
+    }
+
     /// Every operation in a period, the most counted first, or one with `operation`: how many times
     /// it ran, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the
     /// minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months);
@@ -852,6 +895,178 @@ public struct CluenoriAPI: Sendable {
         let answer = try await self.send("PUT", "/api/projects/\(Self.escaped(Self.text(project)))/notes-style", body: try Self.encoded(body))
         return try Self.decoded(NotesStyle.self, from: answer)
     }
+
+    /// Each app component's version policy: releases below `minimum` must update before they can be
+    /// used, those below `recommended` are offered it in a sheet people can close; with the store
+    /// page to update from, the oldest OS the update runs on, and the project's words for each
+    /// decision by language. It applies in the project's production environments, to releases whose
+    /// version (the part before `+`) is one to four numbers, compared part by part. A component
+    /// without a policy isn't listed; its releases are never asked to update. Apps read it in their
+    /// manifest within five minutes.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func versionPolicies(project: String) async throws(APIError) -> VersionPolicies {
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/version-policies")
+        return try Self.decoded(VersionPolicies.self, from: answer)
+    }
+
+    /// Replaces a component's version policy: what is left out is unset, so send every field to
+    /// keep. `minimum`, `recommended`, or both, the recommended not lower; at most 40 `words`, one
+    /// for each language and decision (`require` or `recommend`), which the app shows instead of
+    /// its own. Without `storeUrl`, the App Store page of the app its App Store deploy target names
+    /// (one in production first) is asked of App Store Connect. 422 for a component the project
+    /// lacks, neither version, a recommended version lower than the minimum, or no store URL given
+    /// or found.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.versionPolicyRefused`, or as any call can.
+    @concurrent
+    public func setVersionPolicy(
+        project: String,
+        component: String,
+        _ body: VersionPolicyTo,
+    ) async throws(APIError) -> ComponentVersionPolicy {
+        let answer = try await self.send("PUT", "/api/projects/\(Self.escaped(Self.text(project)))/version-policies/\(Self.escaped(Self.text(component)))", body: try Self.encoded(body))
+        return try Self.decoded(ComponentVersionPolicy.self, from: answer)
+    }
+
+    /// Removes a component's version policy: its releases are no longer asked to update, once apps
+    /// read their manifest again, within five minutes. Removing one that isn't set does nothing.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func clearVersionPolicy(project: String, component: String) async throws(APIError) {
+        _ = try await self.send("DELETE", "/api/projects/\(Self.escaped(Self.text(project)))/version-policies/\(Self.escaped(Self.text(component)))")
+    }
+
+    /// How a project's apps were used in a period, by UTC day: the people active (DAU), the people
+    /// of the 7 and the 30 days ending each day (WAU and MAU), installations, sessions (each time
+    /// the app came to the foreground) and their foreground time; over the whole period, people,
+    /// installations, sessions per person and per person and day, and each release's people. Only
+    /// what the apps' SDKs sent counts: days before the first batch, or older than the 15 months
+    /// kept, aren't listed, and a week or month that reaches before them has no count, never zero.
+    /// Narrow it by component, environment and release.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func usage(
+        project: String,
+        from: Date,
+        to: Date,
+        component: String? = nil,
+        environment: String? = nil,
+        release: String? = nil,
+    ) async throws(APIError) -> AppUsage {
+        var query: [(String, String)] = []
+        query.append(("from", Self.text(from)))
+        query.append(("to", Self.text(to)))
+        if let component { query.append(("component", Self.text(component))) }
+        if let environment { query.append(("environment", Self.text(environment))) }
+        if let release { query.append(("release", Self.text(release))) }
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/usage", query: query)
+        return try Self.decoded(AppUsage.self, from: answer)
+    }
+
+    /// Weekly cohorts of the people first seen in a period, by the UTC week (Monday to Sunday) each
+    /// was first seen in a component and environment: how many there were, and how many were active
+    /// in each week since, the first being all of them and the last the week now is in, so far.
+    /// Activity is kept 15 months.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func retention(
+        project: String,
+        from: Date,
+        to: Date,
+        component: String? = nil,
+        environment: String? = nil,
+    ) async throws(APIError) -> AppRetention {
+        var query: [(String, String)] = []
+        query.append(("from", Self.text(from)))
+        query.append(("to", Self.text(to)))
+        if let component { query.append(("component", Self.text(component))) }
+        if let environment { query.append(("environment", Self.text(environment))) }
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/retention", query: query)
+        return try Self.decoded(AppRetention.self, from: answer)
+    }
+
+    /// The app health of the releases that sent anything in a period, the latest first seen first,
+    /// at most 30, each over all that is kept of it and beside the release before it of the same
+    /// component and environment: sessions and people; launch times to the first frame and to the
+    /// first useful screen, p50 and p95, cold and warm, prewarmed launches only counted; peak
+    /// memory and footprint p95; MetricKit's crashes and hangs, and per 1,000 sessions. Worse when
+    /// a launch kind's p95 is at least 1.5 times and 100 ms more than before (both with 50
+    /// launches), peak memory's p95 1.25 times and 50 MB more (50 measurements), or crashes or
+    /// hangs at least 5, twice the rate and 2 per 1,000 sessions more (both with 200 sessions and
+    /// MetricKit's reports); too early until it ran an hour and a measure compares. What a release
+    /// didn't send is absent, not zero.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func appHealth(
+        project: String,
+        from: Date,
+        to: Date,
+        component: String? = nil,
+        environment: String? = nil,
+    ) async throws(APIError) -> AppHealthList {
+        var query: [(String, String)] = []
+        query.append(("from", Self.text(from)))
+        query.append(("to", Self.text(to)))
+        if let component { query.append(("component", Self.text(component))) }
+        if let environment { query.append(("environment", Self.text(environment))) }
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/app-health", query: query)
+        return try Self.decoded(AppHealthList.self, from: answer)
+    }
+
+    /// How each feature key was used in a period, the most people first: the people who did
+    /// anything in it, its events and screens, and the app's memory there (peak and footprint p95);
+    /// signals the app marked with no feature are the row without a key, "(no feature)", whose
+    /// share says how much is tagged.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func featureUse(
+        project: String,
+        from: Date,
+        to: Date,
+        component: String? = nil,
+        environment: String? = nil,
+        release: String? = nil,
+    ) async throws(APIError) -> FeatureUseTable {
+        var query: [(String, String)] = []
+        query.append(("from", Self.text(from)))
+        query.append(("to", Self.text(to)))
+        if let component { query.append(("component", Self.text(component))) }
+        if let environment { query.append(("environment", Self.text(environment))) }
+        if let release { query.append(("release", Self.text(release))) }
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/feature-use", query: query)
+        return try Self.decoded(FeatureUseTable.self, from: answer)
+    }
+
+    /// One person of the project, by the ID Cluenori gave them: the app's user IDs linked to them,
+    /// when they were first and last seen, their installations (component, release, device,
+    /// country), the days they were active with their sessions, the latest 90, and their timeline:
+    /// the latest 1,000 sessions, launches, screens, events and MetricKit reports, newest first.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.personNotFound`, or as any call can.
+    @concurrent
+    public func person(project: String, person: String) async throws(APIError) -> AppPerson {
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/people/\(Self.escaped(Self.text(person)))")
+        return try Self.decoded(AppPerson.self, from: answer)
+    }
+
+    /// The person the app's own user ID `user` is linked to, as the person route answers: what did
+    /// this user do. 404 when the apps never sent it.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.personNotFound`, or as any call can.
+    @concurrent
+    public func personByUser(project: String, user: String) async throws(APIError) -> AppPerson {
+        var query: [(String, String)] = []
+        query.append(("user", Self.text(user)))
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/people", query: query)
+        return try Self.decoded(AppPerson.self, from: answer)
+    }
 }
 
 /// Why a call failed: an error the API answered with, no answer at all, or one this client can't read.
@@ -873,6 +1088,7 @@ public enum APIError: Error, Sendable {
     case notAllowed(NotAllowed)
     case pairingCodeRejected(PairingCodeRejected)
     case passkeyRejected(PasskeyRejected)
+    case personNotFound(PersonNotFound)
     case phoneKeyRejected(PhoneKeyRejected)
     case phoneNotFound(PhoneNotFound)
     case projectExists(ProjectExists)
@@ -885,8 +1101,10 @@ public enum APIError: Error, Sendable {
     case pushRejected(PushRejected)
     case pushUnavailable(PushUnavailable)
     case releaseNotFound(ReleaseNotFound)
+    case sdkKeyNotFound(SdkKeyNotFound)
     case signInNotFound(SignInNotFound)
     case unauthorized(Unauthorized)
+    case versionPolicyRefused(VersionPolicyRefused)
     case versionRefused(VersionRefused)
     /// The server didn't answer: no connection, a timeout, or a cancelled call.
     case unreachable(URLError)
@@ -923,6 +1141,243 @@ public struct AddedComponentResponse: Codable, Hashable, Sendable {
     public init(component: Component, ingestKey: String) {
         self.component = component
         self.ingestKey = ingestKey
+    }
+}
+
+public struct AppDevice: Codable, Hashable, Sendable {
+    public let model: String
+    public let platform: AppPlatform
+    public let osVersion: String
+    public let locale: String
+    public let timeZone: String
+
+    public init(
+        model: String,
+        platform: AppPlatform,
+        osVersion: String,
+        locale: String,
+        timeZone: String,
+    ) {
+        self.model = model
+        self.platform = platform
+        self.osVersion = osVersion
+        self.locale = locale
+        self.timeZone = timeZone
+    }
+}
+
+public struct AppDiagnostics: Codable, Hashable, Sendable {
+    public let reports: Int
+    public let crashes: Int
+    public let hangs: Int
+    public let cpuExceptions: Int
+    public let diskWriteExceptions: Int
+
+    public init(
+        reports: Int,
+        crashes: Int,
+        hangs: Int,
+        cpuExceptions: Int,
+        diskWriteExceptions: Int,
+    ) {
+        self.reports = reports
+        self.crashes = crashes
+        self.hangs = hangs
+        self.cpuExceptions = cpuExceptions
+        self.diskWriteExceptions = diskWriteExceptions
+    }
+}
+
+public struct AppHealth: Codable, Hashable, Sendable {
+    public let sessions: Int
+    public let people: Int
+    public let cold: LaunchTimes?
+    public let warm: LaunchTimes?
+    public let prewarmed: Int
+    public let memory: MemoryUse?
+    public let diagnostics: AppDiagnostics?
+
+    public init(
+        sessions: Int,
+        people: Int,
+        cold: LaunchTimes? = nil,
+        warm: LaunchTimes? = nil,
+        prewarmed: Int,
+        memory: MemoryUse? = nil,
+        diagnostics: AppDiagnostics? = nil,
+    ) {
+        self.sessions = sessions
+        self.people = people
+        self.cold = cold
+        self.warm = warm
+        self.prewarmed = prewarmed
+        self.memory = memory
+        self.diagnostics = diagnostics
+    }
+}
+
+public struct AppHealthList: Codable, Hashable, Sendable {
+    public let releases: [ReleaseHealth]
+
+    public init(releases: [ReleaseHealth]) {
+        self.releases = releases
+    }
+}
+
+public struct AppInstallation: Codable, Hashable, Sendable {
+    public let installation: String
+    public let component: String
+    public let environment: String
+    public let release: String
+    public let device: AppDevice
+    public let sdk: AppSdk
+    public let country: String?
+    public let firstSeen: Date
+    public let lastSeen: Date
+
+    public init(
+        installation: String,
+        component: String,
+        environment: String,
+        release: String,
+        device: AppDevice,
+        sdk: AppSdk,
+        country: String? = nil,
+        firstSeen: Date,
+        lastSeen: Date,
+    ) {
+        self.installation = installation
+        self.component = component
+        self.environment = environment
+        self.release = release
+        self.device = device
+        self.sdk = sdk
+        self.country = country
+        self.firstSeen = firstSeen
+        self.lastSeen = lastSeen
+    }
+}
+
+public struct AppLaunched: Codable, Hashable, Sendable {
+    public let id: String
+    public let at: Date
+    public let session: String
+    public let user: String?
+    public let feature: String?
+    public let start: LaunchStart
+    public let prewarmed: Bool
+    public let firstFrameMs: Double
+    public let readyMs: Double?
+
+    public init(
+        id: String,
+        at: Date,
+        session: String,
+        user: String? = nil,
+        feature: String? = nil,
+        start: LaunchStart,
+        prewarmed: Bool,
+        firstFrameMs: Double,
+        readyMs: Double? = nil,
+    ) {
+        self.id = id
+        self.at = at
+        self.session = session
+        self.user = user
+        self.feature = feature
+        self.start = start
+        self.prewarmed = prewarmed
+        self.firstFrameMs = firstFrameMs
+        self.readyMs = readyMs
+    }
+}
+
+public struct AppPerson: Codable, Hashable, Sendable {
+    public let person: String
+    public let users: [String]
+    public let firstSeen: Date
+    public let lastSeen: Date
+    public let installations: [AppInstallation]
+    public let days: [PersonDay]
+    public let timeline: [TimelineEntry]
+
+    public init(
+        person: String,
+        users: [String],
+        firstSeen: Date,
+        lastSeen: Date,
+        installations: [AppInstallation],
+        days: [PersonDay],
+        timeline: [TimelineEntry],
+    ) {
+        self.person = person
+        self.users = users
+        self.firstSeen = firstSeen
+        self.lastSeen = lastSeen
+        self.installations = installations
+        self.days = days
+        self.timeline = timeline
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct AppPlatform: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let iOS = AppPlatform(rawValue: "iOS")
+    public static let iPadOS = AppPlatform(rawValue: "iPadOS")
+    public static let macOS = AppPlatform(rawValue: "macOS")
+    public static let visionOS = AppPlatform(rawValue: "visionOS")
+    public static let watchOS = AppPlatform(rawValue: "watchOS")
+    public static let tvOS = AppPlatform(rawValue: "tvOS")
+}
+
+public struct AppRelease: Codable, Hashable, Sendable {
+    public let component: String
+    public let environment: String
+    public let release: String
+    public let firstSeen: Date
+    public let lastSeen: Date
+    public let previous: String?
+
+    public init(
+        component: String,
+        environment: String,
+        release: String,
+        firstSeen: Date,
+        lastSeen: Date,
+        previous: String? = nil,
+    ) {
+        self.component = component
+        self.environment = environment
+        self.release = release
+        self.firstSeen = firstSeen
+        self.lastSeen = lastSeen
+        self.previous = previous
+    }
+}
+
+public struct AppRetention: Codable, Hashable, Sendable {
+    public let cohorts: [RetentionCohort]
+    public let currentWeek: String
+
+    public init(cohorts: [RetentionCohort], currentWeek: String) {
+        self.cohorts = cohorts
+        self.currentWeek = currentWeek
+    }
+}
+
+public struct AppSdk: Codable, Hashable, Sendable {
+    public let name: String
+    public let version: String
+
+    public init(name: String, version: String) {
+        self.name = name
+        self.version = version
     }
 }
 
@@ -967,6 +1422,37 @@ public struct AppStoreTarget: Codable, Hashable, Sendable {
     public init(bundleId: String, distribution: AppStoreDistribution) {
         self.bundleId = bundleId
         self.distribution = distribution
+    }
+}
+
+public struct AppUsage: Codable, Hashable, Sendable {
+    public let covered: Period?
+    public let days: [UsageDay]
+    public let people: Int
+    public let installations: Int
+    public let sessions: Int
+    public let sessionsPerPerson: Double?
+    public let sessionsPerPersonDay: Double?
+    public let releases: [ReleaseUsage]
+
+    public init(
+        covered: Period? = nil,
+        days: [UsageDay],
+        people: Int,
+        installations: Int,
+        sessions: Int,
+        sessionsPerPerson: Double? = nil,
+        sessionsPerPersonDay: Double? = nil,
+        releases: [ReleaseUsage],
+    ) {
+        self.covered = covered
+        self.days = days
+        self.people = people
+        self.installations = installations
+        self.sessions = sessions
+        self.sessionsPerPerson = sessionsPerPerson
+        self.sessionsPerPersonDay = sessionsPerPersonDay
+        self.releases = releases
     }
 }
 
@@ -1122,6 +1608,34 @@ public struct ComponentVersion: Codable, Hashable, Sendable {
         self.component = component
         self.version = version
         self.lastBuild = lastBuild
+        self.setAt = setAt
+    }
+}
+
+public struct ComponentVersionPolicy: Codable, Hashable, Sendable {
+    public let component: String
+    public let minimum: String?
+    public let recommended: String?
+    public let storeUrl: String
+    public let minimumOsVersion: String?
+    public let words: [UpdateWords]
+    public let setAt: Date
+
+    public init(
+        component: String,
+        minimum: String? = nil,
+        recommended: String? = nil,
+        storeUrl: String,
+        minimumOsVersion: String? = nil,
+        words: [UpdateWords],
+        setAt: Date,
+    ) {
+        self.component = component
+        self.minimum = minimum
+        self.recommended = recommended
+        self.storeUrl = storeUrl
+        self.minimumOsVersion = minimumOsVersion
+        self.words = words
         self.setAt = setAt
     }
 }
@@ -1333,6 +1847,34 @@ public struct ErrorTable: Codable, Hashable, Sendable {
     }
 }
 
+public struct EventTracked: Codable, Hashable, Sendable {
+    public let id: String
+    public let at: Date
+    public let session: String
+    public let user: String?
+    public let feature: String?
+    public let name: String
+    public let properties: [String: JSONValue]?
+
+    public init(
+        id: String,
+        at: Date,
+        session: String,
+        user: String? = nil,
+        feature: String? = nil,
+        name: String,
+        properties: [String: JSONValue]? = nil,
+    ) {
+        self.id = id
+        self.at = at
+        self.session = session
+        self.user = user
+        self.feature = feature
+        self.name = name
+        self.properties = properties
+    }
+}
+
 /// One of several kinds, told apart by `_tag`. A kind this client doesn't know, from a newer API,
 /// is `unknown`, with its name.
 public enum Evidence: Codable, Hashable, Sendable {
@@ -1387,6 +1929,36 @@ public struct FailingEvidence: Codable, Hashable, Sendable {
         self.failed = failed
         self.count = count
         self.usualRate = usualRate
+    }
+}
+
+public struct FeatureUse: Codable, Hashable, Sendable {
+    public let feature: String?
+    public let people: Int
+    public let events: Int
+    public let screens: Int
+    public let memory: MemoryUse?
+
+    public init(
+        feature: String? = nil,
+        people: Int,
+        events: Int,
+        screens: Int,
+        memory: MemoryUse? = nil,
+    ) {
+        self.feature = feature
+        self.people = people
+        self.events = events
+        self.screens = screens
+        self.memory = memory
+    }
+}
+
+public struct FeatureUseTable: Codable, Hashable, Sendable {
+    public let features: [FeatureUse]
+
+    public init(features: [FeatureUse]) {
+        self.features = features
     }
 }
 
@@ -1499,6 +2071,37 @@ public struct GitHubStatus: Codable, Hashable, Sendable {
     }
 }
 
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct HealthMeasure: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let coldLaunch = HealthMeasure(rawValue: "coldLaunch")
+    public static let warmLaunch = HealthMeasure(rawValue: "warmLaunch")
+    public static let memory = HealthMeasure(rawValue: "memory")
+    public static let crashes = HealthMeasure(rawValue: "crashes")
+    public static let hangs = HealthMeasure(rawValue: "hangs")
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct HealthVerdict: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let worse = HealthVerdict(rawValue: "worse")
+    public static let better = HealthVerdict(rawValue: "better")
+    public static let same = HealthVerdict(rawValue: "same")
+    public static let tooEarly = HealthVerdict(rawValue: "tooEarly")
+    public static let first = HealthVerdict(rawValue: "first")
+    public static let unmeasured = HealthVerdict(rawValue: "unmeasured")
+}
+
 public struct Incident: Codable, Hashable, Sendable {
     public let id: String
     public let component: String
@@ -1609,6 +2212,20 @@ public struct InviteRejected: Codable, Hashable, Sendable {
     }
 }
 
+public struct IssuedSdkKey: Codable, Hashable, Sendable {
+    public let key: String
+    public let component: String
+    public let issuedAt: Date
+    public let revokedAt: Date?
+
+    public init(key: String, component: String, issuedAt: Date, revokedAt: Date? = nil) {
+        self.key = key
+        self.component = component
+        self.issuedAt = issuedAt
+        self.revokedAt = revokedAt
+    }
+}
+
 public struct JoinWithPasskey: Codable, Hashable, Sendable {
     public let code: String
     public let registration: PasskeyRegistration
@@ -1674,6 +2291,37 @@ public struct LastSeen: Codable, Hashable, Sendable {
         self.at = at
         self.address = address
         self.country = country
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct LaunchStart: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let cold = LaunchStart(rawValue: "cold")
+    public static let warm = LaunchStart(rawValue: "warm")
+}
+
+public struct LaunchTimes: Codable, Hashable, Sendable {
+    public let launches: Int
+    public let firstFrameP50Ms: Double
+    public let firstFrameP95Ms: Double
+    public let ready: ReadyTimes?
+
+    public init(
+        launches: Int,
+        firstFrameP50Ms: Double,
+        firstFrameP95Ms: Double,
+        ready: ReadyTimes? = nil,
+    ) {
+        self.launches = launches
+        self.firstFrameP50Ms = firstFrameP50Ms
+        self.firstFrameP95Ms = firstFrameP95Ms
+        self.ready = ready
     }
 }
 
@@ -1914,6 +2562,18 @@ public struct MemberRole: RawRepresentable, Codable, Hashable, Sendable {
     public static let member = MemberRole(rawValue: "member")
 }
 
+public struct MemoryUse: Codable, Hashable, Sendable {
+    public let samples: Int
+    public let peakP95Bytes: Double
+    public let footprintP95Bytes: Double
+
+    public init(samples: Int, peakP95Bytes: Double, footprintP95Bytes: Double) {
+        self.samples = samples
+        self.peakP95Bytes = peakP95Bytes
+        self.footprintP95Bytes = footprintP95Bytes
+    }
+}
+
 public struct MergedPullRequest: Codable, Hashable, Sendable {
     public let number: Int
     public let title: String
@@ -1927,6 +2587,34 @@ public struct MergedPullRequest: Codable, Hashable, Sendable {
         self.author = author
         self.url = url
         self.labels = labels
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct MetricKitKind: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let metrics = MetricKitKind(rawValue: "metrics")
+    public static let diagnostics = MetricKitKind(rawValue: "diagnostics")
+}
+
+public struct MetricKitSummary: Codable, Hashable, Sendable {
+    public let id: String
+    public let at: Date
+    public let report: MetricKitKind
+    public let crashes: Int
+    public let hangs: Int
+
+    public init(id: String, at: Date, report: MetricKitKind, crashes: Int, hangs: Int) {
+        self.id = id
+        self.at = at
+        self.report = report
+        self.crashes = crashes
+        self.hangs = hangs
     }
 }
 
@@ -2377,6 +3065,23 @@ public struct Period: Codable, Hashable, Sendable {
     }
 }
 
+public struct PersonDay: Codable, Hashable, Sendable {
+    public let day: String
+    public let sessions: Int
+    public let foregroundMs: Double
+
+    public init(day: String, sessions: Int, foregroundMs: Double) {
+        self.day = day
+        self.sessions = sessions
+        self.foregroundMs = foregroundMs
+    }
+}
+
+public struct PersonNotFound: Codable, Hashable, Sendable {
+    public init() {
+    }
+}
+
 public struct PhasedRelease: Codable, Hashable, Sendable {
     public let state: String
     public let startedAt: Date?
@@ -2726,6 +3431,18 @@ public struct PushUnavailable: Codable, Hashable, Sendable {
     }
 }
 
+public struct ReadyTimes: Codable, Hashable, Sendable {
+    public let launches: Int
+    public let p50Ms: Double
+    public let p95Ms: Double
+
+    public init(launches: Int, p50Ms: Double, p95Ms: Double) {
+        self.launches = launches
+        self.p50Ms = p50Ms
+        self.p95Ms = p95Ms
+    }
+}
+
 public struct RegisterPush: Codable, Hashable, Sendable {
     public let token: String
     public let environment: PushEnvironment
@@ -2841,6 +3558,43 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
     }
 }
 
+public struct ReleaseHealth: Codable, Hashable, Sendable {
+    public let release: AppRelease
+    public let health: AppHealth
+    public let previousHealth: AppHealth?
+    public let crashesPerThousand: Double?
+    public let hangsPerThousand: Double?
+    public let previousCrashesPerThousand: Double?
+    public let previousHangsPerThousand: Double?
+    public let verdict: HealthVerdict
+    public let worse: [HealthMeasure]
+    public let better: [HealthMeasure]
+
+    public init(
+        release: AppRelease,
+        health: AppHealth,
+        previousHealth: AppHealth? = nil,
+        crashesPerThousand: Double? = nil,
+        hangsPerThousand: Double? = nil,
+        previousCrashesPerThousand: Double? = nil,
+        previousHangsPerThousand: Double? = nil,
+        verdict: HealthVerdict,
+        worse: [HealthMeasure],
+        better: [HealthMeasure],
+    ) {
+        self.release = release
+        self.health = health
+        self.previousHealth = previousHealth
+        self.crashesPerThousand = crashesPerThousand
+        self.hangsPerThousand = hangsPerThousand
+        self.previousCrashesPerThousand = previousCrashesPerThousand
+        self.previousHangsPerThousand = previousHangsPerThousand
+        self.verdict = verdict
+        self.worse = worse
+        self.better = better
+    }
+}
+
 public struct ReleaseList: Codable, Hashable, Sendable {
     public let releases: [ReleaseSummary]
     public let problems: [SourceProblem]
@@ -2935,6 +3689,43 @@ public struct ReleaseSummary: Codable, Hashable, Sendable {
     }
 }
 
+public struct ReleaseUsage: Codable, Hashable, Sendable {
+    public let component: String
+    public let environment: String
+    public let release: String
+    public let people: Int
+    public let installations: Int
+    public let sessions: Int
+
+    public init(
+        component: String,
+        environment: String,
+        release: String,
+        people: Int,
+        installations: Int,
+        sessions: Int,
+    ) {
+        self.component = component
+        self.environment = environment
+        self.release = release
+        self.people = people
+        self.installations = installations
+        self.sessions = sessions
+    }
+}
+
+public struct RetentionCohort: Codable, Hashable, Sendable {
+    public let week: String
+    public let people: Int
+    public let active: [Int]
+
+    public init(week: String, people: Int, active: [Int]) {
+        self.week = week
+        self.people = people
+        self.active = active
+    }
+}
+
 /// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
 public struct Runner: RawRepresentable, Codable, Hashable, Sendable {
     public let rawValue: String
@@ -2946,6 +3737,47 @@ public struct Runner: RawRepresentable, Codable, Hashable, Sendable {
     public static let auto = Runner(rawValue: "auto")
     public static let local = Runner(rawValue: "local")
     public static let cloud = Runner(rawValue: "cloud")
+}
+
+public struct ScreenShown: Codable, Hashable, Sendable {
+    public let id: String
+    public let at: Date
+    public let session: String
+    public let user: String?
+    public let feature: String?
+    public let screen: String
+
+    public init(
+        id: String,
+        at: Date,
+        session: String,
+        user: String? = nil,
+        feature: String? = nil,
+        screen: String,
+    ) {
+        self.id = id
+        self.at = at
+        self.session = session
+        self.user = user
+        self.feature = feature
+        self.screen = screen
+    }
+}
+
+public struct SdkKeyList: Codable, Hashable, Sendable {
+    public let keys: [IssuedSdkKey]
+
+    public init(keys: [IssuedSdkKey]) {
+        self.keys = keys
+    }
+}
+
+public struct SdkKeyNotFound: Codable, Hashable, Sendable {
+    public let key: String
+
+    public init(key: String) {
+        self.key = key
+    }
 }
 
 public struct SearchedFiles: Codable, Hashable, Sendable {
@@ -2970,6 +3802,53 @@ public struct SeriesStep: RawRepresentable, Codable, Hashable, Sendable {
     public static let `5m` = SeriesStep(rawValue: "5m")
     public static let `1h` = SeriesStep(rawValue: "1h")
     public static let `1d` = SeriesStep(rawValue: "1d")
+}
+
+public struct SessionEnded: Codable, Hashable, Sendable {
+    public let id: String
+    public let at: Date
+    public let session: String
+    public let user: String?
+    public let feature: String?
+    public let foregroundMs: Double
+
+    public init(
+        id: String,
+        at: Date,
+        session: String,
+        user: String? = nil,
+        feature: String? = nil,
+        foregroundMs: Double,
+    ) {
+        self.id = id
+        self.at = at
+        self.session = session
+        self.user = user
+        self.feature = feature
+        self.foregroundMs = foregroundMs
+    }
+}
+
+public struct SessionStarted: Codable, Hashable, Sendable {
+    public let id: String
+    public let at: Date
+    public let session: String
+    public let user: String?
+    public let feature: String?
+
+    public init(
+        id: String,
+        at: Date,
+        session: String,
+        user: String? = nil,
+        feature: String? = nil,
+    ) {
+        self.id = id
+        self.at = at
+        self.session = session
+        self.user = user
+        self.feature = feature
+    }
 }
 
 public struct SetProjects: Codable, Hashable, Sendable {
@@ -3180,6 +4059,89 @@ public struct StoreStage: RawRepresentable, Codable, Hashable, Sendable {
     public static let other = StoreStage(rawValue: "other")
 }
 
+public struct TimelineEntry: Codable, Hashable, Sendable {
+    public let component: String
+    public let environment: String
+    public let release: String
+    public let installation: String
+    public let signal: TimelineSignal
+
+    public init(
+        component: String,
+        environment: String,
+        release: String,
+        installation: String,
+        signal: TimelineSignal,
+    ) {
+        self.component = component
+        self.environment = environment
+        self.release = release
+        self.installation = installation
+        self.signal = signal
+    }
+}
+
+/// One of several kinds, told apart by `_tag`. A kind this client doesn't know, from a newer API,
+/// is `unknown`, with its name.
+public enum TimelineSignal: Codable, Hashable, Sendable {
+    case sessionStarted(SessionStarted)
+    case sessionEnded(SessionEnded)
+    case appLaunched(AppLaunched)
+    case screen(ScreenShown)
+    case event(EventTracked)
+    case metrickit(MetricKitSummary)
+    case unknown(String)
+
+    private enum Kind: String, CodingKey {
+        case kind = "_tag"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let kind = try decoder.container(keyedBy: Kind.self).decode(String.self, forKey: .kind)
+        switch kind {
+        case "session.started": self = .sessionStarted(try SessionStarted(from: decoder))
+        case "session.ended": self = .sessionEnded(try SessionEnded(from: decoder))
+        case "app.launched": self = .appLaunched(try AppLaunched(from: decoder))
+        case "screen": self = .screen(try ScreenShown(from: decoder))
+        case "event": self = .event(try EventTracked(from: decoder))
+        case "metrickit": self = .metrickit(try MetricKitSummary(from: decoder))
+        default: self = .unknown(kind)
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .sessionStarted(let value):
+            try value.encode(to: encoder)
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode("session.started", forKey: .kind)
+        case .sessionEnded(let value):
+            try value.encode(to: encoder)
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode("session.ended", forKey: .kind)
+        case .appLaunched(let value):
+            try value.encode(to: encoder)
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode("app.launched", forKey: .kind)
+        case .screen(let value):
+            try value.encode(to: encoder)
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode("screen", forKey: .kind)
+        case .event(let value):
+            try value.encode(to: encoder)
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode("event", forKey: .kind)
+        case .metrickit(let value):
+            try value.encode(to: encoder)
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode("metrickit", forKey: .kind)
+        case .unknown(let kind):
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode(kind, forKey: .kind)
+        }
+    }
+}
+
 /// One of several kinds, told apart by `_tag`. A kind this client doesn't know, from a newer API,
 /// is `unknown`, with its name.
 public enum TodayItem: Codable, Hashable, Sendable {
@@ -3362,6 +4324,68 @@ public struct Unauthorized: Codable, Hashable, Sendable {
     }
 }
 
+public struct UpdateText: Codable, Hashable, Sendable {
+    public let title: String
+    public let message: String
+
+    public init(title: String, message: String) {
+        self.title = title
+        self.message = message
+    }
+}
+
+public struct UpdateWords: Codable, Hashable, Sendable {
+    public let locale: String
+    public let decision: UpdateWordsDecision
+    public let text: UpdateText
+
+    public init(locale: String, decision: UpdateWordsDecision, text: UpdateText) {
+        self.locale = locale
+        self.decision = decision
+        self.text = text
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct UpdateWordsDecision: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let require = UpdateWordsDecision(rawValue: "require")
+    public static let recommend = UpdateWordsDecision(rawValue: "recommend")
+}
+
+public struct UsageDay: Codable, Hashable, Sendable {
+    public let day: String
+    public let people: Int
+    public let installations: Int
+    public let weekPeople: Int?
+    public let monthPeople: Int?
+    public let sessions: Int
+    public let foregroundMs: Double
+
+    public init(
+        day: String,
+        people: Int,
+        installations: Int,
+        weekPeople: Int? = nil,
+        monthPeople: Int? = nil,
+        sessions: Int,
+        foregroundMs: Double,
+    ) {
+        self.day = day
+        self.people = people
+        self.installations = installations
+        self.weekPeople = weekPeople
+        self.monthPeople = monthPeople
+        self.sessions = sessions
+        self.foregroundMs = foregroundMs
+    }
+}
+
 /// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
 public struct Verdict: RawRepresentable, Codable, Hashable, Sendable {
     public let rawValue: String
@@ -3376,6 +4400,44 @@ public struct Verdict: RawRepresentable, Codable, Hashable, Sendable {
     public static let tooEarly = Verdict(rawValue: "tooEarly")
     public static let first = Verdict(rawValue: "first")
     public static let unmeasured = Verdict(rawValue: "unmeasured")
+}
+
+public struct VersionPolicies: Codable, Hashable, Sendable {
+    public let policies: [ComponentVersionPolicy]
+
+    public init(policies: [ComponentVersionPolicy]) {
+        self.policies = policies
+    }
+}
+
+public struct VersionPolicyRefused: Codable, Hashable, Sendable {
+    public let reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
+}
+
+public struct VersionPolicyTo: Codable, Hashable, Sendable {
+    public let minimum: String?
+    public let recommended: String?
+    public let storeUrl: String?
+    public let minimumOsVersion: String?
+    public let words: [UpdateWords]?
+
+    public init(
+        minimum: String? = nil,
+        recommended: String? = nil,
+        storeUrl: String? = nil,
+        minimumOsVersion: String? = nil,
+        words: [UpdateWords]? = nil,
+    ) {
+        self.minimum = minimum
+        self.recommended = recommended
+        self.storeUrl = storeUrl
+        self.minimumOsVersion = minimumOsVersion
+        self.words = words
+    }
 }
 
 public struct VersionRefused: Codable, Hashable, Sendable {
@@ -3503,6 +4565,7 @@ extension CluenoriAPI {
             case "NotAllowed": return .notAllowed(try jsonDecoder().decode(NotAllowed.self, from: data))
             case "PairingCodeRejected": return .pairingCodeRejected(try jsonDecoder().decode(PairingCodeRejected.self, from: data))
             case "PasskeyRejected": return .passkeyRejected(try jsonDecoder().decode(PasskeyRejected.self, from: data))
+            case "PersonNotFound": return .personNotFound(try jsonDecoder().decode(PersonNotFound.self, from: data))
             case "PhoneKeyRejected": return .phoneKeyRejected(try jsonDecoder().decode(PhoneKeyRejected.self, from: data))
             case "PhoneNotFound": return .phoneNotFound(try jsonDecoder().decode(PhoneNotFound.self, from: data))
             case "ProjectExists": return .projectExists(try jsonDecoder().decode(ProjectExists.self, from: data))
@@ -3515,8 +4578,10 @@ extension CluenoriAPI {
             case "PushRejected": return .pushRejected(try jsonDecoder().decode(PushRejected.self, from: data))
             case "PushUnavailable": return .pushUnavailable(try jsonDecoder().decode(PushUnavailable.self, from: data))
             case "ReleaseNotFound": return .releaseNotFound(try jsonDecoder().decode(ReleaseNotFound.self, from: data))
+            case "SdkKeyNotFound": return .sdkKeyNotFound(try jsonDecoder().decode(SdkKeyNotFound.self, from: data))
             case "SignInNotFound": return .signInNotFound(try jsonDecoder().decode(SignInNotFound.self, from: data))
             case "Unauthorized": return .unauthorized(try jsonDecoder().decode(Unauthorized.self, from: data))
+            case "VersionPolicyRefused": return .versionPolicyRefused(try jsonDecoder().decode(VersionPolicyRefused.self, from: data))
             case "VersionRefused": return .versionRefused(try jsonDecoder().decode(VersionRefused.self, from: data))
             default: return .unreadable(status: status, reason: "An error this client doesn't know: \(named.error).")
             }

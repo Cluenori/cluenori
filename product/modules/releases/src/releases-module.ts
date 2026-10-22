@@ -37,6 +37,14 @@ import { RunnerAnswer, RunnerQuery } from "./runner.ts"
 import type { ReleasesSettings } from "./sources.ts"
 import { ReleaseSources } from "./sources.ts"
 import { syncReleases } from "./sync.ts"
+import { clearVersionPolicy, setVersionPolicy, versionPolicies } from "./version-policies.ts"
+import {
+  ClearVersionPolicy,
+  ComponentVersionPolicy,
+  SetVersionPolicy,
+  VersionPolicies,
+  VersionPolicyRefused,
+} from "./version-policy.ts"
 import {
   ComponentVersion,
   ComponentVersions,
@@ -81,6 +89,13 @@ export const releasesModule = defineModule({
      * telemetry.
      */
     delivery: moduleQuery({ input: Schema.Struct({}), success: Delivery, error: Schema.Never, run: () => deliveryOf }),
+    /** Each component's version policy; a component without one isn't listed. Reads only. */
+    versionPolicies: moduleQuery({
+      input: Schema.Struct({}),
+      success: VersionPolicies,
+      error: Schema.Never,
+      run: () => versionPolicies,
+    }),
     /** How the project's release notes read, for drafts to follow. Reads only. */
     notesStyle: moduleQuery({
       input: Schema.Struct({}),
@@ -140,5 +155,23 @@ export const releasesModule = defineModule({
     }),
     /** Sets how the project's release notes read. */
     setNotesStyle: moduleAction({ input: NotesStyle, success: NotesStyle, error: Schema.Never, run: setNotesStyle }),
+    /**
+     * Replaces a component's version policy: which of its releases must update, and which are
+     * offered one. Without a store URL, asks App Store Connect for its App Store app's page. Fails
+     * with `VersionPolicyRefused`.
+     */
+    setVersionPolicy: moduleAction({
+      input: SetVersionPolicy,
+      success: ComponentVersionPolicy,
+      error: VersionPolicyRefused,
+      run: setVersionPolicy,
+    }),
+    /** Removes a component's version policy; nothing for a component without one. */
+    clearVersionPolicy: moduleAction({
+      input: ClearVersionPolicy,
+      success: Schema.Void,
+      error: Schema.Never,
+      run: clearVersionPolicy,
+    }),
   },
 })

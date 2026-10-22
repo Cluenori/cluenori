@@ -90,5 +90,33 @@ export const ProjectsHandlers = HttpApiBuilder.group(CluenoriApi, "projects", (h
         const projects = yield* MemberProjects
         return yield* projects.call(member, params.project, projectCalls.addComponent, { actor, component: payload })
       }),
+    )
+    .handle("issueSdkKey", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.issueSdkKey, {
+          actor: member.actor,
+          component: params.component,
+        })
+      }),
+    )
+    .handle("sdkKeys", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.sdkKeys, { component: params.component })
+      }),
+    )
+    .handle("revokeSdkKey", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.revokeSdkKey, {
+          actor: member.actor,
+          component: params.component,
+          key: params.key,
+        })
+      }),
     ),
 )

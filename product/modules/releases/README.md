@@ -5,7 +5,8 @@ compared with the release before it, with its commit and what changed in its rep
 numbers each build, so a number always means one commit; promotes a release to an environment
 through its deploy target, as far as App Store review and release; and keeps the release's notes
 for its users, which its language model drafts, and publishes each release that reaches production
-on its repository's Releases page. It is the hub where a release's version, code,
+on its repository's Releases page. It keeps each app's version policy, which tells the app's SDK,
+through the manifest, which releases must update and which are offered one. It is the hub where a release's version, code,
 store build, deploys, performance and errors meet.
 
 ## Use it
@@ -37,6 +38,19 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
 // { state: "starting", workflow: "ios.yml", appStore: { bundleId, distribution: "appStore" }, ... }
 // Later: processing → inReview → approved, released with releaseApproved → succeeded.
 // Without notes for the App Store: PromotionRefused { fix: "notes" }.
+
+// A member sets an app's version policy; without a store URL, its App Store app's page is looked up.
+yield* releasesModule.actions.setVersionPolicy.run(member, {
+  component: ios, minimum: "0.4.0", recommended: "0.4.1", minimumOsVersion: "26.0",
+  words: [{ locale: "en-US", decision: "require", text: { title: "Update Notes", message: "…" } }],
+})
+// { component: "notes-ios", ..., storeUrl: "https://apps.apple.com/app/id1234567890", setAt }
+// Recommended lower than the minimum, neither, or no store URL found: VersionPolicyRefused { reason }.
+
+// The manifest asks what one release should do, in one environment and language.
+const policy = yield* versionPolicyFor(ios, { environment: production, release: "0.3.0+20", locale: "en-US" })
+// { decision: "require", update: { version: "0.4.1", minimumOsVersion: "26.0", storeUrl }, text: { title, message } }
+// 0.4.0+31: "recommend"; 0.4.1+40, a beta environment, or no policy: { decision: "none" }.
 ```
 
 ## Owns
@@ -59,6 +73,7 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
     - followed each minute; lost when no run shows within 10 minutes, it doesn't end within a day, or review takes over 30 days.
   - **Where a build runs, for `auto`:** `local` while a self-hosted runner of the repository's organization labelled `local` is online, as GitHub says; else `cloud`.
   - **GitHub's Releases page:** a release reaches production when it is deployed to one of the project's production environments (reported again there doesn't count; deployed again after another does), or when its App Store version starts reaching people (releasing in phases, or live; not when its build is uploaded, nor those out before App Store Connect was first read). It is then published as its tag (the reported one, else `v<release>`, made on its commit), marked latest, with its notes (English, else its first language) and the commits since the release before it that reached people there (it ran, was deployed, or was out on the App Store), at most 50, and the comparison's link; and published again when its notes are saved. It waits while its component has no repository or its commit isn't found.
+  - **A version policy** (`src/version-policies.ts`): in the project's production environments, a release whose version (the part before `+`) is below the minimum must update, one below the recommended version is offered it; versions compare part by part as numbers, a missing part as 0 (`0.4` is `0.4.0`); a release whose version isn't one to four numbers, such as `2026.10.20-a1b2c3d`, is never asked. It updates to the recommended version, else the minimum; its words are the project's for that decision in the language asked, else the same language in another region, else none, and the SDK uses its own. Its store URL, when not given, is the App Store page of the app the component's App Store deploy target names (one in production first), asked of App Store Connect when it is set.
   - **Notes:** at most 4000 characters a language; required before App Store review, except for an app's first version; a draft is written from the commits since the release current in that environment (on the App Store, the one live), in the project's notes style, with its last 5 notes as examples, and saved only by a person.
 - **Data,** in each project's database:
   - releases' commits (`releases_commits`) and lookups that found none, retried hourly (`releases_lookups`);
@@ -69,7 +84,8 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
   - promotions, with who started them and why (`releases_promotions`);
   - components' versions (`releases_versions`) and each commit's number (`releases_numbers`);
   - releases' notes (`releases_notes`) and the project's notes style (`releases_notes_style`);
-  - releases that reached production, to publish on GitHub, and their pages once published (`releases_github_releases`).
+  - releases that reached production, to publish on GitHub, and their pages once published (`releases_github_releases`);
+  - each component's version policy (`releases_version_policies`).
 
 ## Does not own
 
@@ -79,15 +95,17 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
 - **Which model writes drafts:** the host provides `effect/ai`'s `LanguageModel`.
 - **What a deploy does:** the repository's workflow; its `cluenori-release` step reports it.
 - **The changelog, flags and rollouts:** later modules; the notes are their first part.
+- **The manifest the SDK reads, and its cache:** `@cluenori/manifest` and the Worker, which compose it from `versionPolicyFor`. Audiences, grace periods and blocking by the API are later parts of force update.
 
 ## Contract
 
 `src/index.ts`:
 - **`releasesModule`:**
-  - its queries: `list`, `release`, `delivery`, `versions`, `notesStyle`;
-  - its actions: `promote`, `promoteLatest`, `releaseApproved`, `setVersion`, `saveNotes`, `draftNotes`, `setNotesStyle`;
+  - its queries: `list`, `release`, `delivery`, `versions`, `versionPolicies`, `notesStyle`;
+  - its actions: `promote`, `promoteLatest`, `releaseApproved`, `setVersion`, `saveNotes`, `draftNotes`, `setNotesStyle`, `setVersionPolicy`, `clearVersionPolicy`;
   - its ingest writes: `report`, `last`, `number`, `runner`;
   - and its background work.
+- **`versionPolicyFor`:** what one release should do about its version, for the manifest; never fails, reads two rows.
 - **`releasesLayer`:** its records and App Store Connect clients, from `ReleasesSettings`.
 - **`ReleasesGroup`:** its routes.
 - **The Schemas** they carry.
@@ -97,7 +115,8 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
 - **Engines:**
   - `@cluenori/signals`: releases, operations and errors by release;
   - `@cluenori/incidents`: incidents while a release ran;
-  - `@cluenori/projects`: components' links and deploy targets, and their keys for CI's writes.
+  - `@cluenori/projects`: components' links and deploy targets, the project's production environments, and their keys for CI's writes;
+  - `@cluenori/manifest`: the version policy's Schemas, `StoreVersion` and `VersionPolicy`.
 - **Capabilities:**
   - `@bagatka/github`: tags, commits, comparisons, pull requests, starting workflows and following their runs, and organizations' self-hosted runners, through the `GitHub` service the host provides;
   - `@bagatka/app-store-connect`: builds, versions and languages; preparing, submitting and releasing versions; What to Test;
@@ -132,7 +151,8 @@ A source that refuses or fails is noted for the list, logged when its problem is
   - `promotion.started`, with their reason;
   - `version.set`;
   - `release_notes.saved`;
-  - `notes_style.set`.
+  - `notes_style.set`;
+  - `version_policy.set` and `version_policy.cleared`, with the component.
 - **By the process `releases.promotions`:** `promotion.submitted` and `promotion.ended`.
 - **By the process `releases.numbering`:** `release.numbered`, when CI numbers a commit.
 

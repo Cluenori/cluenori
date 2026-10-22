@@ -1,0 +1,5 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  // The engine itself sees no platform.
+  "include": ["src"]
+}

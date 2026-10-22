@@ -13,6 +13,7 @@ import {
   MonitorList,
   MonitorNotFound,
 } from "@cluenori/incidents"
+import { ManifestQuery, VersionPolicy } from "@cluenori/manifest"
 import {
   AddComponent,
   AddedComponentResponse,
@@ -22,15 +23,22 @@ import {
   ComponentNotFound,
   IngestKey,
   IngestKeyRejected,
+  IssuedSdkKey,
   Project,
   ProjectDetail,
   ProjectExists,
   ProjectName,
   ProjectNotFound,
   ProjectSettings,
+  SdkKey,
+  SdkKeyList,
+  SdkKeyNotFound,
 } from "@cluenori/projects"
 import {
+  AppBatch,
+  AppBatchAccepted,
   ArchiveUnavailable,
+  CountryCode,
   OperationTable,
   ErrorDetail,
   ErrorGroupId,
@@ -47,6 +55,8 @@ import {
   OperationQuery,
   LoadSeries,
   SeriesStep,
+  SdkKeyRejected,
+  TooManySignals,
   TraceExport,
   TraceView,
 } from "@cluenori/signals"
@@ -63,9 +73,14 @@ export type EngineCallName =
   | "addComponent"
   | "linkComponent"
   | "updateSettings"
+  | "issueSdkKey"
+  | "sdkKeys"
+  | "revokeSdkKey"
   | "ingestTraces"
   | "ingestLogs"
   | "ingestMetrics"
+  | "ingestAppBatch"
+  | "appManifest"
   | "operations"
   | "loadOverTime"
   | "keptTraces"
@@ -131,6 +146,24 @@ export const projectCalls = {
     Component,
     Schema.Union([ProjectNotFound, ComponentNotFound]),
   ),
+  issueSdkKey: projectCall(
+    "issueSdkKey",
+    Schema.Struct({ actor: Actor, component: ComponentKey }),
+    IssuedSdkKey,
+    Schema.Union([ProjectNotFound, ComponentNotFound]),
+  ),
+  sdkKeys: projectCall(
+    "sdkKeys",
+    Schema.Struct({ component: ComponentKey }),
+    SdkKeyList,
+    Schema.Union([ProjectNotFound, ComponentNotFound]),
+  ),
+  revokeSdkKey: projectCall(
+    "revokeSdkKey",
+    Schema.Struct({ actor: Actor, component: ComponentKey, key: SdkKey }),
+    IssuedSdkKey,
+    Schema.Union([ProjectNotFound, SdkKeyNotFound]),
+  ),
   ingestTraces: projectCall(
     "ingestTraces",
     Schema.Struct({ ingestKey: IngestKey, export: TraceExport }),
@@ -148,6 +181,18 @@ export const projectCalls = {
     Schema.Struct({ ingestKey: IngestKey, export: MetricsExport }),
     recorded,
     ingestFailure,
+  ),
+  ingestAppBatch: projectCall(
+    "ingestAppBatch",
+    Schema.Struct({ key: SdkKey, country: Schema.optionalKey(CountryCode), batch: AppBatch }),
+    AppBatchAccepted,
+    Schema.Union([SdkKeyRejected, TooManySignals, ArchiveUnavailable]),
+  ),
+  appManifest: projectCall(
+    "appManifest",
+    Schema.Struct({ key: SdkKey, query: ManifestQuery }),
+    VersionPolicy,
+    SdkKeyRejected,
   ),
   operations: projectCall("operations", OperationQuery, OperationTable, ProjectNotFound),
   loadOverTime: projectCall(

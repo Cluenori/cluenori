@@ -4,6 +4,7 @@ import { Schema } from "effect"
 
 import { BundleId, ComponentName, DeployTarget } from "./component.ts"
 import { ProjectName } from "./project.ts"
+import { SdkKey } from "./sdk-key.ts"
 
 /** A project was created. */
 export const ProjectCreated = Schema.TaggedStruct("project.created", { project: ProjectKey, name: ProjectName })
@@ -27,3 +28,9 @@ export const ComponentLinked = Schema.TaggedStruct("component.linked", {
 export const ProjectSettingsChanged = Schema.TaggedStruct("project.settings_changed", {
   productionEnvironments: Schema.Array(EnvironmentKey),
 })
+
+/** A component got a new SDK key, which its app's builds can carry; its other keys stay active. */
+export const SdkKeyIssued = Schema.TaggedStruct("sdk_key.issued", { component: ComponentKey, key: SdkKey })
+
+/** A component's SDK key was revoked: builds that carry it are refused from then on. */
+export const SdkKeyRevoked = Schema.TaggedStruct("sdk_key.revoked", { component: ComponentKey, key: SdkKey })

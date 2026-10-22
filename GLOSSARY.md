@@ -6,8 +6,8 @@ One name per concept, used the same way in code, APIs, storage, UI, and conversa
 - Don't reuse a name for something else.
 - Add terms in the same change that introduces them.
 
-Product terms (project, component, origin, environment, release, feature, person, installation,
-account, session, trace, operation, idea, signals, records, activity, engines, and the module catalog)
+Product terms (project, component, origin, environment, release, feature, account, trace, operation,
+idea, signals, records, activity, engines, and the module catalog)
 are defined in `concept/Foundation.md` and `concept/Modules.md`. When code implements one, its row moves here.
 
 ## Terms the code implements
@@ -26,7 +26,17 @@ its exact rule.
 | Source | Where data comes from: `sdk-ios`, `otel`, `module:releases` | `Source` | origin (that is the component a trace started in) |
 | Activity entry | One fact about a change to a record, named `<record>.<past tense>` | an `Envelope` of kind `activity`; its payload a `Schema.TaggedStruct` | event, audit row, log |
 | Activity log | The activity of one database, and the only way to change its records | `ActivityLog`, its `commit` | event store, outbox, journal |
-| Ingest key | The credential a component sends its telemetry with: `cluenori.<project>.<component>.<secret>` | `IngestKey`, `@cluenori/projects` | API key, API token; SDK key (the apps' key, later) |
+| Ingest key | The credential a component sends its telemetry with: `cluenori.<project>.<component>.<secret>` | `IngestKey`, `@cluenori/projects` | API key, API token; SDK key (the apps' key) |
+| SDK key | The public key a component's app builds carry, so its SDK can send that component's signals and read its manifest, and nothing else: `cluenori-sdk.<project>.<component>.<id>`. A component has several at once, so keys rotate; a revoked one is refused | `SdkKey`, `IssuedSdkKey`, `@cluenori/projects` | ingest key (a secret, for services), API key, app token |
+| Person | One end user in one project, by the ID Cluenori gives them: the app's user IDs link to one, and an installation's signals without one are its person's | `PersonId`, `AppPerson`, `@cluenori/signals` | user (a member is a user of Cluenori), customer (a person who pays), user ID (the app's own ID for them, `AppUserId`) |
+| Installation | One app on one device, by the ID its SDK makes at first launch: its person, release, device, country and when it was last seen | `InstallationId`, `AppInstallation`, `@cluenori/signals` | device (it may hold several), install, phone (Cluenori's own paired phones) |
+| Session | One time a person had the app in the foreground: it starts when the app comes to the foreground, and ends 30 s after it leaves, with its foreground time | `SessionId`, `SessionStarted`, `SessionEnded`, `@cluenori/signals` | open, visit, sign-in (a browser's, for members) |
+| Timeline | A person's latest 1,000 signals but memory, newest first: what they did | `TimelineEntry`, `@cluenori/signals` | activity (facts about records), history, event log |
+| App health | How one release of an app runs, over all that is kept of it: launch times cold and warm, memory, and MetricKit's crashes and hangs, per 1,000 sessions; compared with the release before it, with a verdict in a release's words | `AppHealth`, `ReleaseHealth`, `HealthVerdict`, `@cluenori/analytics` | crash-free rate (one measure of it), stability, vitals |
+| Manifest | The one small response an app's SDK reads at launch and on resume, the same for every installation of a release, kept at the edge five minutes: its version policy now; flags, messages and What's New later | `AppManifest`, `@cluenori/manifest` | config, remote config (one future part of it), bootstrap |
+| Version policy | For one app component, the oldest version its users may keep (minimum) and the version to offer (recommended), with where to update and the project's words: in production, a release below the minimum must update, one below the recommended is offered it | `ComponentVersionPolicy`, `versionPolicyFor`, `@cluenori/releases`; `VersionPolicy`, what the manifest says of one release, `@cluenori/manifest` | force update (one decision of it), update gate (the SDK's screen), kill switch |
+| Store version | A version as a store shows it, and as a release names it before `+`: one to four numbers, compared part by part | `StoreVersion`, `@cluenori/manifest` | marketing version (Apple's word), build |
+| Calendar day | A day in UTC, `YYYY-MM-DD`, which what is counted by day is counted in | `CalendarDay`, Foundation | date (a date-time is an `Instant`) |
 | API token | The credential that lets someone use a deployment's public API | `CLUENORI_API_TOKEN`, `MemberAuthorization` in `apps/worker` | API key, password |
 | Operation | What a service does, by name: an HTTP route it answers (`GET /api/notes/{id}`), a message it processes, or a job it starts (`cleanup.run`). Each time it runs is counted from its span: a server or consumer span, or an internal span that starts its trace | `operation`, `isOperationSpan`, `@cluenori/signals` | endpoint (an HTTP API's address), route (the template inside a name), request (an HTTP request is one kind), job (another), run, transaction |
 | Counts | How many times each operation ran and failed, by environment, by the minute and by the hour, with a sketch of their durations | `OperationCounts`, `Signals`, `@cluenori/signals` | metrics (a separate signal, later), counters |

@@ -1,6 +1,7 @@
 import { WorkersAi, WorkersAiModel } from "@bagatka/cloudflare-workers-ai"
 import type { GitHub } from "@bagatka/github"
 import { webCryptoLayer } from "@bagatka/web-crypto"
+import { analyticsModule } from "@cluenori/analytics"
 import type {
   ErrorSchema,
   ModuleAction,
@@ -13,8 +14,8 @@ import { gitHubAsApp } from "@cluenori/github"
 import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
 import type { ReleaseRecords, ReleaseSources } from "@cluenori/releases"
-import { releasesLayer, releasesModule } from "@cluenori/releases"
-import { Signals } from "@cluenori/signals"
+import { releasesLayer, releasesModule, versionPolicyFor } from "@cluenori/releases"
+import { AppSignals, SdkKeyRejected, Signals } from "@cluenori/signals"
 import { Today } from "@cluenori/today"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
@@ -40,7 +41,7 @@ import type { PlainSchema } from "./object-calls.ts"
 import { exitText, serve } from "./object-calls.ts"
 import type { EngineCallName, ProjectCall, ProjectCallName } from "./project-calls.ts"
 import { moduleActionCall, moduleCall, moduleIngestCall, projectCalls } from "./project-calls.ts"
-import { r2ArchiveLayer } from "./r2-archive.ts"
+import { r2AppBatchLayer, r2ArchiveLayer } from "./r2-archive.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
 import { WorkspaceObjects } from "./workspace-objects.ts"
@@ -50,6 +51,7 @@ import { WorkspaceObjects } from "./workspace-objects.ts"
 type ProjectServices =
   | Projects
   | Signals
+  | AppSignals
   | Incidents
   | Today
   | ReleaseRecords
@@ -88,6 +90,10 @@ const draftTokens = 1500
 
 // How often the detectors look: the object's alarm runs `Incidents.check` this often.
 const checkEvery = Duration.toMillis(Duration.minutes(1))
+
+// An SDK key the project doesn't have, a revoked one, or one for a project that doesn't exist: the
+// same refusal, which tells an SDK to stop sending until its app is updated.
+const sdkKeyRejected = new SdkKeyRejected({ message: "This SDK key isn't one of this deployment's, or was revoked." })
 
 // Set when the object is first asked to create its project. Until then it builds no database, so a
 // request for a project that doesn't exist leaves nothing behind.
@@ -171,6 +177,33 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       }),
     new ProjectNotFound({ project }),
   ),
+  issueSdkKey: served(
+    projectCalls.issueSdkKey,
+    ({ actor, component }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        return yield* projects.issueSdkKey(actor, component)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  sdkKeys: served(
+    projectCalls.sdkKeys,
+    ({ component }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        return yield* projects.sdkKeys(component)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  revokeSdkKey: served(
+    projectCalls.revokeSdkKey,
+    ({ actor, component, key }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        return yield* projects.revokeSdkKey(actor, component, key)
+      }),
+    new ProjectNotFound({ project }),
+  ),
   ingestTraces: served(
     projectCalls.ingestTraces,
     ({ ingestKey, export: exported }) =>
@@ -203,6 +236,32 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
         return yield* signals.recordMetrics(component, exported)
       }),
     new IngestKeyRejected(),
+  ),
+  ingestAppBatch: served(
+    projectCalls.ingestAppBatch,
+    ({ key, country, batch }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const apps = yield* AppSignals
+        const component = yield* projects
+          .authenticateSdkKey(key)
+          .pipe(Effect.catchTag("SdkKeyNotFound", () => Effect.fail(sdkKeyRejected)))
+        return yield* apps.record({ component, key, ...(country === undefined ? {} : { country }) }, batch)
+      }),
+    sdkKeyRejected,
+  ),
+  // The manifest's version policy, from the Releases module's; the Worker adds how long to keep it.
+  appManifest: served(
+    projectCalls.appManifest,
+    ({ key, query }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const component = yield* projects
+          .authenticateSdkKey(key)
+          .pipe(Effect.catchTag("SdkKeyNotFound", () => Effect.fail(sdkKeyRejected)))
+        return yield* versionPolicyFor(component, query)
+      }),
+    sdkKeyRejected,
   ),
   operations: served(
     projectCalls.operations,
@@ -343,7 +402,7 @@ interface ServedModule {
 }
 
 // The modules every project's object serves, each on a visible line.
-const modules: ReadonlyArray<ServedModule> = [releasesModule]
+const modules: ReadonlyArray<ServedModule> = [releasesModule, analyticsModule]
 
 // Each module's queries, under `<module>.<query>`, its actions, under `<module>.action.<name>` for
 // the actor who asks, and its ingest writes, under `<module>.ingest.<name>` for the component whose
@@ -408,7 +467,13 @@ export class ProjectObject extends DurableObject<Env> {
     this.#runtime = ManagedRuntime.make(
       Today.layer.pipe(
         Layer.provideMerge(Incidents.layer),
-        Layer.provideMerge(Layer.mergeAll(Projects.layer({ project }), Signals.layer({ workspace, project }))),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            Projects.layer({ project }),
+            Signals.layer({ workspace, project }),
+            AppSignals.layer({ workspace, project }),
+          ),
+        ),
         // Each module's own services, on its own line, from the settings this host reads.
         Layer.provideMerge(
           Layer.unwrap(
@@ -447,6 +512,7 @@ export class ProjectObject extends DurableObject<Env> {
         ),
         Layer.provideMerge(webCryptoLayer(crypto)),
         Layer.provide(r2ArchiveLayer(env.ARCHIVE)),
+        Layer.provide(r2AppBatchLayer(env.APP_BATCHES)),
         Layer.provide(FetchHttpClient.layer),
         Layer.provide(SqliteClient.layer({ storage: ctx.storage })),
         // In the runtime itself, so every call runs on it as the Worker's requests do. A scheduler

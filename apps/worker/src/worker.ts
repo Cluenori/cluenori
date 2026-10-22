@@ -7,11 +7,15 @@ import { HttpRouter, HttpServer } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 
 import { activityOf } from "./activity-queue.ts"
+import { AnalyticsHandlers } from "./analytics-handlers.ts"
 import { ApiToken } from "./api-token.ts"
+import { CluenoriIngestApi } from "./app-ingest-api.ts"
+import { AppIngestHandlers, AppManifestHandlers } from "./app-ingest.ts"
 import { AppleAppSiteAssociation } from "./apple-app-site.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
 import { GitHubConnected, GitHubHandlers } from "./github-handlers.ts"
 import { IncidentsHandlers } from "./incidents-handlers.ts"
+import { ManifestCache } from "./manifest-cache.ts"
 import { memberAuthorizationLayer } from "./member-authorization-layer.ts"
 import { MemberProjects } from "./member-projects.ts"
 import { moduleIngestRoute } from "./module-ingest.ts"
@@ -26,6 +30,7 @@ import {
 import { ProjectObjects } from "./project-objects.ts"
 import { ProjectsHandlers } from "./projects-handlers.ts"
 import { ReleasesHandlers } from "./releases-handlers.ts"
+import { sdkKeyAuthorizationLayer } from "./sdk-key-authorization-layer.ts"
 import { MembersHandlers, PasskeysHandlers, SignInHandlers } from "./sign-in-handlers.ts"
 import { SignalsHandlers } from "./signals-handlers.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
@@ -72,6 +77,7 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
   Layer.provide(NotificationsHandlers),
   Layer.provide(TodayHandlers),
   Layer.provide(ReleasesHandlers),
+  Layer.provide(AnalyticsHandlers),
   Layer.provide(GitHubHandlers),
   Layer.provide(memberAuthorizationLayer),
   // Handlers reach projects only through it, which keeps to what the member sees (.oxlintrc.json);
@@ -87,6 +93,16 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
   ),
 )
 
+// What apps' SDKs call, with a component's SDK key: their batches, and their manifest, which the
+// edge keeps five minutes. Not under /api, and not for members.
+const IngestRoutes = HttpApiBuilder.layer(CluenoriIngestApi).pipe(
+  Layer.provide(AppIngestHandlers),
+  Layer.provide(AppManifestHandlers),
+  Layer.provide(sdkKeyAuthorizationLayer),
+  // The manifest's handler asks for the cache per request, so it is an output.
+  Layer.provideMerge(ManifestCache.layer),
+)
+
 // Built once per isolate, at module scope, and reused for every request (PATTERNS.md, "The Worker
 // entry"). Building does no I/O, which Workers don't allow outside a request. Each route's path
 // prefix is in wrangler.jsonc's `run_worker_first`, in every environment; any other path is the
@@ -94,6 +110,7 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
 const app = HttpRouter.toWebHandler(
   Layer.mergeAll(
     ApiRoutes,
+    IngestRoutes,
     OtlpTraces,
     OtlpLogs,
     OtlpMetrics,

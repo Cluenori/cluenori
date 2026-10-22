@@ -1,5 +1,6 @@
 import { CommitSha, Repository, WorkflowFile } from "@bagatka/github"
 import { EnvironmentKey, ReleaseVersion } from "@cluenori/foundation"
+import { StoreVersion } from "@cluenori/manifest"
 import { Schema } from "effect"
 
 import { PromotionId, PromotionReason, PromotionState } from "./promotion.ts"
@@ -62,3 +63,16 @@ export const ReleaseNotesSaved = Schema.TaggedStruct("release_notes.saved", {
 
 /** A member set how the project's release notes read. */
 export const NotesStyleSet = Schema.TaggedStruct("notes_style.set", { style: Schema.String })
+
+/**
+ * A member set a component's version policy: releases below `minimum` must update, those below
+ * `recommended` are offered it, at `storeUrl`.
+ */
+export const VersionPolicySet = Schema.TaggedStruct("version_policy.set", {
+  minimum: Schema.optionalKey(StoreVersion),
+  recommended: Schema.optionalKey(StoreVersion),
+  storeUrl: Schema.String,
+})
+
+/** A member removed a component's version policy: its releases are no longer asked to update. */
+export const VersionPolicyCleared = Schema.TaggedStruct("version_policy.cleared", {})

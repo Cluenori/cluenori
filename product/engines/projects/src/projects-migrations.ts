@@ -47,5 +47,19 @@ export const migrateProjects = Migrator.make({})({
       const sql = yield* SqlClient.SqlClient
       yield* sql`ALTER TABLE projects_components ADD COLUMN ships_with TEXT`
     }),
+    // Components' SDK keys, revoked ones too, revoked_at null while active. Unlike an ingest key, an
+    // SDK key is kept as it is, not as a digest: it is public, shipped inside every build, and the
+    // founder must be able to list it again to put it in a new build. It is unguessable, so it is
+    // still looked up by exact match.
+    "0006_sdk_keys": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE projects_sdk_keys (
+        key TEXT PRIMARY KEY,
+        component TEXT NOT NULL,
+        issued_at TEXT NOT NULL,
+        revoked_at TEXT
+      )`
+      yield* sql`CREATE INDEX projects_sdk_keys_by_component ON projects_sdk_keys (component)`
+    }),
   }),
 })

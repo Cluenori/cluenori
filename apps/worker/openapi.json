@@ -1142,6 +1142,240 @@
         }
       }
     },
+    "/api/projects/{project}/components/{component}/sdk-keys": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.issueSdkKey",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "IssuedSdkKey",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedSdkKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ComponentNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ComponentNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Issues a new SDK key for a component: the key its app's builds carry, in the app's SDK configuration, so the SDK can send the component's signals and read its manifest. It is public, as anything shipped in an app is, and grants nothing else. The component's other keys stay active until revoked, so a new build can carry the new key while older builds keep working. Listed again with sdkKeys. 404 for a project or a component that doesn't exist."
+      },
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.sdkKeys",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SdkKeyList",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkKeyList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ComponentNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ComponentNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "A component's SDK keys, newest first, revoked ones too: each key, when it was issued, and `revokedAt` once it is revoked. Active keys are those without `revokedAt`. 404 for a project or a component that doesn't exist."
+      }
+    },
+    "/api/projects/{project}/components/{component}/sdk-keys/{key}/revoke": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.revokeSdkKey",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "IssuedSdkKey",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedSdkKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | SdkKeyNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SdkKeyNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Revokes one of a component's SDK keys: builds that carry it are refused from then on, so issue its replacement and ship it first. Revoking a key revoked before changes nothing and returns it. 404 for a project that doesn't exist, or a key that isn't one of the component's. Returns the key, with `revokedAt`."
+      }
+    },
     "/api/projects/{project}/operations": {
       "get": {
         "tags": [
@@ -4103,6 +4337,767 @@
           "required": true
         }
       }
+    },
+    "/api/projects/{project}/version-policies": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.versionPolicies",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VersionPolicies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionPolicies"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Each app component's version policy: releases below `minimum` must update before they can be used, those below `recommended` are offered it in a sheet people can close; with the store page to update from, the oldest OS the update runs on, and the project's words for each decision by language. It applies in the project's production environments, to releases whose version (the part before `+`) is one to four numbers, compared part by part. A component without a policy isn't listed; its releases are never asked to update. Apps read it in their manifest within five minutes."
+      }
+    },
+    "/api/projects/{project}/version-policies/{component}": {
+      "put": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.setVersionPolicy",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ComponentVersionPolicy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentVersionPolicy"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VersionPolicyRefused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionPolicyRefused"
+                }
+              }
+            }
+          }
+        },
+        "description": "Replaces a component's version policy: what is left out is unset, so send every field to keep. `minimum`, `recommended`, or both, the recommended not lower; at most 40 `words`, one for each language and decision (`require` or `recommend`), which the app shows instead of its own. Without `storeUrl`, the App Store page of the app its App Store deploy target names (one in production first) is asked of App Store Connect. 422 for a component the project lacks, neither version, a recommended version lower than the minimum, or no store URL given or found.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionPolicyTo"
+              }
+            }
+          },
+          "required": true
+        }
+      },
+      "delete": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.clearVersionPolicy",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Removes a component's version policy: its releases are no longer asked to update, once apps read their manifest again, within five minutes. Removing one that isn't set does nothing."
+      }
+    },
+    "/api/projects/{project}/usage": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "operationId": "analytics.usage",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AppUsage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUsage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "How a project's apps were used in a period, by UTC day: the people active (DAU), the people of the 7 and the 30 days ending each day (WAU and MAU), installations, sessions (each time the app came to the foreground) and their foreground time; over the whole period, people, installations, sessions per person and per person and day, and each release's people. Only what the apps' SDKs sent counts: days before the first batch, or older than the 15 months kept, aren't listed, and a week or month that reaches before them has no count, never zero. Narrow it by component, environment and release."
+      }
+    },
+    "/api/projects/{project}/retention": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "operationId": "analytics.retention",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AppRetention",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppRetention"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Weekly cohorts of the people first seen in a period, by the UTC week (Monday to Sunday) each was first seen in a component and environment: how many there were, and how many were active in each week since, the first being all of them and the last the week now is in, so far. Activity is kept 15 months."
+      }
+    },
+    "/api/projects/{project}/app-health": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "operationId": "analytics.appHealth",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AppHealthList",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppHealthList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "The app health of the releases that sent anything in a period, the latest first seen first, at most 30, each over all that is kept of it and beside the release before it of the same component and environment: sessions and people; launch times to the first frame and to the first useful screen, p50 and p95, cold and warm, prewarmed launches only counted; peak memory and footprint p95; MetricKit's crashes and hangs, and per 1,000 sessions. Worse when a launch kind's p95 is at least 1.5 times and 100 ms more than before (both with 50 launches), peak memory's p95 1.25 times and 50 MB more (50 measurements), or crashes or hangs at least 5, twice the rate and 2 per 1,000 sessions more (both with 200 sessions and MetricKit's reports); too early until it ran an hour and a measure compares. What a release didn't send is absent, not zero."
+      }
+    },
+    "/api/projects/{project}/feature-use": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "operationId": "analytics.featureUse",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "FeatureUseTable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureUseTable"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "How each feature key was used in a period, the most people first: the people who did anything in it, its events and screens, and the app's memory there (peak and footprint p95); signals the app marked with no feature are the row without a key, \"(no feature)\", whose share says how much is tagged."
+      }
+    },
+    "/api/projects/{project}/people/{person}": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "operationId": "analytics.person",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "person",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AppPerson",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPerson"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | PersonNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PersonNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "One person of the project, by the ID Cluenori gave them: the app's user IDs linked to them, when they were first and last seen, their installations (component, release, device, country), the days they were active with their sessions, the latest 90, and their timeline: the latest 1,000 sessions, launches, screens, events and MetricKit reports, newest first."
+      }
+    },
+    "/api/projects/{project}/people": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "operationId": "analytics.personByUser",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "user",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AppUserId"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AppPerson",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPerson"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | PersonNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PersonNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "The person the app's own user ID `user` is linked to, as the person route answers: what did this user do. 404 when the apps never sent it."
+      }
     }
   },
   "components": {
@@ -4126,6 +5121,21 @@
         ],
         "additionalProperties": false
       },
+      "PersonNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PersonNotFound"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
       "ProjectNotFound": {
         "type": "object",
         "properties": {
@@ -4143,6 +5153,1223 @@
         "required": [
           "_tag",
           "project"
+        ],
+        "additionalProperties": false
+      },
+      "AppPerson": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppUserId"
+            }
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "installations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppInstallation"
+            }
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonDay"
+            }
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineEntry"
+            }
+          }
+        },
+        "required": [
+          "person",
+          "users",
+          "firstSeen",
+          "lastSeen",
+          "installations",
+          "days",
+          "timeline"
+        ],
+        "additionalProperties": false
+      },
+      "TimelineEntry": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "installation": {
+            "type": "string"
+          },
+          "signal": {
+            "$ref": "#/components/schemas/TimelineSignal"
+          }
+        },
+        "required": [
+          "component",
+          "environment",
+          "release",
+          "installation",
+          "signal"
+        ],
+        "additionalProperties": false
+      },
+      "TimelineSignal": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/SessionStarted"
+          },
+          {
+            "$ref": "#/components/schemas/SessionEnded"
+          },
+          {
+            "$ref": "#/components/schemas/AppLaunched"
+          },
+          {
+            "$ref": "#/components/schemas/ScreenShown"
+          },
+          {
+            "$ref": "#/components/schemas/EventTracked"
+          },
+          {
+            "$ref": "#/components/schemas/MetricKitSummary"
+          }
+        ]
+      },
+      "MetricKitSummary": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "metrickit"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "report": {
+            "$ref": "#/components/schemas/MetricKitKind"
+          },
+          "crashes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "hangs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "_tag",
+          "id",
+          "at",
+          "report",
+          "crashes",
+          "hangs"
+        ],
+        "additionalProperties": false
+      },
+      "MetricKitKind": {
+        "type": "string",
+        "enum": [
+          "metrics",
+          "diagnostics"
+        ]
+      },
+      "EventTracked": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "event"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "session": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AppUserId"
+          },
+          "feature": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "properties": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "_tag",
+          "id",
+          "at",
+          "session",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "AppUserId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "ScreenShown": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "screen"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "session": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AppUserId"
+          },
+          "feature": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "screen": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          }
+        },
+        "required": [
+          "_tag",
+          "id",
+          "at",
+          "session",
+          "screen"
+        ],
+        "additionalProperties": false
+      },
+      "AppLaunched": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "app.launched"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "session": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AppUserId"
+          },
+          "feature": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "start": {
+            "$ref": "#/components/schemas/LaunchStart"
+          },
+          "prewarmed": {
+            "type": "boolean"
+          },
+          "firstFrameMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "readyMs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "_tag",
+          "id",
+          "at",
+          "session",
+          "start",
+          "prewarmed",
+          "firstFrameMs"
+        ],
+        "additionalProperties": false
+      },
+      "LaunchStart": {
+        "type": "string",
+        "enum": [
+          "cold",
+          "warm"
+        ]
+      },
+      "SessionEnded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "session.ended"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "session": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AppUserId"
+          },
+          "feature": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "foregroundMs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "_tag",
+          "id",
+          "at",
+          "session",
+          "foregroundMs"
+        ],
+        "additionalProperties": false
+      },
+      "SessionStarted": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "session.started"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "session": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AppUserId"
+          },
+          "feature": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "_tag",
+          "id",
+          "at",
+          "session"
+        ],
+        "additionalProperties": false
+      },
+      "PersonDay": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "$ref": "#/components/schemas/CalendarDay"
+          },
+          "sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "foregroundMs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "day",
+          "sessions",
+          "foregroundMs"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarDay": {
+        "type": "string",
+        "allOf": [
+          {
+            "format": "date"
+          }
+        ]
+      },
+      "AppInstallation": {
+        "type": "object",
+        "properties": {
+          "installation": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "device": {
+            "$ref": "#/components/schemas/AppDevice"
+          },
+          "sdk": {
+            "$ref": "#/components/schemas/AppSdk"
+          },
+          "country": {
+            "$ref": "#/components/schemas/CountryCode"
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "installation",
+          "component",
+          "environment",
+          "release",
+          "device",
+          "sdk",
+          "firstSeen",
+          "lastSeen"
+        ],
+        "additionalProperties": false
+      },
+      "CountryCode": {
+        "type": "string"
+      },
+      "AppSdk": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^\\P{Cc}+$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^\\P{Cc}+$"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "AppDevice": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^\\P{Cc}+$"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/AppPlatform"
+          },
+          "osVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^\\P{Cc}+$"
+          },
+          "locale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^\\P{Cc}+$"
+          },
+          "timeZone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^\\P{Cc}+$"
+          }
+        },
+        "required": [
+          "model",
+          "platform",
+          "osVersion",
+          "locale",
+          "timeZone"
+        ],
+        "additionalProperties": false
+      },
+      "AppPlatform": {
+        "type": "string",
+        "enum": [
+          "iOS",
+          "iPadOS",
+          "macOS",
+          "visionOS",
+          "watchOS",
+          "tvOS"
+        ]
+      },
+      "FeatureUseTable": {
+        "type": "object",
+        "properties": {
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeatureUse"
+            }
+          }
+        },
+        "required": [
+          "features"
+        ],
+        "additionalProperties": false
+      },
+      "FeatureUse": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "events": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "screens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "memory": {
+            "$ref": "#/components/schemas/MemoryUse"
+          }
+        },
+        "required": [
+          "people",
+          "events",
+          "screens"
+        ],
+        "additionalProperties": false
+      },
+      "MemoryUse": {
+        "type": "object",
+        "properties": {
+          "samples": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "peakP95Bytes": {
+            "type": "number",
+            "minimum": 0
+          },
+          "footprintP95Bytes": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "samples",
+          "peakP95Bytes",
+          "footprintP95Bytes"
+        ],
+        "additionalProperties": false
+      },
+      "AppHealthList": {
+        "type": "object",
+        "properties": {
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseHealth"
+            }
+          }
+        },
+        "required": [
+          "releases"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseHealth": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "$ref": "#/components/schemas/AppRelease"
+          },
+          "health": {
+            "$ref": "#/components/schemas/AppHealth"
+          },
+          "previousHealth": {
+            "$ref": "#/components/schemas/AppHealth"
+          },
+          "crashesPerThousand": {
+            "type": "number",
+            "minimum": 0
+          },
+          "hangsPerThousand": {
+            "type": "number",
+            "minimum": 0
+          },
+          "previousCrashesPerThousand": {
+            "type": "number",
+            "minimum": 0
+          },
+          "previousHangsPerThousand": {
+            "type": "number",
+            "minimum": 0
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/HealthVerdict"
+          },
+          "worse": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthMeasure"
+            }
+          },
+          "better": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthMeasure"
+            }
+          }
+        },
+        "required": [
+          "release",
+          "health",
+          "verdict",
+          "worse",
+          "better"
+        ],
+        "additionalProperties": false
+      },
+      "HealthMeasure": {
+        "type": "string",
+        "enum": [
+          "coldLaunch",
+          "warmLaunch",
+          "memory",
+          "crashes",
+          "hangs"
+        ]
+      },
+      "HealthVerdict": {
+        "type": "string",
+        "enum": [
+          "worse",
+          "better",
+          "same",
+          "tooEarly",
+          "first",
+          "unmeasured"
+        ]
+      },
+      "AppHealth": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "cold": {
+            "$ref": "#/components/schemas/LaunchTimes"
+          },
+          "warm": {
+            "$ref": "#/components/schemas/LaunchTimes"
+          },
+          "prewarmed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "memory": {
+            "$ref": "#/components/schemas/MemoryUse"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/AppDiagnostics"
+          }
+        },
+        "required": [
+          "sessions",
+          "people",
+          "prewarmed"
+        ],
+        "additionalProperties": false
+      },
+      "AppDiagnostics": {
+        "type": "object",
+        "properties": {
+          "reports": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "crashes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "hangs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "cpuExceptions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "diskWriteExceptions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "reports",
+          "crashes",
+          "hangs",
+          "cpuExceptions",
+          "diskWriteExceptions"
+        ],
+        "additionalProperties": false
+      },
+      "LaunchTimes": {
+        "type": "object",
+        "properties": {
+          "launches": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "firstFrameP50Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "firstFrameP95Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "ready": {
+            "$ref": "#/components/schemas/ReadyTimes"
+          }
+        },
+        "required": [
+          "launches",
+          "firstFrameP50Ms",
+          "firstFrameP95Ms"
+        ],
+        "additionalProperties": false
+      },
+      "ReadyTimes": {
+        "type": "object",
+        "properties": {
+          "launches": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "p50Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p95Ms": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "launches",
+          "p50Ms",
+          "p95Ms"
+        ],
+        "additionalProperties": false
+      },
+      "AppRelease": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "previous": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "component",
+          "environment",
+          "release",
+          "firstSeen",
+          "lastSeen"
+        ],
+        "additionalProperties": false
+      },
+      "AppRetention": {
+        "type": "object",
+        "properties": {
+          "cohorts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetentionCohort"
+            }
+          },
+          "currentWeek": {
+            "$ref": "#/components/schemas/CalendarDay"
+          }
+        },
+        "required": [
+          "cohorts",
+          "currentWeek"
+        ],
+        "additionalProperties": false
+      },
+      "RetentionCohort": {
+        "type": "object",
+        "properties": {
+          "week": {
+            "$ref": "#/components/schemas/CalendarDay"
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "active": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "required": [
+          "week",
+          "people",
+          "active"
+        ],
+        "additionalProperties": false
+      },
+      "AppUsage": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageDay"
+            }
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "installations": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "sessionsPerPerson": {
+            "type": "number"
+          },
+          "sessionsPerPersonDay": {
+            "type": "number"
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseUsage"
+            }
+          }
+        },
+        "required": [
+          "days",
+          "people",
+          "installations",
+          "sessions",
+          "releases"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseUsage": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "installations": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "component",
+          "environment",
+          "release",
+          "people",
+          "installations",
+          "sessions"
+        ],
+        "additionalProperties": false
+      },
+      "UsageDay": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "$ref": "#/components/schemas/CalendarDay"
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "installations": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "weekPeople": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "monthPeople": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "foregroundMs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "day",
+          "people",
+          "installations",
+          "sessions",
+          "foregroundMs"
+        ],
+        "additionalProperties": false
+      },
+      "Period": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "VersionPolicyRefused": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "VersionPolicyRefused"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "ComponentVersionPolicy": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "minimum": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "recommended": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "storeUrl": {
+            "type": "string"
+          },
+          "minimumOsVersion": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpdateWords"
+            },
+            "maxItems": 40
+          },
+          "setAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "component",
+          "storeUrl",
+          "words",
+          "setAt"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateWords": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "decision": {
+            "$ref": "#/components/schemas/UpdateWordsDecision"
+          },
+          "text": {
+            "$ref": "#/components/schemas/UpdateText"
+          }
+        },
+        "required": [
+          "locale",
+          "decision",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateText": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "title",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateWordsDecision": {
+        "type": "string",
+        "enum": [
+          "require",
+          "recommend"
+        ]
+      },
+      "VersionPolicyTo": {
+        "type": "object",
+        "properties": {
+          "minimum": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "recommended": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "storeUrl": {
+            "type": "string"
+          },
+          "minimumOsVersion": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpdateWords"
+            },
+            "maxItems": 40
+          }
+        },
+        "additionalProperties": false
+      },
+      "VersionPolicies": {
+        "type": "object",
+        "properties": {
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComponentVersionPolicy"
+            }
+          }
+        },
+        "required": [
+          "policies"
         ],
         "additionalProperties": false
       },
@@ -6924,24 +9151,6 @@
           "consumer"
         ]
       },
-      "Period": {
-        "type": "object",
-        "properties": {
-          "from": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "to": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "from",
-          "to"
-        ],
-        "additionalProperties": false
-      },
       "LogCounts": {
         "type": "object",
         "properties": {
@@ -7426,6 +9635,66 @@
           "p80Ms",
           "p95Ms",
           "p99Ms"
+        ],
+        "additionalProperties": false
+      },
+      "SdkKeyNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "SdkKeyNotFound"
+            ]
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "IssuedSdkKey": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "key",
+          "component",
+          "issuedAt"
+        ],
+        "additionalProperties": false
+      },
+      "SdkKeyList": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssuedSdkKey"
+            }
+          }
+        },
+        "required": [
+          "keys"
         ],
         "additionalProperties": false
       },
@@ -8201,6 +10470,9 @@
     },
     {
       "name": "releases"
+    },
+    {
+      "name": "analytics"
     }
   ]
 }

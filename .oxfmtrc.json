@@ -7,13 +7,14 @@
   "arrowParens": "always",
   "sortImports": true,
   // Markdown is wrapped by hand at 100 columns; generated files are written by their generators, and
-  // Icon Composer documents by Icon Composer.
+  // Icon Composer documents and asset catalogs by Icon Composer and Xcode.
   "ignorePatterns": [
     "**/*.md",
     "bun.lock",
     "flake.lock",
     "**/worker-configuration.d.ts",
     "**/openapi.json",
-    "**/*.icon/**"
+    "**/*.icon/**",
+    "**/*.xcassets/**"
   ]
 }

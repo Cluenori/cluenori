@@ -11,7 +11,7 @@ import { TestClock } from "effect/testing"
 import type { KeptTrace, OperationCounts, TraceExport } from "../src/index.ts"
 import { BatchDigest, readTraces, Signals } from "../src/index.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
-import { inProject, WebCrypto } from "./in-object.ts"
+import { dropAppTables, inProject, WebCrypto } from "./in-object.ts"
 
 // The fixture's operations started at 2026-10-19T22:49:43Z; the tests ask a minute later.
 const capturedAt = 1792442983314
@@ -783,6 +783,7 @@ describe("Signals by release", () => {
           yield* sql`DROP TABLE signals_releases`
           yield* sql`DROP INDEX signals_logs_release`
           yield* sql`ALTER TABLE signals_logs DROP COLUMN release`
+          yield* dropAppTables
           yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 7`
         }).pipe(Effect.orDie),
       )

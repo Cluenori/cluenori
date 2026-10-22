@@ -17,6 +17,7 @@ import { setup } from "./setup.ts"
 import { appStore, github } from "./sources-commands.ts"
 import { today } from "./today-command.ts"
 import { update } from "./update.ts"
+import { versionPolicy } from "./version-policy-commands.ts"
 import { version } from "./versions-commands.ts"
 
 /**
@@ -49,6 +50,7 @@ export const cluenori = Command.make("cluenori").pipe(
     release,
     delivery,
     version,
+    versionPolicy,
     notes,
     notesStyle,
     promote,

@@ -1,7 +1,8 @@
 /**
  * Releases: each component's versions, as its telemetry, its CI's deploy reports, and App Store
  * Connect know them, each compared with the one before it, with its commit and what changed in its
- * repository since; and promoting one to an environment, by starting its deploy workflow on GitHub.
+ * repository since; promoting one to an environment, by starting its deploy workflow on GitHub;
+ * and each app's version policy, which releases must update and which are offered one.
  * Reads Signals' counts and errors by release and the project's incidents; keeps commits, changes,
  * store builds, deploys and promotions of its own.
  */
@@ -81,8 +82,22 @@ export {
   PromotionSubmitted,
   ReleaseNotesSaved,
   ReleaseNumbered,
+  VersionPolicyCleared,
+  VersionPolicySet,
   VersionSet,
 } from "./releases-activity.ts"
+export {
+  ClearVersionPolicy,
+  compareStoreVersions,
+  ComponentVersionPolicy,
+  SetVersionPolicy,
+  UpdateWords,
+  UpdateWordsDecision,
+  VersionPolicies,
+  VersionPolicyRefused,
+  VersionPolicyTo,
+} from "./version-policy.ts"
+export { versionPolicyFor } from "./version-policies.ts"
 export type { ReleasesSettings } from "./sources.ts"
 export { ReleaseFilters, ReleasesGroup } from "./releases-api.ts"
 export { ReleaseRecords } from "./records.ts"

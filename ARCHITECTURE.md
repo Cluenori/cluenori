@@ -138,8 +138,8 @@ packages/
   webauthn/                    @bagatka/webauthn: makes and checks passkeys
 product/
   foundation/                  @cluenori/foundation
-  engines/<engine>/            @cluenori/<engine>: projects, signals, incidents, phones, today, notifications, members, github
-  modules/<module>/            @cluenori/<module>
+  engines/<engine>/            @cluenori/<engine>: projects, signals, manifest, incidents, phones, today, notifications, members, github
+  modules/<module>/            @cluenori/<module>: releases, analytics
 apps/
   worker/                      @cluenori/worker: the deployable Worker and composition root
     wrangler.jsonc
@@ -151,6 +151,10 @@ apps/
     CluenoriAlerts/            the notification extension, which rings alarms
 sdks/
   web/                         @cluenori/sdk: browsers and JavaScript backends (MIT)
+  swift/                       the Swift SDK for Apple's platforms (MIT): a Swift package, no workspace package
+    openapi.json, Sources/CluenoriIngest/CluenoriIngestAPI.swift   generated from the ingest API's definition
+  swift/                       the Swift SDK for founders' iPhone apps, one Swift package (MIT)
+    Sources/CluenoriIngest/CluenoriIngestAPI.swift   generated from the ingest API's definition
 tests/
   journeys/                    the real Worker through its public API
 ```
@@ -165,15 +169,17 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 
 | Part | Package | Purpose | Status |
 |---|---|---|---|
-| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, operations, their load, errors and logs over time, kept traces, logs, traces, incidents and monitors, Today across projects, phones, each calling with its own key, and GitHub's connection; and the Releases module's routes, its queries and its action), GitHub's return when an owner connects it (`/api/github/connected`), OTLP ingest of traces, logs and metrics, modules' ingest writes with a component's key (`/ingest/v1/<module>/<name>`, such as deploy reports), the archive in R2, each project's Durable Object and the workspace's, the project's alarm that runs its detectors every minute and delivers its activity to the activity queue, the queue's consumer that hands it to the workspace's notifications, and the dashboard's files |
+| Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, operations, their load, errors and logs over time, kept traces, logs, traces, incidents and monitors, Today across projects, phones, each calling with its own key, and GitHub's connection; and the Releases module's routes, its queries and its action), GitHub's return when an owner connects it (`/api/github/connected`), OTLP ingest of traces, logs and metrics, the ingest API apps' SDKs call with a component's SDK key (`CluenoriIngestApi`: batches of their signals, limited per key and per installation, and the manifest, kept at the edge five minutes), modules' ingest writes with a component's key (`/ingest/v1/<module>/<name>`, such as deploy reports), the archive in R2, each project's Durable Object and the workspace's, apps' batches in R2, the project's alarm that runs its detectors every minute and delivers its activity to the activity queue, the queue's consumer that hands it to the workspace's notifications, and the dashboard's files |
 | CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, questions about them, and the repository's check and generate | Built |
 | Dashboard | `apps/dashboard` | The web app over the public API | Built: served by the Worker, signed in with a passkey or the API token; members, invitations and the browsers signed in; reads the public API for a project's overview, its performance, operations, errors, logs and releases by component, and a trace; the views waiting for app data are in its design kit, on sample data |
 | iPhone app | `apps/ios` | Cluenori on the founder's iPhone, from TestFlight: near the web's parity, and where alerts reach them | Built: pairing by the web's QR code or a passkey, the phone's key in the Keychain, Today, and each project's incidents, load, operations, errors, logs and releases, and its delivery, what release is in each environment with its one next step, every screen kept for offline; alerts: the push token registered with the phone's key, an alarm through silent mode from its notification extension, Acknowledge on the alarm and the notification, and a test alarm |
 | Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, `ActivityLog`, which commits a write with its activity and delivers it, at least once, and the module contract's first part, `defineModule`: a module's ID, scope, queries and their routes |
-| Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys, components' links to their repository and App Store app, and each project's production environments) and `signals` (the archive, operation counts by release, kept traces, warnings and errors, error groups, traces), `incidents` (detectors, incidents, monitors), `phones` (pairing, phone keys, last seen, push tokens), `today` (what needs attention now, across projects), `notifications` (alerts on phones), `members` (members, what each sees, passkeys and sign-ins), and `github` (the workspace's GitHub App, connected from the web, and tokens that act as it in projects); the first action, Releases' promote, is served for the members who see the project, and the rest of Actions and policy come with the first action that needs each |
-| Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Built: `releases`, each component's releases from its telemetry, its CI's deploy reports and App Store Connect, each compared with the release before it, with its commit and changes from GitHub; each build numbered by the component's version, so a number is one commit; releases promoted by their deploy targets, through a workflow and on through App Store review; and release notes the project's language model drafts. The rest planned |
+| Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys and SDK keys, components' links to their repository and App Store app, and each project's production environments) and `signals` (the archive, operation counts by release, kept traces, warnings and errors, error groups, traces; and apps' signals: people and installations, activity, sessions and measures by day and release, retention, timelines, apps' batches archived), `manifest` (the manifest's contract, which the Worker composes), `incidents` (detectors, incidents, monitors), `phones` (pairing, phone keys, last seen, push tokens), `today` (what needs attention now, across projects), `notifications` (alerts on phones), `members` (members, what each sees, passkeys and sign-ins), and `github` (the workspace's GitHub App, connected from the web, and tokens that act as it in projects); the first action, Releases' promote, is served for the members who see the project, and the rest of Actions and policy come with the first action that needs each |
+| Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Built: `releases`, each component's releases from its telemetry, its CI's deploy reports and App Store Connect, each compared with the release before it, with its commit and changes from GitHub; each build numbered by the component's version, so a number is one commit; releases promoted by their deploy targets, through a workflow and on through App Store review; and release notes the project's language model drafts; and each app component's version policy, which the manifest serves. `analytics`, apps' usage, retention, each release's app health beside the release before it, features, and one person, from Signals. The rest planned |
 | Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | Built: `workspace-rules`, for the architecture check; `web-crypto`, for `Crypto` in workerd; `otlp`, for OpenTelemetry exports; `quantile-sketch`, for percentiles; `scrub`, to remove secrets and personal data; `qr-code`, for the links phones pair by; `openapi-swift`, for the iOS app's API client; `es256-jwt`, for tokens signed with Apple's keys; `rs256-jwt`, for tokens signed with a GitHub App's key; `apns`, for pushes to phones; `app-store-connect`, for apps' builds and App Store versions, submitting them for review and releasing them; `cloudflare-workers-ai`, for the language model that drafts release notes; `github`, for releases' commits, tags and changes, workflows started and followed, organizations' self-hosted runners, and a GitHub App's installations and tokens; `webauthn`, for passkeys |
 | Web SDK | `sdks/web` | Init, identify, consent, track, feature, flags, and the client kit views, for browsers and JavaScript backends | Planned |
+| Swift SDK | `sdks/swift` | What runs in founders' apps on Apple's platforms: sessions, launches, memory, screens, events, MetricKit, and the update gate from the manifest | In progress, against the ingest API's generated client |
+| Swift SDK | `sdks/swift` | The SDK in founders' iPhone apps: a core every app links (installation, sessions, identify, consent, the feature in effect, the manifest and the update gate's decision, the queue that sends to ingest, and the release and trace headers for the app's own API), and opt-in libraries where including one has a cost: `CluenoriAnalytics` (events and screens), `CluenoriPerformance` (launches, memory, MetricKit), `CluenoriUpdateGate` (the gate's views) | Built, not yet in an app; to be its own repository (its README) |
 | Journeys | `tests/journeys` | The Worker in workerd, through its public API | Built: the deployment and telemetry journeys |
 
 ## Dependency rules
@@ -188,6 +194,8 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 | `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; foundation's, engines' and modules' contracts, for the Schemas of what they send (open decision: "How clients import the API definition"); `@bagatka/*`, `effect`; the CLI also `@effect/platform-bun`; the dashboard also React, Vite, Tailwind CSS, and the libraries of shadcn/ui's views, and for its build and tests React Compiler, Playwright, and axe (its README) | engine and module implementations |
 | `apps/ios` | Its own layers, each only the one beneath: the app's Xcode target, `CluenoriViews` (SwiftUI), `CluenoriScreens` (Observation), `CluenoriClient` (Foundation); Apple's SDKs, no third-party code. The API's contract only as `CluenoriAPI.swift`, generated from it | Apple-only frameworks in `CluenoriClient` and `CluenoriScreens`, which build on Linux too |
 | `@cluenori/sdk` | `@bagatka/*`, `effect`, the API definition of what it calls | server packages |
+| `sdks/swift` | Swift, and Apple's SDKs; the ingest API's contract only as `CluenoriIngestAPI.swift`, generated from it | third-party code, server packages; it isn't a workspace package, so the architecture check doesn't read it |
+| `sdks/swift` | Its own libraries, each only the core beneath it, and the core only `CluenoriIngest`; Apple's frameworks, no third-party code. The ingest API's contract only as `CluenoriIngestAPI.swift`, generated from it; `CluenoriIngest` imports Foundation alone | anything else in this repository |
 | Package tests | the package they test, `@effect/vitest`, Vitest; product packages also `@cloudflare/vitest-plugin`, Wrangler, and `@effect/sql-sqlite-do`, to run inside a Durable Object | other packages' private files |
 | `tests/journeys` | `apps/worker`, foundation's, engines' and modules' contracts, `@bagatka/*`, for what a journey plays a client with (a passkey's authenticator), `effect`, `@cloudflare/vitest-plugin`, Wrangler, Vitest | the Worker's private files |
 
@@ -224,7 +232,10 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
   | Signals: archive | Every export as received, with secrets and personal data removed, as gzip OTLP protobuf in R2 (`cluenori-archive`), kept 90 days by the bucket's lifecycle rule; indexed by time in the project's object | Signals |
   | Signals: warnings and errors | SQLite in each project's Durable Object, searchable, 90 days; errors grouped by type and stack, groups kept 15 months | Signals |
   | Signals: duplicate window | The digest of each export, kept an hour in the project's object | Signals |
-  | Signals: lake | Planned: SQL over long periods, built from the archive | Signals |
+  | Signals: apps' counts | SQLite in each project's Durable Object: by UTC day, release and feature, who was active on which installation, sessions, feature use, launch and memory sketches, MetricKit's diagnostics, 15 months; people, their user IDs and installations; each person's first day; sessions 90 days; each person's latest 1,000 signals | Signals: `AppSignals` |
+  | Signals: apps' batches | Each batch's new signals as received, scrubbed, each with its person instead of the app's user ID, as gzip JSON in R2 (`cluenori-app-batches`), kept 5 years by the bucket's lifecycle rule, as product events are | Signals |
+  | Signals: apps' duplicate window | The ID of each signal of the last 14 days, by its own time | Signals |
+  | Signals: lake | Planned: SQL over long periods, built from the archive and apps' batches | Signals |
   | Durable steps | Cloudflare Workflows | The workflows engine |
   | Media, uploads, symbol files | R2 | Content; symbol files, Errors |
 
@@ -272,8 +283,13 @@ From `concept/`; each gets its pattern when it is built.
 
 - **Ingest keys** belong to one component each and allow only sending its telemetry. A key names its
   project, so the Worker routes it unread; the project's object checks it against the SHA-256 digest
-  it keeps (`@cluenori/projects`). The SDK's keys, for apps, will be public and also allow the
-  manifest.
+  it keeps (`@cluenori/projects`).
+- **SDK keys** (`cluenori-sdk.<project>.<component>.<id>`) are public, shipped in every build of an
+  app, and allow only sending that component's signals and reading its manifest. Like an ingest
+  key, one names its project, so the Worker routes it unread and the project's object checks it, in
+  the call that records or answers; a component has several at once, so keys rotate, and a revoked
+  one is refused. Stored as they are, since they are public and must be listed again for new builds.
+  Batches are limited per key and per installation in the project's object.
 - **Members** (`@cluenori/members`): an owner sees every project and invites members to some, by a
   link good once for 7 days. Every request runs for a member, with what they see: the API token
   stands for the owner `./setup` made (`CLUENORI_OWNER`), a browser signs in with a passkey, and a
@@ -307,7 +323,7 @@ From `concept/`; each gets its pattern when it is built.
     token in `apps/worker/.dev.vars` made on the first run.
   - `./setup` deploys it to your Cloudflare account: signs in with Wrangler, asks once whether the
     data stays in the EU (saved at once; it can't change later), makes the archive's bucket there
-    with its 90-day expiry and the activity queue, deploys (`--env eu` for the EU), and the first time gives the
+    with its 90-day expiry, apps' batches' with their 5-year expiry, and the activity queue, deploys (`--env eu` for the EU), and the first time gives the
     deployment an API token. It saves the choice, the URL and the token for this computer in
     `~/.config/cluenori/deployment.json`; `./update` deploys with the same choice.
   - `./cluenori` asks the deployment, or with `--local` the Cluenori `./run` serves, about projects:
@@ -381,6 +397,11 @@ These are choices, not omissions. Change them only through `PATTERNS.md`, with a
   account). Rolling hours up from minutes in an alarm would halve that, at the cost of tracking
   late data; a project that outgrows either can count in Analytics Engine behind the same `Signals`
   contract.
+- **Apps' batches are kept 5 years, in a bucket of their own** (October 2026). They are the product
+  events, which `concept/Platform.md` keeps 5 years, while exports are diagnostic evidence kept 90
+  days; two buckets let each keep a lifecycle rule. What is counted of them by day lives in the
+  project's object 15 months, as hourly counts do, with people counted exactly from one row per
+  installation and day; older questions will read the lake.
 - **SQL directly, through `effect/sql`.** Parameterized tagged templates and Schema-decoded rows; no
   ORM and no query builder.
 - **No mediator and no event bus.** Callers call services; activity on Queues is the only
@@ -433,10 +454,13 @@ updates this table in the same change.
 
 | Package | Kind | Owns | Uses | Reacts to |
 |---|---|---|---|---|
-| `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests; the workspace's index of its projects | Foundation's `ActivityLog` | — |
-| `@cluenori/signals` | Engine | The archive of every export and its index; operations counted by name and environment; warnings and errors; error groups; the duplicate window; what "slower", "new" and "happening now" mean | `@bagatka/otlp`, `@bagatka/quantile-sketch`, `@bagatka/scrub`; an `ArchiveStore` the host provides; `projects` for its API's errors | — |
+| `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests and their SDK keys; the workspace's index of its projects | Foundation's `ActivityLog` | — |
+| `@cluenori/signals` | Engine | The archive of every export and its index; operations counted by name and environment; warnings and errors; error groups; the duplicate window; what "slower", "new" and "happening now" mean; apps' signals: people and their user IDs, installations, activity and measures by day, sessions, timelines, apps' batches, and the limits on how much they take | `@bagatka/otlp`, `@bagatka/quantile-sketch`, `@bagatka/scrub`; an `ArchiveStore` and an `AppBatchStore` the host provides; `projects` for its API's errors and SDK keys | — |
+| `@cluenori/manifest` | Engine | The manifest's shape and its route: what an app's SDK reads at launch and on resume | Foundation | — |
 | `@cluenori/incidents` | Engine | Its project's incidents and monitors; the detectors and what they learn: usual error rates and schedules | `@cluenori/signals`, `@cluenori/projects`; Foundation's `ActivityLog`; an `HttpClient` the host provides, for monitors | — |
 | `@cluenori/phones` | Engine | The workspace's paired phones, their keys' digests, when and where each last called, their push tokens, and open pairings; the names of Apple's models | Foundation's `ActivityLog` | — |
 | `@cluenori/today` | Engine | Today's detectors and order: what needs attention now in each project, from its incidents and counts | `@cluenori/incidents`, `@cluenori/signals`, `@cluenori/projects` | — |
 | `@cluenori/notifications` | Engine | Each alert's level and words; which activity reached which phone | `@cluenori/phones`, `@cluenori/members`, `@cluenori/projects`' index, `@bagatka/apns`; an `HttpClient` the host provides | `incident.*`, from the activity queue |
 | `@cluenori/members` | Engine | The workspace's members, what each sees, invitations, passkeys, and browsers' sign-ins | `@cluenori/projects`' index, `@bagatka/webauthn`; Foundation's `ActivityLog` | — |
+| `@cluenori/releases` | Module | Releases' commits, changes, store builds, deploys, numbering, promotions and notes; each app component's version policy, and what one release gets from it (`versionPolicyFor`) | `@cluenori/signals`, `@cluenori/projects`, `@cluenori/incidents`, `@cluenori/manifest`'s Schemas; `@bagatka/github`, `@bagatka/app-store-connect` | — |
+| `@cluenori/analytics` | Module | Nothing stored: apps' usage, retention, features and people as Signals counts them, and what makes a release's app health worse or better than the release before it's | `@cluenori/signals`, `@cluenori/projects` | — |

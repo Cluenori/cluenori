@@ -185,5 +185,120 @@ export const migrateSignals = Migrator.make({})({
       yield* sql`UPDATE signals_logs SET release = coalesce(json_extract(entry, '$.release'), '')`
       yield* sql`CREATE INDEX signals_logs_release ON signals_logs (release, time) WHERE release <> ''`
     }),
+    // Apps' signals. People and installations get row numbers, so the tables by day hold integers;
+    // `person` is Cluenori's ID for a person, `user` the app's own user ID, linked to one person.
+    // Times are Unix ms, days the days since 1970-01-01 in UTC, '' an absent feature. What is counted
+    // by day is kept 15 months; a session 90 days; a person's timeline its latest 1,000 signals, 15
+    // months; a signal's ID 14 days by its own time, so a batch sent again counts once.
+    "0009_app_signals": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE signals_people (
+        id INTEGER PRIMARY KEY,
+        person TEXT NOT NULL UNIQUE,
+        first_seen INTEGER NOT NULL,
+        last_seen INTEGER NOT NULL
+      )`
+      yield* sql`CREATE TABLE signals_person_users (
+        user TEXT PRIMARY KEY,
+        person INTEGER NOT NULL
+      ) WITHOUT ROWID`
+      yield* sql`CREATE INDEX signals_person_users_person ON signals_person_users (person)`
+      yield* sql`CREATE TABLE signals_installations (
+        id INTEGER PRIMARY KEY,
+        installation TEXT NOT NULL UNIQUE,
+        person INTEGER NOT NULL,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        device TEXT NOT NULL,
+        sdk TEXT NOT NULL,
+        country TEXT,
+        first_seen INTEGER NOT NULL,
+        last_seen INTEGER NOT NULL
+      )`
+      yield* sql`CREATE INDEX signals_installations_person ON signals_installations (person)`
+      yield* sql`CREATE TABLE signals_app_releases (
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        first_seen INTEGER NOT NULL,
+        last_seen INTEGER NOT NULL,
+        PRIMARY KEY (component, environment, release)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE TABLE signals_app_first_days (
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        person INTEGER NOT NULL,
+        day INTEGER NOT NULL,
+        PRIMARY KEY (component, environment, person)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE TABLE signals_app_days (
+        day INTEGER NOT NULL,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        installation INTEGER NOT NULL,
+        person INTEGER NOT NULL,
+        sessions INTEGER NOT NULL,
+        foreground_ms REAL NOT NULL,
+        PRIMARY KEY (day, component, environment, release, installation, person)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE INDEX signals_app_days_person ON signals_app_days (person, day)`
+      yield* sql`CREATE TABLE signals_app_feature_days (
+        day INTEGER NOT NULL,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        feature TEXT NOT NULL,
+        person INTEGER NOT NULL,
+        events INTEGER NOT NULL,
+        screens INTEGER NOT NULL,
+        PRIMARY KEY (day, component, environment, release, feature, person)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE TABLE signals_app_measures (
+        day INTEGER NOT NULL,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        feature TEXT NOT NULL,
+        measure TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        sketch TEXT,
+        PRIMARY KEY (day, component, environment, release, feature, measure)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE INDEX signals_app_measures_release ON signals_app_measures (component, release)`
+      yield* sql`CREATE TABLE signals_app_diagnostics (
+        day INTEGER NOT NULL,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        PRIMARY KEY (day, component, environment, release, kind)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE INDEX signals_app_diagnostics_release ON signals_app_diagnostics (component, release)`
+      yield* sql`CREATE TABLE signals_app_sessions (
+        session TEXT PRIMARY KEY,
+        installation INTEGER NOT NULL,
+        person INTEGER NOT NULL,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        started_at INTEGER,
+        ended_at INTEGER,
+        foreground_ms REAL,
+        seen_at INTEGER NOT NULL
+      ) WITHOUT ROWID`
+      yield* sql`CREATE INDEX signals_app_sessions_seen ON signals_app_sessions (seen_at)`
+      yield* sql`CREATE TABLE signals_app_seen (signal TEXT PRIMARY KEY) WITHOUT ROWID`
+      yield* sql`CREATE TABLE signals_app_timeline (
+        person INTEGER NOT NULL,
+        at INTEGER NOT NULL,
+        signal TEXT NOT NULL,
+        entry TEXT NOT NULL,
+        PRIMARY KEY (person, at, signal)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE INDEX signals_app_timeline_at ON signals_app_timeline (at)`
+    }),
   }),
 })

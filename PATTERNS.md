@@ -375,7 +375,8 @@ export class FeatureKeyTaken extends Schema.TaggedError<FeatureKeyTaken>()("Feat
   `new Date()` are errors (`globalDate`).
 - **Instants are `DateTime.Utc` in code** and ISO 8601 UTC strings on the wire and in storage:
   Foundation's `Instant`, which the OpenAPI document marks `format: date-time`. Durations are `Duration`. Calendar dates are `YYYY-MM-DD`
-  strings with their own Schema.
+  strings with their own Schema: Foundation's `CalendarDay`, a UTC day, stored as the number of days
+  since 1970-01-01 (`product/foundation/src/calendar-day.ts`).
 - **A person's time zone is data:** an IANA ID stored with them, applied with `DateTime` zone
   functions only when formatting for that person.
 - **Tests control time** with `TestClock` from `effect/testing`.
@@ -562,6 +563,14 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   once and serves each call on a visible line.
 - **The workspace's Durable Object is reached the same way,** through `workspaceCalls` and
   `WorkspaceObjects.call`; both kinds of object share `src/object-calls.ts`.
+- **What callers may flood is limited where it is recorded:** in the project's object, fixed
+  minutes counted in its memory, only the current one kept, refused with the seconds left to wait
+  (429). Nothing is stored, and a restart forgets: right for keeping a project's writes bounded, not
+  for billing (`product/engines/signals/src/app-rate-limits.ts`).
+- **An answer the same for many callers is kept in the edge's cache,** named by everything it
+  depends on, the credential included, so only one the project's object accepted ever finds it; it
+  says how long it may still be used, so a change reaches everyone within that time
+  (`apps/worker/src/manifest-cache.ts`). A cache that fails or keeps nothing means asking the object.
 - Canonical examples: `apps/worker/src/worker.ts`; for Durable Object calls,
   `apps/worker/src/object-calls.ts`, `project-calls.ts`, `project-object.ts`, and `project-objects.ts`.
 
@@ -719,7 +728,10 @@ The configuration files are the specification; this entry says what each one own
   `@bagatka/scrub`'s `scrubText`, and a value whose name `isSecretName` is removed whole. The
   canonical example is `product/engines/signals/src/scrubbed.ts`.
 - **Stores keep a digest, never the credential.** Keys and tokens are compared by their SHA-256
-  digests, which also makes the comparison take the same time whatever is presented.
+  digests, which also makes the comparison take the same time whatever is presented. The one
+  exception is a key that is public by design, such as an SDK key, which every build of an app
+  carries: it grants nothing secret, is stored as it is so it can be listed again for a new build,
+  and is still unguessable (`product/engines/projects/src/sdk-key.ts`).
 - **A credential Cluenori uses, rather than checks, is a Worker secret** when it is given at setup,
   such as APNs's key. One a vendor hands over while running, such as the private key GitHub gives
   the workspace's app, is kept only in the workspace's object: never returned by a route, logged,

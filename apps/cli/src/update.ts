@@ -4,7 +4,7 @@ import { Command } from "effect/cli"
 import { refuse } from "./api-client.ts"
 import { savedDeployment } from "./api-settings.ts"
 import { attached, buildDashboard, wrangler } from "./attached.ts"
-import { domainFlags, ensureActivityQueue, environmentFlags } from "./setup.ts"
+import { domainFlags, ensureActivityQueue, ensureBuckets, environmentFlags } from "./setup.ts"
 
 /** `./update`: the newest version of this clone's upstream branch, installed and deployed. */
 export const update = Command.make("update", {}, () =>
@@ -22,6 +22,7 @@ export const update = Command.make("update", {}, () =>
     yield* attached("git", ["pull", "--ff-only"], {})
     yield* attached("bun", ["install", "--frozen-lockfile"], {})
     // A version may bind something earlier ones didn't, which is made first.
+    yield* ensureBuckets(saved.value.jurisdiction)
     yield* ensureActivityQueue(saved.value.jurisdiction)
     yield* Console.log("\nDeploying it.\n")
     yield* buildDashboard

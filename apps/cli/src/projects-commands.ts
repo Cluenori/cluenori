@@ -1,5 +1,5 @@
 import { ComponentKey, EnvironmentKey, ProjectKey } from "@cluenori/foundation"
-import { ComponentName, ProjectName } from "@cluenori/projects"
+import { ComponentName, ProjectName, SdkKey } from "@cluenori/projects"
 import { Console, Effect, Option, Redacted } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 
@@ -7,6 +7,7 @@ import { apiClient, reachFailures, refuse } from "./api-client.ts"
 import { apiTarget } from "./api-settings.ts"
 import { componentLinksOf, deployTargetLines } from "./deploy-targets.ts"
 import { local, parsed } from "./question.ts"
+import { columns, utcMinute } from "./terminal-text.ts"
 
 /** `cluenori project create <key> --name <name>`. */
 export const projectCreate = Command.make(
@@ -219,6 +220,89 @@ export const componentLink = Command.make(
   ),
 )
 
+/** `cluenori component sdk-keys <project> <component> [--new] [--revoke <key>]`. */
+export const componentSdkKeys = Command.make(
+  "sdk-keys",
+  {
+    project: Argument.String("project").pipe(Argument.withDescription("The project's key.")),
+    component: Argument.String("component").pipe(Argument.withDescription("The component's key, such as notes-ios.")),
+    issue: Flag.Boolean("new").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("Issue a new key. The component's other keys stay active until revoked."),
+    ),
+    revoke: Flag.String("revoke").pipe(
+      Flag.optional,
+      Flag.withDescription("Revoke this key: builds that carry it are refused from then on."),
+    ),
+    local,
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const project = yield* parsed(ProjectKey, input.project, "a project key")
+      const component = yield* parsed(ComponentKey, input.component, "a component key")
+      if (input.issue && Option.isSome(input.revoke)) {
+        return yield* refuse("Use --new or --revoke, not both: issue the new key, ship it, then revoke the old one.")
+      }
+      const listCommand = `./cluenori component sdk-keys ${project} ${component}`
+      const target = yield* apiTarget(input.local)
+      const client = yield* apiClient(target)
+      const failures = {
+        ...reachFailures(target),
+        ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
+        ComponentNotFound: () =>
+          refuse(
+            `${project} has no component ${component}. Add it: ./cluenori component add ${project} ${component} --name <name>`,
+          ),
+      }
+      if (input.issue) {
+        const issued = yield* client.projects
+          .issueSdkKey({ params: { project, component } })
+          .pipe(Effect.catchTags(failures))
+        yield* Console.log(`Issued an SDK key for ${component} of ${project}:\n`)
+        yield* Console.log(`  ${issued.key}\n`)
+        yield* Console.log(
+          "Put it in the app's SDK configuration. It ships inside every build, so it isn't a secret: it only sends this component's signals and reads its manifest.",
+        )
+        return yield* Console.log(
+          `The component's other keys stay active until you revoke them: ${listCommand} --revoke <key>`,
+        )
+      }
+      if (Option.isSome(input.revoke)) {
+        const key = yield* parsed(SdkKey, input.revoke.value, "an SDK key")
+        const revoked = yield* client.projects.revokeSdkKey({ params: { project, component, key } }).pipe(
+          Effect.catchTags({
+            ...reachFailures(target),
+            ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
+            SdkKeyNotFound: () =>
+              refuse(`${component} of ${project} has no SDK key ${key}. See its keys: ${listCommand}`),
+          }),
+        )
+        const since = revoked.revokedAt === undefined ? "now" : utcMinute(revoked.revokedAt)
+        return yield* Console.log(
+          `Revoked ${revoked.key} (since ${since}). Builds that carry it are refused from now on.`,
+        )
+      }
+      const list = yield* client.projects.sdkKeys({ params: { project, component } }).pipe(Effect.catchTags(failures))
+      if (list.keys.length === 0) {
+        return yield* Console.log(`${component} has no SDK keys yet. Issue one: ${listCommand} --new`)
+      }
+      yield* Console.log(
+        columns([
+          ["Key", "Issued", "Revoked"],
+          ...list.keys.map((issued) => [
+            issued.key,
+            utcMinute(issued.issuedAt),
+            issued.revokedAt === undefined ? "active" : utcMinute(issued.revokedAt),
+          ]),
+        ]).join("\n"),
+      )
+    }),
+).pipe(
+  Command.withDescription(
+    "List a component's SDK keys, the keys its app's builds carry so its SDK can send signals; issue a new one with --new, the others staying active, or revoke one with --revoke.",
+  ),
+)
+
 /** `cluenori project ...`. */
 export const project = Command.make("project").pipe(
   Command.withDescription("Create projects, and choose their production environments."),
@@ -228,7 +312,7 @@ export const project = Command.make("project").pipe(
 /** `cluenori component ...`. */
 export const component = Command.make("component").pipe(
   Command.withDescription(
-    "Add components to projects, and link them to their repository and deploy targets: where their releases go.",
+    "Add components to projects, link them to their repository and deploy targets, where their releases go, and issue the SDK keys their apps' builds carry.",
   ),
-  Command.withSubcommands([componentAdd, componentLink]),
+  Command.withSubcommands([componentAdd, componentLink, componentSdkKeys]),
 )

@@ -1,4 +1,4 @@
-import { ArchiveStore, ArchiveUnavailable } from "@cluenori/signals"
+import { AppBatchStore, ArchiveStore, ArchiveUnavailable } from "@cluenori/signals"
 import { Effect, Layer, Option } from "effect"
 
 const unavailable = (action: string) => (cause: unknown) =>
@@ -39,6 +39,27 @@ export const r2ArchiveLayer = (bucket: R2Bucket) =>
           catch: unavailable("decompress a file of"),
         })
         return Option.some(new Uint8Array(bytes))
+      }),
+    }),
+  )
+
+const utf8 = new TextEncoder()
+
+/** Apps' batches in an R2 bucket, kept 5 years by its lifecycle rule, each a JSON file compressed with gzip. */
+export const r2AppBatchLayer = (bucket: R2Bucket) =>
+  Layer.succeed(
+    AppBatchStore,
+    AppBatchStore.of({
+      put: Effect.fn("R2AppBatches.put")(function* (key: string, json: string) {
+        const compressed = yield* Effect.tryPromise({
+          try: () => transformed(utf8.encode(json), new CompressionStream("gzip")),
+          catch: unavailable("compress a batch for"),
+        })
+        yield* Effect.tryPromise({
+          try: () =>
+            bucket.put(key, compressed, { httpMetadata: { contentType: "application/json", contentEncoding: "gzip" } }),
+          catch: unavailable("write to"),
+        })
       }),
     }),
   )

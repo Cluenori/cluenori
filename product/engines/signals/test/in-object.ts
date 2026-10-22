@@ -4,10 +4,11 @@ import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
 import { Effect, Layer } from "effect"
-import type { SqlClient } from "effect/sql"
+import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 
-import { ArchiveStore, Signals } from "../src/index.ts"
+import type { AppRateLimits } from "../src/index.ts"
+import { AppBatchStore, AppSignals, ArchiveStore, Signals } from "../src/index.ts"
 
 /**
  * Runs `program` inside the Durable Object of project `project` at the time `now` (Unix ms), with
@@ -39,3 +40,57 @@ export const inProject = <A, E>(
 
 /** Effect's `Crypto` on the runtime's Web Crypto, as a host provides it. */
 export const WebCrypto = webCryptoLayer(crypto)
+
+/**
+ * Runs `program` inside the Durable Object of project `project` at the time `now` (Unix ms), with
+ * the apps' signals built on its storage the way a host builds them: their batches kept in `files`,
+ * and `limits` on how much they take.
+ */
+export const inApps = <A, E>(
+  project: string,
+  now: number,
+  program: Effect.Effect<A, E, AppSignals | SqlClient.SqlClient>,
+  options: { readonly files?: Map<string, string>; readonly limits?: AppRateLimits } = {},
+) =>
+  Effect.promise(() =>
+    runInDurableObject(env.PROJECT.getByName(project), (_instance, state) =>
+      Effect.runPromise(
+        TestClock.setTime(now).pipe(
+          Effect.andThen(program),
+          Effect.provide(
+            AppSignals.layer({
+              workspace: WorkspaceKey.make("main"),
+              project: ProjectKey.make(project),
+              ...(options.limits === undefined ? {} : { limits: options.limits }),
+            }).pipe(
+              Layer.provideMerge(AppBatchStore.layerMemory(options.files)),
+              Layer.provideMerge(WebCrypto),
+              Layer.provideMerge(SqliteClient.layer({ storage: state.storage })),
+              Layer.provideMerge(TestClock.layer()),
+            ),
+          ),
+        ),
+      ),
+    ),
+  )
+
+/** Removes what migration 0009 made, apps' tables, so a test can build a database from before it. */
+export const dropAppTables = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  for (const table of [
+    "signals_people",
+    "signals_person_users",
+    "signals_installations",
+    "signals_app_releases",
+    "signals_app_first_days",
+    "signals_app_days",
+    "signals_app_feature_days",
+    "signals_app_measures",
+    "signals_app_diagnostics",
+    "signals_app_sessions",
+    "signals_app_seen",
+    "signals_app_timeline",
+  ]) {
+    yield* sql`DROP TABLE ${sql(table)}`
+  }
+})
