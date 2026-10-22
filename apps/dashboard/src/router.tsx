@@ -16,35 +16,43 @@ import { useSyncExternalStore } from "react"
 export type Area = "performance" | "errors" | "logs" | "releases"
 
 /**
+ * What a page of numbers is narrowed to, in its address: one component, one environment, and one
+ * release (`?component=notes-api&environment=staging&release=2.4.0%2B312`). Pages that lead to
+ * others keep them, so an operation, an error, or a trace opened from a filtered page is of the same.
+ */
+export type Filters = {
+  readonly component?: ComponentKey
+  readonly environment?: EnvironmentKey
+  readonly release?: ReleaseVersion
+}
+
+/**
  * Every page the dashboard has. The start, `/`, shows the first project; a project opens on its
- * overview; each area is a page that can show one component (`?component=notes-api`); performance
- * leads to every operation and then to one; the errors page leads to one error, with all it was sent
- * with; the releases page leads to one release, by its component and version, and its environment
- * when it has one (`/notes/releases/notes-api/2.4.0+312?environment=production`); a trace is a page
- * of its own, by its ID, with the time it happened when a link knows it (`?around=<ISO 8601>`). `hrefOf` and `routeOf` convert to and from URLs. An address is
- * untrusted input, so its keys are decoded here, once: one that isn't a page's is `missing`.
+ * overview; each area is a page with its `Filters`; performance leads to every operation and then
+ * to one; the errors page leads to one error, with all it was sent with; the releases page leads to
+ * one release, by its component and version, and its environment when it has one
+ * (`/notes/releases/notes-api/2.4.0+312?environment=production`); a trace is a page of its own, by
+ * its ID, with the time it happened when a link knows it (`?around=<ISO 8601>`), keeping the
+ * environment and release of the page it came from. `hrefOf` and `routeOf` convert to and from
+ * URLs. An address is untrusted input, so its keys are decoded here, once: one that isn't a page's
+ * is `missing`.
  */
 export type Route =
   | { readonly page: "start" }
   | { readonly page: "missing" }
-  | { readonly page: "overview"; readonly project: ProjectKey }
-  | { readonly page: "performance"; readonly project: ProjectKey; readonly component?: ComponentKey }
-  | { readonly page: "operations"; readonly project: ProjectKey; readonly component?: ComponentKey }
+  | { readonly page: "overview"; readonly project: ProjectKey; readonly environment?: EnvironmentKey }
+  | ({ readonly page: "performance"; readonly project: ProjectKey } & Filters)
+  | ({ readonly page: "operations"; readonly project: ProjectKey } & Filters)
+  | ({ readonly page: "operation"; readonly project: ProjectKey; readonly operation: EnvelopeName } & Filters)
+  | ({ readonly page: "errors"; readonly project: ProjectKey } & Filters)
+  | ({ readonly page: "error"; readonly project: ProjectKey; readonly error: ErrorGroupId } & Filters)
+  | ({ readonly page: "logs"; readonly project: ProjectKey } & Filters)
   | {
-      readonly page: "operation"
+      readonly page: "releases"
       readonly project: ProjectKey
       readonly component?: ComponentKey
-      readonly operation: EnvelopeName
+      readonly environment?: EnvironmentKey
     }
-  | { readonly page: "errors"; readonly project: ProjectKey; readonly component?: ComponentKey }
-  | {
-      readonly page: "error"
-      readonly project: ProjectKey
-      readonly component?: ComponentKey
-      readonly error: ErrorGroupId
-    }
-  | { readonly page: "logs"; readonly project: ProjectKey; readonly component?: ComponentKey }
-  | { readonly page: "releases"; readonly project: ProjectKey; readonly component?: ComponentKey }
   | {
       readonly page: "release"
       readonly project: ProjectKey
@@ -52,7 +60,14 @@ export type Route =
       readonly release: ReleaseVersion
       readonly environment?: EnvironmentKey
     }
-  | { readonly page: "trace"; readonly project: ProjectKey; readonly trace: TraceId; readonly around?: DateTime.Utc }
+  | {
+      readonly page: "trace"
+      readonly project: ProjectKey
+      readonly trace: TraceId
+      readonly around?: DateTime.Utc
+      readonly environment?: EnvironmentKey
+      readonly release?: ReleaseVersion
+    }
   | { readonly page: "phones" }
   | { readonly page: "browsers" }
   | { readonly page: "members" }
@@ -65,8 +80,16 @@ export type Route =
 // trailing slash included (`POST /api/profile/`).
 const operationPath = (operation: string) => operation.split("/").map(encodeURIComponent).join("/")
 
-const withComponent = (path: string, component: string | undefined) =>
-  component === undefined ? path : `${path}?component=${encodeURIComponent(component)}`
+// A page's query, in a fixed order: `?component=notes-api&environment=staging&release=2.4.0%2B312`.
+const withQuery = (path: string, query: Filters & { readonly around?: DateTime.Utc }) => {
+  const pairs = [
+    ...(query.around === undefined ? [] : [`around=${encodeURIComponent(DateTime.formatIso(query.around))}`]),
+    ...(query.component === undefined ? [] : [`component=${encodeURIComponent(query.component)}`]),
+    ...(query.environment === undefined ? [] : [`environment=${encodeURIComponent(query.environment)}`]),
+    ...(query.release === undefined ? [] : [`release=${encodeURIComponent(query.release)}`]),
+  ]
+  return pairs.length === 0 ? path : `${path}?${pairs.join("&")}`
+}
 
 export const hrefOf = (route: Route): string => {
   switch (route.page) {
@@ -74,29 +97,23 @@ export const hrefOf = (route: Route): string => {
     case "missing":
       return "/"
     case "overview":
-      return `/${route.project}`
+      return withQuery(`/${route.project}`, route)
     case "performance":
-      return withComponent(`/${route.project}/performance`, route.component)
     case "operations":
-      return withComponent(`/${route.project}/operations`, route.component)
-    case "operation":
-      return withComponent(`/${route.project}/operations/${operationPath(route.operation)}`, route.component)
     case "errors":
-      return withComponent(`/${route.project}/errors`, route.component)
-    case "error":
-      return withComponent(`/${route.project}/errors/${route.error}`, route.component)
     case "logs":
-      return withComponent(`/${route.project}/logs`, route.component)
     case "releases":
-      return withComponent(`/${route.project}/releases`, route.component)
+      return withQuery(`/${route.project}/${route.page}`, route)
+    case "operation":
+      return withQuery(`/${route.project}/operations/${operationPath(route.operation)}`, route)
+    case "error":
+      return withQuery(`/${route.project}/errors/${route.error}`, route)
     case "release": {
-      const path = `/${route.project}/releases/${route.component}/${encodeURIComponent(route.release)}`
-      return route.environment === undefined ? path : `${path}?environment=${encodeURIComponent(route.environment)}`
+      const { component: _, release: __, ...query } = route
+      return withQuery(`/${route.project}/releases/${route.component}/${encodeURIComponent(route.release)}`, query)
     }
     case "trace":
-      return route.around === undefined
-        ? `/${route.project}/traces/${route.trace}`
-        : `/${route.project}/traces/${route.trace}?around=${encodeURIComponent(DateTime.formatIso(route.around))}`
+      return withQuery(`/${route.project}/traces/${route.trace}`, route)
     case "phones":
       return "/phones"
     case "browsers":
@@ -142,58 +159,62 @@ export const routeOf = (path: string, search: string): Route => {
     return page === undefined ? { page: first } : { page: "missing" }
   }
   const project = projectKey(first)
-  const named = query.get("component") ?? undefined
-  const component = componentKey(named)
+  const component = componentKey(query.get("component") ?? undefined)
+  const environment = keyOf(EnvironmentKey, query.get("environment") ?? undefined)
+  const release = keyOf(ReleaseVersion, query.get("release") ?? undefined)
+  // A filter named that isn't a key makes the address no page's.
+  const mistyped =
+    (query.has("component") && Option.isNone(component)) ||
+    (query.has("environment") && Option.isNone(environment)) ||
+    (query.has("release") && Option.isNone(release))
   const operationsAt = `/${first}/operations/`
   const isOperation = page === "operations" && id !== undefined && path.startsWith(operationsAt)
   const isRelease = page === "releases" && rest.length === 1
-  if (
-    Option.isNone(project) ||
-    (named !== undefined && Option.isNone(component)) ||
-    (rest.length > 0 && !isOperation && !isRelease)
-  ) {
+  if (Option.isNone(project) || mistyped || (rest.length > 0 && !isOperation && !isRelease)) {
     return { page: "missing" }
   }
-  const scope = { project: project.value, ...(Option.isSome(component) ? { component: component.value } : {}) }
+  const ofEnvironment = Option.isSome(environment) ? { environment: environment.value } : {}
+  const ofRelease = Option.isSome(release) ? { release: release.value } : {}
+  const filters = {
+    project: project.value,
+    ...(Option.isSome(component) ? { component: component.value } : {}),
+    ...ofEnvironment,
+    ...ofRelease,
+  }
   if (page === undefined) {
-    return id === undefined ? { page: "overview", project: project.value } : { page: "missing" }
+    return id === undefined ? { page: "overview", project: project.value, ...ofEnvironment } : { page: "missing" }
   }
   if ((page === "performance" || page === "logs") && id === undefined) {
-    return { page, ...scope }
+    return { page, ...filters }
   }
   if (page === "releases") {
     if (id === undefined) {
-      return { page: "releases", ...scope }
+      const { release: _, ...releasesFilters } = filters
+      return { page: "releases", ...releasesFilters }
     }
     // A release is named by its component and version, in the path as the API names it.
     const of = componentKey(id)
-    const release = keyOf(ReleaseVersion, rest[0] === undefined ? undefined : decoded(rest[0]))
-    const environmentNamed = query.get("environment") ?? undefined
-    const environment = keyOf(EnvironmentKey, environmentNamed)
-    if (Option.isNone(of) || Option.isNone(release) || (environmentNamed !== undefined && Option.isNone(environment))) {
+    const version = keyOf(ReleaseVersion, rest[0] === undefined ? undefined : decoded(rest[0]))
+    if (Option.isNone(of) || Option.isNone(version)) {
       return { page: "missing" }
     }
-    return {
-      page: "release",
-      project: project.value,
-      component: of.value,
-      release: release.value,
-      ...(Option.isSome(environment) ? { environment: environment.value } : {}),
-    }
+    return { page: "release", project: project.value, component: of.value, release: version.value, ...ofEnvironment }
   }
   if (page === "operations") {
     if (id === undefined) {
-      return { page: "operations", ...scope }
+      return { page: "operations", ...filters }
     }
     const operation = keyOf(EnvelopeName, path.slice(operationsAt.length).split("/").map(decoded).join("/"))
-    return Option.isSome(operation) ? { page: "operation", ...scope, operation: operation.value } : { page: "missing" }
+    return Option.isSome(operation)
+      ? { page: "operation", ...filters, operation: operation.value }
+      : { page: "missing" }
   }
   if (page === "errors") {
     if (id === undefined) {
-      return { page: "errors", ...scope }
+      return { page: "errors", ...filters }
     }
     const error = keyOf(ErrorGroupId, id)
-    return Option.isSome(error) ? { page: "error", ...scope, error: error.value } : { page: "missing" }
+    return Option.isSome(error) ? { page: "error", ...filters, error: error.value } : { page: "missing" }
   }
   if (page === "traces") {
     const trace = keyOf(TraceId, id)
@@ -204,6 +225,8 @@ export const routeOf = (path: string, search: string): Route => {
           project: project.value,
           trace: trace.value,
           ...(Option.isSome(around) ? { around: around.value } : {}),
+          ...ofEnvironment,
+          ...ofRelease,
         }
       : { page: "missing" }
   }

@@ -1,4 +1,4 @@
-import type { ComponentKey, EnvelopeName, ProjectKey } from "@cluenori/foundation"
+import type { ComponentKey, EnvelopeName, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import type { KeptTraceRow } from "@cluenori/signals"
 import { operationKeyOf, slowerOf, usualOf } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
@@ -17,14 +17,15 @@ import {
   useComponentKeys,
   usualOperationsAtom,
 } from "@/project-data"
+import type { Environments } from "@/project-facts"
 import { colorOf, columnTimesOf, keptOverOf, periodWords, loadColumnsOf, sumOf, ticksOf, zoneOf } from "@/project-facts"
-import type { Route } from "@/router"
+import type { Filters, Route } from "@/router"
 import { Link } from "@/router"
 import { BarRows, largestOf } from "@/views/bar-rows"
+import { FilterSwitches } from "@/views/filter-switches"
 import { Loaded } from "@/views/loaded"
 import { OperationName } from "@/views/operation-name"
 import { Panel, PanelStats } from "@/views/panel"
-import { PeriodSwitch } from "@/views/period-switch"
 import { SinceUsual } from "@/views/since-usual"
 import { TraceList } from "@/views/trace-list"
 import { buttonVariants } from "@/views/ui/button"
@@ -33,8 +34,16 @@ import { buttonVariants } from "@/views/ui/button"
 // step's count and its p95 line up.
 const rowHeight = 64
 
-/** The top of the page: back to every operation, the operation's name, its component, and the period. */
-function OperationHeader({ back, children }: { readonly back: Route; readonly children: ReactNode }) {
+/** The top of the page: back to every operation, the operation's name, its component, and its switches. */
+function OperationHeader({
+  back,
+  switches,
+  children,
+}: {
+  readonly back: Route
+  readonly switches: ReactNode
+  readonly children: ReactNode
+}) {
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-3 pb-2">
       <Link
@@ -46,19 +55,19 @@ function OperationHeader({ back, children }: { readonly back: Route; readonly ch
       </Link>
       {/* At least 16rem, so on a phone the period wraps under the name rather than squeezing it. */}
       <div className="flex min-w-0 flex-[1_1_16rem] flex-col">{children}</div>
-      <PeriodSwitch />
+      <div className="flex max-w-full min-w-0 flex-wrap items-center gap-3">{switches}</div>
     </header>
   )
 }
 
 /** A list of kept traces, or what it would show when it has none. */
 function KeptList({
-  project,
+  scope,
   rows,
   slowAfterMs,
   none,
 }: {
-  readonly project: ProjectKey
+  readonly scope: Scope
   readonly rows: ReadonlyArray<KeptTraceRow>
   readonly slowAfterMs?: number
   readonly none: string
@@ -66,7 +75,15 @@ function KeptList({
   return rows.length === 0 ? (
     <p className="px-5 py-6 text-sm text-muted-foreground">{none}</p>
   ) : (
-    <TraceList project={project} rows={rows} {...(slowAfterMs === undefined ? {} : { slowAfterMs })} />
+    <TraceList
+      project={scope.project}
+      rows={rows}
+      traceFilters={{
+        ...(scope.environment === undefined ? {} : { environment: scope.environment }),
+        ...(scope.release === undefined ? {} : { release: scope.release }),
+      }}
+      {...(slowAfterMs === undefined ? {} : { slowAfterMs })}
+    />
   )
 }
 
@@ -86,14 +103,14 @@ function KeptTracePanels({ scope, p95Ms }: { readonly scope: Scope; readonly p95
           <div className="flex flex-col gap-4">
             <Panel icon={TimerIcon} title="Slowest traces" subtitle={`Slowest first, ${over}`}>
               <KeptList
-                project={scope.project}
+                scope={scope}
                 rows={answer.slowest}
                 slowAfterMs={p95Ms}
                 none={`No trace of the ${over} is kept. Of each hour, the five slowest are kept 14 days.`}
               />
             </Panel>
             <Panel icon={CircleXIcon} title="Failed traces" subtitle={`Newest first, ${over}`}>
-              <KeptList project={scope.project} rows={answer.failed} none={`Nothing failed in the ${over}.`} />
+              <KeptList scope={scope} rows={answer.failed} none={`Nothing failed in the ${over}.`} />
             </Panel>
           </div>
         )
@@ -110,14 +127,24 @@ function KeptTracePanels({ scope, p95Ms }: { readonly scope: Scope; readonly p95
 export function OperationPage({
   project,
   component,
+  release,
+  environments,
   operation,
 }: {
   readonly project: ProjectKey
   readonly component?: ComponentKey
+  readonly release?: ReleaseVersion
+  readonly environments: Environments
   readonly operation: EnvelopeName
 }) {
-  const scope = { project, operation, ...(component === undefined ? {} : { component }) }
-  const componentScope = { project, ...(component === undefined ? {} : { component }) }
+  const environment = environments.shown
+  const filters: Filters = {
+    ...(component === undefined ? {} : { component }),
+    ...(environment === undefined ? {} : { environment }),
+    ...(release === undefined ? {} : { release }),
+  }
+  const scope = { project, operation, ...filters }
+  const componentScope = { project, ...filters }
   const period = useAtomValue(periodAtom)
   const components = useComponentKeys(project)
   const load = useAtomValue(loadAtom(scope))
@@ -128,9 +155,9 @@ export function OperationPage({
   const periodText = periodWords[period].toLowerCase()
   const shownComponent = component ?? "Every component"
 
-  // Rows have the most counted first. Not handled: an operation in several environments shows the
-  // percentiles of the one counted most, while the charts count every environment; a page for
-  // each environment would take an environment in the address and in the series.
+  // Rows have the most counted first. Not handled: shown in every environment, on an older
+  // deployment, an operation in several shows the percentiles of the one counted most, while the
+  // charts count every environment.
   const verdict = AsyncResult.map(
     AsyncResult.all({ operations, compared }),
     ({ operations: table, compared: usual }) => {
@@ -145,7 +172,17 @@ export function OperationPage({
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
-      <OperationHeader back={back}>
+      <OperationHeader
+        back={back}
+        switches={
+          <FilterSwitches
+            project={project}
+            filters={filters}
+            environments={environments}
+            routeOf={(next) => ({ page: "operation", project, ...next, operation })}
+          />
+        }
+      >
         <h1 className="flex min-w-0 items-baseline gap-3 text-2xl font-semibold tracking-[-0.02em]">
           <OperationName name={operation} wrap />
           {known?.slower !== undefined && (

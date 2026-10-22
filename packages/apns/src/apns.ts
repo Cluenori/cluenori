@@ -1,5 +1,7 @@
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Ref, Result, Schema } from "effect"
-import { Base64, Base64Url } from "effect/encoding"
+import type { Es256Signing } from "@bagatka/es256-jwt"
+import { InvalidSigningKey, signEs256 } from "@bagatka/es256-jwt"
+import type { Redacted } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Ref, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 /**
@@ -14,22 +16,9 @@ export interface ApnsCredentials {
 
 /**
  * The part of the Web Crypto API this package signs with: `globalThis.crypto.subtle` in Workers,
- * browsers, Bun, and Node.
+ * browsers, Bun, and Node. The same shape `@bagatka/es256-jwt` signs with.
  */
-export interface ApnsSigning {
-  importKey(
-    format: "pkcs8",
-    keyData: Uint8Array,
-    algorithm: { readonly name: "ECDSA"; readonly namedCurve: "P-256" },
-    extractable: false,
-    keyUsages: Array<"sign">,
-  ): Promise<unknown>
-  sign(
-    algorithm: { readonly name: "ECDSA"; readonly hash: "SHA-256" },
-    key: unknown,
-    data: Uint8Array,
-  ): Promise<ArrayBuffer>
-}
+export type ApnsSigning = Es256Signing
 
 /** Which APNs a device token belongs to: a build signed for development, or one from TestFlight or the App Store. */
 export type ApnsEnvironment = "development" | "production"
@@ -76,9 +65,6 @@ const keyAndTeam = /^[A-Z0-9]{10}$/
 
 const ReasonBody = Schema.Struct({ reason: Schema.String })
 
-// The signing key couldn't sign: not a P-256 key in PKCS #8, or IDs of another shape.
-class InvalidSigningKey extends Schema.TaggedError<InvalidSigningKey>()("InvalidSigningKey", {}) {}
-
 /** Sends pushes through Apple's Push Notification service, with a token-signing key. */
 export class Apns extends Context.Service<
   Apns,
@@ -104,29 +90,22 @@ export class Apns extends Context.Service<
         const client = yield* HttpClient.HttpClient
         const signed = yield* Ref.make(Option.none<{ readonly token: string; readonly at: number }>())
 
-        const signingKey = Effect.tryPromise({
-          try: () => signing.importKey("pkcs8", derOf(Redacted.value(credentials.key)), keyAlgorithm, false, ["sign"]),
-          catch: () => new InvalidSigningKey(),
-        })
-
         const providerToken = Effect.fn("Apns.providerToken")(function* (renew: boolean) {
           const now = yield* Clock.currentTimeMillis
           const kept = yield* Ref.get(signed)
           if (!renew && Option.isSome(kept) && now - kept.value.at < tokenLasts) {
             return kept.value.token
           }
+          // IDs of another shape can't make a token APNs takes: the key's fault, like a key that can't sign.
           if (!keyAndTeam.test(credentials.keyId) || !keyAndTeam.test(credentials.teamId)) {
             return yield* new InvalidSigningKey()
           }
-          const key = yield* signingKey
-          const unsigned = `${Base64Url.encode(`{"alg":"ES256","kid":"${credentials.keyId}"}`)}.${Base64Url.encode(
-            `{"iss":"${credentials.teamId}","iat":${Math.floor(now / 1000)}}`,
-          )}`
-          const signature = yield* Effect.tryPromise({
-            try: () => signing.sign(signatureAlgorithm, key, asciiBytes(unsigned)),
-            catch: () => new InvalidSigningKey(),
-          })
-          const token = `${unsigned}.${Base64Url.encode(new Uint8Array(signature))}`
+          const token = yield* signEs256(
+            signing,
+            credentials.key,
+            { kid: credentials.keyId },
+            { iss: credentials.teamId, iat: Math.floor(now / 1000) },
+          )
           yield* Ref.set(signed, Option.some({ token, at: now }))
           return token
         })
@@ -179,20 +158,8 @@ export class Apns extends Context.Service<
     )
 }
 
-const keyAlgorithm = { name: "ECDSA", namedCurve: "P-256" } as const
-const signatureAlgorithm = { name: "ECDSA", hash: "SHA-256" } as const
-
 // A key the platform can't take is the key's fault, not APNs's: rejected, never sent again.
 const rejectedForKey = () => {
   const rejected: ApnsAnswer = { _tag: "Rejected", status: 0, reason: "InvalidSigningKey" }
   return Effect.succeed(rejected)
-}
-
-// The bytes of text that is ASCII, as a JWT's parts are.
-const asciiBytes = (text: string) => Uint8Array.from(text, (character) => character.charCodeAt(0))
-
-// The PKCS #8 bytes of a `.p8` file's PEM text; empty when it isn't base64, which the import refuses.
-const derOf = (pem: string) => {
-  const base64 = pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "")
-  return Result.getOrElse(Base64.decode(base64), () => new Uint8Array(0))
 }

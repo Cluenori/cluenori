@@ -16,17 +16,17 @@ import { CurrentMember } from "./member-authorization.ts"
 import { MemberProjects } from "./member-projects.ts"
 import { projectCalls } from "./project-calls.ts"
 
-// The filters every question shares: the period, and optionally one environment or component.
+// The filters every question shares: the period, and optionally one environment, component, or release.
 const queryOf = (filters: typeof LogFilters.Type | typeof LogCountFilters.Type): ErrorQuery => ({
   period: new Period({ from: filters.from, to: filters.to }),
   ...(filters.environment === undefined ? {} : { environment: filters.environment }),
   ...(filters.component === undefined ? {} : { component: filters.component }),
+  ...(filters.release === undefined ? {} : { release: filters.release }),
 })
 
 const operationQueryOf = (filters: typeof OperationFilters.Type): OperationQuery => ({
   ...queryOf(filters),
   ...(filters.operation === undefined ? {} : { operation: filters.operation }),
-  ...(filters.release === undefined ? {} : { release: filters.release }),
 })
 
 const logCountQueryOf = (filters: typeof LogCountFilters.Type): LogCountQuery => ({

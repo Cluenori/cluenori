@@ -221,6 +221,37 @@ public struct CluenoriAPI: Sendable {
         return try Self.decoded(AddedComponentResponse.self, from: answer)
     }
 
+    /// Replaces the project's settings: `productionEnvironments`, the 1 to 20 environments it calls
+    /// production, where its incidents alert and its views start. Telemetry without an environment
+    /// counts as production, so no alert is lost. Until a project chooses, prod, production and
+    /// live.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func updateSettings(
+        project: String,
+        _ body: ProjectSettings,
+    ) async throws(APIError) -> ProjectSettings {
+        let answer = try await self.send("PUT", "/api/projects/\(Self.escaped(Self.text(project)))/settings", body: try Self.encoded(body))
+        return try Self.decoded(ProjectSettings.self, from: answer)
+    }
+
+    /// Replaces a component's links, where its releases come from beside its telemetry:
+    /// `repository`, its GitHub repository as owner/name, whose tags and commits name its releases,
+    /// and `appStoreBundleId`, its app's bundle ID in App Store Connect. One left out is unlinked.
+    /// Returns the component.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.componentNotFound`, or as any call can.
+    @concurrent
+    public func linkComponent(
+        project: String,
+        component: String,
+        _ body: ComponentLinks,
+    ) async throws(APIError) -> Component {
+        let answer = try await self.send("PUT", "/api/projects/\(Self.escaped(Self.text(project)))/components/\(Self.escaped(Self.text(component)))/links", body: try Self.encoded(body))
+        return try Self.decoded(Component.self, from: answer)
+    }
+
     /// Every operation in a period, the most counted first, or one with `operation`: how many times
     /// it ran, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the
     /// minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months);
@@ -234,16 +265,16 @@ public struct CluenoriAPI: Sendable {
         to: Date,
         environment: String? = nil,
         component: String? = nil,
-        operation: String? = nil,
         release: String? = nil,
+        operation: String? = nil,
     ) async throws(APIError) -> OperationTable {
         var query: [(String, String)] = []
         query.append(("from", Self.text(from)))
         query.append(("to", Self.text(to)))
         if let environment { query.append(("environment", Self.text(environment))) }
         if let component { query.append(("component", Self.text(component))) }
-        if let operation { query.append(("operation", Self.text(operation))) }
         if let release { query.append(("release", Self.text(release))) }
+        if let operation { query.append(("operation", Self.text(operation))) }
         let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/operations", query: query)
         return try Self.decoded(OperationTable.self, from: answer)
     }
@@ -262,8 +293,8 @@ public struct CluenoriAPI: Sendable {
         step: SeriesStep,
         environment: String? = nil,
         component: String? = nil,
-        operation: String? = nil,
         release: String? = nil,
+        operation: String? = nil,
     ) async throws(APIError) -> LoadSeries {
         var query: [(String, String)] = []
         query.append(("from", Self.text(from)))
@@ -271,8 +302,8 @@ public struct CluenoriAPI: Sendable {
         query.append(("step", Self.text(step)))
         if let environment { query.append(("environment", Self.text(environment))) }
         if let component { query.append(("component", Self.text(component))) }
-        if let operation { query.append(("operation", Self.text(operation))) }
         if let release { query.append(("release", Self.text(release))) }
+        if let operation { query.append(("operation", Self.text(operation))) }
         let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/load", query: query)
         return try Self.decoded(LoadSeries.self, from: answer)
     }
@@ -291,16 +322,16 @@ public struct CluenoriAPI: Sendable {
         to: Date,
         environment: String? = nil,
         component: String? = nil,
-        operation: String? = nil,
         release: String? = nil,
+        operation: String? = nil,
     ) async throws(APIError) -> KeptTraces {
         var query: [(String, String)] = []
         query.append(("from", Self.text(from)))
         query.append(("to", Self.text(to)))
         if let environment { query.append(("environment", Self.text(environment))) }
         if let component { query.append(("component", Self.text(component))) }
-        if let operation { query.append(("operation", Self.text(operation))) }
         if let release { query.append(("release", Self.text(release))) }
+        if let operation { query.append(("operation", Self.text(operation))) }
         let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/kept-traces", query: query)
         return try Self.decoded(KeptTraces.self, from: answer)
     }
@@ -316,16 +347,16 @@ public struct CluenoriAPI: Sendable {
         to: Date,
         environment: String? = nil,
         component: String? = nil,
-        operation: String? = nil,
         release: String? = nil,
+        operation: String? = nil,
     ) async throws(APIError) -> ErrorTable {
         var query: [(String, String)] = []
         query.append(("from", Self.text(from)))
         query.append(("to", Self.text(to)))
         if let environment { query.append(("environment", Self.text(environment))) }
         if let component { query.append(("component", Self.text(component))) }
-        if let operation { query.append(("operation", Self.text(operation))) }
         if let release { query.append(("release", Self.text(release))) }
+        if let operation { query.append(("operation", Self.text(operation))) }
         let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/errors", query: query)
         return try Self.decoded(ErrorTable.self, from: answer)
     }
@@ -343,16 +374,16 @@ public struct CluenoriAPI: Sendable {
         to: Date,
         environment: String? = nil,
         component: String? = nil,
-        operation: String? = nil,
         release: String? = nil,
+        operation: String? = nil,
     ) async throws(APIError) -> ErrorDetail {
         var query: [(String, String)] = []
         query.append(("from", Self.text(from)))
         query.append(("to", Self.text(to)))
         if let environment { query.append(("environment", Self.text(environment))) }
         if let component { query.append(("component", Self.text(component))) }
-        if let operation { query.append(("operation", Self.text(operation))) }
         if let release { query.append(("release", Self.text(release))) }
+        if let operation { query.append(("operation", Self.text(operation))) }
         let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/errors/\(Self.escaped(Self.text(error)))", query: query)
         return try Self.decoded(ErrorDetail.self, from: answer)
     }
@@ -369,6 +400,7 @@ public struct CluenoriAPI: Sendable {
         to: Date,
         environment: String? = nil,
         component: String? = nil,
+        release: String? = nil,
         level: IndexedLevel? = nil,
         search: String? = nil,
         category: String? = nil,
@@ -381,6 +413,7 @@ public struct CluenoriAPI: Sendable {
         query.append(("to", Self.text(to)))
         if let environment { query.append(("environment", Self.text(environment))) }
         if let component { query.append(("component", Self.text(component))) }
+        if let release { query.append(("release", Self.text(release))) }
         if let level { query.append(("level", Self.text(level))) }
         if let search { query.append(("search", Self.text(search))) }
         if let category { query.append(("category", Self.text(category))) }
@@ -406,6 +439,7 @@ public struct CluenoriAPI: Sendable {
         by: LogCountsBy,
         environment: String? = nil,
         component: String? = nil,
+        release: String? = nil,
         level: IndexedLevel? = nil,
         error: String? = nil,
     ) async throws(APIError) -> LogCounts {
@@ -416,6 +450,7 @@ public struct CluenoriAPI: Sendable {
         query.append(("by", Self.text(by)))
         if let environment { query.append(("environment", Self.text(environment))) }
         if let component { query.append(("component", Self.text(component))) }
+        if let release { query.append(("release", Self.text(release))) }
         if let level { query.append(("level", Self.text(level))) }
         if let error { query.append(("error", Self.text(error))) }
         let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/logs/counts", query: query)
@@ -698,6 +733,31 @@ public struct ArchiveUnavailable: Codable, Hashable, Sendable {
     }
 }
 
+public struct ChangedCommit: Codable, Hashable, Sendable {
+    public let sha: String
+    public let message: String
+    public let author: String
+    public let committedAt: Date
+    public let url: String?
+    public let pullRequest: Int?
+
+    public init(
+        sha: String,
+        message: String,
+        author: String,
+        committedAt: Date,
+        url: String? = nil,
+        pullRequest: Int? = nil,
+    ) {
+        self.sha = sha
+        self.message = message
+        self.author = author
+        self.committedAt = committedAt
+        self.url = url
+        self.pullRequest = pullRequest
+    }
+}
+
 public struct ComparedOperation: Codable, Hashable, Sendable {
     public let operation: String
     public let count: Int
@@ -730,11 +790,21 @@ public struct Component: Codable, Hashable, Sendable {
     public let key: String
     public let name: String
     public let createdAt: Date
+    public let repository: String?
+    public let appStoreBundleId: String?
 
-    public init(key: String, name: String, createdAt: Date) {
+    public init(
+        key: String,
+        name: String,
+        createdAt: Date,
+        repository: String? = nil,
+        appStoreBundleId: String? = nil,
+    ) {
         self.key = key
         self.name = name
         self.createdAt = createdAt
+        self.repository = repository
+        self.appStoreBundleId = appStoreBundleId
     }
 }
 
@@ -743,6 +813,16 @@ public struct ComponentExists: Codable, Hashable, Sendable {
 
     public init(component: String) {
         self.component = component
+    }
+}
+
+public struct ComponentLinks: Codable, Hashable, Sendable {
+    public let repository: String?
+    public let appStoreBundleId: String?
+
+    public init(repository: String? = nil, appStoreBundleId: String? = nil) {
+        self.repository = repository
+        self.appStoreBundleId = appStoreBundleId
     }
 }
 
@@ -1346,6 +1426,22 @@ public struct MemberRole: RawRepresentable, Codable, Hashable, Sendable {
     public static let member = MemberRole(rawValue: "member")
 }
 
+public struct MergedPullRequest: Codable, Hashable, Sendable {
+    public let number: Int
+    public let title: String
+    public let author: String
+    public let url: String
+    public let labels: [String]
+
+    public init(number: Int, title: String, author: String, url: String, labels: [String]) {
+        self.number = number
+        self.title = title
+        self.author = author
+        self.url = url
+        self.labels = labels
+    }
+}
+
 public struct Monitor: Codable, Hashable, Sendable {
     public let id: String
     public let component: String
@@ -1728,6 +1824,18 @@ public struct Period: Codable, Hashable, Sendable {
     }
 }
 
+public struct PhasedRelease: Codable, Hashable, Sendable {
+    public let state: String
+    public let startedAt: Date?
+    public let day: Int?
+
+    public init(state: String, startedAt: Date? = nil, day: Int? = nil) {
+        self.state = state
+        self.startedAt = startedAt
+        self.day = day
+    }
+}
+
 public struct Phone: Codable, Hashable, Sendable {
     public let id: String
     public let model: String
@@ -1795,10 +1903,19 @@ public struct Project: Codable, Hashable, Sendable {
 public struct ProjectDetail: Codable, Hashable, Sendable {
     public let project: Project
     public let components: [Component]
+    public let settings: ProjectSettings?
+    public let environments: [String]?
 
-    public init(project: Project, components: [Component]) {
+    public init(
+        project: Project,
+        components: [Component],
+        settings: ProjectSettings? = nil,
+        environments: [String]? = nil,
+    ) {
         self.project = project
         self.components = components
+        self.settings = settings
+        self.environments = environments
     }
 }
 
@@ -1823,6 +1940,14 @@ public struct ProjectNotFound: Codable, Hashable, Sendable {
 
     public init(project: String) {
         self.project = project
+    }
+}
+
+public struct ProjectSettings: Codable, Hashable, Sendable {
+    public let productionEnvironments: [String]
+
+    public init(productionEnvironments: [String]) {
+        self.productionEnvironments = productionEnvironments
     }
 }
 
@@ -1869,6 +1994,59 @@ public struct RegisterPush: Codable, Hashable, Sendable {
     }
 }
 
+public struct ReleaseChanges: Codable, Hashable, Sendable {
+    public let totalCommits: Int
+    public let commits: [ChangedCommit]
+    public let pullRequests: [MergedPullRequest]
+    public let filesChanged: Int?
+    public let additions: Int?
+    public let deletions: Int?
+    public let url: String?
+
+    public init(
+        totalCommits: Int,
+        commits: [ChangedCommit],
+        pullRequests: [MergedPullRequest],
+        filesChanged: Int? = nil,
+        additions: Int? = nil,
+        deletions: Int? = nil,
+        url: String? = nil,
+    ) {
+        self.totalCommits = totalCommits
+        self.commits = commits
+        self.pullRequests = pullRequests
+        self.filesChanged = filesChanged
+        self.additions = additions
+        self.deletions = deletions
+        self.url = url
+    }
+}
+
+public struct ReleaseCommit: Codable, Hashable, Sendable {
+    public let sha: String
+    public let tag: String?
+    public let message: String?
+    public let author: String?
+    public let committedAt: Date?
+    public let url: String?
+
+    public init(
+        sha: String,
+        tag: String? = nil,
+        message: String? = nil,
+        author: String? = nil,
+        committedAt: Date? = nil,
+        url: String? = nil,
+    ) {
+        self.sha = sha
+        self.tag = tag
+        self.message = message
+        self.author = author
+        self.committedAt = committedAt
+        self.url = url
+    }
+}
+
 public struct ReleaseDetail: Codable, Hashable, Sendable {
     public let summary: ReleaseSummary
     public let slower: [ComparedOperation]
@@ -1878,6 +2056,8 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
     public let newOperations: [String]
     public let newErrors: [ErrorGroup]
     public let incidents: [Incident]
+    public let changes: ReleaseChanges?
+    public let problems: [SourceProblem]
 
     public init(
         summary: ReleaseSummary,
@@ -1888,6 +2068,8 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
         newOperations: [String],
         newErrors: [ErrorGroup],
         incidents: [Incident],
+        changes: ReleaseChanges? = nil,
+        problems: [SourceProblem],
     ) {
         self.summary = summary
         self.slower = slower
@@ -1897,14 +2079,18 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
         self.newOperations = newOperations
         self.newErrors = newErrors
         self.incidents = incidents
+        self.changes = changes
+        self.problems = problems
     }
 }
 
 public struct ReleaseList: Codable, Hashable, Sendable {
     public let releases: [ReleaseSummary]
+    public let problems: [SourceProblem]
 
-    public init(releases: [ReleaseSummary]) {
+    public init(releases: [ReleaseSummary], problems: [SourceProblem]) {
         self.releases = releases
+        self.problems = problems
     }
 }
 
@@ -1918,33 +2104,51 @@ public struct ReleaseNotFound: Codable, Hashable, Sendable {
     }
 }
 
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct ReleaseSource: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let github = ReleaseSource(rawValue: "github")
+    public static let appStoreConnect = ReleaseSource(rawValue: "appStoreConnect")
+}
+
 public struct ReleaseSummary: Codable, Hashable, Sendable {
     public let component: String
     public let environment: String?
     public let release: String
-    public let firstSeen: Date
-    public let lastSeen: Date
-    public let count: Int
-    public let errors: Int
+    public let firstSeen: Date?
+    public let lastSeen: Date?
+    public let count: Int?
+    public let errors: Int?
     public let previous: String?
     public let verdict: Verdict
     public let slower: Int
     public let failingMore: Int
     public let newErrors: Int
+    public let commit: ReleaseCommit?
+    public let store: StoreBuild?
+    public let deployedAt: Date?
 
     public init(
         component: String,
         environment: String? = nil,
         release: String,
-        firstSeen: Date,
-        lastSeen: Date,
-        count: Int,
-        errors: Int,
+        firstSeen: Date? = nil,
+        lastSeen: Date? = nil,
+        count: Int? = nil,
+        errors: Int? = nil,
         previous: String? = nil,
         verdict: Verdict,
         slower: Int,
         failingMore: Int,
         newErrors: Int,
+        commit: ReleaseCommit? = nil,
+        store: StoreBuild? = nil,
+        deployedAt: Date? = nil,
     ) {
         self.component = component
         self.environment = environment
@@ -1958,6 +2162,9 @@ public struct ReleaseSummary: Codable, Hashable, Sendable {
         self.slower = slower
         self.failingMore = failingMore
         self.newErrors = newErrors
+        self.commit = commit
+        self.store = store
+        self.deployedAt = deployedAt
     }
 }
 
@@ -2083,6 +2290,20 @@ public struct SlowerItem: Codable, Hashable, Sendable {
     }
 }
 
+public struct SourceProblem: Codable, Hashable, Sendable {
+    public let component: String
+    public let source: ReleaseSource
+    public let problem: String
+    public let at: Date
+
+    public init(component: String, source: ReleaseSource, problem: String, at: Date) {
+        self.component = component
+        self.source = source
+        self.problem = problem
+        self.at = at
+    }
+}
+
 public struct SpanEvent: Codable, Hashable, Sendable {
     public let name: String
     public let time: Date
@@ -2121,6 +2342,62 @@ public struct StoppedEvidence: Codable, Hashable, Sendable {
         self.lastRanAt = lastRanAt
         self.usualGapMs = usualGapMs
     }
+}
+
+public struct StoreBuild: Codable, Hashable, Sendable {
+    public let version: String
+    public let buildNumber: String
+    public let uploadedAt: Date
+    public let stage: StoreStage
+    public let appStoreState: String?
+    public let internalTesting: String?
+    public let externalTesting: String?
+    public let phasedRelease: PhasedRelease?
+    public let earliestReleaseAt: Date?
+
+    public init(
+        version: String,
+        buildNumber: String,
+        uploadedAt: Date,
+        stage: StoreStage,
+        appStoreState: String? = nil,
+        internalTesting: String? = nil,
+        externalTesting: String? = nil,
+        phasedRelease: PhasedRelease? = nil,
+        earliestReleaseAt: Date? = nil,
+    ) {
+        self.version = version
+        self.buildNumber = buildNumber
+        self.uploadedAt = uploadedAt
+        self.stage = stage
+        self.appStoreState = appStoreState
+        self.internalTesting = internalTesting
+        self.externalTesting = externalTesting
+        self.phasedRelease = phasedRelease
+        self.earliestReleaseAt = earliestReleaseAt
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct StoreStage: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let processing = StoreStage(rawValue: "processing")
+    public static let failed = StoreStage(rawValue: "failed")
+    public static let testing = StoreStage(rawValue: "testing")
+    public static let waitingForReview = StoreStage(rawValue: "waitingForReview")
+    public static let inReview = StoreStage(rawValue: "inReview")
+    public static let rejected = StoreStage(rawValue: "rejected")
+    public static let pendingRelease = StoreStage(rawValue: "pendingRelease")
+    public static let releasing = StoreStage(rawValue: "releasing")
+    public static let live = StoreStage(rawValue: "live")
+    public static let replaced = StoreStage(rawValue: "replaced")
+    public static let expired = StoreStage(rawValue: "expired")
+    public static let other = StoreStage(rawValue: "other")
 }
 
 /// One of several kinds, told apart by `_tag`. A kind this client doesn't know, from a newer API,
@@ -2318,6 +2595,7 @@ public struct Verdict: RawRepresentable, Codable, Hashable, Sendable {
     public static let same = Verdict(rawValue: "same")
     public static let tooEarly = Verdict(rawValue: "tooEarly")
     public static let first = Verdict(rawValue: "first")
+    public static let unmeasured = Verdict(rawValue: "unmeasured")
 }
 
 /// A value of any JSON shape, as the API sends free-form data.

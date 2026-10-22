@@ -21,5 +21,16 @@ export const migrateProjects = Migrator.make({})({
         created_at TEXT NOT NULL
       )`
     }),
+    // A component's links: its repository on GitHub and its App Store bundle ID, null until linked.
+    "0002_component_links": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE projects_components ADD COLUMN repository TEXT`
+      yield* sql`ALTER TABLE projects_components ADD COLUMN app_store_bundle_id TEXT`
+    }),
+    // The project's settings, as JSON, null until it chooses.
+    "0003_project_settings": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE projects_project ADD COLUMN settings TEXT`
+    }),
   }),
 })

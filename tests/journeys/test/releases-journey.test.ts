@@ -1,3 +1,4 @@
+import { Repository } from "@bagatka/github"
 import { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import { ComponentName, ProjectName } from "@cluenori/projects"
 import { assert, layer } from "@effect/vitest"
@@ -85,6 +86,65 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("releases", (it) => {
         }),
       )
       assert.strictEqual(unknown._tag, "ReleaseNotFound")
+    }),
+  )
+
+  it.effect("a deploy reported from CI shows as a release with its commit, before its telemetry arrives", () =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const http = yield* HttpClient.HttpClient
+      const project = ProjectKey.make("deploys")
+      yield* client.projects.createProject({ payload: { key: project, name: ProjectName.make("Notes") } })
+      const { ingestKey } = yield* client.projects.addComponent({
+        params: { project },
+        payload: { key: api, name: ComponentName.make("Notes API") },
+      })
+      const linked = yield* client.projects.linkComponent({
+        params: { project, component: api },
+        payload: { repository: Repository.make("notes/notes-api") },
+      })
+      assert.strictEqual(linked.repository, "notes/notes-api")
+
+      // What cluenori-release does: ask for the last deploy, then report this one.
+      const write = (name: string, body: unknown) =>
+        http.execute(
+          HttpClientRequest.post(`${baseUrl}/ingest/v1/releases/${name}`).pipe(
+            HttpClientRequest.bearerToken(ingestKey),
+            HttpClientRequest.bodyJsonUnsafe(body),
+          ),
+        )
+      const first = yield* write("last", { environment: "production" })
+      assert.deepStrictEqual([first.status, yield* first.json], [200, {}])
+      const commit = "e91f09c".padEnd(40, "0")
+      const reported = yield* write("report", {
+        release: newer,
+        environment: "production",
+        commit,
+        tag: `prod-${newer}`,
+      })
+      assert.strictEqual(reported.status, 204)
+      const since = yield* write("last", { environment: "production" })
+      assert.deepStrictEqual(yield* since.json, { release: newer, commit })
+
+      // A wrong key and a body that isn't a report are refused.
+      const refused = yield* http.execute(
+        HttpClientRequest.post(`${baseUrl}/ingest/v1/releases/report`).pipe(
+          HttpClientRequest.bearerToken(`${ingestKey.slice(0, -1)}${ingestKey.endsWith("A") ? "B" : "A"}`),
+          HttpClientRequest.bodyJsonUnsafe({ release: newer, commit }),
+        ),
+      )
+      const invalid = yield* write("report", { release: newer })
+      assert.deepStrictEqual([refused.status, invalid.status], [401, 400])
+
+      const now = DateTime.toEpochMillis(yield* DateTime.now)
+      const { releases } = yield* client.releases.releases({
+        params: { project },
+        query: { from: DateTime.makeUnsafe(now - 60 * minute), to: DateTime.makeUnsafe(now + minute) },
+      })
+      assert.deepStrictEqual(
+        releases.map((release) => [release.release, release.verdict, release.commit?.tag, release.commit?.url]),
+        [[newer, "unmeasured", `prod-${newer}`, `https://github.com/notes/notes-api/commit/${commit}`]],
+      )
     }),
   )
 })

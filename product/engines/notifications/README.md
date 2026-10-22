@@ -24,7 +24,8 @@ yield* notifications.testAlert(phone)
 - **Rules:**
   - **Each change's level:** an alarm when Down or Failing opens or gets worse; time sensitive
     when Stopped opens or any incident reopens; quiet when one recovers or someone acknowledges it.
-    Nothing about an incident someone is on, nor for other activity. An alarm more than 10 minutes
+    Nothing about an incident someone is on, one in an environment its project doesn't call
+    production, nor for other activity. An alarm more than 10 minutes
     late comes as time sensitive.
   - **Who is told:** the phones whose member sees the incident's project; an owner sees every one.
   - **What a push says:** "<project> · <what happened>", and the incident's title.

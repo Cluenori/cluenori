@@ -1,4 +1,4 @@
-import type { ComponentKey, ProjectKey } from "@cluenori/foundation"
+import type { ComponentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
@@ -17,13 +17,14 @@ import {
   ticksOf,
   zoneOf,
 } from "@/project-facts"
-import { Link, navigate } from "@/router"
+import type { Environments } from "@/project-facts"
+import type { Filters } from "@/router"
+import { Link } from "@/router"
 import { BarRows } from "@/views/bar-rows"
-import { ComponentSwitch } from "@/views/component-switch"
+import { FilterSwitches } from "@/views/filter-switches"
 import { Loaded } from "@/views/loaded"
 import { byTimeInTotal, OperationTable, sortOperations } from "@/views/operation-table"
 import { Panel, PanelStats } from "@/views/panel"
-import { PeriodSwitch } from "@/views/period-switch"
 import { ProjectHeader } from "@/views/project-header"
 import { buttonVariants } from "@/views/ui/button"
 
@@ -31,18 +32,28 @@ import { buttonVariants } from "@/views/ui/button"
 const summaryRows = 8
 
 /**
- * The load on a project's components, or on one: how many ran over the period and how many failed, then
- * the operations that got slower or take the most time, each one click from its own page, each panel
- * the page's full width.
+ * The load on a project's components, or on one, in the environment shown, or of one release: how
+ * many ran over the period and how many failed, then the operations that got slower or take the
+ * most time, each one click from its own page, each panel the page's full width.
  */
 export function PerformancePage({
   project,
   component,
+  release,
+  environments,
 }: {
   readonly project: ProjectKey
   readonly component?: ComponentKey
+  readonly release?: ReleaseVersion
+  readonly environments: Environments
 }) {
-  const scope = { project, ...(component === undefined ? {} : { component }) }
+  const environment = environments.shown
+  const filters: Filters = {
+    ...(component === undefined ? {} : { component }),
+    ...(environment === undefined ? {} : { environment }),
+    ...(release === undefined ? {} : { release }),
+  }
+  const scope = { project, ...filters }
   const period = useAtomValue(periodAtom)
   const components = useComponentKeys(project)
   const load = useAtomValue(loadAtom(scope))
@@ -59,18 +70,13 @@ export function PerformancePage({
           table.dataUntil === undefined ? undefined : DateTime.toEpochMillis(table.dataUntil),
         )}
       >
-        <ComponentSwitch
+        <FilterSwitches
+          project={project}
           components={components}
-          value={component}
-          allowAll
-          onChange={(picked) =>
-            navigate(
-              { page: "performance", project, ...(picked === undefined ? {} : { component: picked }) },
-              { replace: true },
-            )
-          }
+          filters={filters}
+          environments={environments}
+          routeOf={(next) => ({ page: "performance", project, ...next })}
         />
-        <PeriodSwitch />
       </ProjectHeader>
 
       <div className="flex flex-col gap-4">
@@ -129,7 +135,7 @@ export function PerformancePage({
           subtitle="Any that got slower, then the most time in total"
           action={
             <Link
-              to={{ page: "operations", project, ...(component === undefined ? {} : { component }) }}
+              to={{ page: "operations", project, ...filters }}
               className={buttonVariants({ variant: "outline", size: "sm" })}
             >
               All operations
@@ -155,6 +161,7 @@ export function PerformancePage({
                       linkOf={(row) => ({
                         page: "operation",
                         project,
+                        ...filters,
                         component: row.component,
                         operation: row.operation,
                       })}

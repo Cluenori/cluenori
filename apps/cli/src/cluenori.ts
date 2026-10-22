@@ -13,6 +13,7 @@ import { push } from "./push-commands.ts"
 import { release, releases } from "./releases-commands.ts"
 import { run } from "./run.ts"
 import { setup } from "./setup.ts"
+import { appStore, github } from "./sources-commands.ts"
 import { today } from "./today-command.ts"
 import { update } from "./update.ts"
 
@@ -44,6 +45,8 @@ export const cluenori = Command.make("cluenori").pipe(
     monitor,
     releases,
     release,
+    github,
+    appStore,
     members,
     member,
     phones,

@@ -1,10 +1,10 @@
-import { NotAllowed, ProjectKey } from "@cluenori/foundation"
+import { ComponentKey, EnvironmentKey, NotAllowed, ProjectKey } from "@cluenori/foundation"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
-import { AddComponent, Component, ComponentExists } from "./component.ts"
+import { AddComponent, Component, ComponentExists, ComponentLinks, ComponentNotFound } from "./component.ts"
 import { IngestKey } from "./ingest-key.ts"
-import { CreateProject, Project, ProjectExists, ProjectNotFound } from "./project.ts"
+import { CreateProject, Project, ProjectExists, ProjectNotFound, ProjectSettings } from "./project.ts"
 
 /** A component just added, with the ingest key its telemetry is sent with: shown this once. */
 export const AddedComponentResponse = Schema.Struct({ component: Component, ingestKey: IngestKey }).annotate({
@@ -15,10 +15,17 @@ export const AddedComponentResponse = Schema.Struct({ component: Component, inge
 export const ProjectList = Schema.Struct({ projects: Schema.Array(Project) }).annotate({ identifier: "ProjectList" })
 export type ProjectList = typeof ProjectList.Type
 
-/** One project and its components, by key. */
-export const ProjectDetail = Schema.Struct({ project: Project, components: Schema.Array(Component) }).annotate({
-  identifier: "ProjectDetail",
-})
+/**
+ * One project and its components, by key; its settings; and the environments its telemetry named
+ * in the last 30 days, production first. Settings and environments are absent from deployments
+ * from before October 2026.
+ */
+export const ProjectDetail = Schema.Struct({
+  project: Project,
+  components: Schema.Array(Component),
+  settings: Schema.optionalKey(ProjectSettings),
+  environments: Schema.optionalKey(Schema.Array(EnvironmentKey)),
+}).annotate({ identifier: "ProjectDetail" })
 export type ProjectDetail = typeof ProjectDetail.Type
 
 /** Projects and their components: the public API's part for this engine. */
@@ -55,5 +62,27 @@ export class ProjectsGroup extends HttpApiGroup.make("projects")
     }).annotate(
       OpenApi.Description,
       "Adds a component to a project and returns its ingest key, which its telemetry is sent with. The key is shown only in this answer.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put("updateSettings", "/projects/:project/settings", {
+      params: { project: ProjectKey },
+      payload: ProjectSettings,
+      success: ProjectSettings,
+      error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
+    }).annotate(
+      OpenApi.Description,
+      "Replaces the project's settings: `productionEnvironments`, the 1 to 20 environments it calls production, where its incidents alert and its views start. Telemetry without an environment counts as production, so no alert is lost. Until a project chooses, prod, production and live.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put("linkComponent", "/projects/:project/components/:component/links", {
+      params: { project: ProjectKey, component: ComponentKey },
+      payload: ComponentLinks,
+      success: Component,
+      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ComponentNotFound.pipe(HttpApiSchema.status(404))],
+    }).annotate(
+      OpenApi.Description,
+      "Replaces a component's links, where its releases come from beside its telemetry: `repository`, its GitHub repository as owner/name, whose tags and commits name its releases, and `appStoreBundleId`, its app's bundle ID in App Store Connect. One left out is unlinked. Returns the component.",
     ),
   ) {}

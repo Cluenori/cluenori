@@ -39,7 +39,7 @@ at a time, getting APNs's answer: accepted, or rejected with Apple's reason.
 
 ## Depends on
 
-`effect`, and an `HttpClient` the host provides.
+`@bagatka/es256-jwt`, to sign its provider tokens; `effect`; and an `HttpClient` the host provides.
 
 ## Settings
 
@@ -50,7 +50,8 @@ installs, production for TestFlight and the App Store.
 ## Decisions and constraints
 
 - **The host passes the platform's Web Crypto.** The package compiles without DOM or Workers types,
-  so it declares only the two functions it signs with, `importKey` and `sign` (ES256).
+  so `ApnsSigning` is only the two functions it signs with, `importKey` and `sign` (ES256): the
+  shape `@bagatka/es256-jwt` signs with.
 - **One provider token for 50 minutes.** APNs takes a token for an hour and refuses one renewed
   more often than about every 20 minutes. A token APNs calls expired anyway is renewed, and the push
   sent once more.

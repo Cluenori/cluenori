@@ -1,4 +1,4 @@
-import { ComponentKey, EnvelopeName, Period, ProjectKey, TraceId } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ProjectKey, TraceId } from "@cluenori/foundation"
 import { Incident, IncidentId } from "@cluenori/incidents"
 import type { OperationRow, ErrorGroup, LoadSeries } from "@cluenori/signals"
 import { ErrorGroupId, SpanId } from "@cluenori/signals"
@@ -6,7 +6,16 @@ import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
 import { axisTime, dayOf } from "@/lib/format"
-import { attentionOf, columnTimesOf, exceptionsOf, logColumnsOf, loadColumnsOf, operationSpanOf } from "@/project-facts"
+import {
+  attentionOf,
+  columnTimesOf,
+  environmentsOf,
+  exceptionsOf,
+  isShownIn,
+  logColumnsOf,
+  loadColumnsOf,
+  operationSpanOf,
+} from "@/project-facts"
 
 const minute = 60_000
 const hour = 60 * minute
@@ -14,6 +23,9 @@ const now = Date.UTC(2026, 9, 20, 9, 40)
 const at = (epochMillis: number) => DateTime.makeUnsafe(epochMillis)
 const project = ProjectKey.make("notes")
 const api = ComponentKey.make("notes-api")
+const production = EnvironmentKey.make("production")
+const staging = EnvironmentKey.make("staging")
+const euProduction = EnvironmentKey.make("prod-eu")
 
 // Ten minutes of load, 100 a minute, with these failed; `undefined` for a minute nothing reported.
 const series = (failed: ReadonlyArray<number | undefined>): LoadSeries => ({
@@ -170,9 +182,31 @@ const operation = (name: string, p95Ms: number): OperationRow => ({
 
 const table = (rows: ReadonlyArray<OperationRow>) => ({ rows, count: 1_000, errors: 0 })
 
+// An incident of an operation failing, in `environment`, or in none.
+const incident = (id: string, environment: EnvironmentKey | undefined) =>
+  new Incident({
+    id: IncidentId.make(id),
+    component: api,
+    ...(environment === undefined ? {} : { environment }),
+    subject: "POST /api/export",
+    title: `Failing in ${environment ?? "no environment"}`,
+    evidence: {
+      _tag: "failing",
+      operation: EnvelopeName.make("POST /api/export"),
+      failed: 10,
+      count: 50,
+      usualRate: 0.001,
+    },
+    openedAt: at(now - 5 * minute),
+  })
+
+// A page of a deployment that names no environments.
+const everyEnvironment = { offered: [], production: [] }
+
 describe("attentionOf", () => {
   const items = attentionOf({
     project,
+    environments: everyEnvironment,
     errors: {
       covered: new Period({ from: at(now - 24 * hour), to: at(now) }),
       groups: [
@@ -229,9 +263,28 @@ describe("attentionOf", () => {
     assert.isFalse(items.some((item) => item.key.includes("POST /api/export")))
   })
 
+  it("keeps the incidents of the environment shown, and those of none in production", () => {
+    const open = [
+      incident("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a61", production),
+      incident("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a62", staging),
+      incident("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a63", undefined),
+    ]
+    const titlesIn = (shown: EnvironmentKey) =>
+      attentionOf({
+        project,
+        environments: { shown, offered: [production, staging], production: [production] },
+        errors: { groups: [], occurrences: 0 },
+        incidents: { open, resolved: [] },
+        compared: { lastDay: table([]), usual: table([]) },
+      }).map((item) => item.title)
+    assert.deepStrictEqual(titlesIn(production), ["Failing in production", "Failing in no environment"])
+    assert.deepStrictEqual(titlesIn(staging), ["Failing in staging"])
+  })
+
   it("names an error that is new and happening now once", () => {
     const both = attentionOf({
       project,
+      environments: everyEnvironment,
       errors: {
         covered: new Period({ from: at(now - 24 * hour), to: at(now) }),
         groups: [group({ firstSeen: at(now - 2 * hour), lastSeen: at(now - minute) })],
@@ -244,5 +297,50 @@ describe("attentionOf", () => {
       both.map((item) => item.title),
       ["NpgsqlException is new, and happening right now"],
     )
+  })
+})
+
+describe("environmentsOf", () => {
+  const settings = { productionEnvironments: [EnvironmentKey.make("prod"), euProduction, production] }
+
+  it("shows production first: the first production environment seen lately, offering every one seen", () => {
+    const shown = environmentsOf({ settings, environments: [euProduction, production, staging] }, undefined)
+    assert.deepStrictEqual(shown, {
+      shown: euProduction,
+      offered: [euProduction, production, staging],
+      production: settings.productionEnvironments,
+    })
+  })
+
+  it("shows the one chosen, offering it too when it wasn't seen lately", () => {
+    const qa = EnvironmentKey.make("qa")
+    assert.strictEqual(environmentsOf({ settings, environments: [production, staging] }, staging).shown, staging)
+    assert.deepStrictEqual(environmentsOf({ settings, environments: [production] }, qa).offered, [production, qa])
+  })
+
+  it("shows the first seen when no production environment was, and none when none was", () => {
+    assert.strictEqual(environmentsOf({ settings, environments: [staging] }, undefined).shown, staging)
+    assert.deepStrictEqual(environmentsOf({ settings, environments: [] }, undefined), {
+      offered: [],
+      production: settings.productionEnvironments,
+    })
+  })
+
+  it("offers nothing, and shows only one named, on a deployment that says neither settings nor environments", () => {
+    assert.deepStrictEqual(environmentsOf({}, undefined), { offered: [], production: [] })
+    assert.deepStrictEqual(environmentsOf({}, staging), { shown: staging, offered: [staging], production: [] })
+  })
+})
+
+// A page showing `shown`, of a project whose production is production.
+const shownIn = (shown: EnvironmentKey) => ({ shown, offered: [production, staging], production: [production] })
+
+describe("isShownIn", () => {
+  it("keeps what is of the environment shown, and what names none in production", () => {
+    assert.isTrue(isShownIn(shownIn(production), production))
+    assert.isTrue(isShownIn(shownIn(production), undefined))
+    assert.isFalse(isShownIn(shownIn(production), staging))
+    assert.isFalse(isShownIn(shownIn(staging), undefined))
+    assert.isTrue(isShownIn(everyEnvironment, staging))
   })
 })

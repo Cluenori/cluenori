@@ -1,4 +1,4 @@
-import type { ComponentKey, TraceId } from "@cluenori/foundation"
+import type { ComponentKey, EnvironmentKey, TraceId } from "@cluenori/foundation"
 import { Period } from "@cluenori/foundation"
 import { Context, DateTime, Duration, Effect, Layer, Option, Ref, Schema } from "effect"
 import type { SqlError } from "effect/sql"
@@ -110,6 +110,11 @@ export class Signals extends Context.Service<
      * from before October 2026 have none. Reads one row per release.
      */
     readonly releases: (query: ReleaseQuery) => Effect.Effect<ReleaseTable>
+    /**
+     * The environments the period's operations ran in, by name, as components report them in
+     * `deployment.environment.name`; operations without one name none. Reads the hourly counts.
+     */
+    readonly environments: (period: Period) => Effect.Effect<ReadonlyArray<EnvironmentKey>>
     /** The errors of the query's period, most frequent first. Reads only. */
     readonly errors: (query: ErrorQuery) => Effect.Effect<ErrorTable>
     /** One error and its latest occurrences in the query's period. Reads only. */
@@ -297,6 +302,7 @@ export class Signals extends Context.Service<
           keptTraces: counts.keptTraces,
           minutesRan: counts.minutesRan,
           releases: counts.releases,
+          environments: counts.environments,
           errors,
           error,
           logs: searchLogs,

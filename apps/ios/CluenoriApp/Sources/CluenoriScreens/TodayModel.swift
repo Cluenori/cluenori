@@ -84,7 +84,7 @@ public final class TodayModel {
                     isNew: item.isNew,
                     ongoing: item.ongoing
                 ),
-                route: .error(project: item.project, id: item.error.id)
+                route: .error(of: .project(item.project), id: item.error.id)
             )
         case .slower(let item):
             TodayRow(

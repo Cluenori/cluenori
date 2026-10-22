@@ -61,7 +61,9 @@ const detectorLevels: Readonly<Record<Detector, AlertLevel>> = {
 
 /**
  * The alert one activity entry is, at `now` (Unix ms), for the project named `projectName`: none for
- * activity that isn't about an incident, or about one someone is on.
+ * activity that isn't about an incident, about one someone is on, or about one in an environment its
+ * project doesn't call production. An entry that doesn't say, from before October 2026, counts as
+ * production.
  */
 export const alertOf = (entry: Envelope, projectName: string, now: number): Option.Option<Alert> => {
   const project = entry.project
@@ -73,6 +75,9 @@ export const alertOf = (entry: Envelope, projectName: string, now: number): Opti
     return Option.none()
   }
   const activity = decoded.value
+  if (activity.production === false) {
+    return Option.none()
+  }
   const late = now - DateTime.toEpochMillis(entry.ts) > alarmsWithin
   const alertAs = (level: AlertLevel, what: string, body: string | undefined): Option.Option<Alert> =>
     Option.some({

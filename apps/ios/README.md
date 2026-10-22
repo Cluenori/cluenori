@@ -3,7 +3,10 @@
 Cluenori on the founder's iPhone, installed from TestFlight: it pairs with a deployment by the QR
 code its web shows, and shows Today, what needs attention across the deployment's projects, and
 each project over a period: its incidents, load, operations with their percentiles, errors with
-their stacks, logs, and releases, each compared with the release before it. Alerts reach it as pushes: a project that is down rings like an alarm
+their stacks, logs, and releases, each compared with the release before it, with its commit and
+the changes since that release from GitHub, and its build's stage in App Store Connect; from a
+release, its operations, errors, and logs, narrowed to it, over the release's own span. A project's
+screens show one environment at a time: its production environment, or the one chosen on the phone. Alerts reach it as pushes: a project that is down rings like an alarm
 clock, through silent mode, with an Acknowledge button (`concept/Modules.md`).
 
 ## Use it
@@ -69,8 +72,18 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   question goes through `Answer`: shown at once from the phone, asked again, and kept when the
   network drops, in the app's caches, a folder per pairing, gone when the phone unpairs.
 - **Links to screens:** `cluenori://projects/<key>`, and under it `/operations`, `/errors`,
-  `/errors/<id>`, `/logs`, `/releases`, and `/releases/<component>/<release>`, with
-  `?environment=<key>` for a component that says where it runs, which alerts will open.
+  `/errors/<id>`, `/logs`, `/releases`, and `/releases/<component>/<release>`, under which
+  `/operations`, `/errors`, `/errors/<id>`, and `/logs` are that release's alone. Each takes
+  `?environment=<key>`: the environment a project's screen shows, or the one a release's component
+  says it runs in. Alerts will open them. A screen narrowed to a release (`Telemetry` in its
+  `Route`) says so at its top, with its environment and span and a button that shows every release
+  in its place.
+- **Environments** (`EnvironmentChoice`, one per project): the project's production environments
+  and those its telemetry named in the last 30 days, from the deployment and kept on the phone, and
+  the one its screens show: chosen on the phone and remembered for the project, else the first
+  production one seen. A route that names no environment shows that one
+  (`DeploymentModels.resolved`); choosing another shows the project's open screens in it. A
+  deployment older than environments tells none apart: no choice, and no environment asked.
 - **The client** (`CluenoriApp/Sources/CluenoriClient`): `CluenoriAPI.swift`, generated from the
   API's definition, and pairing: reading a link, and the phone's User-Agent.
 

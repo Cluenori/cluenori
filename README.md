@@ -66,6 +66,24 @@ Send its logs too, to `<your Cluenori>/otlp/v1/logs` with the same header, and i
 Every export is kept 90 days, with emails, tokens and card numbers removed. Add `--local` to ask
 the Cluenori `./run` serves instead of the deployment.
 
+## Follow releases
+
+A service's releases come from the version it reports in `service.version`, compared each with
+the one before it. Tell Cluenori about each deploy from CI with `cluenori-release`, one file to
+copy into your repository: it needs only `git` and `curl`, and sends the release's commit and the
+commits since the release before. Link a component to its GitHub repository and its App Store app
+for tags, pull requests, and store builds:
+
+```sh
+CLUENORI_URL=<your Cluenori> CLUENORI_INGEST_KEY=<the component's ingest key> \
+  ./cluenori-release --release 2026.10.21-e91f09c --environment prod   # in CI, after deploying
+./cluenori component link notes notes-api --repository owner/notes-api
+./cluenori github setup                      # a read-only token, for tags, commits, pull requests
+./cluenori appstore setup AuthKey_ABC123DEFG.p8 --issuer <issuer ID>   # for an app's builds
+./cluenori releases notes                    # each release and how it compares with the one before
+./cluenori release notes notes-api <release> # what moved, what changed, and where its build stands
+```
+
 ## Work on it
 
 `./dev` opens a shell with the pinned toolchain. Start with `AGENTS.md` (how we build), then

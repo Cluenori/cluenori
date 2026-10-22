@@ -1,4 +1,4 @@
-import type { ComponentKey, ProjectKey } from "@cluenori/foundation"
+import type { ComponentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import { otherOperations } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
@@ -7,27 +7,40 @@ import { useState } from "react"
 
 import { count } from "@/lib/format"
 import { operationsAtom, periodAtom, useComponentKeys, usualOperationsAtom } from "@/project-data"
+import type { Environments } from "@/project-facts"
 import { colorOf, operationRowsOf, periodWords, slowerMeaning } from "@/project-facts"
+import type { Filters } from "@/router"
 import { Link } from "@/router"
+import { FilterSwitches } from "@/views/filter-switches"
 import { Loaded } from "@/views/loaded"
 import type { Sort } from "@/views/operation-table"
 import { byTimeInTotal, OperationTable, sortOperations } from "@/views/operation-table"
 import { Panel } from "@/views/panel"
-import { PeriodSwitch } from "@/views/period-switch"
 import { buttonVariants } from "@/views/ui/button"
 
 /**
- * Every operation of a project, or of one component: searchable, sortable by any column, each one
- * click from its own page. The most time in total comes first.
+ * Every operation of a project, or of one component, in the environment shown, or of one release:
+ * searchable, sortable by any column, each one click from its own page. The most time in total
+ * comes first.
  */
 export function OperationsPage({
   project,
   component,
+  release,
+  environments,
 }: {
   readonly project: ProjectKey
   readonly component?: ComponentKey
+  readonly release?: ReleaseVersion
+  readonly environments: Environments
 }) {
-  const scope = { project, ...(component === undefined ? {} : { component }) }
+  const environment = environments.shown
+  const filters: Filters = {
+    ...(component === undefined ? {} : { component }),
+    ...(environment === undefined ? {} : { environment }),
+    ...(release === undefined ? {} : { release }),
+  }
+  const scope = { project, ...filters }
   const period = useAtomValue(periodAtom)
   const components = useComponentKeys(project)
   const operations = useAtomValue(operationsAtom(scope))
@@ -42,7 +55,7 @@ export function OperationsPage({
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-3 pb-2">
         <Link
-          to={{ page: "performance", project, ...(component === undefined ? {} : { component }) }}
+          to={{ page: "performance", project, ...filters }}
           aria-label="Back to the performance"
           className={buttonVariants({ variant: "outline", size: "icon" })}
         >
@@ -54,8 +67,13 @@ export function OperationsPage({
             {shownComponent}, {periodText}
           </p>
         </div>
-        <div className="ml-auto">
-          <PeriodSwitch />
+        <div className="ml-auto flex max-w-full min-w-0 flex-wrap items-center gap-3">
+          <FilterSwitches
+            project={project}
+            filters={filters}
+            environments={environments}
+            routeOf={(next) => ({ page: "operations", project, ...next })}
+          />
         </div>
       </header>
 
@@ -111,6 +129,7 @@ export function OperationsPage({
                     linkOf={(row) => ({
                       page: "operation",
                       project,
+                      ...filters,
                       component: row.component,
                       operation: row.operation,
                     })}

@@ -3,17 +3,25 @@ import CluenoriScreens
 import Foundation
 import SwiftUI
 
-/// Every error group of a project over the period, the most frequent first.
+/// Every error group of a project in one environment over the period, or of one of its releases over
+/// its span, the most frequent first.
 struct ErrorsScreen: View {
     let errors: ErrorsModel
+    let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
 
     var body: some View {
         List {
-            PeriodSection(period: $navigation.period)
+            CoverageSections(
+                telemetry: errors.telemetry,
+                release: errors.release,
+                environments: environments,
+                route: .errors(of: errors.telemetry),
+                navigation: navigation
+            )
             if let table = errors.table.value {
                 ForEach(table.groups, id: \.id) { group in
-                    NavigationLink(value: Route.error(project: errors.project, id: group.id)) {
+                    NavigationLink(value: Route.error(of: errors.telemetry, id: group.id)) {
                         ErrorGroupRow(title: group.title, culprit: group.culprit, occurrences: group.occurrences)
                     }
                 }
@@ -22,9 +30,10 @@ struct ErrorsScreen: View {
         .overlay {
             if let table = errors.table.value {
                 if table.groups.isEmpty {
-                    NothingInPeriod(
+                    NothingShown(
                         title: Text("No errors", bundle: #bundle, comment: "A project had no errors."),
                         systemImage: "checkmark.circle",
+                        narrowed: errors.release != nil,
                         period: $navigation.period
                     )
                 }
@@ -65,14 +74,22 @@ struct ErrorGroupRow: View {
     }
 }
 
-/// One error group: what it said, where it happens, how often, and its latest occurrences.
+/// One error group, in a project's environment over the period, or in one of its releases over its
+/// span: what it said, where it happens, how often, and its latest occurrences.
 struct ErrorScreen: View {
     let error: ErrorModel
+    let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
 
     var body: some View {
         List {
-            PeriodSection(period: $navigation.period)
+            CoverageSections(
+                telemetry: error.telemetry,
+                release: error.release,
+                environments: environments,
+                route: .error(of: error.telemetry, id: error.id),
+                navigation: navigation
+            )
             if let detail = error.detail.value {
                 Section {
                     ErrorSummary(
@@ -102,13 +119,14 @@ struct ErrorScreen: View {
         .overlay {
             if error.detail.value == nil {
                 if error.detail.problem == .missing {
-                    NothingInPeriod(
+                    NothingShown(
                         title: Text(
                             "This error didn't happen",
                             bundle: #bundle,
                             comment: "An error the period doesn't have."
                         ),
                         systemImage: "checkmark.circle",
+                        narrowed: error.release != nil,
                         period: $navigation.period
                     )
                 } else {

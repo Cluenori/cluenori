@@ -24,64 +24,83 @@ public enum OperationOrder: String, CaseIterable, Hashable, Sendable {
     }
 }
 
-/// Every operation of a project over a period, with its percentiles.
+/// Every operation of a project in one environment over a period, or of one of its releases over
+/// its span, with its percentiles.
 @Observable
 public final class OperationsModel {
-    public let project: String
-    public let period: PeriodKey
+    public let telemetry: Telemetry
+    /// The release it is narrowed to, whose span it looks over; nil for a project's, over the period.
+    public let release: ReleaseModel?
     public let table: Answer<OperationTable>
     public var order = OperationOrder.p95
 
-    init(project: String, period: PeriodKey, api: CluenoriAPI, context: AnswerContext) {
-        self.project = project
-        self.period = period
+    init(telemetry: Telemetry, period: PeriodKey, release: ReleaseModel?, api: CluenoriAPI, context: AnswerContext) {
+        self.telemetry = telemetry
+        self.release = release
+        let window = release.map(Window.span) ?? .period(period)
+        let narrowed = telemetry.release
         table = Answer(
             context,
-            .init(key: "projects/\(project)/operations/\(period.rawValue)") { () async throws(APIError) in
-                let (from, to) = period.endingNow
-                return try await api.operations(project: project, from: from, to: to)
+            .init(key: "\(telemetry.key)/operations/\(window.key)") { () async throws(APIError) in
+                let (from, to) = try await window.bounds()
+                return try await api.operations(
+                    project: telemetry.project,
+                    from: from,
+                    to: to,
+                    environment: telemetry.environment,
+                    component: narrowed?.component,
+                    release: narrowed?.version
+                )
             })
     }
 }
 
-/// One operation over a period: its load and latency over time, and its percentiles.
+/// One operation in its environment, over a period and every release, or over one release's span:
+/// its load and latency over time, and its percentiles.
 @Observable
 public final class OperationModel {
     public let operation: OperationRef
+    /// The release it is narrowed to, whose span it looks over; nil for every release, over the period.
+    public let release: ReleaseModel?
     public let period: PeriodKey
     public let load: Answer<LoadSeries>
     /// The operation's row: one, or none when it didn't run in the period.
     public let table: Answer<OperationTable>
 
-    init(operation: OperationRef, period: PeriodKey, api: CluenoriAPI, context: AnswerContext) {
+    init(operation: OperationRef, period: PeriodKey, release: ReleaseModel?, api: CluenoriAPI, context: AnswerContext) {
         self.operation = operation
+        self.release = release
         self.period = period
+        let window = release.map(Window.span) ?? .period(period)
         let key =
             "projects/\(operation.project)/operation/\(operation.component)/\(operation.environment ?? "")/\(operation.name)"
+            + (operation.release.map { "/release/\($0)" } ?? "")
         load = Answer(
             context,
-            .init(key: "\(key)/load/\(period.rawValue)") { () async throws(APIError) in
-                let (from, to) = period.endingNow
+            .init(key: "\(key)/load/\(window.key)") { () async throws(APIError) in
+                let (from, to) = try await window.bounds()
                 return try await api.load(
                     project: operation.project,
                     from: from,
                     to: to,
-                    step: period.step,
+                    step: PeriodKey.step(over: to.timeIntervalSince(from)),
                     environment: operation.environment,
                     component: operation.component,
+                    release: operation.release,
                     operation: operation.name
                 )
             })
         table = Answer(
             context,
-            .init(key: "\(key)/operations/\(period.rawValue)") { () async throws(APIError) in
-                let (from, to) = period.endingNow
+            .init(key: "\(key)/operations/\(window.key)") { () async throws(APIError) in
+                let (from, to) = try await window.bounds()
                 return try await api.operations(
                     project: operation.project,
                     from: from,
                     to: to,
                     environment: operation.environment,
                     component: operation.component,
+                    release: operation.release,
                     operation: operation.name
                 )
             })

@@ -1,10 +1,12 @@
-import type { ProjectKey } from "@cluenori/foundation"
+import type { EnvironmentKey, ProjectKey } from "@cluenori/foundation"
 import { RegistryProvider, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Cause, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { FolderPlusIcon, SearchXIcon } from "lucide-react"
+import type { ReactNode } from "react"
 import { lazy, Suspense, useEffect, useState } from "react"
 
+import { useEnvironments } from "@/hooks/use-environments"
 import { ErrorsPage } from "@/pages/errors-page"
 import { LogsPage } from "@/pages/logs-page"
 import { OperationPage } from "@/pages/operation-page"
@@ -12,7 +14,8 @@ import { OperationsPage } from "@/pages/operations-page"
 import { OverviewPage } from "@/pages/overview-page"
 import { PerformancePage } from "@/pages/performance-page"
 import { meAtom, projectsAtom, signOutAtom } from "@/project-data"
-import type { Route } from "@/router"
+import type { Environments } from "@/project-facts"
+import type { Filters, Route } from "@/router"
 import { Link, useRoute } from "@/router"
 import { AppSidebar } from "@/views/app-sidebar"
 import { failureText } from "@/views/loaded"
@@ -103,66 +106,117 @@ function NoSuchPage() {
   )
 }
 
+// A page's component and release, as its props take them; its environment comes resolved.
+const filterProps = (route: Filters) => ({
+  ...(route.component === undefined ? {} : { component: route.component }),
+  ...(route.release === undefined ? {} : { release: route.release }),
+})
+
+/**
+ * A project's page once the environment it shows is known (`useEnvironments`): the one its address
+ * names, the one picked last, or production. While that waits for the project, a quiet line.
+ */
+function WithEnvironments({
+  project,
+  named,
+  children,
+}: {
+  readonly project: ProjectKey
+  readonly named: EnvironmentKey | undefined
+  readonly children: (environments: Environments) => ReactNode
+}) {
+  const environments = useEnvironments(project, named)
+  return environments === undefined ? opening : children(environments)
+}
+
 function PageOf({ route, first }: { readonly route: Route; readonly first: ProjectKey | undefined }) {
   switch (route.page) {
     case "start":
-      return first === undefined ? <NoProjects /> : <OverviewPage project={first} />
+      return first === undefined ? (
+        <NoProjects />
+      ) : (
+        <WithEnvironments project={first} named={undefined}>
+          {(environments) => <OverviewPage project={first} environments={environments} />}
+        </WithEnvironments>
+      )
     case "missing":
       return <NoSuchPage />
     case "overview":
-      return <OverviewPage project={route.project} />
+      return (
+        <WithEnvironments project={route.project} named={route.environment}>
+          {(environments) => <OverviewPage project={route.project} environments={environments} />}
+        </WithEnvironments>
+      )
     case "performance":
       return (
-        <PerformancePage
-          project={route.project}
-          {...(route.component === undefined ? {} : { component: route.component })}
-        />
+        <WithEnvironments project={route.project} named={route.environment}>
+          {(environments) => (
+            <PerformancePage project={route.project} environments={environments} {...filterProps(route)} />
+          )}
+        </WithEnvironments>
       )
     case "operations":
       return (
-        <OperationsPage
-          project={route.project}
-          {...(route.component === undefined ? {} : { component: route.component })}
-        />
+        <WithEnvironments project={route.project} named={route.environment}>
+          {(environments) => (
+            <OperationsPage project={route.project} environments={environments} {...filterProps(route)} />
+          )}
+        </WithEnvironments>
       )
     case "operation":
       return (
-        <OperationPage
-          project={route.project}
-          operation={route.operation}
-          {...(route.component === undefined ? {} : { component: route.component })}
-        />
+        <WithEnvironments project={route.project} named={route.environment}>
+          {(environments) => (
+            <OperationPage
+              project={route.project}
+              operation={route.operation}
+              environments={environments}
+              {...filterProps(route)}
+            />
+          )}
+        </WithEnvironments>
       )
     case "errors":
       return (
-        <ErrorsPage
-          project={route.project}
-          {...(route.component === undefined ? {} : { component: route.component })}
-        />
+        <WithEnvironments project={route.project} named={route.environment}>
+          {(environments) => <ErrorsPage project={route.project} environments={environments} {...filterProps(route)} />}
+        </WithEnvironments>
       )
     case "error":
       return (
-        <Suspense fallback={opening}>
-          <ErrorPage
-            key={route.error}
-            project={route.project}
-            error={route.error}
-            {...(route.component === undefined ? {} : { component: route.component })}
-          />
-        </Suspense>
+        <WithEnvironments project={route.project} named={route.environment}>
+          {(environments) => (
+            <Suspense fallback={opening}>
+              <ErrorPage
+                key={route.error}
+                project={route.project}
+                error={route.error}
+                environments={environments}
+                {...filterProps(route)}
+              />
+            </Suspense>
+          )}
+        </WithEnvironments>
       )
     case "logs":
       return (
-        <LogsPage project={route.project} {...(route.component === undefined ? {} : { component: route.component })} />
+        <WithEnvironments project={route.project} named={route.environment}>
+          {(environments) => <LogsPage project={route.project} environments={environments} {...filterProps(route)} />}
+        </WithEnvironments>
       )
     case "releases":
       return (
-        <Suspense fallback={opening}>
-          <ReleasesPage
-            project={route.project}
-            {...(route.component === undefined ? {} : { component: route.component })}
-          />
-        </Suspense>
+        <WithEnvironments project={route.project} named={route.environment}>
+          {(environments) => (
+            <Suspense fallback={opening}>
+              <ReleasesPage
+                project={route.project}
+                environments={environments}
+                {...(route.component === undefined ? {} : { component: route.component })}
+              />
+            </Suspense>
+          )}
+        </WithEnvironments>
       )
     case "release":
       return (
@@ -183,6 +237,8 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
             project={route.project}
             trace={route.trace}
             {...(route.around === undefined ? {} : { around: route.around })}
+            {...(route.environment === undefined ? {} : { environment: route.environment })}
+            {...(route.release === undefined ? {} : { release: route.release })}
           />
         </Suspense>
       )

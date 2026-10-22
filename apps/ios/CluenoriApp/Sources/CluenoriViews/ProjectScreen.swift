@@ -3,24 +3,33 @@ import CluenoriScreens
 import Foundation
 import SwiftUI
 
-/// A project's overview over the period: its open incidents, its load, its releases, its errors, and
-/// its latest warnings and errors, each leading to a screen with all of them.
+/// A project's overview in one environment over the period: its open incidents, its load, its
+/// releases, its errors, and its latest warnings and errors, each leading to a screen with all of
+/// them, in the same environment.
 struct ProjectScreen: View {
     let project: ProjectModel
+    let environments: EnvironmentChoice
     let name: String
     @Bindable var navigation: Navigation
 
     var body: some View {
+        // What the sections lead to: this project's screens in this environment.
+        let shown = Telemetry.project(project.key, environment: project.environment)
         List {
             PeriodSection(period: $navigation.period)
+            EnvironmentSection(choice: environments, shown: project.environment, navigation: navigation)
             IncidentsSection(incidents: project.incidents)
-            LoadSection(project: project.key, load: project.load, operations: project.operations)
-            ReleasesSection(project: project.key, releases: project.releases, period: project.period)
-            ErrorsSection(project: project.key, errors: project.errors, period: project.period)
-            LogsSection(project: project.key, logs: project.logs, period: project.period)
+            LoadSection(telemetry: shown, load: project.load, operations: project.operations)
+            ReleasesSection(telemetry: shown, releases: project.releases, period: project.period)
+            ErrorsSection(telemetry: shown, errors: project.errors, period: project.period)
+            LogsSection(telemetry: shown, logs: project.logs, period: project.period)
         }
         .navigationTitle(name)
-        .refreshable { await project.refresh() }
+        .refreshable {
+            async let project: Void = project.refresh()
+            async let environments: Void = environments.refresh()
+            _ = await (project, environments)
+        }
         .task(id: navigation.period) {
             // A new period asks everything again; the same one, shown again, does too.
             if project.period == navigation.period {
@@ -100,7 +109,7 @@ struct IncidentRow: View {
 }
 
 struct LoadSection: View {
-    let project: String
+    let telemetry: Telemetry
     let load: Answer<LoadSeries>
     let operations: Answer<OperationTable>
 
@@ -119,7 +128,7 @@ struct LoadSection: View {
                     slowestP95Ms: table.rows.map(\.p95Ms).max()
                 )
             }
-            NavigationLink(value: Route.operations(project: project)) {
+            NavigationLink(value: Route.operations(of: telemetry)) {
                 Text("All operations", bundle: #bundle, comment: "Opens every operation of a project.")
             }
         } header: {
@@ -156,9 +165,10 @@ struct LoadStats: View {
     }
 }
 
-/// The project's latest releases over the period, each with its verdict, leading to all of them.
+/// The project's latest releases over the period, each with its verdict, leading to all of them;
+/// and which of their sources couldn't be read lately.
 struct ReleasesSection: View {
-    let project: String
+    let telemetry: Telemetry
     let releases: Answer<ReleaseList>
     let period: PeriodKey
 
@@ -167,20 +177,34 @@ struct ReleasesSection: View {
             if let list = releases.value {
                 if list.releases.isEmpty {
                     Text(
-                        "No releases in \(periodPhrase(period)). A release shows once a service reports its version in `service.version`.",
+                        "No releases in \(periodPhrase(period)). A release shows once a service reports its version in `service.version`, `cluenori-release` reports a deploy, or App Store Connect has a build.",
                         bundle: #bundle,
                         comment:
-                            "A project had no releases. The variable is a period; service.version is a name, as is."
+                            "A project had no releases. The variable is a period; service.version and cluenori-release are names, as is."
                     )
                     .foregroundStyle(.secondary)
                 }
                 ForEach(list.releases.prefix(3), id: \.self) { summary in
-                    ReleaseLink(project: project, summary: summary)
+                    ReleaseLink(project: telemetry.project, summary: summary)
+                }
+                ForEach(list.problems, id: \.self) { problem in
+                    Label {
+                        Text(
+                            "\(sourceName(problem.source)) couldn't be read for \(problem.component): commits or builds may be missing.",
+                            bundle: #bundle,
+                            comment:
+                                "A release source that failed. The variables are a service, such as GitHub, and a component."
+                        )
+                        .font(.subheadline)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
                 }
             } else {
                 AnswerPlaceholder(problem: releases.problem)
             }
-            NavigationLink(value: Route.releases(project: project)) {
+            NavigationLink(value: Route.releases(project: telemetry.project, environment: telemetry.environment)) {
                 Text("All releases", bundle: #bundle, comment: "Opens every release of a project.")
             }
         } header: {
@@ -190,7 +214,7 @@ struct ReleasesSection: View {
 }
 
 struct ErrorsSection: View {
-    let project: String
+    let telemetry: Telemetry
     let errors: Answer<ErrorTable>
     let period: PeriodKey
 
@@ -206,14 +230,14 @@ struct ErrorsSection: View {
                     .foregroundStyle(.secondary)
                 }
                 ForEach(table.groups.prefix(4), id: \.id) { group in
-                    NavigationLink(value: Route.error(project: project, id: group.id)) {
+                    NavigationLink(value: Route.error(of: telemetry, id: group.id)) {
                         ErrorGroupRow(title: group.title, culprit: group.culprit, occurrences: group.occurrences)
                     }
                 }
             } else {
                 AnswerPlaceholder(problem: errors.problem)
             }
-            NavigationLink(value: Route.errors(project: project)) {
+            NavigationLink(value: Route.errors(of: telemetry)) {
                 Text("All errors", bundle: #bundle, comment: "Opens every error of a project.")
             }
         } header: {
@@ -223,7 +247,7 @@ struct ErrorsSection: View {
 }
 
 struct LogsSection: View {
-    let project: String
+    let telemetry: Telemetry
     let logs: Answer<LogPage>
     let period: PeriodKey
 
@@ -244,7 +268,7 @@ struct LogsSection: View {
             } else {
                 AnswerPlaceholder(problem: logs.problem)
             }
-            NavigationLink(value: Route.logs(project: project)) {
+            NavigationLink(value: Route.logs(of: telemetry)) {
                 Text("All logs", bundle: #bundle, comment: "Opens every warning and error of a project.")
             }
         } header: {

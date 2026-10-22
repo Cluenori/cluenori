@@ -10,6 +10,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@bagatka/es256-jwt": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

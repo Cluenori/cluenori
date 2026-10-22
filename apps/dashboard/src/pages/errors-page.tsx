@@ -1,4 +1,4 @@
-import type { ComponentKey, ProjectKey } from "@cluenori/foundation"
+import type { ComponentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import { errorStatusOf } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
@@ -9,27 +9,38 @@ import { failureColor, warningColor } from "@/lib/colors"
 import { count, moment } from "@/lib/format"
 import { errorsAtom, logCountsAtom, periodAtom, useComponentKeys } from "@/project-data"
 import { colorOf, columnTimesOf, endOf, logColumnsOf, periodWords, ticksOf, zoneOf } from "@/project-facts"
-import { navigate } from "@/router"
+import type { Environments } from "@/project-facts"
+import type { Filters } from "@/router"
 import { BarRows } from "@/views/bar-rows"
-import { ComponentSwitch } from "@/views/component-switch"
 import { ErrorList } from "@/views/error-list"
+import { FilterSwitches } from "@/views/filter-switches"
 import { Loaded } from "@/views/loaded"
 import { Panel, PanelStats } from "@/views/panel"
-import { PeriodSwitch } from "@/views/period-switch"
 import { ProjectHeader } from "@/views/project-header"
 
 /**
- * Every error of a project, or of one component, over the period: when they happened, by component,
- * and each error group, most frequent first, each one click from its own page.
+ * Every error of a project, or of one component, in the environment shown, or of one release, over
+ * the period: when they happened, by component, and each error group, most frequent first, each one
+ * click from its own page.
  */
 export function ErrorsPage({
   project,
   component,
+  release,
+  environments,
 }: {
   readonly project: ProjectKey
   readonly component?: ComponentKey
+  readonly release?: ReleaseVersion
+  readonly environments: Environments
 }) {
-  const scope = { project, ...(component === undefined ? {} : { component }) }
+  const environment = environments.shown
+  const filters: Filters = {
+    ...(component === undefined ? {} : { component }),
+    ...(environment === undefined ? {} : { environment }),
+    ...(release === undefined ? {} : { release }),
+  }
+  const scope = { project, ...filters }
   const period = useAtomValue(periodAtom)
   const components = useComponentKeys(project)
   const errors = useAtomValue(errorsAtom(scope))
@@ -47,18 +58,13 @@ export function ErrorsPage({
           return latest.length === 0 ? undefined : Math.max(...latest)
         })}
       >
-        <ComponentSwitch
+        <FilterSwitches
+          project={project}
           components={components}
-          value={component}
-          allowAll
-          onChange={(picked) =>
-            navigate(
-              { page: "errors", project, ...(picked === undefined ? {} : { component: picked }) },
-              { replace: true },
-            )
-          }
+          filters={filters}
+          environments={environments}
+          routeOf={(next) => ({ page: "errors", project, ...next })}
         />
-        <PeriodSwitch />
       </ProjectHeader>
 
       <Panel
@@ -135,7 +141,7 @@ export function ErrorsPage({
                     ? logColumnsOf(counts, [group.id]).values
                     : undefined
                 }
-                linkOf={(group) => ({ page: "error", ...scope, error: group.id })}
+                linkOf={(group) => ({ page: "error", project, ...filters, error: group.id })}
               />
             )
           }}

@@ -781,7 +781,9 @@ describe("Signals by release", () => {
           yield* sql`ALTER TABLE signals_kept_traces DROP COLUMN release`
           yield* sql`ALTER TABLE signals_error_groups DROP COLUMN first_release`
           yield* sql`DROP TABLE signals_releases`
-          yield* sql`DELETE FROM signals_migrations WHERE migration_id = 7`
+          yield* sql`DROP INDEX signals_logs_release`
+          yield* sql`ALTER TABLE signals_logs DROP COLUMN release`
+          yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 7`
         }).pipe(Effect.orDie),
       )
       // Built again on it, the engine counts by release, and the counts from before still count.

@@ -40,6 +40,19 @@ describe("routeOf", () => {
     assert.deepStrictEqual(routeOf("/folio/releases/folio-ios", ""), { page: "missing" })
   })
 
+  it("reads the release that performance, errors and logs are filtered to, and refuses one that isn't one", () => {
+    const project = ProjectKey.make("folio")
+    const release = ReleaseVersion.make("2.4.0+312")
+    for (const page of ["performance", "errors", "logs"] as const) {
+      const oneComponent: Route = { page, project, component: ComponentKey.make("folio-ios"), release }
+      const everyComponent: Route = { page, project, release }
+      assert.deepStrictEqual(readBack(oneComponent), oneComponent)
+      assert.deepStrictEqual(readBack(everyComponent), everyComponent)
+    }
+    assert.strictEqual(hrefOf({ page: "errors", project, release }), "/folio/errors?release=2.4.0%2B312")
+    assert.deepStrictEqual(routeOf("/folio/logs", "?release=2.4.0%20beta"), { page: "missing" })
+  })
+
   it("reads the deployment's pages, which no project's address names", () => {
     assert.deepStrictEqual(readBack({ page: "phones" }), { page: "phones" })
     assert.deepStrictEqual(readBack({ page: "kit" }), { page: "kit" })

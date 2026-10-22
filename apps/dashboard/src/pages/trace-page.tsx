@@ -1,4 +1,4 @@
-import type { ProjectKey, TraceId } from "@cluenori/foundation"
+import type { EnvironmentKey, ProjectKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import type { LogLevel, TraceView } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { cn } from "cn"
@@ -9,6 +9,7 @@ import { useState } from "react"
 
 import { count, duration, moment, preciseTime } from "@/lib/format"
 import { traceAtom } from "@/project-data"
+import type { Route } from "@/router"
 import { Link } from "@/router"
 import { AttributeList } from "@/views/attribute-list"
 import { Loaded } from "@/views/loaded"
@@ -30,12 +31,15 @@ const noApps = () => false
 
 const millisOf = DateTime.toEpochMillis
 
-/** The top of the page: back to the project's performance, and what the trace is. */
-function TraceHeader({ project, children }: { readonly project: ProjectKey; readonly children: ReactNode }) {
+/**
+ * The top of the page: back to the project's performance, in the environment and of the release the
+ * trace was opened from, and what the trace is.
+ */
+function TraceHeader({ back, children }: { readonly back: Route; readonly children: ReactNode }) {
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-3 pb-2">
       <Link
-        to={{ page: "performance", project }}
+        to={back}
         aria-label="Back to the performance"
         className={buttonVariants({ variant: "outline", size: "icon" })}
       >
@@ -56,13 +60,13 @@ function NoSteps({ title, children }: { readonly title: string; readonly childre
 }
 
 /** The trace's steps, the one chosen, and its log lines. */
-function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly view: TraceView }) {
+function TraceSteps({ back, view }: { readonly back: Route; readonly view: TraceView }) {
   const root = view.spans[0]
   const [selected, setSelected] = useState(root?.span)
   if (root === undefined) {
     return (
       <div className="flex flex-col gap-4">
-        <TraceHeader project={project}>
+        <TraceHeader back={back}>
           <h1 className="font-mono text-2xl font-semibold tracking-[-0.02em]">{view.trace}</h1>
         </TraceHeader>
         <NoSteps title="No steps of this trace">
@@ -78,7 +82,7 @@ function TraceSteps({ project, view }: { readonly project: ProjectKey; readonly 
 
   return (
     <div className="flex flex-col gap-4">
-      <TraceHeader project={project}>
+      <TraceHeader back={back}>
         <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-[-0.02em]">
           {root.name}
           {root.failed && (
@@ -199,15 +203,26 @@ export function TracePage({
   project,
   trace,
   around,
+  environment,
+  release,
 }: {
   readonly project: ProjectKey
   readonly trace: TraceId
   readonly around?: DateTime.Utc
+  /** The environment and release of the page it was opened from, which its way back keeps. */
+  readonly environment?: EnvironmentKey
+  readonly release?: ReleaseVersion
 }) {
   const view = useAtomValue(traceAtom({ project, trace, ...(around === undefined ? {} : { around }) }))
+  const back: Route = {
+    page: "performance",
+    project,
+    ...(environment === undefined ? {} : { environment }),
+    ...(release === undefined ? {} : { release }),
+  }
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
-      <Loaded result={view}>{(answer) => <TraceSteps project={project} view={answer} />}</Loaded>
+      <Loaded result={view}>{(answer) => <TraceSteps back={back} view={answer} />}</Loaded>
     </div>
   )
 }

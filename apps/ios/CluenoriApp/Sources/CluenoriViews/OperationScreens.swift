@@ -3,23 +3,32 @@ import CluenoriScreens
 import Foundation
 import SwiftUI
 
-/// Every operation of a project over the period, the slowest first by the percentile chosen.
+/// Every operation of a project in one environment over the period, or of one of its releases over
+/// its span, the slowest first by the percentile chosen.
 struct OperationsScreen: View {
     @Bindable var operations: OperationsModel
+    let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
 
     var body: some View {
         List {
-            PeriodSection(period: $navigation.period)
+            CoverageSections(
+                telemetry: operations.telemetry,
+                release: operations.release,
+                environments: environments,
+                route: .operations(of: operations.telemetry),
+                navigation: navigation
+            )
             if let table = operations.table.value {
                 ForEach(operations.order.sorted(table.rows), id: \.self) { row in
                     NavigationLink(
                         value: Route.operation(
                             OperationRef(
-                                project: operations.project,
+                                project: operations.telemetry.project,
                                 component: row.component,
                                 environment: row.environment,
-                                name: row.operation
+                                name: row.operation,
+                                release: operations.telemetry.release?.version
                             )
                         )
                     ) {
@@ -38,9 +47,10 @@ struct OperationsScreen: View {
         .overlay {
             if let table = operations.table.value {
                 if table.rows.isEmpty {
-                    NothingInPeriod(
+                    NothingShown(
                         title: Text("No operations", bundle: #bundle, comment: "A project ran nothing in the period."),
                         systemImage: "chart.bar",
+                        narrowed: operations.release != nil,
                         period: $navigation.period
                     )
                 }
@@ -117,14 +127,22 @@ struct OperationRowView: View {
     }
 }
 
-/// One operation over the period: its load, its p50, p95 and p99 over time, and its percentiles.
+/// One operation in its environment, over the period and every release, or over one release's span:
+/// its load, its p50, p95 and p99 over time, and its percentiles.
 struct OperationScreen: View {
     let operation: OperationModel
+    let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
 
     var body: some View {
         List {
-            PeriodSection(period: $navigation.period)
+            CoverageSections(
+                telemetry: operation.operation.telemetry,
+                release: operation.release,
+                environments: environments,
+                route: .operation(operation.operation),
+                navigation: navigation
+            )
             Section {
                 if let series = operation.load.value {
                     LoadChart(points: series.points, step: series.step)
@@ -141,13 +159,22 @@ struct OperationScreen: View {
                         .padding(.vertical, 8)
                 }
                 if let table = operation.table.value, table.rows.isEmpty {
-                    Text(
-                        "It didn't run in \(periodPhrase(navigation.period)).",
-                        bundle: #bundle,
-                        comment: "An operation that didn't run in the period. The variable is a period."
-                    )
-                    .foregroundStyle(.secondary)
-                    LookFurtherBack(period: $navigation.period)
+                    if operation.release != nil {
+                        Text(
+                            "It didn't run in this release.",
+                            bundle: #bundle,
+                            comment: "An operation that didn't run in the release a screen is narrowed to."
+                        )
+                        .foregroundStyle(.secondary)
+                    } else {
+                        Text(
+                            "It didn't run in \(periodPhrase(navigation.period)).",
+                            bundle: #bundle,
+                            comment: "An operation that didn't run in the period. The variable is a period."
+                        )
+                        .foregroundStyle(.secondary)
+                        LookFurtherBack(period: $navigation.period)
+                    }
                 }
                 if let row = operation.table.value?.rows.first {
                     PercentilesGrid(

@@ -74,9 +74,16 @@ const checkFirstLoad = (): Plugin => ({
 export default defineConfig({
   plugins: [react({ compiler: true }), tailwindcss(), checkFirstLoad()],
   resolve: { alias: { "@": "/src" } },
-  // `checkFirstLoad` governs size by what the first load downloads; Vite's warning about any chunk
-  // over 500 KB, uncompressed, would only repeat it less precisely, for chunks loaded later too.
-  build: { chunkSizeWarningLimit: 2_000 },
+  build: {
+    // `checkFirstLoad` governs size by what the first load downloads; Vite's warning about any chunk
+    // over 500 KB, uncompressed, would only repeat it less precisely, for chunks loaded later too.
+    chunkSizeWarningLimit: 2_000,
+    // Left to itself, Rolldown gives each set of modules that the first load shares with pages
+    // loaded later a chunk of its own (Effect, Base UI's toggle group, our rules and formats): eleven
+    // chunks, each compressed alone, so about 5 KB heavier than one. Every module the entry imports
+    // statically (Rolldown's `$initial` tag) goes in one chunk; the pages loaded later import from it.
+    rolldownOptions: { output: { codeSplitting: { groups: [{ name: "first-load", tags: ["$initial"] }] } } },
+  },
   // `vite` alone serves the dashboard with its changes as they are made; the API it calls is
   // Cluenori on this computer, `./run`, at Wrangler's port.
   server: { proxy: { "/api": "http://localhost:8787" } },

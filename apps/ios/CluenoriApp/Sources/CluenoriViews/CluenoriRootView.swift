@@ -64,17 +64,53 @@ struct PairedTabs: View {
     }
 }
 
-/// The screen a route opens, with its model, made once and kept while recently used.
+/// The screen a route opens, with its model, made once and kept while recently used: in the
+/// environment the route names, else the one chosen for its project.
 struct RouteScreen: View {
     let route: Route
     let models: DeploymentModels
     let navigation: Navigation
 
     var body: some View {
+        let shown = models.resolved(route)
+        Screen(route: shown, models: models, navigation: navigation)
+            // Another environment, a cleared filter, or, for a screen that looks over it, another
+            // period, is another screen, with its own state.
+            .id(Identity(route: shown, period: Self.looksOverPeriod(shown) ? navigation.period : nil))
+            // The project's environments, which choose the one shown; the first screen of a project
+            // asks for them, and a link may show another project in this one's place.
+            .task(id: route.project) { await models.environments(route.project).loadOnce() }
+    }
+
+    private struct Identity: Hashable {
+        let route: Route
+        let period: PeriodKey?
+    }
+
+    // Whether the screen looks over the period chosen; a project's follows it in place, and a
+    // release, or a screen narrowed to one, looks over the release's own span.
+    private static func looksOverPeriod(_ route: Route) -> Bool {
         switch route {
-        case .project(let key):
+        case .operations(.project), .errors(.project), .error(.project, _), .logs(.project), .releases: true
+        case .operation(let operation): operation.release == nil
+        case .project, .release, .operations(.release), .errors(.release), .error(.release, _), .logs(.release): false
+        }
+    }
+}
+
+/// The screen of a route whose environment is resolved.
+private struct Screen: View {
+    let route: Route
+    let models: DeploymentModels
+    let navigation: Navigation
+
+    var body: some View {
+        let environments = models.environments(route.project)
+        switch route {
+        case .project(let key, let environment):
             ProjectScreen(
-                project: models.project(key, period: navigation.period),
+                project: models.project(key, environment: environment, period: navigation.period),
+                environments: environments,
                 name: models.name(of: key),
                 navigation: navigation
             )
@@ -84,26 +120,37 @@ struct RouteScreen: View {
                     await models.projects.load()
                 }
             }
-        // Each of these looks over one period: a new one is another screen, with its own state.
-        case .operations(let project):
-            OperationsScreen(operations: models.operations(project, period: navigation.period), navigation: navigation)
-                .id(navigation.period)
+        case .operations(let telemetry):
+            OperationsScreen(
+                operations: models.operations(telemetry, period: navigation.period),
+                environments: environments,
+                navigation: navigation
+            )
         case .operation(let operation):
-            OperationScreen(operation: models.operation(operation, period: navigation.period), navigation: navigation)
-                .id(navigation.period)
-        case .errors(let project):
-            ErrorsScreen(errors: models.errors(project, period: navigation.period), navigation: navigation)
-                .id(navigation.period)
-        case .error(let project, let id):
-            ErrorScreen(error: models.error(project, id: id, period: navigation.period), navigation: navigation)
-                .id(navigation.period)
-        case .logs(let project):
-            LogsScreen(logs: models.logs(project, period: navigation.period), navigation: navigation)
-                .id(navigation.period)
-        case .releases(let project):
-            ReleasesScreen(releases: models.releases(project, period: navigation.period), navigation: navigation)
-                .id(navigation.period)
-        // A release is compared whole, whatever the period.
+            OperationScreen(
+                operation: models.operation(operation, period: navigation.period),
+                environments: environments,
+                navigation: navigation
+            )
+        case .errors(let telemetry):
+            ErrorsScreen(
+                errors: models.errors(telemetry, period: navigation.period), environments: environments,
+                navigation: navigation)
+        case .error(let telemetry, let id):
+            ErrorScreen(
+                error: models.error(telemetry, id: id, period: navigation.period), environments: environments,
+                navigation: navigation)
+        case .logs(let telemetry):
+            LogsScreen(
+                logs: models.logs(telemetry, period: navigation.period), environments: environments,
+                navigation: navigation)
+        case .releases(let project, let environment):
+            ReleasesScreen(
+                releases: models.releases(project, environment: environment, period: navigation.period),
+                environments: environments,
+                navigation: navigation
+            )
+        // A release is compared whole, whatever the period, in its own environment.
         case .release(let release):
             ReleaseScreen(release: models.release(release))
         }

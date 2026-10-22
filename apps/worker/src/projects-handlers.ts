@@ -62,6 +62,27 @@ export const ProjectsHandlers = HttpApiBuilder.group(CluenoriApi, "projects", (h
         return created
       }),
     )
+    .handle("updateSettings", ({ params, payload }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.updateSettings, {
+          actor: member.actor,
+          settings: payload,
+        })
+      }),
+    )
+    .handle("linkComponent", ({ params, payload }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.linkComponent, {
+          actor: member.actor,
+          component: params.component,
+          links: payload,
+        })
+      }),
+    )
     .handle("addComponent", ({ params, payload }) =>
       Effect.gen(function* () {
         const member = yield* CurrentMember

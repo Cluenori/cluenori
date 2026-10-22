@@ -5,6 +5,7 @@ import { DateTime } from "effect"
 import { useState } from "react"
 
 import { axisTime, dayOf } from "@/lib/format"
+import type { Filters } from "@/router"
 import { Link } from "@/router"
 import { buttonVariants } from "@/views/ui/button"
 
@@ -28,16 +29,20 @@ const levelWord: Readonly<Record<LogLevel, string>> = {
 
 /**
  * Log lines, newest first, one line each: when, how serious, what it said. A line opens in place
- * with its logger and component, and a button to the trace it belongs to.
+ * with its logger and component, a link to the release it was written in, and a button to the trace
+ * it belongs to.
  */
 export function LogList({
   project,
   lines,
   colorOf,
+  traceFilters,
 }: {
   readonly project: ProjectKey
   readonly lines: ReadonlyArray<LogLine>
   readonly colorOf: (component: string) => string
+  /** The environment and release the page shows, which a trace opened from it keeps. */
+  readonly traceFilters: Pick<Filters, "environment" | "release">
 }) {
   const [opened, setOpened] = useState<number | undefined>(undefined)
   return (
@@ -66,9 +71,23 @@ export function LogList({
                   {line.component}
                 </span>
                 <span className="min-w-0 truncate font-mono text-[13px] text-muted-foreground">{line.category}</span>
+                {line.release !== undefined && (
+                  <Link
+                    to={{
+                      page: "release",
+                      project,
+                      component: line.component,
+                      release: line.release,
+                      ...(line.environment === undefined ? {} : { environment: line.environment }),
+                    }}
+                    className="min-w-0 truncate underline-offset-4 hover:underline"
+                  >
+                    Release <span className="font-mono">{line.release}</span>
+                  </Link>
+                )}
                 {line.trace !== undefined && (
                   <Link
-                    to={{ page: "trace", project, trace: line.trace, around: line.time }}
+                    to={{ page: "trace", project, trace: line.trace, around: line.time, ...traceFilters }}
                     className={buttonVariants({ variant: "outline", size: "sm", className: "ml-auto" })}
                   >
                     Open the trace

@@ -986,6 +986,162 @@
         }
       }
     },
+    "/api/projects/{project}/settings": {
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.updateSettings",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ProjectSettings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Replaces the project's settings: `productionEnvironments`, the 1 to 20 environments it calls production, where its incidents alert and its views start. Telemetry without an environment counts as production, so no alert is lost. Until a project chooses, prod, production and live.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectSettings"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/projects/{project}/components/{component}/links": {
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.linkComponent",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Component",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Component"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ComponentNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ComponentNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Replaces a component's links, where its releases come from beside its telemetry: `repository`, its GitHub repository as owner/name, whose tags and commits name its releases, and `appStoreBundleId`, its app's bundle ID in App Store Connect. One left out is unlinked. Returns the component.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComponentLinks"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/projects/{project}/operations": {
       "get": {
         "tags": [
@@ -1039,6 +1195,15 @@
             "required": false
           },
           {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          },
+          {
             "name": "operation",
             "in": "query",
             "schema": {
@@ -1051,15 +1216,6 @@
                   "pattern": "^\\P{Cc}*$"
                 }
               ]
-            },
-            "required": false
-          },
-          {
-            "name": "release",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 64
             },
             "required": false
           }
@@ -1160,6 +1316,15 @@
             "required": false
           },
           {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          },
+          {
             "name": "operation",
             "in": "query",
             "schema": {
@@ -1172,15 +1337,6 @@
                   "pattern": "^\\P{Cc}*$"
                 }
               ]
-            },
-            "required": false
-          },
-          {
-            "name": "release",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 64
             },
             "required": false
           },
@@ -1289,6 +1445,15 @@
             "required": false
           },
           {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          },
+          {
             "name": "operation",
             "in": "query",
             "schema": {
@@ -1301,15 +1466,6 @@
                   "pattern": "^\\P{Cc}*$"
                 }
               ]
-            },
-            "required": false
-          },
-          {
-            "name": "release",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 64
             },
             "required": false
           }
@@ -1410,6 +1566,15 @@
             "required": false
           },
           {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          },
+          {
             "name": "operation",
             "in": "query",
             "schema": {
@@ -1422,15 +1587,6 @@
                   "pattern": "^\\P{Cc}*$"
                 }
               ]
-            },
-            "required": false
-          },
-          {
-            "name": "release",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 64
             },
             "required": false
           }
@@ -1539,6 +1695,15 @@
             "required": false
           },
           {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          },
+          {
             "name": "operation",
             "in": "query",
             "schema": {
@@ -1551,15 +1716,6 @@
                   "pattern": "^\\P{Cc}*$"
                 }
               ]
-            },
-            "required": false
-          },
-          {
-            "name": "release",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 64
             },
             "required": false
           }
@@ -1663,6 +1819,15 @@
             "schema": {
               "type": "string",
               "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
             },
             "required": false
           },
@@ -1810,6 +1975,15 @@
             "schema": {
               "type": "string",
               "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
             },
             "required": false
           },
@@ -3014,6 +3188,15 @@
             "items": {
               "$ref": "#/components/schemas/Incident"
             }
+          },
+          "changes": {
+            "$ref": "#/components/schemas/ReleaseChanges"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceProblem"
+            }
           }
         },
         "required": [
@@ -3024,7 +3207,153 @@
           "failingLess",
           "newOperations",
           "newErrors",
-          "incidents"
+          "incidents",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "SourceProblem": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "source": {
+            "$ref": "#/components/schemas/ReleaseSource"
+          },
+          "problem": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "component",
+          "source",
+          "problem",
+          "at"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseSource": {
+        "type": "string",
+        "enum": [
+          "github",
+          "appStoreConnect"
+        ]
+      },
+      "ReleaseChanges": {
+        "type": "object",
+        "properties": {
+          "totalCommits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangedCommit"
+            }
+          },
+          "pullRequests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MergedPullRequest"
+            }
+          },
+          "filesChanged": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "additions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "deletions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "totalCommits",
+          "commits",
+          "pullRequests"
+        ],
+        "additionalProperties": false
+      },
+      "MergedPullRequest": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "title": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "number",
+          "title",
+          "author",
+          "url",
+          "labels"
+        ],
+        "additionalProperties": false
+      },
+      "ChangedCommit": {
+        "type": "object",
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "committedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "url": {
+            "type": "string"
+          },
+          "pullRequest": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "sha",
+          "message",
+          "author",
+          "committedAt"
         ],
         "additionalProperties": false
       },
@@ -3375,19 +3704,132 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "commit": {
+            "$ref": "#/components/schemas/ReleaseCommit"
+          },
+          "store": {
+            "$ref": "#/components/schemas/StoreBuild"
+          },
+          "deployedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
           "component",
           "release",
-          "firstSeen",
-          "lastSeen",
-          "count",
-          "errors",
           "verdict",
           "slower",
           "failingMore",
           "newErrors"
+        ],
+        "additionalProperties": false
+      },
+      "StoreBuild": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "buildNumber": {
+            "type": "string"
+          },
+          "uploadedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/StoreStage"
+          },
+          "appStoreState": {
+            "type": "string"
+          },
+          "internalTesting": {
+            "type": "string"
+          },
+          "externalTesting": {
+            "type": "string"
+          },
+          "phasedRelease": {
+            "$ref": "#/components/schemas/PhasedRelease"
+          },
+          "earliestReleaseAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "version",
+          "buildNumber",
+          "uploadedAt",
+          "stage"
+        ],
+        "additionalProperties": false
+      },
+      "PhasedRelease": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "day": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "StoreStage": {
+        "type": "string",
+        "enum": [
+          "processing",
+          "failed",
+          "testing",
+          "waitingForReview",
+          "inReview",
+          "rejected",
+          "pendingRelease",
+          "releasing",
+          "live",
+          "replaced",
+          "expired",
+          "other"
+        ]
+      },
+      "ReleaseCommit": {
+        "type": "object",
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "committedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha"
         ],
         "additionalProperties": false
       },
@@ -3398,7 +3840,8 @@
           "better",
           "same",
           "tooEarly",
-          "first"
+          "first",
+          "unmeasured"
         ]
       },
       "ReleaseList": {
@@ -3409,10 +3852,17 @@
             "items": {
               "$ref": "#/components/schemas/ReleaseSummary"
             }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceProblem"
+            }
           }
         },
         "required": [
-          "releases"
+          "releases",
+          "problems"
         ],
         "additionalProperties": false
       },
@@ -4957,6 +5407,69 @@
         ],
         "additionalProperties": false
       },
+      "Component": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "appStoreBundleId": {
+            "type": "string",
+            "maxLength": 155
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "ComponentLinks": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "appStoreBundleId": {
+            "type": "string",
+            "maxLength": 155
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProjectSettings": {
+        "type": "object",
+        "properties": {
+          "productionEnvironments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "productionEnvironments"
+        ],
+        "additionalProperties": false
+      },
       "ComponentExists": {
         "type": "object",
         "properties": {
@@ -4990,31 +5503,6 @@
         "required": [
           "component",
           "ingestKey"
-        ],
-        "additionalProperties": false
-      },
-      "Component": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "key",
-          "name",
-          "createdAt"
         ],
         "additionalProperties": false
       },
@@ -5103,6 +5591,16 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Component"
+            }
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ProjectSettings"
+          },
+          "environments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
             }
           }
         },

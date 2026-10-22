@@ -34,6 +34,7 @@ final class FakeDeployment: Sendable {
     private let answers = Mutex<[String: (Int, String)]>([:])
     private let offline = Mutex(false)
     private let received = Mutex<[String]>([])
+    private let receivedURLs = Mutex<[URL]>([])
 
     func answer(_ request: String, _ status: Int, _ body: String = "") {
         answers.withLock { $0[request] = (status, body) }
@@ -46,10 +47,23 @@ final class FakeDeployment: Sendable {
     /// Each request, `"DELETE /api/phones/p1"`, in order.
     var requests: [String] { received.withLock { $0 } }
 
+    /// The query of each request to `path`, in order, by parameter: `["release": "1.8.0"]`.
+    func queries(_ path: String) -> [[String: String]] {
+        receivedURLs.withLock { urls in
+            urls.filter { $0.path(percentEncoded: true) == path }.map { url in
+                let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                return Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { _, last in last })
+            }
+        }
+    }
+
     var transport: CluenoriAPI.Transport {
         { [self] request in
             let key = "\(request.httpMethod ?? "GET") \(request.url?.path(percentEncoded: true) ?? "")"
             received.withLock { $0.append(key) }
+            if let url = request.url {
+                receivedURLs.withLock { $0.append(url) }
+            }
             if offline.withLock({ $0 }) {
                 throw URLError(.notConnectedToInternet)
             }

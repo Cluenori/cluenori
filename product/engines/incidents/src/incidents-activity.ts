@@ -1,8 +1,15 @@
-import { ComponentKey } from "@cluenori/foundation"
+import { ComponentKey, EnvironmentKey } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import { Detector, IncidentId } from "./incident.ts"
 import { MonitorId, MonitorUrl } from "./monitor.ts"
+
+// Where an incident is, and whether its project calls that production: absent on entries from
+// before October 2026, which count as production.
+const placeFields = {
+  environment: Schema.optionalKey(EnvironmentKey),
+  production: Schema.optionalKey(Schema.Boolean),
+}
 
 // What every change to an incident tells: enough to notify without reading the incident.
 const incidentFields = {
@@ -11,6 +18,7 @@ const incidentFields = {
   component: ComponentKey,
   subject: Schema.String,
   title: Schema.String,
+  ...placeFields,
 }
 
 /** A detector fired, and opened an incident. */
@@ -35,6 +43,7 @@ export const IncidentResolved = Schema.TaggedStruct("incident.resolved", { ...in
 export const IncidentAcknowledged = Schema.TaggedStruct("incident.acknowledged", {
   incident: IncidentId,
   title: Schema.optionalKey(Schema.String),
+  ...placeFields,
 })
 
 /** A monitor was added to a component. */

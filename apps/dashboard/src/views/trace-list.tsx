@@ -4,6 +4,7 @@ import { cn } from "cn"
 import { DateTime } from "effect"
 
 import { duration, moment } from "@/lib/format"
+import type { Filters } from "@/router"
 import { Link } from "@/router"
 
 /**
@@ -15,10 +16,13 @@ export function TraceList({
   project,
   rows,
   slowAfterMs,
+  traceFilters,
 }: {
   readonly project: ProjectKey
   readonly rows: ReadonlyArray<KeptTraceRow>
   readonly slowAfterMs?: number
+  /** The environment and release the page shows, which a trace opened from it keeps. */
+  readonly traceFilters: Pick<Filters, "environment" | "release">
 }) {
   const longest = Math.max(1, ...rows.map((row) => row.durationMs))
   const tick = slowAfterMs !== undefined && slowAfterMs < longest ? (slowAfterMs / longest) * 100 : undefined
@@ -30,7 +34,7 @@ export function TraceList({
           // A trace can hold one operation twice, so its ID alone isn't a key.
           <li key={`${row.trace} ${index}`}>
             <Link
-              to={{ page: "trace", project, trace: row.trace, around: row.start }}
+              to={{ page: "trace", project, trace: row.trace, around: row.start, ...traceFilters }}
               className="grid grid-cols-[minmax(0,1fr)_4.5rem_3.5rem] items-center gap-x-5 px-5 py-3 hover:bg-accent/60 md:grid-cols-[9rem_9rem_minmax(0,1fr)_5rem_3.5rem]"
             >
               <span className="font-mono text-[13px] text-muted-foreground">

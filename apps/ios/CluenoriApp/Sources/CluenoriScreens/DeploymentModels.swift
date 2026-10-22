@@ -13,6 +13,8 @@ public final class DeploymentModels {
     private let api: CluenoriAPI
     private let context: AnswerContext
     private var kept: [String: AnyObject] = [:]
+    // Each project's environment choice, kept apart from the screens' models: one per project.
+    private var choices: [String: EnvironmentChoice] = [:]
 
     // The models of the screens recently opened, at most this many; past it, they are made anew.
     private static let keptAtMost = 64
@@ -33,50 +35,96 @@ public final class DeploymentModels {
             ?? project
     }
 
-    /// A project's overview; its period changes by `ProjectModel.choose`.
-    public func project(_ key: String, period: PeriodKey) -> ProjectModel {
-        model("project \(key)") {
-            ProjectModel(key: key, period: period, api: api, context: context)
+    /// The environments a project's screens can show, and the one they show; one per project, kept
+    /// while the app runs.
+    public func environments(_ project: String) -> EnvironmentChoice {
+        if let choice = choices[project] {
+            return choice
+        }
+        let choice = EnvironmentChoice(project: project, api: api, context: context)
+        choices[project] = choice
+        return choice
+    }
+
+    /// The screen `route` names, in the environment chosen for its project when it names none: what
+    /// its screen shows, and the models it is made with.
+    public func resolved(_ route: Route) -> Route {
+        guard let environment = environments(route.project).chosen else { return route }
+        return route.choosing(environment)
+    }
+
+    /// A project's overview in `environment`; its period changes by `ProjectModel.choose`.
+    public func project(_ key: String, environment: String?, period: PeriodKey) -> ProjectModel {
+        model("project \(key) \(environment ?? "")") {
+            ProjectModel(key: key, environment: environment, period: period, api: api, context: context)
         }
     }
 
-    public func operations(_ project: String, period: PeriodKey) -> OperationsModel {
-        model("operations \(project) \(period)") {
-            OperationsModel(project: project, period: period, api: api, context: context)
+    /// Every operation of a project in an environment over `period`, or of one of its releases over
+    /// its span.
+    public func operations(_ telemetry: Telemetry, period: PeriodKey) -> OperationsModel {
+        model("operations \(telemetry) \(over(telemetry, period))") {
+            OperationsModel(
+                telemetry: telemetry, period: period, release: release(of: telemetry), api: api, context: context)
         }
     }
 
+    /// One operation in its environment, over `period` and every release, or over one release's span.
     public func operation(_ operation: OperationRef, period: PeriodKey) -> OperationModel {
-        model("operation \(operation) \(period)") {
-            OperationModel(operation: operation, period: period, api: api, context: context)
+        model("operation \(operation) \(over(operation.telemetry, period))") {
+            OperationModel(
+                operation: operation, period: period, release: release(of: operation.telemetry), api: api,
+                context: context)
         }
     }
 
-    public func errors(_ project: String, period: PeriodKey) -> ErrorsModel {
-        model("errors \(project) \(period)") {
-            ErrorsModel(project: project, period: period, api: api, context: context)
+    /// Every error of a project in an environment over `period`, or of one of its releases over its
+    /// span.
+    public func errors(_ telemetry: Telemetry, period: PeriodKey) -> ErrorsModel {
+        model("errors \(telemetry) \(over(telemetry, period))") {
+            ErrorsModel(
+                telemetry: telemetry, period: period, release: release(of: telemetry), api: api, context: context)
         }
     }
 
-    public func error(_ project: String, id: String, period: PeriodKey) -> ErrorModel {
-        model("error \(project) \(id) \(period)") {
-            ErrorModel(project: project, id: id, period: period, api: api, context: context)
+    /// One error, in a project's environment over `period`, or in one of its releases over its span.
+    public func error(_ telemetry: Telemetry, id: String, period: PeriodKey) -> ErrorModel {
+        model("error \(telemetry) \(id) \(over(telemetry, period))") {
+            ErrorModel(
+                telemetry: telemetry, id: id, period: period, release: release(of: telemetry), api: api,
+                context: context)
         }
     }
 
-    public func logs(_ project: String, period: PeriodKey) -> LogsModel {
-        model("logs \(project) \(period)") { LogsModel(project: project, period: period, api: api, context: context) }
+    /// The warnings and errors of a project in an environment over `period`, or of one of its
+    /// releases over its span.
+    public func logs(_ telemetry: Telemetry, period: PeriodKey) -> LogsModel {
+        model("logs \(telemetry) \(over(telemetry, period))") {
+            LogsModel(telemetry: telemetry, period: period, release: release(of: telemetry), api: api, context: context)
+        }
     }
 
-    public func releases(_ project: String, period: PeriodKey) -> ReleasesModel {
-        model("releases \(project) \(period)") {
-            ReleasesModel(project: project, period: period, api: api, context: context)
+    /// The releases of a project in `environment` over `period`.
+    public func releases(_ project: String, environment: String?, period: PeriodKey) -> ReleasesModel {
+        model("releases \(project) \(environment ?? "") \(period)") {
+            ReleasesModel(project: project, environment: environment, period: period, api: api, context: context)
         }
     }
 
     /// One release, whatever the period: its comparison is of the whole release.
     public func release(_ release: ReleaseRef) -> ReleaseModel {
         model("release \(release)") { ReleaseModel(release: release, api: api, context: context) }
+    }
+
+    // The release `telemetry` is narrowed to, whose span its screens look over.
+    private func release(of telemetry: Telemetry) -> ReleaseModel? {
+        telemetry.release.map(release)
+    }
+
+    // What a screen's model looks over, beside its telemetry: the period for a project's; a release's
+    // own span, whatever the period, for one release's.
+    private func over(_ telemetry: Telemetry, _ period: PeriodKey) -> String {
+        telemetry.release == nil ? period.rawValue : "span"
     }
 
     private func model<Model: AnyObject>(_ key: String, _ make: () -> Model) -> Model {

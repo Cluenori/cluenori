@@ -1,4 +1,4 @@
-import type { ComponentKey, ProjectKey } from "@cluenori/foundation"
+import type { ComponentKey, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import type { IndexedLevel } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
@@ -10,13 +10,13 @@ import { failureColor, warningColor } from "@/lib/colors"
 import { count, moment } from "@/lib/format"
 import { logCountsAtom, logsAtom, periodAtom, useComponentKeys } from "@/project-data"
 import { colorOf, columnTimesOf, logColumnsOf, periodWords, sumOf, ticksOf, zoneOf } from "@/project-facts"
-import { navigate } from "@/router"
+import type { Environments } from "@/project-facts"
+import type { Filters } from "@/router"
 import { BarRows } from "@/views/bar-rows"
-import { ComponentSwitch } from "@/views/component-switch"
+import { FilterSwitches } from "@/views/filter-switches"
 import { Loaded } from "@/views/loaded"
 import { LogList } from "@/views/log-list"
 import { Panel, PanelStats } from "@/views/panel"
-import { PeriodSwitch } from "@/views/period-switch"
 import { ProjectHeader } from "@/views/project-header"
 import { Segmented } from "@/views/segmented"
 import { Button } from "@/views/ui/button"
@@ -33,6 +33,8 @@ const longestSearch = 200
 type Lines = {
   readonly project: ProjectKey
   readonly component?: ComponentKey
+  readonly environment?: EnvironmentKey
+  readonly release?: ReleaseVersion
   readonly level: IndexedLevel
   readonly search?: string
 }
@@ -61,7 +63,15 @@ function LogPage({
                 : `Nothing matches “${lines.search}”.`}
             </p>
           ) : (
-            <LogList project={lines.project} lines={shown} colorOf={colorOfComponent} />
+            <LogList
+              project={lines.project}
+              lines={shown}
+              colorOf={colorOfComponent}
+              traceFilters={{
+                ...(lines.environment === undefined ? {} : { environment: lines.environment }),
+                ...(lines.release === undefined ? {} : { release: lines.release }),
+              }}
+            />
           )}
           {next !== undefined && onOlder !== undefined && (
             <div className="border-t px-5 py-3">
@@ -105,11 +115,28 @@ function LogPages({
 }
 
 /**
- * A project's warnings and errors, or one component's, over the period: how many in each step, and
- * every line, newest first, searchable, each opening in place with a way to its trace.
+ * A project's warnings and errors, or one component's, in the environment shown, or one release's,
+ * over the period: how many in each step, and every line, newest first, searchable, each opening in
+ * place with a way to its trace and its release.
  */
-export function LogsPage({ project, component }: { readonly project: ProjectKey; readonly component?: ComponentKey }) {
-  const scope = { project, ...(component === undefined ? {} : { component }) }
+export function LogsPage({
+  project,
+  component,
+  release,
+  environments,
+}: {
+  readonly project: ProjectKey
+  readonly component?: ComponentKey
+  readonly release?: ReleaseVersion
+  readonly environments: Environments
+}) {
+  const environment = environments.shown
+  const filters: Filters = {
+    ...(component === undefined ? {} : { component }),
+    ...(environment === undefined ? {} : { environment }),
+    ...(release === undefined ? {} : { release }),
+  }
+  const scope = { project, ...filters }
   const period = useAtomValue(periodAtom)
   const components = useComponentKeys(project)
   const counts = useAtomValue(logCountsAtom({ ...scope, by: "level" }))
@@ -128,18 +155,13 @@ export function LogsPage({ project, component }: { readonly project: ProjectKey;
           return first === undefined ? undefined : DateTime.toEpochMillis(first.time)
         })}
       >
-        <ComponentSwitch
+        <FilterSwitches
+          project={project}
           components={components}
-          value={component}
-          allowAll
-          onChange={(picked) =>
-            navigate(
-              { page: "logs", project, ...(picked === undefined ? {} : { component: picked }) },
-              { replace: true },
-            )
-          }
+          filters={filters}
+          environments={environments}
+          routeOf={(next) => ({ page: "logs", project, ...next })}
         />
-        <PeriodSwitch />
       </ProjectHeader>
 
       <Panel
@@ -215,7 +237,7 @@ export function LogsPage({ project, component }: { readonly project: ProjectKey;
           </form>
         </div>
         <LogPages
-          key={[component ?? "", level, search ?? "", period].join("\u0000")}
+          key={[component ?? "", environment ?? "", release ?? "", level, search ?? "", period].join("\u0000")}
           lines={lines}
           colorOf={(of) => colorOf(of, components)}
         />

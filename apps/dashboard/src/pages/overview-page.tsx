@@ -1,10 +1,11 @@
-import type { ProjectKey } from "@cluenori/foundation"
+import type { EnvironmentKey, ProjectKey } from "@cluenori/foundation"
+import type { ProjectSettings } from "@cluenori/projects"
 import { errorStatusOf, operationKeyOf, slowerOperations } from "@cluenori/signals"
-import { useAtomValue } from "@effect/atom-react"
+import { useAtom, useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
-import { AsyncResult } from "effect/reactivity"
-import { ActivityIcon, BellIcon, BoxesIcon, BugIcon, ScrollTextIcon, TagIcon } from "lucide-react"
-import { lazy, Suspense } from "react"
+import { Atom, AsyncResult } from "effect/reactivity"
+import { ActivityIcon, BellIcon, BoxesIcon, BugIcon, RadioTowerIcon, ScrollTextIcon, TagIcon } from "lucide-react"
+import { lazy, Suspense, useState } from "react"
 
 import { failureColor, warningColor } from "@/lib/colors"
 import { count, duration, share } from "@/lib/format"
@@ -17,6 +18,7 @@ import {
   projectAtom,
   loadAtom,
   releasesAtom,
+  updateSettingsAtom,
   usualOperationsAtom,
 } from "@/project-data"
 import {
@@ -27,20 +29,23 @@ import {
   logColumnsOf,
   periodWords,
   loadColumnsOf,
+  isShownIn,
   releaseRouteOf,
   sumOf,
   ticksOf,
 } from "@/project-facts"
+import type { Environments } from "@/project-facts"
 import type { Area } from "@/router"
 import { Link } from "@/router"
 import { AttentionList } from "@/views/attention-list"
 import { BarRows } from "@/views/bar-rows"
+import { EnvironmentSwitch } from "@/views/environment-switch"
 import { titleParts } from "@/views/error-group"
 import { Loaded } from "@/views/loaded"
 import { Panel, PanelStats } from "@/views/panel"
 import { PeriodSwitch } from "@/views/period-switch"
 import { ProjectHeader } from "@/views/project-header"
-import { buttonVariants } from "@/views/ui/button"
+import { Button, buttonVariants } from "@/views/ui/button"
 
 const areaWords: Readonly<Record<Area, string>> = {
   performance: "Performance",
@@ -49,18 +54,104 @@ const areaWords: Readonly<Record<Area, string>> = {
   releases: "Releases",
 }
 
-// The list of releases loads after start, with the releases' pages, so the first load holds its budget.
+// The list of releases, and of the sources that failed, load after start, with the releases'
+// pages, so the first load holds its budget.
 const releaseList = import("@/views/release-list")
 const ReleaseList = lazy(() => releaseList.then((module) => ({ default: module.ReleaseList })))
+const sourceProblems = import("@/views/source-problems")
+const SourceProblems = lazy(() => sourceProblems.then((module) => ({ default: module.SourceProblems })))
+// Changing production loads when opened, now and then.
+const ProductionDialog = lazy(() =>
+  import("@/views/production-dialog").then((module) => ({ default: module.ProductionDialog })),
+)
 
 // How many releases the summary shows, the latest first; the releases page lists every one.
 const summaryReleases = 4
 
-function OpenButton({ project, area }: { readonly project: ProjectKey; readonly area: Area }) {
+function OpenButton({
+  project,
+  environment,
+  area,
+}: {
+  readonly project: ProjectKey
+  readonly environment: EnvironmentKey | undefined
+  readonly area: Area
+}) {
   return (
-    <Link to={{ page: area, project }} className={buttonVariants({ variant: "outline", size: "sm" })}>
+    <Link
+      to={{ page: area, project, ...(environment === undefined ? {} : { environment }) }}
+      className={buttonVariants({ variant: "outline", size: "sm" })}
+    >
       Open
     </Link>
+  )
+}
+
+/**
+ * The environments the project calls production, which its alerts, Today, and its pages start in,
+ * each marked when its telemetry hasn't named it lately; one click from changing them.
+ */
+function ProductionPanel({
+  project,
+  name,
+  settings,
+  seen,
+}: {
+  readonly project: ProjectKey
+  readonly name: string
+  readonly settings: ProjectSettings
+  readonly seen: ReadonlyArray<EnvironmentKey>
+}) {
+  const [saving, save] = useAtom(updateSettingsAtom)
+  const [changing, setChanging] = useState(false)
+  return (
+    <Panel
+      icon={RadioTowerIcon}
+      title="Production"
+      subtitle="Where alerts ring, Today counts, and these pages start"
+      action={
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            // A save from an earlier dialog isn't this one's.
+            save(Atom.Reset)
+            setChanging(true)
+          }}
+        >
+          Change<span className="sr-only"> production</span>
+        </Button>
+      }
+    >
+      <ul className="flex flex-wrap gap-x-8 gap-y-2 px-5 py-4">
+        {settings.productionEnvironments.map((environment) => (
+          <li key={environment} className="flex items-baseline gap-2 text-[15px]">
+            {environment}
+            {!seen.includes(environment) && (
+              <span className="text-sm text-muted-foreground">not seen in the last 30 days</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {changing && (
+        <Suspense fallback={null}>
+          <ProductionDialog
+            projectName={name}
+            settings={settings}
+            seen={seen}
+            // Open until it is closed, or its save succeeds.
+            open={!AsyncResult.isSuccess(saving)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setChanging(false)
+              }
+            }}
+            saving={saving}
+            onSave={(next) => save({ project, settings: next })}
+          />
+        </Suspense>
+      )}
+    </Panel>
   )
 }
 
@@ -76,8 +167,16 @@ const everyOther = <T,>(ticks: ReadonlyArray<T>) => ticks.filter((_, index) => i
  * page, its latest releases, and its components. Later areas, such as analytics, add their
  * summaries here.
  */
-export function OverviewPage({ project }: { readonly project: ProjectKey }) {
-  const scope = { project }
+export function OverviewPage({
+  project,
+  environments,
+}: {
+  readonly project: ProjectKey
+  readonly environments: Environments
+}) {
+  const environment = environments.shown
+  const inShown = environment === undefined ? {} : { environment }
+  const scope = { project, ...inShown }
   const period = useAtomValue(periodAtom)
   const detail = useAtomValue(projectAtom(project))
   const load = useAtomValue(loadAtom(scope))
@@ -85,8 +184,9 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
   const compared = useAtomValue(usualOperationsAtom(scope))
   const errors = useAtomValue(errorsAtom(scope))
   const incidents = useAtomValue(incidentsAtom(project))
-  const logCounts = useAtomValue(logCountsAtom({ project, by: "level" }))
-  const releases = useAtomValue(releasesAtom(scope))
+  const logCounts = useAtomValue(logCountsAtom({ ...scope, by: "level" }))
+  // Every environment's releases, the page keeping those of the environment shown (`isShownIn`).
+  const releases = useAtomValue(releasesAtom({ project }))
   const periodText = periodWords[period].toLowerCase()
 
   return (
@@ -97,12 +197,17 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
           table.dataUntil === undefined ? undefined : DateTime.toEpochMillis(table.dataUntil),
         )}
       >
+        <EnvironmentSwitch
+          project={project}
+          environments={environments}
+          routeOf={(picked) => ({ page: "overview", project, environment: picked })}
+        />
         <PeriodSwitch />
       </ProjectHeader>
 
       <Panel icon={BellIcon} title="Needs attention" subtitle="What is wrong now, the worst first">
         <Loaded result={AsyncResult.all({ incidents, errors, compared })}>
-          {(facts) => <AttentionList items={attentionOf({ project, ...facts })} />}
+          {(facts) => <AttentionList items={attentionOf({ project, environments, ...facts })} />}
         </Loaded>
       </Panel>
 
@@ -111,7 +216,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
           icon={ActivityIcon}
           title="Load"
           subtitle={periodWords[period]}
-          action={<OpenButton project={project} area="performance" />}
+          action={<OpenButton project={project} environment={environment} area="performance" />}
         >
           <Loaded result={AsyncResult.all({ load, operations })}>
             {({ load: series, operations: table }) => {
@@ -154,7 +259,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
           icon={BugIcon}
           title="Errors"
           subtitle="Most frequent first"
-          action={<OpenButton project={project} area="errors" />}
+          action={<OpenButton project={project} environment={environment} area="errors" />}
         >
           <Loaded result={AsyncResult.all({ errors, detail })}>
             {({ errors: table, detail: { components } }) => {
@@ -171,7 +276,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
                       {table.groups.slice(0, 4).map((group) => (
                         <li key={group.id}>
                           <Link
-                            to={{ page: "error", project, error: group.id }}
+                            to={{ page: "error", project, ...inShown, error: group.id }}
                             className="flex items-center gap-4 px-5 py-3 hover:bg-accent/60"
                           >
                             <span className="flex min-w-0 flex-1 flex-col">
@@ -211,7 +316,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
           icon={ScrollTextIcon}
           title="Logs"
           subtitle="Warnings and errors"
-          action={<OpenButton project={project} area="logs" />}
+          action={<OpenButton project={project} environment={environment} area="logs" />}
         >
           <Loaded result={logCounts}>
             {(counts) => {
@@ -253,15 +358,23 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
         icon={TagIcon}
         title="Releases"
         subtitle="The latest first, each against the release before it"
-        action={<OpenButton project={project} area="releases" />}
+        action={<OpenButton project={project} environment={environment} area="releases" />}
       >
         <Loaded result={AsyncResult.all({ releases, detail })}>
           {({ releases: answer, detail: { components } }) => {
             const keys = components.map((component) => component.key)
             return (
               <Suspense fallback={<p className="px-5 py-6 text-sm text-muted-foreground">Loading…</p>}>
+                {/* A source that failed lately, so a release without its commit or build isn't read as having none. */}
+                {answer.problems.length > 0 && (
+                  <div className="border-b">
+                    <SourceProblems problems={answer.problems} asOf={answer.asOf} colorOf={(of) => colorOf(of, keys)} />
+                  </div>
+                )}
                 <ReleaseList
-                  releases={answer.releases.slice(0, summaryReleases)}
+                  releases={answer.releases
+                    .filter((release) => isShownIn(environments, release.environment))
+                    .slice(0, summaryReleases)}
                   asOf={answer.asOf}
                   colorOf={(of) => colorOf(of, keys)}
                   linkOf={(release) => releaseRouteOf(project, release)}
@@ -341,7 +454,7 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
                       <span className="flex flex-wrap gap-2">
                         {(["performance", "errors", "logs", "releases"] as const).map((area) => (
                           <Link
-                            to={{ page: area, project, component: component.key }}
+                            to={{ page: area, project, component: component.key, ...inShown }}
                             key={area}
                             className={buttonVariants({ variant: "outline", size: "sm" })}
                           >
@@ -357,6 +470,15 @@ export function OverviewPage({ project }: { readonly project: ProjectKey }) {
           }}
         </Loaded>
       </Panel>
+
+      {AsyncResult.isSuccess(detail) && detail.value.settings !== undefined && (
+        <ProductionPanel
+          project={project}
+          name={detail.value.project.name}
+          settings={detail.value.settings}
+          seen={detail.value.environments ?? []}
+        />
+      )}
     </div>
   )
 }

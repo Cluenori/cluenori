@@ -177,5 +177,13 @@ export const migrateSignals = Migrator.make({})({
       ) WITHOUT ROWID`
       yield* sql`ALTER TABLE signals_error_groups ADD COLUMN first_release TEXT NOT NULL DEFAULT ''`
     }),
+    // Each warning and error keeps its release in a column, so they filter by it; those kept before
+    // take it from their record, which has it when their service said.
+    "0008_log_release": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE signals_logs ADD COLUMN release TEXT NOT NULL DEFAULT ''`
+      yield* sql`UPDATE signals_logs SET release = coalesce(json_extract(entry, '$.release'), '')`
+      yield* sql`CREATE INDEX signals_logs_release ON signals_logs (release, time) WHERE release <> ''`
+    }),
   }),
 })

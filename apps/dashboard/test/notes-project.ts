@@ -8,9 +8,20 @@ import {
   TraceId,
 } from "@cluenori/foundation"
 import { Incident, IncidentId, IncidentList } from "@cluenori/incidents"
-import { Component, ComponentName, Project, ProjectDetail, ProjectList, ProjectName } from "@cluenori/projects"
-import type { ComparedOperation, ReleaseSummary } from "@cluenori/releases"
-import { ReleaseDetail, ReleaseList, ReleaseNotFound } from "@cluenori/releases"
+import {
+  BundleId,
+  Component,
+  ComponentLinks,
+  ComponentName,
+  ComponentNotFound,
+  Project,
+  ProjectDetail,
+  ProjectList,
+  ProjectName,
+  ProjectSettings,
+} from "@cluenori/projects"
+import type { ComparedOperation, ReleaseChanges, ReleaseSummary, SourceProblem } from "@cluenori/releases"
+import { ReleaseCommit, ReleaseDetail, ReleaseList, ReleaseNotFound } from "@cluenori/releases"
 import type { OperationRow, ErrorGroup, LogLine, SeriesStep } from "@cluenori/signals"
 import {
   OperationTable,
@@ -53,9 +64,15 @@ const projects = [
   new Project({ key: ProjectKey.make("landing"), name: ProjectName.make("Landing"), createdAt: created }),
 ]
 
-const components = [
-  new Component({ key: api, name: ComponentName.make("Notes API"), createdAt: created }),
-  new Component({ key: ios, name: ComponentName.make("Notes for iOS"), createdAt: created }),
+// The API is linked to its repository; the iPhone app to its App Store app only.
+const linksAtStart: ReadonlyMap<string, ComponentLinks> = new Map([
+  [api, { repository: ComponentLinks.fields.repository.schema.make("notesapp/notes-api") }],
+  [ios, { appStoreBundleId: BundleId.make("com.notesapp.notes") }],
+])
+
+const componentsWith = (links: ReadonlyMap<string, ComponentLinks>) => [
+  new Component({ key: api, name: ComponentName.make("Notes API"), createdAt: created, ...links.get(api) }),
+  new Component({ key: ios, name: ComponentName.make("Notes for iOS"), createdAt: created, ...links.get(ios) }),
 ]
 
 export const ongoing = ErrorGroupId.make("4f1c9a2e7b3d5068")
@@ -74,6 +91,7 @@ const Asked = Schema.Struct({
   level: Schema.optionalKey(Schema.String),
   search: Schema.optionalKey(Schema.String),
   by: Schema.optionalKey(Schema.String),
+  release: Schema.optionalKey(Schema.String),
 })
 type Asked = typeof Asked.Type
 
@@ -121,14 +139,33 @@ const usualRows = [
   row("POST /api/export", 8_100, 240, [880, 1_650, 4_000, 8_500]),
 ]
 
+// Whether a question about one release is about one of the API's, which ran its operations, wrote
+// its log lines, and had its errors: the latest's, as the API's answers have them.
+const ofApiRelease = (asked: Asked) =>
+  asked.release === undefined || apiReleases.some((entry) => entry === asked.release)
+const ofLatestApiRelease = (asked: Asked) => asked.release === undefined || asked.release === worseRelease
+
+// Whether a question is about production, where the API's errors and log lines are; staging runs a
+// little of the same, without failing.
+const ofProduction = (asked: Asked) => asked.environment === undefined || asked.environment === "production"
+const inStaging = (entry: OperationRow): OperationRow => ({
+  ...entry,
+  environment: EnvironmentKey.make("staging"),
+  count: Math.max(1, Math.round(entry.count / 40)),
+  errors: 0,
+})
+
 const operations = ({ asked, period, now }: Question) => {
   // The 7 days before the last day end a day ago; every other question ends now.
   const usual = now - DateTime.toEpochMillis(period.to) > 12 * hour
-  const rows = (usual ? usualRows : lastDayRows).filter(
-    (entry) =>
-      (asked.component === undefined || entry.component === asked.component) &&
-      (asked.operation === undefined || entry.operation === asked.operation),
-  )
+  const rows = (usual ? usualRows : lastDayRows)
+    .filter(
+      (entry) =>
+        ofApiRelease(asked) &&
+        (asked.component === undefined || entry.component === asked.component) &&
+        (asked.operation === undefined || entry.operation === asked.operation),
+    )
+    .map((entry) => (ofProduction(asked) ? entry : inStaging(entry)))
   return reply(OperationTable, {
     covered: period,
     rows,
@@ -147,8 +184,8 @@ const load = ({ asked, period }: Question) =>
       step,
       points: stepsOf(period, step).map((start, index) => ({
         start: DateTime.makeUnsafe(start),
-        count: 40 + (index % 7) * 6,
-        errors: index % 9 === 0 ? 1 : 0,
+        count: ofProduction(asked) ? 40 + (index % 7) * 6 : 1 + (index % 3),
+        errors: ofProduction(asked) && index % 9 === 0 ? 1 : 0,
         p50Ms: 60,
         p80Ms: 120,
         p95Ms: slow ? 620 : 240 + (index % 5) * 20,
@@ -195,7 +232,7 @@ const groupsOf = (period: Period): ReadonlyArray<ErrorGroup> => {
       firstSeen: DateTime.makeUnsafe(to - 3 * day),
       lastSeen: DateTime.makeUnsafe(to - 2 * minute),
       lastComponent: api,
-      lastRelease: ReleaseVersion.make("1.8.2"),
+      lastRelease: worseRelease,
     },
     {
       id: fresh,
@@ -211,7 +248,7 @@ const groupsOf = (period: Period): ReadonlyArray<ErrorGroup> => {
 }
 
 const errors = ({ asked, period }: Question) => {
-  const groups = asked.component === ios ? [] : groupsOf(period)
+  const groups = asked.component === ios || !ofLatestApiRelease(asked) || !ofProduction(asked) ? [] : groupsOf(period)
   return reply(ErrorTable, {
     covered: period,
     groups,
@@ -227,11 +264,14 @@ const stack = [
   "   at Notes.Api.Exports.ExportEndpoint.HandleAsync(ExportRequest request) in /src/Notes.Api/Exports/ExportEndpoint.cs:line 31",
 ].join("\n")
 
+// Each line written by the API's latest release, in production.
 const line = (id: number, at: number, fields: Partial<LogLine> & Pick<LogLine, "level" | "message">): LogLine => ({
   id,
   component: api,
   time: DateTime.makeUnsafe(at),
   category: "Notes.Api.Exports.ExportEndpoint",
+  environment: EnvironmentKey.make("production"),
+  release: worseRelease,
   attributes: {},
   ...fields,
 })
@@ -266,6 +306,8 @@ const logs = ({ asked, period }: Question) => {
     covered: period,
     lines: linesOf(period).filter(
       (entry) =>
+        (asked.release === undefined || entry.release === asked.release) &&
+        (asked.environment === undefined || entry.environment === asked.environment) &&
         (!errorsOnly || entry.level !== "warn") &&
         (search === undefined || entry.message.toLowerCase().includes(search)),
     ),
@@ -290,7 +332,11 @@ const logCounts = ({ asked, period }: Question) =>
     if (kept === undefined) {
       return yield* Effect.die(`The fake API counts logs by level, component, or error, not ${asked.by}.`)
     }
-    return yield* reply(LogCounts, { covered: period, step, series: kept })
+    return yield* reply(LogCounts, {
+      covered: period,
+      step,
+      series: ofLatestApiRelease(asked) && ofProduction(asked) ? kept : [],
+    })
   })
 
 const trace = (around: number, id: string) => {
@@ -347,18 +393,27 @@ const trace = (around: number, id: string) => {
   })
 }
 
-// Releases, each component's versions as its telemetry reports them. The API's latest went out 3
-// hours ago and made the feed slower and the export fail more, with a new error; the one before it
-// made things better; staging ran the latest first; the iPhone app's latest went out 40 minutes
-// ago, while phones still run the one before, the first counted.
+// Releases, each component's versions as its telemetry, its CI's deploy reports, and App Store
+// Connect know them. The API's latest went out 3 hours ago and made the feed slower and the export
+// fail more, with a new error; GitHub knows its pull requests. The one before it made things better;
+// only its deploy report listed its commits. Staging ran the latest first. The iPhone app's latest
+// build is in review, with no telemetry yet; the one before is on day 3 of its phased release, while
+// phones still run the one before that, the first counted. GitHub refused the token 8 minutes ago.
 const production = EnvironmentKey.make("production")
 const staging = EnvironmentKey.make("staging")
 const worseRelease = ReleaseVersion.make("2026.10.21-e91f09c")
 const betterRelease = ReleaseVersion.make("2026.10.20-7b2c4d1")
 const sameRelease = ReleaseVersion.make("2026.10.17-c3d9a02")
 const firstApiRelease = ReleaseVersion.make("2026.10.14-5e8f210")
+const apiReleases = [worseRelease, betterRelease, sameRelease, firstApiRelease]
+export const inReviewRelease = ReleaseVersion.make("1.9.0+420")
 export const appRelease = ReleaseVersion.make("1.8.2+412")
 const firstAppRelease = ReleaseVersion.make("1.8.1+398")
+
+const sha = (text: string) => ReleaseCommit.fields.sha.make(text)
+const repository = "https://github.com/notesapp/notes-api"
+const worseSha = sha("e91f09c4b7a2d85f3c6e1b0a9d4f7c2e8b5a3d61")
+const betterSha = sha("7b2c4d1e8f3a6b9c0d5e2f7a4b1c8d3e6f9a0b25")
 
 // Counts are kept by the minute: a release runs from the start of its first to the end of its last.
 const minuteOf = (at: number) => DateTime.makeUnsafe(at - (at % minute))
@@ -366,7 +421,8 @@ const minuteOf = (at: number) => DateTime.makeUnsafe(at - (at % minute))
 const release = (
   now: number,
   fields: Omit<ReleaseSummary, "firstSeen" | "lastSeen" | "slower" | "failingMore" | "newErrors"> & {
-    readonly ran: readonly [number, number]
+    /** How long ago it first and last ran; absent without telemetry. */
+    readonly ran?: readonly [number, number]
     readonly worse?: readonly [number, number, number]
   },
 ): ReleaseSummary => {
@@ -374,16 +430,35 @@ const release = (
   const [slower, failingMore, newErrors] = worse
   return {
     ...summary,
-    firstSeen: minuteOf(now - ran[0]),
-    lastSeen: DateTime.makeUnsafe(DateTime.toEpochMillis(minuteOf(now - ran[1])) + minute),
+    ...(ran === undefined
+      ? {}
+      : {
+          firstSeen: minuteOf(now - ran[0]),
+          lastSeen: DateTime.makeUnsafe(DateTime.toEpochMillis(minuteOf(now - ran[1])) + minute),
+        }),
     slower,
     failingMore,
     newErrors,
   }
 }
 
-// Every release, the latest first seen first, as the API lists them.
+// Every release, the latest first, as the API lists them.
 const releasesAt = (now: number): ReadonlyArray<ReleaseSummary> => [
+  release(now, {
+    component: ios,
+    release: inReviewRelease,
+    previous: appRelease,
+    verdict: "unmeasured",
+    store: {
+      version: "1.9.0",
+      buildNumber: "420",
+      uploadedAt: DateTime.makeUnsafe(now - 5 * hour),
+      stage: "inReview",
+      appStoreState: "IN_REVIEW",
+      internalTesting: "IN_BETA_TESTING",
+      externalTesting: "IN_BETA_TESTING",
+    },
+  }),
   release(now, {
     component: ios,
     environment: production,
@@ -393,6 +468,14 @@ const releasesAt = (now: number): ReadonlyArray<ReleaseSummary> => [
     errors: 3,
     previous: firstAppRelease,
     verdict: "tooEarly",
+    store: {
+      version: "1.8.2",
+      buildNumber: "412",
+      uploadedAt: DateTime.makeUnsafe(now - 4 * day),
+      stage: "releasing",
+      appStoreState: "READY_FOR_SALE",
+      phasedRelease: { state: "ACTIVE", startedAt: DateTime.makeUnsafe(now - 2 * day - 3 * hour), day: 3 },
+    },
   }),
   release(now, {
     component: api,
@@ -404,6 +487,14 @@ const releasesAt = (now: number): ReadonlyArray<ReleaseSummary> => [
     previous: betterRelease,
     verdict: "worse",
     worse: [1, 1, 1],
+    commit: {
+      sha: worseSha,
+      message: "Share a note by link (#212)",
+      author: "mira",
+      committedAt: DateTime.makeUnsafe(now - 3 * hour - 40 * minute),
+      url: `${repository}/commit/${worseSha}`,
+    },
+    deployedAt: DateTime.makeUnsafe(now - 3 * hour - 2 * minute),
   }),
   release(now, {
     component: api,
@@ -413,6 +504,14 @@ const releasesAt = (now: number): ReadonlyArray<ReleaseSummary> => [
     count: 340,
     errors: 2,
     verdict: "first",
+    commit: {
+      sha: worseSha,
+      message: "Share a note by link (#212)",
+      author: "mira",
+      committedAt: DateTime.makeUnsafe(now - 3 * hour - 40 * minute),
+      url: `${repository}/commit/${worseSha}`,
+    },
+    deployedAt: DateTime.makeUnsafe(now - 5 * hour - 3 * minute),
   }),
   release(now, {
     component: api,
@@ -423,6 +522,9 @@ const releasesAt = (now: number): ReadonlyArray<ReleaseSummary> => [
     errors: 96,
     previous: sameRelease,
     verdict: "better",
+    // Only its deploy report named its commit: GitHub refused the token since.
+    commit: { sha: betterSha, tag: "prod-2026.10.20-7b2c4d1" },
+    deployedAt: DateTime.makeUnsafe(now - 27 * hour - 4 * minute),
   }),
   release(now, {
     component: api,
@@ -442,6 +544,13 @@ const releasesAt = (now: number): ReadonlyArray<ReleaseSummary> => [
     count: 14_300,
     errors: 21,
     verdict: "first",
+    store: {
+      version: "1.8.1",
+      buildNumber: "398",
+      uploadedAt: DateTime.makeUnsafe(now - 9 * day),
+      stage: "replaced",
+      appStoreState: "REPLACED_WITH_NEW_VERSION",
+    },
   }),
   release(now, {
     component: api,
@@ -454,16 +563,35 @@ const releasesAt = (now: number): ReadonlyArray<ReleaseSummary> => [
   }),
 ]
 
+const problemsAt = (now: number): ReadonlyArray<SourceProblem> => [
+  {
+    component: api,
+    source: "github",
+    problem: "GitHub refused the token: Bad credentials. Store a new one with ./cluenori github setup.",
+    at: DateTime.makeUnsafe(now - 8 * minute),
+  },
+]
+
+// Whether a release did anything in a period, as the API lists it: ran, was deployed, or was uploaded then.
+const activeIn = (entry: ReleaseSummary, from: number, to: number) => {
+  const within = (time: DateTime.Utc | undefined) =>
+    time !== undefined && DateTime.toEpochMillis(time) >= from && DateTime.toEpochMillis(time) < to
+  const ran =
+    entry.firstSeen !== undefined &&
+    entry.lastSeen !== undefined &&
+    DateTime.toEpochMillis(entry.lastSeen) > from &&
+    DateTime.toEpochMillis(entry.firstSeen) < to
+  return ran || within(entry.deployedAt) || within(entry.store?.uploadedAt)
+}
+
 const releases = ({ asked, period, now }: Question) => {
   const from = DateTime.toEpochMillis(period.from)
   const to = DateTime.toEpochMillis(period.to)
   return reply(ReleaseList, {
     releases: releasesAt(now).filter(
-      (entry) =>
-        DateTime.toEpochMillis(entry.lastSeen) > from &&
-        DateTime.toEpochMillis(entry.firstSeen) < to &&
-        (asked.component === undefined || entry.component === asked.component),
+      (entry) => activeIn(entry, from, to) && (asked.component === undefined || entry.component === asked.component),
     ),
+    problems: problemsAt(now).filter((entry) => asked.component === undefined || entry.component === asked.component),
   })
 }
 
@@ -504,10 +632,103 @@ const releaseIncident = (
     ...(resolved === undefined ? {} : { resolvedAt: DateTime.makeUnsafe(now - resolved) }),
   })
 
+// What changed in the repository since the release before: in the API's latest, as GitHub tells it,
+// with its pull requests; in the one before it, the commits its deploy report listed.
+const changesOf = (now: number, summary: ReleaseSummary): ReleaseChanges | undefined => {
+  if (summary.release === worseRelease && summary.environment === production) {
+    const commit = (id: string, message: string, author: string, ago: number, pullRequest: number) => ({
+      sha: sha(id),
+      message,
+      author,
+      committedAt: DateTime.makeUnsafe(now - ago),
+      url: `${repository}/commit/${id}`,
+      pullRequest,
+    })
+    return {
+      totalCommits: 4,
+      commits: [
+        commit(worseSha, "Share a note by link (#212)", "mira", 3 * hour + 40 * minute, 212),
+        commit(
+          "c4d8e2f6a0b3c7d1e5f9a2b6c0d4e8f1a5b9c3d7",
+          "Retry exports on connection errors (#214)",
+          "theo",
+          5 * hour,
+          214,
+        ),
+        commit(
+          "a1f3e5c7b9d2f4a6c8e0b2d4f6a8c1e3b5d7f9a2",
+          "Load the feed with one query (#209)",
+          "theo",
+          9 * hour,
+          209,
+        ),
+        commit("f0e2d4c6b8a1c3e5d7f9b2a4c6e8d0f1b3a5c7e9", "Bump Npgsql to 9.0.2 (#211)", "dependabot", 20 * hour, 211),
+      ],
+      pullRequests: [
+        {
+          number: 214,
+          title: "Retry exports on connection errors",
+          author: "theo",
+          url: "https://github.com/notesapp/notes-api/pull/214",
+          labels: ["bug", "exports"],
+        },
+        {
+          number: 212,
+          title: "Share a note by link",
+          author: "mira",
+          url: "https://github.com/notesapp/notes-api/pull/212",
+          labels: ["feature"],
+        },
+        {
+          number: 211,
+          title: "Bump Npgsql to 9.0.2",
+          author: "dependabot",
+          url: "https://github.com/notesapp/notes-api/pull/211",
+          labels: ["dependencies"],
+        },
+        {
+          number: 209,
+          title: "Load the feed with one query",
+          author: "theo",
+          url: "https://github.com/notesapp/notes-api/pull/209",
+          labels: ["performance"],
+        },
+      ],
+      filesChanged: 23,
+      additions: 640,
+      deletions: 182,
+      url: `${repository}/compare/7b2c4d1...e91f09c`,
+    }
+  }
+  if (summary.release === betterRelease) {
+    const reported = (id: string, message: string, author: string, ago: number) => ({
+      sha: sha(id),
+      message,
+      author,
+      committedAt: DateTime.makeUnsafe(now - ago),
+    })
+    return {
+      totalCommits: 3,
+      commits: [
+        reported(betterSha, "Cache the notes list per account", "theo", 28 * hour),
+        reported("9d1b3f5a7c0e2d4f6b8a1c3e5d7f9a0b2c4e6d8f", "Fail an export once, not three times", "mira", 30 * hour),
+        reported("2e4a6c8e0b1d3f5a7c9e1b3d5f7a9c0e2b4d6f8a", "Log the export's size", "mira", 31 * hour),
+      ],
+      pullRequests: [],
+    }
+  }
+  return undefined
+}
+
 // What moved in a release against the one before it, each the biggest change first: in the API's
 // latest, in production, and in the one before it; nothing in the others.
 const movedIn = (now: number, summary: ReleaseSummary) => {
-  if (summary.release === worseRelease && summary.environment === production) {
+  if (
+    summary.release === worseRelease &&
+    summary.environment === production &&
+    summary.firstSeen !== undefined &&
+    summary.lastSeen !== undefined
+  ) {
     const ran = new Period({ from: summary.firstSeen, to: summary.lastSeen })
     return {
       slower: [compared("GET /api/feed", [2_400, 0, 620], [15_800, 0, 290])],
@@ -536,7 +757,7 @@ const movedIn = (now: number, summary: ReleaseSummary) => {
   return {}
 }
 
-// One release against the one before it, or the API's 404 for one it never counted.
+// One release against the one before it, or the API's 404 for one it doesn't know.
 const releaseDetail = (now: number, component: string, version: string, environment: string | undefined) => {
   const summary = releasesAt(now).find(
     (entry) => entry.component === component && entry.release === version && entry.environment === environment,
@@ -557,7 +778,14 @@ const releaseDetail = (now: number, component: string, version: string, environm
     newErrors: [],
     incidents: [],
   }
-  return reply(ReleaseDetail, { summary, ...none, ...movedIn(now, summary) })
+  const changes = changesOf(now, summary)
+  return reply(ReleaseDetail, {
+    summary,
+    ...none,
+    ...movedIn(now, summary),
+    ...(changes === undefined ? {} : { changes }),
+    problems: problemsAt(now).filter((entry) => entry.component === summary.component),
+  })
 }
 
 const signedOut = reply(
@@ -567,6 +795,8 @@ const signedOut = reply(
 )
 
 const SignInBody = Schema.fromJsonString(Schema.Struct({ token: Schema.String }))
+const LinksBody = Schema.fromJsonString(ComponentLinks)
+const SettingsBody = Schema.fromJsonString(ProjectSettings)
 
 const noSuchCall = (method: string, path: ReadonlyArray<string>) =>
   Effect.die(`The fake API has no ${method} /api/${path.join("/")}.`)
@@ -599,13 +829,24 @@ const incidents = Effect.gen(function* () {
 
 /**
  * The public API with Notes in it, signed in or not; `workspace` replaces the workspace's projects,
- * such as none for a workspace that has just been set up.
+ * such as none for a workspace that has just been set up. Notes's telemetry named production and
+ * staging lately, or the environments `seen` names; production is production until the dashboard
+ * changes it, as it changes components' links. An `older` deployment says neither.
  */
 export const notesApi = ({
   signedIn = true,
   workspace = projects,
-}: { readonly signedIn?: boolean; readonly workspace?: ReadonlyArray<Project> } = {}): AnswerApi => {
+  seen = [EnvironmentKey.make("production"), EnvironmentKey.make("staging")],
+  older = false,
+}: {
+  readonly signedIn?: boolean
+  readonly workspace?: ReadonlyArray<Project>
+  readonly seen?: ReadonlyArray<EnvironmentKey>
+  readonly older?: boolean
+} = {}): AnswerApi => {
   let session = signedIn
+  const links = new Map(linksAtStart)
+  let settings: ProjectSettings = { productionEnvironments: [EnvironmentKey.make("production")] }
   return (call) =>
     Effect.gen(function* () {
       const [first, project, area, id, more] = call.path
@@ -636,10 +877,30 @@ export const notesApi = ({
       }
       const isNotes = known.key === notes
       if (area === undefined) {
-        return yield* reply(ProjectDetail, { project: known, components: isNotes ? components : [] })
+        return yield* reply(ProjectDetail, {
+          project: known,
+          components: isNotes ? componentsWith(links) : [],
+          ...(older ? {} : { settings, environments: isNotes ? seen : [] }),
+        })
       }
       if (!isNotes) {
         return yield* Effect.die(`The fake API answers only Notes's signals, not ${project}'s.`)
+      }
+      if (call.method === "PUT" && area === "settings") {
+        settings = yield* Schema.decodeEffect(SettingsBody)(call.body ?? "").pipe(Effect.orDie)
+        return yield* reply(ProjectSettings, settings)
+      }
+      if (call.method === "PUT" && area === "components" && id !== undefined && more === "links") {
+        const linked = componentsWith(links).find((entry) => entry.key === id)
+        if (linked === undefined) {
+          return yield* reply(ComponentNotFound, new ComponentNotFound({ component: ComponentKey.make(id) }), 404)
+        }
+        const payload = yield* Schema.decodeEffect(LinksBody)(call.body ?? "").pipe(Effect.orDie)
+        links.set(linked.key, payload)
+        return yield* reply(
+          Component,
+          new Component({ key: linked.key, name: linked.name, createdAt: created, ...payload }),
+        )
       }
       if (area === "incidents") {
         return yield* incidents

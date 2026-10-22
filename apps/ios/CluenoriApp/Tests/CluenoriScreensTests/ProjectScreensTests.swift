@@ -28,15 +28,21 @@ func notesDeployment() -> FakeDeployment {
     deployment.answer("GET /api/projects/notes/errors", 200, errorsAnswer)
     deployment.answer("GET /api/projects/notes/logs", 200, logsAnswer(ids: 101...200, next: 101))
     deployment.answer("GET /api/projects/notes/releases", 200, releasesAnswer)
+    // The release screens narrowed to it look over its span, from 09:12 to 13:41 on Oct 21.
+    deployment.answer("GET /api/projects/notes/releases/notes-api/2026.10.21-e91f09c", 200, releaseAnswer)
     return deployment
 }
 
 struct RouteTests {
     @Test(arguments: [
         ("cluenori://projects/notes", Route.project("notes")),
-        ("cluenori://projects/notes/errors", .errors(project: "notes")),
-        ("cluenori://projects/notes/errors/4f1c9a2e7b3d5068", .error(project: "notes", id: "4f1c9a2e7b3d5068")),
-        ("cluenori://projects/notes/logs", .logs(project: "notes")),
+        ("cluenori://projects/notes/errors", .errors(of: .project("notes"))),
+        (
+            "cluenori://projects/notes/errors/4f1c9a2e7b3d5068",
+            .error(of: .project("notes"), id: "4f1c9a2e7b3d5068")
+        ),
+        ("cluenori://projects/notes/logs", .logs(of: .project("notes"))),
+        ("cluenori://projects/notes/operations", .operations(of: .project("notes"))),
         ("cluenori://projects/notes/releases", .releases(project: "notes")),
     ])
     func `reads the screen a link names`(_ text: String, _ route: Route) throws {
@@ -63,11 +69,12 @@ struct RouteTests {
 
     @Test func `opens a screen over the ones that lead to it, on the projects tab`() {
         let navigation = Navigation()
-        navigation.open(.error(project: "notes", id: "4f1c9a2e7b3d5068"))
+        navigation.open(.error(of: .project("notes"), id: "4f1c9a2e7b3d5068"))
         #expect(navigation.tab == .projects)
         #expect(
             navigation.projectsPath == [
-                .project("notes"), .errors(project: "notes"), .error(project: "notes", id: "4f1c9a2e7b3d5068"),
+                .project("notes"), .errors(of: .project("notes")),
+                .error(of: .project("notes"), id: "4f1c9a2e7b3d5068"),
             ])
 
         let release = ReleaseRef(project: "notes", component: "notes-api", environment: nil, version: "1.8.0")
@@ -84,6 +91,85 @@ struct RouteTests {
         #expect(Route(try #require(URL(string: text))) == nil)
     }
 
+    @Test func `reads a release's screens a link names`() throws {
+        let screens: [(String, Route)] = [
+            ("operations", .operations(of: .release(feedRelease))),
+            ("errors", .errors(of: .release(feedRelease))),
+            ("errors/4f1c9a2e7b3d5068", .error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068")),
+            ("logs", .logs(of: .release(feedRelease))),
+        ]
+        for (screen, route) in screens {
+            let url = try #require(
+                URL(
+                    string:
+                        "cluenori://projects/notes/releases/notes-api/2026.10.21-e91f09c/\(screen)?environment=production"
+                ))
+            #expect(Route(url) == route)
+        }
+    }
+
+    @Test(arguments: [
+        "cluenori://projects/notes/releases/notes-api/1.8.0/releases",
+        "cluenori://projects/notes/releases/notes-api/1.8.0/errors/4f1c9a2e7b3d5068/extra",
+        "cluenori://projects/notes/releases/notes-api/1.8.0/deploys",
+    ])
+    func `reads no screen from a release's link that names none`(_ text: String) throws {
+        #expect(Route(try #require(URL(string: text))) == nil)
+    }
+
+    @Test func `opens a release's screen over the release, and its error over its errors`() {
+        let navigation = Navigation()
+        navigation.open(.error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068"))
+        #expect(
+            navigation.projectsPath == [
+                .project("notes"), .releases(project: "notes"), .release(feedRelease),
+                .errors(of: .release(feedRelease)), .error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068"),
+            ])
+
+        let operation = OperationRef(
+            project: "notes", component: "notes-api", environment: "production", name: "GET /api/feed",
+            release: "2026.10.21-e91f09c")
+        navigation.open(.operation(operation))
+        #expect(
+            navigation.projectsPath == [
+                .project("notes"), .releases(project: "notes"), .release(feedRelease),
+                .operations(of: .release(feedRelease)), .operation(operation),
+            ])
+    }
+
+    @Test func `shows a screen without its release in its place, on the tab it's on`() {
+        let navigation = Navigation()
+        navigation.open(.logs(of: .release(feedRelease)))
+
+        navigation.showWithoutRelease(.logs(of: .release(feedRelease)))
+
+        #expect(
+            navigation.projectsPath == [
+                .project("notes"), .releases(project: "notes"), .release(feedRelease), .logs(of: .project("notes")),
+            ])
+
+        navigation.todayPath = [.error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068")]
+        navigation.showWithoutRelease(.error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068"))
+        #expect(navigation.todayPath == [.error(of: .project("notes"), id: "4f1c9a2e7b3d5068")])
+
+        let operation = OperationRef(
+            project: "notes", component: "notes-api", environment: "production", name: "GET /api/feed",
+            release: "2026.10.21-e91f09c")
+        #expect(Route.operation(operation).withoutRelease == .operation(operation.everyRelease))
+    }
+
+    @Test func `leaves a screen that isn't narrowed, or isn't on top, as it is`() {
+        let navigation = Navigation()
+        navigation.open(.errors(of: .release(feedRelease)))
+        let before = navigation.projectsPath
+
+        navigation.showWithoutRelease(.errors(of: .project("notes")))
+        navigation.showWithoutRelease(.logs(of: .release(feedRelease)))
+
+        #expect(navigation.projectsPath == before)
+        #expect(Route.release(feedRelease).withoutRelease == nil)
+    }
+
     @Test func `opens a screen's link only while paired`() async throws {
         let url = try #require(URL(string: "cluenori://projects/notes/logs"))
         let unpaired = PairingModel(store: MemoryStore(), details: details)
@@ -93,7 +179,7 @@ struct RouteTests {
 
         let pairing = PairingModel(store: MemoryStore(paired), details: details)
         await pairing.open(url)
-        #expect(pairing.navigation.projectsPath == [.project("notes"), .logs(project: "notes")])
+        #expect(pairing.navigation.projectsPath == [.project("notes"), .logs(of: .project("notes"))])
     }
 }
 
@@ -102,7 +188,7 @@ struct ProjectModelTests {
         let deployment = notesDeployment()
         let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
         let models = try #require(pairing.models)
-        let project = models.project("notes", period: .day)
+        let project = models.project("notes", environment: nil, period: .day)
 
         await project.refresh()
         #expect(project.operations.value?.rows.first?.p95Ms == 590)
@@ -116,7 +202,7 @@ struct ProjectModelTests {
         #expect(project.period == .week)
         #expect(deployment.requests.count == 12)
         // The same model comes back for the same project, so going back shows it as it was.
-        #expect(models.project("notes", period: .week) === project)
+        #expect(models.project("notes", environment: nil, period: .week) === project)
     }
 
     @Test func `shows what it kept for a period at once, offline`() async throws {
@@ -124,13 +210,13 @@ struct ProjectModelTests {
         let online = notesDeployment()
         let first = PairingModel(
             store: MemoryStore(paired), details: details, transport: online.transport, cacheDirectory: directory)
-        await first.models?.project("notes", period: .day).refresh()
+        await first.models?.project("notes", environment: nil, period: .day).refresh()
 
         let offline = FakeDeployment()
         offline.setOffline(true)
         let next = PairingModel(
             store: MemoryStore(paired), details: details, transport: offline.transport, cacheDirectory: directory)
-        let project = try #require(next.models).project("notes", period: .day)
+        let project = try #require(next.models).project("notes", environment: nil, period: .day)
         #expect(project.operations.value?.count == 120)
         await project.refresh()
         #expect(project.operations.value?.count == 120)
@@ -143,7 +229,7 @@ struct LogsModelTests {
     @Test func `adds older lines as the list reaches its end, and drops them when filtered`() async throws {
         let deployment = notesDeployment()
         let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
-        let logs = try #require(pairing.models).logs("notes", period: .day)
+        let logs = try #require(pairing.models).logs(.project("notes"), period: .day)
         await logs.refresh()
         #expect(logs.hasOlder)
 
@@ -169,7 +255,7 @@ struct MissingTests {
             #"{"_tag":"ErrorGroupNotFound","error":"4f1c9a2e7b3d5068"}"#
         )
         let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
-        let error = try #require(pairing.models).error("notes", id: "4f1c9a2e7b3d5068", period: .hour)
+        let error = try #require(pairing.models).error(.project("notes"), id: "4f1c9a2e7b3d5068", period: .hour)
 
         await error.detail.load()
 

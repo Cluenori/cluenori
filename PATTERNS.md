@@ -530,7 +530,11 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   errors, and a `run` that reads the engines in the project's Durable Object. The host serves every
   query there under `<module>.<query>` from its `modules` list (`apps/worker/src/project-object.ts`),
   and a handler per route calls it with `moduleCall(module, query)` through `MemberProjects`
-  (`apps/worker/src/releases-handlers.ts`).
+  (`apps/worker/src/releases-handlers.ts`). A module with records or clients has a `layer` taking
+  its settings, which the host reads and builds on its own line in the project's object; its
+  `background` runs on the project's alarm, bounded and at its own pace; its `ingest` writes are
+  served at `POST /ingest/v1/<module>/<name>` for a component's ingest key
+  (`apps/worker/src/module-ingest.ts`), for tooling such as CI that isn't a member.
 - **Canonical examples:** a group, `product/engines/projects/src/projects-api.ts`; the API,
   `apps/worker/src/cluenori-api.ts`; handlers, `apps/worker/src/projects-handlers.ts`. The MCP
   server's comes with the first module.
@@ -580,6 +584,11 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
 - **Inbound webhooks** verify their signature with the client, then call the owning engine or module
   with a system actor.
 - **Tests fake vendors at `HttpClient`,** with recorded responses, never by mocking our own services.
+  A client package's own tests do; an engine or module that uses a client may fake the client's
+  service instead (`product/modules/releases/test/sources.test.ts`), since the client's tests
+  already cover the wire.
+- **JSON Web Tokens are signed with `@bagatka/es256-jwt`,** such as Apple's tokens from a `.p8` key:
+  APNs's and App Store Connect's.
   A journey fakes them with Miniflare's `outboundService`, in a Vitest project of its own, so the
   other journeys' requests aren't affected.
 - Canonical examples: `packages/apns`, its tests, and `tests/journeys/vitest.alerts.config.ts`.
@@ -735,7 +744,8 @@ language.
   design kit, on sample data (`src/pages/kit-ahead.tsx`), never on a page. A page branches on what
   an answer says, never on a component's name.
 - **One click, nothing hidden.** A choice among a few is a `Segmented` (`src/views/segmented.tsx`),
-  always visible; the component a page shows is a `ComponentSwitch`, kept in the URL. Details of a
+  always visible; the component, environment and release a page shows are its `FilterSwitches`
+  (`src/views/filter-switches.tsx`), kept in the URL and in the links it opens. Details of a
   short item open in place, such as a log line. A summary shows the top few of a long list and
   links to a page with all of them, searchable and sortable; an item with more to show, such as an
   operation, an error, or a trace, has a page of its own (`src/pages/error-page.tsx`).
@@ -783,7 +793,8 @@ language.
   that drifts from the contract fails.
 - **The first load has a budget,** compressed, checked by every build (`vite.config.ts`): code
   that most visits don't need loads when it is needed, as the design kit does, or after start, as
-  search does (`src/app.tsx`). A package the dashboard imports is side-effect free
+  search does (`src/app.tsx`). What the first load needs is one chunk (Rolldown's `$initial`
+  group), so it compresses as one. A package the dashboard imports is side-effect free
   (`"sideEffects": false`), and keeps an API's schemas apart from server code, so only the
   definitions reach the bundle (`trace-view.ts` and `read-archived-trace.ts` in Signals).
 

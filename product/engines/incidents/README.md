@@ -62,7 +62,8 @@ An unknown incident fails with `IncidentNotFound`, an unknown monitor with `Moni
 ## Activity
 
 `incident.opened`, `incident.reopened`, `incident.worsened` and `incident.resolved` by the system
-process `incidents.check`, all of one check in one commit; `incident.acknowledged`, `monitor.added`
+process `incidents.check`, all of one check in one commit, each with its environment and whether
+its project calls that production (Projects' settings; unknown counts as production); `incident.acknowledged`, `monitor.added`
 and `monitor.removed` by whoever acts. Removing a monitor resolves its open incident, with
 `incident.resolved` in the same commit. `incident.worsened` and `incident.resolved` say
 `acknowledged: true` for an incident someone is on, and `incident.acknowledged` carries its title,

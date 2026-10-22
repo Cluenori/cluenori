@@ -510,7 +510,9 @@ conflict.
   web's QR code, shows it too, and incidents reach it as alerts through APNs, ringing like an alarm
   clock for Down and Failing; members sign in with passkeys and see only the projects an owner
   chose for them. The first module, Releases (`product/modules/releases`), compares each component's
-  release with the one before it.
+  release with the one before it, with its commit and changes from GitHub, deploys its CI reports
+  with `cluenori-release`, and apps' builds from App Store Connect; only the environments a project
+  calls production alert, and Today counts only them.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository
@@ -522,6 +524,7 @@ conflict.
   - Run Cluenori on this computer: `./run`
   - Deploy it to your Cloudflare account: `./setup`; install a new version: `./update`
   - Ask it about projects, and create them: `./cluenori --help` (`--local` for `./run`'s)
+  - Report a deploy from a project's CI: `./cluenori-release --help`, the one file founders copy
   - Install dependencies: `bun install`
   - Everything CI checks (types and Effect diagnostics, lint, format, dependency rules, suppression
     comments, generated files): `bun run check`

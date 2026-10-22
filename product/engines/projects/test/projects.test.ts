@@ -1,14 +1,19 @@
+import { Repository } from "@bagatka/github"
 import type { Actor } from "@cluenori/foundation"
-import { ActivityLog, ComponentKey, MemberId, ProjectKey } from "@cluenori/foundation"
+import { ActivityLog, ComponentKey, EnvironmentKey, MemberId, ProjectKey } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Redacted, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 
 import {
+  BundleId,
   ComponentExists,
   ComponentName,
+  ComponentNotFound,
+  defaultProjectSettings,
   IngestKey,
   IngestKeyRejected,
+  isProduction,
   ProjectExists,
   ProjectName,
   ProjectNotFound,
@@ -65,6 +70,65 @@ describe("Projects", () => {
         )
         assert.strictEqual(componentAdded?.name, "component.added")
         assert.strictEqual(componentAdded?.component, "notes-api")
+      }),
+    ),
+  )
+
+  it.effect(
+    "links a component to its repository and App Store app, with component.linked, and unlinks one left out",
+    () =>
+      inProject(
+        "links",
+        Effect.gen(function* () {
+          yield* createWithApi
+          const projects = yield* Projects
+          const linked = yield* projects.linkComponent(owner, notesApi.key, {
+            repository: Repository.make("notes/notes-api"),
+            appStoreBundleId: BundleId.make("com.example.notes"),
+          })
+          const unlinked = yield* projects.linkComponent(owner, notesApi.key, {
+            repository: Repository.make("notes/notes-api"),
+          })
+          const [component] = yield* projects.components
+          const missing = yield* projects.linkComponent(owner, ComponentKey.make("notes-web"), {}).pipe(Effect.flip)
+          const log = yield* ActivityLog
+          const [latest] = yield* log.latest
+
+          assert.deepInclude(linked, {
+            repository: Repository.make("notes/notes-api"),
+            appStoreBundleId: BundleId.make("com.example.notes"),
+          })
+          assert.isUndefined(unlinked.appStoreBundleId)
+          assert.strictEqual(component?.repository, "notes/notes-api")
+          assert.isUndefined(component?.appStoreBundleId)
+          assert.deepStrictEqual(missing, new ComponentNotFound({ component: ComponentKey.make("notes-web") }))
+          assert.strictEqual(latest?.name, "component.linked")
+          assert.deepStrictEqual(latest?.attrs, { component: "notes-api", repository: "notes/notes-api" })
+        }),
+      ),
+  )
+
+  it.effect("calls prod, production and live production until the project chooses, with project.settings_changed", () =>
+    inProject(
+      "settings",
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const before = yield* projects.settings.pipe(Effect.flip)
+        yield* projects.create(owner, ProjectName.make("Notes"))
+        const defaults = yield* projects.settings
+        const chosen = { productionEnvironments: [EnvironmentKey.make("prod"), EnvironmentKey.make("staging")] }
+        yield* projects.updateSettings(owner, chosen)
+        const after = yield* projects.settings
+        const log = yield* ActivityLog
+        const [latest] = yield* log.latest
+
+        assert.deepStrictEqual(before, new ProjectNotFound({ project: ProjectKey.make("settings") }))
+        assert.deepStrictEqual(defaults, defaultProjectSettings)
+        assert.deepStrictEqual(after, chosen)
+        assert.isTrue(isProduction(after, EnvironmentKey.make("staging")))
+        assert.isFalse(isProduction(after, EnvironmentKey.make("dev")))
+        assert.isTrue(isProduction(after, undefined))
+        assert.strictEqual(latest?.name, "project.settings_changed")
       }),
     ),
   )

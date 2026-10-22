@@ -3,6 +3,7 @@ import type { ActivityPayload, Actor } from "@cluenori/foundation"
 import {
   ComponentKey,
   Envelope,
+  EnvironmentKey,
   EnvelopeId,
   EnvelopeName,
   ProcessName,
@@ -200,7 +201,7 @@ describe("Notifications", () => {
     }),
   )
 
-  it.effect("tells each change at its level, and nothing about an incident someone is on", () =>
+  it.effect("tells each change at its level, and nothing about an incident someone is on, or outside production", () =>
     Effect.gen(function* () {
       const settings = yield* settingsWithKey
       const apns = fakeApns(accepts)
@@ -229,6 +230,21 @@ describe("Notifications", () => {
             activityOf(IncidentResolved.make(fields)),
             activityOf(IncidentResolved.make({ ...fields, acknowledged: true })),
             activityOf(IncidentAcknowledged.make({ incident, title: fields.title })),
+            // An incident in an environment the project doesn't call production, and one in one it does.
+            activityOf(
+              IncidentOpened.make({ ...fields, environment: EnvironmentKey.make("dev"), production: false }),
+              start + 19 * minute,
+            ),
+            activityOf(
+              IncidentOpened.make({
+                ...fields,
+                detector: "stopped",
+                title: "billing.run stopped",
+                environment: EnvironmentKey.make("prod"),
+                production: true,
+              }),
+              start + 19 * minute,
+            ),
             // A project's other activity, and activity without a project.
             activityOf({ _tag: "project.created", project: "notes" }),
             activityOf(IncidentOpened.make(fields), start + 19 * minute, {}),
@@ -253,6 +269,7 @@ describe("Notifications", () => {
         ["Notes · Failing, worse", "alarm", "", "10"],
         ["Notes · Recovered", "quiet", "", "5"],
         ["Notes · Acknowledged", "quiet", "", "5"],
+        ["Notes · Stopped", "timeSensitive", "default", "10"],
       ])
     }),
   )

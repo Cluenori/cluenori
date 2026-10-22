@@ -16,6 +16,7 @@
     "apps/cli": {
       "name": "@cluenori/cli",
       "dependencies": {
+        "@bagatka/github": "workspace:*",
         "@bagatka/openapi-swift": "workspace:*",
         "@bagatka/workspace-rules": "workspace:*",
         "@cluenori/foundation": "workspace:*",
@@ -104,6 +105,38 @@
     },
     "packages/apns": {
       "name": "@bagatka/apns",
+      "dependencies": {
+        "@bagatka/es256-jwt": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/app-store-connect": {
+      "name": "@bagatka/app-store-connect",
+      "dependencies": {
+        "@bagatka/es256-jwt": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/es256-jwt": {
+      "name": "@bagatka/es256-jwt",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/github": {
+      "name": "@bagatka/github",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -266,6 +299,7 @@
     "product/engines/projects": {
       "name": "@cluenori/projects",
       "dependencies": {
+        "@bagatka/github": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "effect": "catalog:",
       },
@@ -333,6 +367,9 @@
     "product/modules/releases": {
       "name": "@cluenori/releases",
       "dependencies": {
+        "@bagatka/app-store-connect": "workspace:*",
+        "@bagatka/es256-jwt": "workspace:*",
+        "@bagatka/github": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/projects": "workspace:*",
@@ -352,6 +389,7 @@
     "tests/journeys": {
       "name": "@cluenori/journeys",
       "devDependencies": {
+        "@bagatka/github": "workspace:*",
         "@bagatka/webauthn": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
         "@cluenori/foundation": "workspace:*",
@@ -417,6 +455,12 @@
     "@babel/runtime": ["@babel/runtime@8.0.7", "", {}, "sha512-k0hagDDq/6w4v+0Sp4wFvIz/yswH5O7Va6aRTnD7N62Tnborp4X+YB+H3XUcWVSR4aE47WPEXiIIZchBs0GmYg=="],
 
     "@bagatka/apns": ["@bagatka/apns@workspace:packages/apns"],
+
+    "@bagatka/app-store-connect": ["@bagatka/app-store-connect@workspace:packages/app-store-connect"],
+
+    "@bagatka/es256-jwt": ["@bagatka/es256-jwt@workspace:packages/es256-jwt"],
+
+    "@bagatka/github": ["@bagatka/github@workspace:packages/github"],
 
     "@bagatka/openapi-swift": ["@bagatka/openapi-swift@workspace:packages/openapi-swift"],
 

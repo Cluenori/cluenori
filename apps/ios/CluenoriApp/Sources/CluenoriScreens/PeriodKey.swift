@@ -35,9 +35,35 @@ public enum PeriodKey: String, CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// How wide a chart's bars are over `length`, as over the shortest period at least as long: a
+    /// release's span charts as its period would.
+    static func step(over length: TimeInterval) -> SeriesStep {
+        (allCases.first { $0.length >= length } ?? .month).step
+    }
+
     /// The period ending now: from, to.
     var endingNow: (from: Date, to: Date) {
         let now = Date.now
         return (now.addingTimeInterval(-length), now)
+    }
+}
+
+/// When a screen's questions look, and how their answers are kept apart: over the period chosen,
+/// ending now, for a project's telemetry; over a release's whole span, for one release's.
+struct Window {
+    /// What sets its answers apart from another window's of the same question.
+    let key: String
+    /// Its from and to, as a question asks them; may ask the deployment first.
+    let bounds: () async throws(APIError) -> (from: Date, to: Date)
+
+    static func period(_ period: PeriodKey) -> Window {
+        Window(key: period.rawValue) { period.endingNow }
+    }
+
+    /// A release's span, from its detail; one window whatever the span, as a release keeps one.
+    static func span(of release: ReleaseModel) -> Window {
+        Window(key: "span") { () async throws(APIError) in
+            try await release.span()
+        }
     }
 }

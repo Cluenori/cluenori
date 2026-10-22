@@ -1,4 +1,4 @@
-import { Instant, ProjectKey } from "@cluenori/foundation"
+import { EnvironmentKey, Instant, ProjectKey } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 /** What people call a project: 1 to 100 characters, without space at either end. */
@@ -13,6 +13,27 @@ export class Project extends Schema.Class<Project>("Project")({
   name: ProjectName,
   createdAt: Instant,
 }) {}
+
+/**
+ * What a project decides for itself: the environments it calls production, where its incidents
+ * alert and its views start, 1 to 20 of them. Until it chooses, `prod`, `production` and `live`.
+ */
+export const ProjectSettings = Schema.Struct({
+  productionEnvironments: Schema.Array(EnvironmentKey).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+}).annotate({ identifier: "ProjectSettings" })
+export type ProjectSettings = typeof ProjectSettings.Type
+
+/** A project's settings until it chooses. */
+export const defaultProjectSettings: ProjectSettings = {
+  productionEnvironments: [EnvironmentKey.make("prod"), EnvironmentKey.make("production"), EnvironmentKey.make("live")],
+}
+
+/**
+ * Whether `environment` is production for `settings`: one of its production environments, or
+ * unknown, so no alert is lost to a component that doesn't say its environment.
+ */
+export const isProduction = (settings: ProjectSettings, environment: EnvironmentKey | undefined) =>
+  environment === undefined || settings.productionEnvironments.includes(environment)
 
 export const CreateProject = Schema.Struct({ key: ProjectKey, name: ProjectName }).annotate({
   identifier: "CreateProject",

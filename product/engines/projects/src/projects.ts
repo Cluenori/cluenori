@@ -1,16 +1,17 @@
+import { Repository } from "@bagatka/github"
 import type { Actor } from "@cluenori/foundation"
-import { ActivityLog, ComponentKey, Source } from "@cluenori/foundation"
+import { ActivityLog, ComponentKey, Instant, Source } from "@cluenori/foundation"
 import type { ProjectKey } from "@cluenori/foundation"
 import { Context, Crypto, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Base64Url, Hex } from "effect/encoding"
 import { SqlClient, SqlSchema } from "effect/sql"
 
-import type { AddComponent } from "./component.ts"
-import { Component, ComponentExists } from "./component.ts"
+import type { AddComponent, ComponentLinks } from "./component.ts"
+import { BundleId, Component, ComponentExists, ComponentNotFound, ComponentName } from "./component.ts"
 import { IngestKey, IngestKeyRejected, ingestKeyScope } from "./ingest-key.ts"
 import type { ProjectName } from "./project.ts"
-import { Project, ProjectExists, ProjectNotFound } from "./project.ts"
-import { ComponentAdded, ProjectCreated } from "./projects-activity.ts"
+import { defaultProjectSettings, Project, ProjectExists, ProjectNotFound, ProjectSettings } from "./project.ts"
+import { ComponentAdded, ComponentLinked, ProjectCreated, ProjectSettingsChanged } from "./projects-activity.ts"
 import { migrateProjects } from "./projects-migrations.ts"
 
 /** Which project the object holds: the key the host routed by. */
@@ -25,6 +26,24 @@ export interface AddedComponent {
 }
 
 const source = Source.make("engine:projects")
+
+// A component as its row holds it: links are null until set.
+const ComponentRow = Schema.Struct({
+  key: ComponentKey,
+  name: ComponentName,
+  createdAt: Instant,
+  repository: Schema.NullOr(Repository),
+  appStoreBundleId: Schema.NullOr(BundleId),
+})
+
+const componentOf = (row: typeof ComponentRow.Type) =>
+  new Component({
+    key: row.key,
+    name: row.name,
+    createdAt: row.createdAt,
+    ...(row.repository === null ? {} : { repository: row.repository }),
+    ...(row.appStoreBundleId === null ? {} : { appStoreBundleId: row.appStoreBundleId }),
+  })
 
 /**
  * The project of one Durable Object, its components, and their ingest keys. Runs inside the object
@@ -53,6 +72,22 @@ export class Projects extends Context.Service<
      * for any key that isn't one of the project's. Reads one row.
      */
     readonly authenticate: (key: Redacted.Redacted<IngestKey>) => Effect.Effect<ComponentKey, IngestKeyRejected>
+    /**
+     * Replaces a component's links, its repository and App Store bundle ID, with `component.linked`;
+     * one left out is unlinked. Fails with `ComponentNotFound` for a component the project lacks.
+     */
+    readonly linkComponent: (
+      actor: Actor,
+      component: ComponentKey,
+      links: ComponentLinks,
+    ) => Effect.Effect<Component, ComponentNotFound | ProjectNotFound>
+    /** The project's settings: those it chose, or the defaults until it does. Reads one row. */
+    readonly settings: Effect.Effect<ProjectSettings, ProjectNotFound>
+    /** Replaces the project's settings, with `project.settings_changed`. */
+    readonly updateSettings: (
+      actor: Actor,
+      settings: ProjectSettings,
+    ) => Effect.Effect<ProjectSettings, ProjectNotFound>
   }
 >()("@cluenori/projects/projects") {
   /** Builds the engine on the object's database, first creating or updating its tables. */
@@ -65,6 +100,13 @@ export class Projects extends Context.Service<
         const log = yield* ActivityLog
         yield* migrateProjects.pipe(Effect.orDie)
 
+        const findSettings = SqlSchema.findOneOption({
+          Request: Schema.Void,
+          Result: Schema.Struct({ settings: Schema.NullOr(Schema.fromJsonString(ProjectSettings)) }),
+          execute: () => sql`SELECT settings FROM projects_project`,
+        })
+        const encodeSettings = Schema.encodeEffect(Schema.fromJsonString(ProjectSettings))
+
         const findProject = SqlSchema.findOneOption({
           Request: Schema.Void,
           Result: Project,
@@ -73,8 +115,10 @@ export class Projects extends Context.Service<
 
         const findComponents = SqlSchema.findAll({
           Request: Schema.Void,
-          Result: Component,
-          execute: () => sql`SELECT key, name, created_at AS "createdAt" FROM projects_components ORDER BY key`,
+          Result: ComponentRow,
+          execute: () =>
+            sql`SELECT key, name, created_at AS "createdAt", repository, app_store_bundle_id AS "appStoreBundleId"
+              FROM projects_components ORDER BY key`,
         })
 
         const findComponent = SqlSchema.findOneOption({
@@ -169,10 +213,82 @@ export class Projects extends Context.Service<
 
         const components = project.pipe(
           Effect.andThen(findComponents(undefined).pipe(Effect.orDie)),
+          Effect.map((rows) => rows.map(componentOf)),
           Effect.withSpan("Projects.components"),
         )
 
-        return Projects.of({ create, project, components, addComponent, authenticate })
+        const updateLinks = Effect.fn("Projects.updateLinks")(function* (key: ComponentKey, links: ComponentLinks) {
+          const all = yield* components
+          const current = all.find((component) => component.key === key)
+          if (current === undefined) {
+            return yield* new ComponentNotFound({ component: key })
+          }
+          yield* sql`UPDATE projects_components SET repository = ${links.repository ?? null},
+            app_store_bundle_id = ${links.appStoreBundleId ?? null} WHERE key = ${key}`.pipe(Effect.orDie)
+          return new Component({ key, name: current.name, createdAt: current.createdAt, ...links })
+        })
+
+        const linkComponent = Effect.fn("Projects.linkComponent")(function* (
+          actor: Actor,
+          component: ComponentKey,
+          links: ComponentLinks,
+        ) {
+          return yield* log.commit({
+            source,
+            actor,
+            write: updateLinks(component, links),
+            activity: (linked) => [
+              {
+                payload: ComponentLinked.make({
+                  component: linked.key,
+                  ...(linked.repository === undefined ? {} : { repository: linked.repository }),
+                  ...(linked.appStoreBundleId === undefined ? {} : { appStoreBundleId: linked.appStoreBundleId }),
+                }),
+                component: linked.key,
+              },
+            ],
+          })
+        })
+
+        const projectSettings = findSettings(undefined).pipe(
+          Effect.orDie,
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.fail(new ProjectNotFound({ project: settings.project })),
+              onSome: (row) => Effect.succeed(row.settings ?? defaultProjectSettings),
+            }),
+          ),
+          Effect.withSpan("Projects.settings"),
+        )
+
+        const writeSettings = Effect.fn("Projects.writeSettings")(function* (chosen: ProjectSettings) {
+          yield* project
+          const json = yield* encodeSettings(chosen).pipe(Effect.orDie)
+          yield* sql`UPDATE projects_project SET settings = ${json}`.pipe(Effect.orDie)
+          return chosen
+        })
+
+        const updateSettings = Effect.fn("Projects.updateSettings")(function* (actor: Actor, chosen: ProjectSettings) {
+          return yield* log.commit({
+            source,
+            actor,
+            write: writeSettings(chosen),
+            activity: (written) => [
+              { payload: ProjectSettingsChanged.make({ productionEnvironments: written.productionEnvironments }) },
+            ],
+          })
+        })
+
+        return Projects.of({
+          create,
+          project,
+          components,
+          addComponent,
+          authenticate,
+          linkComponent,
+          settings: projectSettings,
+          updateSettings,
+        })
       }),
     )
 }

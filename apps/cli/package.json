@@ -6,6 +6,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@bagatka/github": "workspace:*",
     "@bagatka/openapi-swift": "workspace:*",
     "@bagatka/workspace-rules": "workspace:*",
     "@cluenori/foundation": "workspace:*",

@@ -278,6 +278,16 @@ export const operationStore = Effect.gen(function* () {
       ORDER BY c.bucket`,
   })
 
+  // The environments counted in [from, to), by name; '' is none.
+  const findEnvironments = SqlSchema.findAll({
+    Request: Schema.Struct({ from: Schema.Int, to: Schema.Int }),
+    Result: Schema.Struct({ environment: EnvironmentKey }),
+    execute: (asked) => sql`
+      SELECT DISTINCT environment FROM signals_hour_counts
+      WHERE bucket >= ${asked.from} AND bucket < ${asked.to} AND environment <> ''
+      ORDER BY environment`,
+  })
+
   // The releases whose span overlaps [from, to): one row each.
   const findReleases = SqlSchema.findAll({
     Request: Schema.Struct({
@@ -640,5 +650,14 @@ export const operationStore = Effect.gen(function* () {
     return table
   })
 
-  return { add, cleanUp, operations, loadOverTime, keptTraces, minutesRan, releases }
+  // The environments the period's operations ran in, by name.
+  const environments = Effect.fn("OperationStore.environments")(function* (period: Period) {
+    const rows = yield* findEnvironments({
+      from: floorTo(DateTime.toEpochMillis(period.from), byHour.width),
+      to: DateTime.toEpochMillis(period.to),
+    }).pipe(Effect.orDie)
+    return rows.map((row) => row.environment)
+  })
+
+  return { add, cleanUp, operations, loadOverTime, keptTraces, minutesRan, releases, environments }
 })

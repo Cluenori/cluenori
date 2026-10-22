@@ -1,3 +1,4 @@
+import CluenoriClient
 import CluenoriScreens
 import Foundation
 import SwiftUI
@@ -185,5 +186,203 @@ struct FailedShare: View {
             comment: "The share of operations that failed. The variable is a percentage."
         )
         .foregroundStyle(failed > 0 ? .red : .secondary)
+    }
+}
+
+/// At the top of a screen narrowed to one release, in place of the period and environment: which
+/// release, a button that shows every release instead, the release's environment, which its screens
+/// keep to, and the span they look over.
+struct ReleaseFilterSection: View {
+    let release: ReleaseRef
+    /// When it ran, from its detail; nil until the detail arrives.
+    let span: ReleaseSpan?
+    let showEveryRelease: () -> Void
+
+    var body: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "shippingbox")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: release.version)
+                        .font(.body.monospaced())
+                        .lineLimit(2)
+                    Text(
+                        "Only this release of \(release.component)",
+                        bundle: #bundle,
+                        comment: "Below the version a screen shows alone. The variable is a component."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: 8)
+                Button(action: showEveryRelease) {
+                    Label {
+                        Text("Show every release", bundle: #bundle, comment: "Clears a screen's release filter.")
+                    } icon: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .labelStyle(.iconOnly)
+                    .font(.title2)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
+            }
+            if let environment = release.environment {
+                LabeledContent {
+                    Text(verbatim: environment)
+                } label: {
+                    Text("Environment", bundle: #bundle, comment: "Where a screen's numbers come from.")
+                }
+            }
+            if let span {
+                SpanRow(span: span)
+            }
+        }
+    }
+}
+
+/// The span a screen narrowed to a release looks over: `Ran  Oct 21, 7:53 PM – Oct 22, 12:21 AM`,
+/// or, for a release without telemetry, `Since  Oct 21, 4:21 PM`.
+struct SpanRow: View {
+    let span: ReleaseSpan
+
+    var body: some View {
+        if let to = span.to {
+            LabeledContent {
+                Text(span.from..<max(span.from, to), format: .interval.month(.abbreviated).day().hour().minute())
+                    .multilineTextAlignment(.trailing)
+            } label: {
+                Text("Ran", bundle: #bundle, comment: "When a release ran, from its first minute to its last.")
+            }
+        } else {
+            LabeledContent {
+                Text(span.from, format: .dateTime.month(.abbreviated).day().hour().minute())
+            } label: {
+                Text(
+                    "Since",
+                    bundle: #bundle,
+                    comment: "From when a screen narrowed to a release without telemetry looks: its deploy or upload."
+                )
+            }
+        }
+    }
+}
+
+/// A screen's empty answer when it is narrowed to a release: there was none over the release's span.
+struct NothingInRelease: View {
+    let title: Text
+    let systemImage: String
+
+    var body: some View {
+        ContentUnavailableView {
+            Label {
+                title
+            } icon: {
+                Image(systemName: systemImage)
+            }
+        } description: {
+            Text(
+                "Over all of this release, for the time shown above.",
+                bundle: #bundle,
+                comment: "Below an empty screen narrowed to one release: over which time."
+            )
+        }
+    }
+}
+
+/// Which environment a screen's numbers come from: a menu of those the project's telemetry named
+/// lately, its production ones first, when there are several; the one, as text, when there is only
+/// one; nothing for a deployment that doesn't tell environments apart.
+struct EnvironmentSection: View {
+    let choice: EnvironmentChoice
+    /// The environment the screen shows; nil for every environment.
+    let shown: String?
+    let navigation: Navigation
+
+    var body: some View {
+        let environments = choice.environments
+        if let shown, !environments.isEmpty {
+            Section {
+                if environments == [shown] {
+                    LabeledContent {
+                        Text(verbatim: shown)
+                    } label: {
+                        Text("Environment", bundle: #bundle, comment: "Where a screen's numbers come from.")
+                    }
+                } else {
+                    Picker(selection: Binding(get: { shown }, set: { navigation.show($0, of: choice) })) {
+                        // A link may name an environment not seen lately: it is offered too, to show
+                        // which is chosen.
+                        let production = choice.production
+                        let others = (environments.contains(shown) ? environments : environments + [shown])
+                            .filter { !production.contains($0) }
+                        if production.isEmpty || others.isEmpty {
+                            ForEach(production + others, id: \.self) { Text(verbatim: $0).tag($0) }
+                        } else {
+                            Section {
+                                ForEach(production, id: \.self) { Text(verbatim: $0).tag($0) }
+                            } header: {
+                                Text("Production", bundle: #bundle, comment: "The project's production environments.")
+                            }
+                            Section {
+                                ForEach(others, id: \.self) { Text(verbatim: $0).tag($0) }
+                            } header: {
+                                Text("Others", bundle: #bundle, comment: "The project's other environments.")
+                            }
+                        }
+                    } label: {
+                        Text("Environment", bundle: #bundle, comment: "Where a screen's numbers come from.")
+                    }
+                    .pickerStyle(.menu)
+                }
+            }
+        }
+    }
+}
+
+/// At the top of a screen of a project's telemetry, what its numbers cover: the period and the
+/// environment; or, narrowed to a release, the release, its environment, and its span, with a
+/// button that shows every release over the period instead.
+struct CoverageSections: View {
+    let telemetry: Telemetry
+    /// The release it is narrowed to, whose detail says its span.
+    let release: ReleaseModel?
+    let environments: EnvironmentChoice
+    /// The screen's route, which the release's button shows without the release.
+    let route: Route
+    @Bindable var navigation: Navigation
+
+    var body: some View {
+        if let narrowed = telemetry.release {
+            ReleaseFilterSection(release: narrowed, span: release?.detail.value?.summary.span) {
+                navigation.showWithoutRelease(route)
+            }
+        } else {
+            PeriodSection(period: $navigation.period)
+            EnvironmentSection(choice: environments, shown: telemetry.environment, navigation: navigation)
+        }
+    }
+}
+
+/// A screen's empty answer: none over the period, with a way to look further back; or, narrowed to
+/// a release, none over the release's span.
+struct NothingShown: View {
+    let title: Text
+    let systemImage: String
+    let narrowed: Bool
+    @Binding var period: PeriodKey
+
+    var body: some View {
+        if narrowed {
+            NothingInRelease(title: title, systemImage: systemImage)
+        } else {
+            NothingInPeriod(title: title, systemImage: systemImage, period: $period)
+        }
     }
 }

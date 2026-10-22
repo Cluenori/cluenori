@@ -69,8 +69,9 @@ again. An unknown error ID fails with `ErrorGroupNotFound`.
   - each release's span, from the first minute it ran in to the end of the last
     (`signals_releases`, 15 months after last seen);
   - the traces kept to open from their operations (`signals_kept_traces`, 14 days);
-  - warnings and errors (`signals_logs`, 90 days) and error groups (`signals_error_groups`, 15
-    months after last seen), each with the release it was first and last seen in;
+  - warnings and errors, each with its release (`signals_logs`, 90 days), and error groups
+    (`signals_error_groups`, 15 months after last seen), each with the release it was first and
+    last seen in;
   - which archive file holds each export, by time (`signals_archive`), and the last hour's export
     digests (`signals_batches`).
 - **The archive's layout:** `<workspace>/<project>/<signal>/<day>/<component>/<digest>.otlp`, OTLP

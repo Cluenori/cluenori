@@ -13,8 +13,9 @@ public enum AnswerProblem: Equatable, Sendable {
     case unreadable
 }
 
-/// Where answers are kept on the phone between launches: one file per question, in a folder of
-/// the pairing's own, which goes when the phone unpairs. Without a folder, nothing is kept.
+/// Where answers are kept on the phone between launches, and the choices made on them: one file per
+/// question or choice, in a folder of the pairing's own, which goes when the phone unpairs. Without a
+/// folder, nothing is kept.
 struct AnswerStore {
     let folder: URL?
 
@@ -91,19 +92,25 @@ public final class Answer<Value: Codable & Equatable & Sendable> {
 
     /// Asks the question. An answer to a question since changed is let go.
     public func load() async {
+        _ = try? await answer()
+    }
+
+    /// Asks the question as `load` does, and returns its answer, or throws why it couldn't be had.
+    func answer() async throws(APIError) -> Value {
         let asked = question
         isLoading = true
         defer { isLoading = false }
         do {
             let answer = try await asked.ask()
-            guard asked.key == question.key else { return }
+            guard asked.key == question.key else { return answer }
             let now = Date.now
             value = answer
             receivedAt = now
             problem = nil
             context.store.write(answer, receivedAt: now, asked.key)
+            return answer
         } catch {
-            guard asked.key == question.key else { return }
+            guard asked.key == question.key else { throw error }
             switch error {
             case .unauthorized:
                 context.keyRejected()
@@ -115,6 +122,7 @@ public final class Answer<Value: Codable & Equatable & Sendable> {
             default:
                 problem = .unreadable
             }
+            throw error
         }
     }
 

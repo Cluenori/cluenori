@@ -61,7 +61,7 @@ const areas: ReadonlyArray<{ readonly area: Area; readonly label: string; readon
 
 /**
  * The sidebar: every project, one click away, with the open project's pages under it, search, and
- * the viewer's settings. A component chosen on one page stays chosen on the others.
+ * the viewer's settings. A component and an environment chosen on one page stay chosen on the others.
  */
 export function AppSidebar({
   route,
@@ -82,6 +82,8 @@ export function AppSidebar({
 }) {
   const [theme, setTheme] = useState<Theme>(storedTheme)
   const component = "component" in route ? route.component : undefined
+  const environment = "environment" in route ? route.environment : undefined
+  const inEnvironment = environment === undefined ? {} : { environment }
   const onOverview = route.page === "overview" || route.page === "start"
 
   return (
@@ -131,7 +133,7 @@ export function AppSidebar({
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton
                             isActive={onOverview}
-                            render={<Link to={{ page: "overview", project: project.key }} />}
+                            render={<Link to={{ page: "overview", project: project.key, ...inEnvironment }} />}
                           >
                             <LayoutGridIcon />
                             <span>Overview</span>
@@ -147,6 +149,7 @@ export function AppSidebar({
                                     page: entry.area,
                                     project: project.key,
                                     ...(component === undefined ? {} : { component }),
+                                    ...inEnvironment,
                                   }}
                                 />
                               }

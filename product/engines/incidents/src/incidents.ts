@@ -10,7 +10,8 @@ import {
   Source,
 } from "@cluenori/foundation"
 import type { ProjectNotFound } from "@cluenori/projects"
-import { ComponentNotFound, Projects } from "@cluenori/projects"
+import type { ProjectSettings } from "@cluenori/projects"
+import { ComponentNotFound, defaultProjectSettings, isProduction, Projects } from "@cluenori/projects"
 import type { OperationRow } from "@cluenori/signals"
 import { Signals } from "@cluenori/signals"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
@@ -74,6 +75,12 @@ const baselinesAtOnce = Math.floor(100 / 6)
 const checksAtOnce = 10
 
 const EnvironmentColumn = Schema.Union([Schema.Literal(""), EnvironmentKey])
+
+// Where an incident is, and whether its project calls that environment production.
+const placeOf = (environment: EnvironmentKey | "" | undefined, settings: ProjectSettings) => {
+  const known = environment === "" ? undefined : environment
+  return { ...(known === undefined ? {} : { environment: known }), production: isProduction(settings, known) }
+}
 
 const IncidentRow = Schema.Struct({
   id: IncidentId,
@@ -500,13 +507,19 @@ export class Incidents extends Context.Service<
 
       // ---- An incident's life ---------------------------------------------------------------
 
-      const resolvedEntry = (row: IncidentRow): ActivityEntry => ({
+      // The project's settings, which say what is production; the defaults before it exists.
+      const settingsNow = projects.settings.pipe(
+        Effect.catchTag("ProjectNotFound", () => Effect.succeed(defaultProjectSettings)),
+      )
+
+      const resolvedEntry = (row: IncidentRow, settings: ProjectSettings): ActivityEntry => ({
         payload: IncidentResolved.make({
           incident: row.id,
           detector: row.detector,
           component: row.component,
           subject: row.subject,
           title: row.title,
+          ...placeOf(row.environment, settings),
           ...(row.acknowledgedAt === null ? {} : { acknowledged: true }),
         }),
       })
@@ -517,6 +530,7 @@ export class Incidents extends Context.Service<
         now: number,
         open: ReadonlyArray<IncidentRow>,
         firings: ReadonlyArray<Firing>,
+        settings: ProjectSettings,
       ) {
         const openByKey = new Map(open.map((row) => [keyOf(row), row] as const))
         const firingKeys = new Set(firings.map(keyOf))
@@ -530,6 +544,7 @@ export class Incidents extends Context.Service<
             component: row.component,
             subject: row.subject,
             title: row.title,
+            ...placeOf(row.environment, settings),
           }
           entries.push({
             payload:
@@ -655,7 +670,8 @@ export class Incidents extends Context.Service<
           ...(yield* failingNow(now, baselines)),
           ...(yield* stoppedNow(now, baselines, open)),
         ]
-        const changes = yield* settle(now, open, firings)
+        const settings = yield* settingsNow
+        const changes = yield* settle(now, open, firings, settings)
         yield* sql`INSERT INTO incidents_state (id, checked_at) VALUES (1, ${now})
           ON CONFLICT (id) DO UPDATE SET checked_at = excluded.checked_at`.pipe(Effect.orDie)
         return changes
@@ -678,6 +694,7 @@ export class Incidents extends Context.Service<
       }).pipe(Effect.withSpan("Incidents.incidents"))
 
       const acknowledge = Effect.fn("Incidents.acknowledge")(function* (actor: Actor, id: IncidentId) {
+        const settings = yield* settingsNow
         return yield* log.commit({
           source,
           actor,
@@ -697,7 +714,13 @@ export class Incidents extends Context.Service<
             return incidentOf({ ...row, acknowledgedAt: at })
           }),
           activity: (incident) => [
-            { payload: IncidentAcknowledged.make({ incident: incident.id, title: incident.title }) },
+            {
+              payload: IncidentAcknowledged.make({
+                incident: incident.id,
+                title: incident.title,
+                ...placeOf(incident.environment, settings),
+              }),
+            },
           ],
         })
       })
@@ -755,6 +778,7 @@ export class Incidents extends Context.Service<
 
       const removeMonitor = Effect.fn("Incidents.removeMonitor")(function* (actor: Actor, id: MonitorId) {
         const now = DateTime.toEpochMillis(yield* DateTime.now)
+        const settings = yield* settingsNow
         yield* log.commit({
           source,
           actor,
@@ -780,7 +804,7 @@ export class Incidents extends Context.Service<
           activity: (down) =>
             down === undefined
               ? [{ payload: MonitorRemoved.make({ monitor: id }) }]
-              : [{ payload: MonitorRemoved.make({ monitor: id }) }, resolvedEntry(down)],
+              : [{ payload: MonitorRemoved.make({ monitor: id }) }, resolvedEntry(down, settings)],
         })
       })
 

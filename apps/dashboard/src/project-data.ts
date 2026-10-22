@@ -14,6 +14,7 @@ import type {
 } from "@cluenori/foundation"
 import type { Email, InviteCode, SignInId } from "@cluenori/members"
 import type { PhoneId } from "@cluenori/phones"
+import type { ComponentLinks, ProjectSettings } from "@cluenori/projects"
 import type { ErrorGroupId, IndexedLevel, LogCountsBy, SeriesStep } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime, Duration, Effect, Redacted } from "effect"
@@ -76,17 +77,32 @@ const kept = <A, E>(question: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
     focusSignal: Atom.windowFocusSignal,
   })
 
-/** What a question is about: a project, and optionally one of its components or operations. */
+/**
+ * What a question is about: a project, and optionally one of its components, environments,
+ * operations, or releases.
+ */
 export type Scope = {
   readonly project: ProjectKey
   readonly component?: ComponentKey
+  readonly environment?: EnvironmentKey
   readonly operation?: EnvelopeName
+  readonly release?: ReleaseVersion
 }
 
 const filtersOf = (scope: Scope) => ({
   ...(scope.component === undefined ? {} : { component: scope.component }),
+  ...(scope.environment === undefined ? {} : { environment: scope.environment }),
   ...(scope.operation === undefined ? {} : { operation: scope.operation }),
+  ...(scope.release === undefined ? {} : { release: scope.release }),
 })
+
+/**
+ * The environment last picked on each project's pages, while the dashboard is open: a page whose
+ * address names none shows it, so a choice holds across pages and projects.
+ */
+export const chosenEnvironmentAtom = Atom.family((_project: ProjectKey) =>
+  Atom.make<EnvironmentKey | undefined>(undefined).pipe(Atom.keepAlive),
+)
 
 /** The workspace's projects. */
 export const projectsAtom = kept(
@@ -254,14 +270,17 @@ export const errorsAtom = Atom.family((scope: Scope) =>
   ),
 )
 
-/** One error and its latest occurrences in the period. */
-export const errorAtom = Atom.family((key: { readonly project: ProjectKey; readonly error: ErrorGroupId }) =>
+/** One error and its latest occurrences in the period, of one component, environment, or release when the key names it. */
+export const errorAtom = Atom.family((key: Scope & { readonly error: ErrorGroupId }) =>
   kept(
     CluenoriClient.runtime.atom((get) =>
       Effect.gen(function* () {
         const client = yield* CluenoriClient
         const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.error({ params: { project: key.project, error: key.error }, query: period })
+        return yield* client.signals.error({
+          params: { project: key.project, error: key.error },
+          query: { ...period, ...filtersOf(key) },
+        })
       }),
     ),
   ),
@@ -269,7 +288,7 @@ export const errorAtom = Atom.family((key: { readonly project: ProjectKey; reado
 
 /**
  * Warnings and errors counted over the period, a series for each level, component, or error group;
- * of one component, or one error group, when the key names it.
+ * of one component, environment, release, or error group, when the key names it.
  */
 export const logCountsAtom = Atom.family(
   (key: Scope & { readonly by: LogCountsBy; readonly level?: IndexedLevel; readonly error?: ErrorGroupId }) =>
@@ -286,6 +305,8 @@ export const logCountsAtom = Atom.family(
               step: stepOf[period],
               by: key.by,
               ...(key.component === undefined ? {} : { component: key.component }),
+              ...(key.environment === undefined ? {} : { environment: key.environment }),
+              ...(key.release === undefined ? {} : { release: key.release }),
               ...(key.level === undefined ? {} : { level: key.level }),
               ...(key.error === undefined ? {} : { error: key.error }),
             },
@@ -296,8 +317,8 @@ export const logCountsAtom = Atom.family(
 )
 
 /**
- * A page of the period's warnings and errors, newest first, 100 at a time: `before` continues from an
- * earlier page's `next`.
+ * A page of the period's warnings and errors, newest first, 100 at a time, of one component,
+ * environment, or release when the key names it: `before` continues from an earlier page's `next`.
  */
 export const logsAtom = Atom.family(
   (key: Scope & { readonly level?: IndexedLevel; readonly search?: string; readonly before?: number }) =>
@@ -311,6 +332,8 @@ export const logsAtom = Atom.family(
             query: {
               ...period,
               ...(key.component === undefined ? {} : { component: key.component }),
+              ...(key.environment === undefined ? {} : { environment: key.environment }),
+              ...(key.release === undefined ? {} : { release: key.release }),
               ...(key.level === undefined ? {} : { level: key.level }),
               ...(key.search === undefined ? {} : { search: key.search }),
               ...(key.before === undefined ? {} : { before: key.before }),
@@ -322,8 +345,11 @@ export const logsAtom = Atom.family(
 )
 
 /**
- * The releases that ran over the period, the latest first seen first, at most 30, of a project or
- * one component; with `asOf`, the end of the period asked about, which "live" is measured from.
+ * The releases that ran or were uploaded over the period, the latest first, at most 30, of a project
+ * or one component, in every environment, with the sources that couldn't be read lately; with
+ * `asOf`, the end of the period asked about, which "live" is measured from. Not by environment: the
+ * API's filter leaves out builds that don't say one, such as those only App Store Connect knows,
+ * which a production page shows (`isShownIn` in `src/project-facts.ts`).
  */
 export const releasesAtom = Atom.family((scope: Scope) =>
   kept(
@@ -335,7 +361,7 @@ export const releasesAtom = Atom.family((scope: Scope) =>
           params: { project: scope.project },
           query: { ...period, ...(scope.component === undefined ? {} : { component: scope.component }) },
         })
-        return { releases: list.releases, asOf: period.to }
+        return { releases: list.releases, problems: list.problems, asOf: period.to }
       }),
     ),
   ),
@@ -367,6 +393,41 @@ export const releaseAtom = Atom.family((key: ReleaseScope) =>
       }),
     ),
   ),
+)
+
+/**
+ * Replaces a component's links, its GitHub repository and its App Store bundle ID, one left out
+ * unlinked, and asks for the project again, whose components show them. Fails with
+ * `ComponentNotFound` for a component the project no longer has.
+ */
+export const linkComponentAtom = CluenoriClient.runtime.fn(
+  (input: { readonly project: ProjectKey; readonly component: ComponentKey; readonly links: ComponentLinks }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const linked = yield* client.projects.linkComponent({
+        params: { project: input.project, component: input.component },
+        payload: input.links,
+      })
+      yield* Atom.refresh(projectAtom(input.project))
+      return linked
+    }),
+)
+
+/**
+ * Replaces a project's settings, the environments it calls production, and asks for the project
+ * again, whose pages start there.
+ */
+export const updateSettingsAtom = CluenoriClient.runtime.fn(
+  (input: { readonly project: ProjectKey; readonly settings: ProjectSettings }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const saved = yield* client.projects.updateSettings({
+        params: { project: input.project },
+        payload: input.settings,
+      })
+      yield* Atom.refresh(projectAtom(input.project))
+      return saved
+    }),
 )
 
 /** One trace, read from the archive around when it happened. */

@@ -21,17 +21,26 @@ Pages, each with a permanent URL (`src/router.tsx`):
 
 ```
 /                                                the first project, or how to create one; signed out, the sign-in
-/notes                                           the overview: needs attention, a summary per area, each component
+/notes                                           the overview: needs attention, a summary per area, each component,
+                                                 and the environments the project calls production
 /notes/performance?component=notes-api           the load and failures over time, the operations that got slower or take the most time
 /notes/operations?component=notes-api            every operation, searchable and sortable by any percentile
 /notes/operations/GET%20/api/feed?component=…    one operation, its name as path segments: its load and p95 over time, its slowest and failed traces
 /notes/errors                                    errors over time by component, and every error group
 /notes/errors/<id>                               one error: its exception chain, every frame, its operation, its log record
 /notes/logs                                      warnings and errors over time, and every line, searchable
-/notes/releases?component=notes-api              the releases that ran, the latest first, each against the release before it
+/notes/errors?component=notes-api&environment=staging&release=2.4.0%2B312
+                                                 any page of numbers narrowed to a component, an environment (production
+                                                 when none is named) and a release; an operation, an error or a trace
+                                                 opened from it keeps them
+/notes/releases?component=notes-api              the releases that ran, were deployed or uploaded, the latest first: how each
+                                                 shipped (commit, store stage, deploy), each against the release before it;
+                                                 sources that failed lately; where each component's releases come from
 /notes/releases/notes-api/2.4.0+312?environment=production
-                                                 one release against the one before: what got slower or fails more, its new
-                                                 errors, the incidents while it ran, what got faster or fails less, new operations
+                                                 one release against the one before, one click from its performance, errors
+                                                 and logs: its commit, its App Store build, the pull requests or commits since,
+                                                 what got slower or fails more, its new errors, the incidents while it ran,
+                                                 what got faster or fails less, new operations
 /notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
 /phones                                          the paired phones, removing one, and adding one by its QR code
 /browsers                                        the browsers signed in with passkeys, signing one out, and adding a passkey
@@ -60,10 +69,25 @@ those keys has no pages.
   (`slowerOf`, `errorStatusOf` in `@cluenori/signals`), which Today on the server uses too; the
   pages mark them and say them in words. There is no fixed limit and no setting: an operation slow
   by nature, such as an export, is not news; one that got worse is.
-- **Saying how a release compares:** the verdict is Releases' (`@cluenori/releases`), against the
-  release before it; the pages say it in words with what it counts ("Worse: 2 slower, 1 new
-  error"), and call a release live while it ran in the last 15 minutes, the window an error is
-  happening now in (`verdictOf`, `isLive` in `src/project-facts.ts`).
+- **Saying how a release compares and shipped:** the verdict is Releases' (`@cluenori/releases`),
+  against the release before it; the pages say it in words with what it counts ("Worse: 2 slower,
+  1 new error"), and call a release live while it ran in the last 15 minutes, the window an error is
+  happening now in. A release without telemetry says "No telemetry yet" and shows no numbers. Its
+  commit is named by its tag, else its short SHA; its App Store build's stage in words ("In
+  TestFlight", "Phased release, day 3 of 7"). All in `src/project-facts.ts`.
+- **A release as the hub:** its page opens Performance, Errors and Logs filtered to it and its
+  environment, over the shortest period that covers it; what opens from there keeps both; a log
+  line links back to its release.
+- **Which environment a page shows** (`environmentsOf` in `src/project-facts.ts`,
+  `src/hooks/use-environments.ts`): the one its address names, else the one picked last on the
+  project, else production, the first of the project's production environments seen lately. The
+  switch offers those seen in the last 30 days (`src/views/environment-switch.tsx`); one alone is
+  said as text; a deployment that doesn't say them gets no switch and no parameter. A page waits for
+  the project's answer only when nothing names its environment, so it asks its questions once.
+- **Choosing production,** on the overview: the environments seen and any typed in, checked by the
+  API's rule for a key (`src/views/production-dialog.tsx`).
+- **Linking a component to its sources,** from the Releases page: its GitHub repository and App
+  Store bundle ID, checked by the API's own schemas before they are sent (`src/views/links-dialog.tsx`).
 - **What a color means,** `src/lib/colors.ts`: each component keeps one color everywhere; red is
   failure, yellow a warning.
 - **The panel** every question is answered in, `src/views/panel.tsx`, an answer's three states,
@@ -142,4 +166,14 @@ those keys has no pages.
   does, so they are there before anyone opens them. An answer a page showed a moment ago is shown again at once, and refreshed in the
   background when stale.
 - **The first load's budget** is 248 KB of scripts, compressed, of which the typed API client is
-  about 75 KB; `vite.config.ts` fails a build over it.
+  about 75 KB; `vite.config.ts` fails a build over it. The first load is one chunk: left to itself,
+  Rolldown split the modules it shares with later pages into eleven, each compressed alone, about
+  5 KB heavier.
+- **Releases are asked in every environment** and the page keeps the shown one's, with those that
+  name none when it is production (`isShownIn`): the API's environment filter leaves out builds
+  that name none, such as one only App Store Connect knows. The overview's incidents are kept to the
+  shown environment the same way, as the incidents question takes none.
+- **A release filter widens the period,** when a release's page opens an area: to the shortest period
+  that covers the release from its first minute to now, so nothing of it is cut off and its charts are
+  as fine as they can be. The period stays one choice for every page, so the others show it too; an
+  address opened elsewhere, such as in a new tab, keeps the period the browser has.

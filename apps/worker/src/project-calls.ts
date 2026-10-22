@@ -1,5 +1,5 @@
-import type { ModuleDefinition, ModuleQueries } from "@cluenori/foundation"
-import { Actor, Instant, TraceId } from "@cluenori/foundation"
+import type { ModuleIngests, ModuleQueries } from "@cluenori/foundation"
+import { Actor, ComponentKey, Instant, TraceId } from "@cluenori/foundation"
 import {
   AddMonitor,
   Incident,
@@ -16,7 +16,9 @@ import {
 import {
   AddComponent,
   AddedComponentResponse,
+  Component,
   ComponentExists,
+  ComponentLinks,
   ComponentNotFound,
   IngestKey,
   IngestKeyRejected,
@@ -25,6 +27,7 @@ import {
   ProjectExists,
   ProjectName,
   ProjectNotFound,
+  ProjectSettings,
 } from "@cluenori/projects"
 import {
   ArchiveUnavailable,
@@ -58,6 +61,8 @@ export type EngineCallName =
   | "createProject"
   | "detail"
   | "addComponent"
+  | "linkComponent"
+  | "updateSettings"
   | "ingestTraces"
   | "ingestLogs"
   | "ingestMetrics"
@@ -113,6 +118,18 @@ export const projectCalls = {
     Schema.Struct({ actor: Actor, component: AddComponent }),
     AddedComponentResponse,
     Schema.Union([ProjectNotFound, ComponentExists]),
+  ),
+  updateSettings: projectCall(
+    "updateSettings",
+    Schema.Struct({ actor: Actor, settings: ProjectSettings }),
+    ProjectSettings,
+    ProjectNotFound,
+  ),
+  linkComponent: projectCall(
+    "linkComponent",
+    Schema.Struct({ actor: Actor, component: ComponentKey, links: ComponentLinks }),
+    Component,
+    Schema.Union([ProjectNotFound, ComponentNotFound]),
   ),
   ingestTraces: projectCall(
     "ingestTraces",
@@ -183,7 +200,7 @@ export const projectCalls = {
  * failures are the query's, and `ProjectNotFound` for a project that doesn't exist.
  */
 export const moduleCall = <Queries extends ModuleQueries<Queries>, K extends keyof Queries & string>(
-  module: ModuleDefinition<string, Queries>,
+  module: { readonly id: string; readonly queries: Queries },
   name: K,
 ): ProjectCall<
   Queries[K]["input"],
@@ -192,4 +209,26 @@ export const moduleCall = <Queries extends ModuleQueries<Queries>, K extends key
 > => {
   const query: Queries[K] = module.queries[name]
   return objectCall(`${module.id}.${name}`, query.input, query.success, Schema.Union([ProjectNotFound, query.error]))
+}
+
+/**
+ * The call that runs `module`'s ingest write `name` in a project's object, under
+ * `<module>.ingest.<name>`, for the component whose ingest key comes with it: its failures are the
+ * write's, and `IngestKeyRejected` for a key that isn't one of the project's.
+ */
+export const moduleIngestCall = <Ingests extends ModuleIngests<Ingests>, K extends keyof Ingests & string>(
+  module: { readonly id: string; readonly ingest: Ingests },
+  name: K,
+): ProjectCall<
+  Schema.Struct<{ readonly ingestKey: typeof IngestKey; readonly input: Ingests[K]["input"] }>,
+  Ingests[K]["success"],
+  Schema.Union<readonly [typeof IngestKeyRejected, Ingests[K]["error"]]>
+> => {
+  const ingest: Ingests[K] = module.ingest[name]
+  return objectCall(
+    `${module.id}.ingest.${name}`,
+    Schema.Struct({ ingestKey: IngestKey, input: ingest.input }),
+    ingest.success,
+    Schema.Union([IngestKeyRejected, ingest.error]),
+  )
 }

@@ -1,4 +1,4 @@
-import type { ComponentKey, ProjectKey, TraceId } from "@cluenori/foundation"
+import type { ComponentKey, ProjectKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import type { ErrorGroupId, LogLine, TraceSpan } from "@cluenori/signals"
 import { errorStatusOf } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
@@ -21,6 +21,7 @@ import { useState } from "react"
 import { failureColor } from "@/lib/colors"
 import { ago, count, duration, moment, preciseTime } from "@/lib/format"
 import { errorAtom, logCountsAtom, periodAtom, traceAtom } from "@/project-data"
+import type { Environments } from "@/project-facts"
 import {
   columnTimesOf,
   endOf,
@@ -31,15 +32,16 @@ import {
   ticksOf,
   zoneOf,
 } from "@/project-facts"
+import type { Filters } from "@/router"
 import { Link } from "@/router"
 import { AttributeList } from "@/views/attribute-list"
 import { BarRows } from "@/views/bar-rows"
 import { titleParts } from "@/views/error-group"
 import { ExceptionView } from "@/views/exception-view"
+import { FilterSwitches } from "@/views/filter-switches"
 import { Loaded } from "@/views/loaded"
 import { OperationName } from "@/views/operation-name"
 import { Panel, PanelStats } from "@/views/panel"
-import { PeriodSwitch } from "@/views/period-switch"
 import { TemplateText } from "@/views/template-text"
 import { Button, buttonVariants } from "@/views/ui/button"
 
@@ -62,14 +64,19 @@ function Facts({ rows }: { readonly rows: ReadonlyArray<{ readonly label: string
   )
 }
 
+// The environment and release the page shows, which a trace opened from it keeps.
+type TraceFilters = Pick<Filters, "environment" | "release">
+
 /** The operation an occurrence was logged in, in a few facts, one click from its whole trace. */
 function OperationSummary({
   project,
+  traceFilters,
   line,
   trace,
   operation,
 }: {
   readonly project: ProjectKey
+  readonly traceFilters: TraceFilters
   readonly line: LogLine
   readonly trace: TraceId
   readonly operation: TraceSpan | undefined
@@ -115,7 +122,7 @@ function OperationSummary({
         ]}
       />
       <Link
-        to={{ page: "trace", project, trace, around: line.time }}
+        to={{ page: "trace", project, trace, around: line.time, ...traceFilters }}
         className={buttonVariants({ variant: "outline", className: "mt-auto self-start" })}
       >
         Open the trace
@@ -161,10 +168,12 @@ function SentWith({ line, operation }: { readonly line: LogLine; readonly operat
 /** An occurrence: its exception beside its operation, then everything it was sent with. */
 function OccurrenceDetail({
   project,
+  traceFilters,
   line,
   operation,
 }: {
   readonly project: ProjectKey
+  readonly traceFilters: TraceFilters
   readonly line: LogLine
   /** The operation it happened in, once its trace is read; absent when it was logged outside one. */
   readonly operation: { readonly trace: TraceId; readonly found: TraceSpan | undefined } | undefined
@@ -195,7 +204,13 @@ function OccurrenceDetail({
                 It was logged outside any operation, such as while its service started.
               </p>
             ) : (
-              <OperationSummary project={project} line={line} trace={operation.trace} operation={operation.found} />
+              <OperationSummary
+                project={project}
+                traceFilters={traceFilters}
+                line={line}
+                trace={operation.trace}
+                operation={operation.found}
+              />
             )}
           </div>
         </Panel>
@@ -210,10 +225,12 @@ function OccurrenceDetail({
 /** An occurrence logged in an operation: its trace is read first, from the archive around then. */
 function TracedOccurrence({
   project,
+  traceFilters,
   line,
   trace,
 }: {
   readonly project: ProjectKey
+  readonly traceFilters: TraceFilters
   readonly line: LogLine
   readonly trace: TraceId
 }) {
@@ -224,6 +241,7 @@ function TracedOccurrence({
         <div className="flex flex-col gap-4">
           <OccurrenceDetail
             project={project}
+            traceFilters={traceFilters}
             line={line}
             operation={{ trace, found: operationSpanOf(answer, line.span) }}
           />
@@ -242,22 +260,36 @@ function TracedOccurrence({
 export function ErrorPage({
   project,
   component,
+  release,
+  environments,
   error,
 }: {
   readonly project: ProjectKey
   readonly component?: ComponentKey
+  readonly release?: ReleaseVersion
+  readonly environments: Environments
   readonly error: ErrorGroupId
 }) {
+  const environment = environments.shown
+  const filters: Filters = {
+    ...(component === undefined ? {} : { component }),
+    ...(environment === undefined ? {} : { environment }),
+    ...(release === undefined ? {} : { release }),
+  }
   const period = useAtomValue(periodAtom)
-  const detail = useAtomValue(errorAtom({ project, error }))
-  const counts = useAtomValue(logCountsAtom({ project, by: "level", level: "error", error }))
+  const detail = useAtomValue(errorAtom({ project, ...filters, error }))
+  const counts = useAtomValue(logCountsAtom({ project, ...filters, by: "level", level: "error", error }))
   const [position, setPosition] = useState(0)
   const group = AsyncResult.isSuccess(detail) ? detail.value.group : undefined
   const parts = group === undefined ? undefined : titleParts(group)
   const isLogged = group?.kind === "log"
   const named = parts === undefined ? "Error" : shortName(parts.type)
   const heading = isLogged && group !== undefined ? <TemplateText text={group.title} /> : named
-  const back = { page: "errors" as const, project, ...(component === undefined ? {} : { component }) }
+  const back = { page: "errors" as const, project, ...filters }
+  const traceFilters: TraceFilters = {
+    ...(environment === undefined ? {} : { environment }),
+    ...(release === undefined ? {} : { release }),
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
@@ -289,7 +321,14 @@ export function ErrorPage({
             {periodWords[period].toLowerCase()}
           </p>
         </div>
-        <PeriodSwitch />
+        <div className="flex max-w-full min-w-0 flex-wrap items-center gap-3">
+          <FilterSwitches
+            project={project}
+            filters={filters}
+            environments={environments}
+            routeOf={(next) => ({ page: "error", project, ...next, error })}
+          />
+        </div>
       </header>
 
       <Loaded result={AsyncResult.all({ detail, counts })}>
@@ -365,11 +404,17 @@ export function ErrorPage({
                     </span>
                   </div>
                   {occurrence.trace === undefined ? (
-                    <OccurrenceDetail project={project} line={occurrence} operation={undefined} />
+                    <OccurrenceDetail
+                      project={project}
+                      traceFilters={traceFilters}
+                      line={occurrence}
+                      operation={undefined}
+                    />
                   ) : (
                     <TracedOccurrence
                       key={occurrence.id}
                       project={project}
+                      traceFilters={traceFilters}
                       line={occurrence}
                       trace={occurrence.trace}
                     />

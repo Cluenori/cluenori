@@ -4,6 +4,7 @@ import { ComponentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundat
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Duration, Effect, Layer } from "effect"
 import { Base64 } from "effect/encoding"
+import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 
 import type { LogEntry, LogExport, TraceExport } from "../src/index.ts"
@@ -202,6 +203,76 @@ describe("Signals' warnings and errors", () => {
           [older, newer],
         ],
       )
+    }),
+  )
+
+  it.effect("narrows errors, warnings and their counts to one release", () =>
+    Effect.gen(function* () {
+      const { export: read } = yield* readAt(now, fixtureLogs)
+      const older = ReleaseVersion.make("2026.10.20-a1b2c3d")
+      const newer = ReleaseVersion.make("2026.10.21-e91f09c")
+      const fromRelease = (digit: string, release: ReleaseVersion, shift: number): LogExport => ({
+        ...read,
+        digest: BatchDigest.make(digit.repeat(64)),
+        entries: read.entries.map((entry) => ({
+          ...entry,
+          release,
+          time: DateTime.makeUnsafe(DateTime.toEpochMillis(entry.time) + shift),
+        })),
+      })
+      const found = yield* inProject(
+        "by-release",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordLogs(api, fromRelease("a", older, -60_000))
+          yield* signals.recordLogs(api, fromRelease("b", newer, 0))
+          const all = yield* signals.errors({ period: lastHour })
+          const newest = yield* signals.errors({ period: lastHour, release: newer })
+          const lines = yield* signals.logs({ period: lastHour, release: older })
+          const counted = yield* signals.logCounts({ period: lastHour, step: "1h", by: "level", release: newer })
+          return { all, newest, lines, counted }
+        }),
+      )
+
+      assert.strictEqual(found.all.occurrences, 2 * found.newest.occurrences)
+      assert.isAbove(found.newest.occurrences, 0)
+      assert.isTrue(found.lines.lines.every((line) => line.release === older))
+      assert.lengthOf(found.lines.lines, read.entries.length)
+      assert.strictEqual(
+        found.counted.series.reduce((total, series) => total + series.total, 0),
+        read.entries.length,
+      )
+    }),
+  )
+
+  it.effect("gives warnings and errors kept before releases had a column theirs from their record", () =>
+    Effect.gen(function* () {
+      const { export: read } = yield* readAt(now, fixtureLogs)
+      const release = ReleaseVersion.make("2026.10.21-e91f09c")
+      // A database as it was before: its warnings and errors stored, then the column taken away.
+      yield* inProject(
+        "logs-before-releases",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          const sql = yield* SqlClient.SqlClient
+          yield* signals.recordLogs(api, { ...read, entries: read.entries.map((entry) => ({ ...entry, release })) })
+          yield* sql`DROP INDEX signals_logs_release`
+          yield* sql`ALTER TABLE signals_logs DROP COLUMN release`
+          yield* sql`DELETE FROM signals_migrations WHERE migration_id = 8`
+        }).pipe(Effect.orDie),
+      )
+      const lines = yield* inProject(
+        "logs-before-releases",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          return yield* signals.logs({ period: lastHour, release })
+        }),
+      )
+
+      assert.lengthOf(lines.lines, read.entries.length)
     }),
   )
 

@@ -8,6 +8,7 @@ const failureWords: Readonly<Record<string, string>> = {
   Unauthorized: "You're signed out. Sign in again to see this.",
   ProjectNotFound: "There is no such project here; the link may be from another deployment.",
   ErrorGroupNotFound: "This error didn't happen in this period.",
+  ComponentNotFound: "The project has no such component any more; reload the page to see its components.",
   ArchiveUnavailable: "The archive didn't answer. Try again in a moment.",
 }
 

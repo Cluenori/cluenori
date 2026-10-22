@@ -63,7 +63,50 @@ const checkAt = (time: number) =>
     return changes.map((change) => [change.change, change.incident.title] as const)
   })
 
+// The same counts, from dev.
+const dev = (entry: OperationCounts): OperationCounts => ({ ...entry, environment: EnvironmentKey.make("dev") })
+
+// An entry's environment and whether it is production, in an order that doesn't depend on commits.
+const placesOf = (entries: ReadonlyArray<{ readonly attrs: Readonly<Record<string, unknown>> }>) =>
+  entries
+    .map((entry) => [String(entry.attrs["environment"]), entry.attrs["production"]] as const)
+    .toSorted(([left], [right]) => Number(left > right) - Number(left < right))
+    .map(([environment, production]) => [environment, production])
+
 describe("Incidents", () => {
+  it.effect("says whether each change is in an environment its project calls production", () =>
+    inProject(
+      "production",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const log = yield* ActivityLog
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* record(api, [dev(counts("POST /api/export", start - 3 * day, 1000, 1))])
+        yield* record(api, [dev(counts("POST /api/export", start - minute, 50, 10))])
+        yield* record(api, [counts("POST /api/export", start - 3 * day, 1000, 1)])
+        yield* record(api, [counts("POST /api/export", start - minute, 50, 10)])
+        yield* checkAt(start)
+        const opened = (yield* log.latest).filter((entry) => entry.name === "incident.opened")
+        // Once the project calls dev production too, its changes say so.
+        yield* projects.updateSettings(member, {
+          productionEnvironments: [EnvironmentKey.make("production"), EnvironmentKey.make("dev")],
+        })
+        yield* checkAt(start + 25 * minute)
+        const resolved = (yield* log.latest).filter((entry) => entry.name === "incident.resolved")
+
+        assert.deepStrictEqual(placesOf(opened), [
+          ["dev", false],
+          ["production", true],
+        ])
+        assert.deepStrictEqual(placesOf(resolved), [
+          ["dev", true],
+          ["production", true],
+        ])
+      }),
+    ),
+  )
+
   it.effect("opens an incident when an operation fails three times its usual, and resolves it 10 minutes after", () =>
     inProject(
       "failing",

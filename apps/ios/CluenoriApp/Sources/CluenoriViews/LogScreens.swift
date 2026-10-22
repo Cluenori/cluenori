@@ -3,16 +3,19 @@ import CluenoriScreens
 import Foundation
 import SwiftUI
 
-/// A project's warnings and errors over the period, newest first: of one level or all, searched by
-/// text, older ones added as the list reaches its end.
+/// A project's warnings and errors in one environment over the period, or one of its releases' over
+/// its span, newest first: of one level or all, searched by text, older ones added as the list
+/// reaches its end.
 struct LogsScreen: View {
     let logs: LogsModel
+    let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
     @State private var level: IndexedLevel?
     @State private var search: String
 
-    init(logs: LogsModel, navigation: Navigation) {
+    init(logs: LogsModel, environments: EnvironmentChoice, navigation: Navigation) {
         self.logs = logs
+        self.environments = environments
         self.navigation = navigation
         level = logs.level
         search = logs.search
@@ -20,13 +23,33 @@ struct LogsScreen: View {
 
     var body: some View {
         List {
-            PeriodSection(period: $navigation.period)
+            CoverageSections(
+                telemetry: logs.telemetry,
+                release: logs.release,
+                environments: environments,
+                route: .logs(of: logs.telemetry),
+                navigation: navigation
+            )
             Section {
                 LevelPicker(level: $level)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
             }
             if let page = logs.page.value {
+                // Under the screen's filters, which the empty state would cover in the middle.
+                if page.lines.isEmpty {
+                    Section {
+                        NothingShown(
+                            title: logs.search.isEmpty && logs.level == nil
+                                ? Text("No warnings or errors", bundle: #bundle, comment: "No log lines in the period.")
+                                : Text("Nothing matches", bundle: #bundle, comment: "No log lines matched the filter."),
+                            systemImage: "text.page.slash",
+                            narrowed: logs.release != nil,
+                            period: $navigation.period
+                        )
+                        .listRowBackground(Color.clear)
+                    }
+                }
                 ForEach(page.lines + logs.older, id: \.id) { line in
                     NavigationLink {
                         LogLineScreen(line: line)
@@ -42,17 +65,7 @@ struct LogsScreen: View {
             }
         }
         .overlay {
-            if let page = logs.page.value {
-                if page.lines.isEmpty {
-                    NothingInPeriod(
-                        title: logs.search.isEmpty && logs.level == nil
-                            ? Text("No warnings or errors", bundle: #bundle, comment: "No log lines in the period.")
-                            : Text("Nothing matches", bundle: #bundle, comment: "No log lines matched the filter."),
-                        systemImage: "text.page.slash",
-                        period: $navigation.period
-                    )
-                }
-            } else {
+            if logs.page.value == nil {
                 AnswerPlaceholder(problem: logs.page.problem)
             }
         }

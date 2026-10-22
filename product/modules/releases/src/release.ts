@@ -1,3 +1,4 @@
+import { CommitSha } from "@bagatka/github"
 import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, Period, ReleaseVersion } from "@cluenori/foundation"
 import { Incident } from "@cluenori/incidents"
 import { ErrorGroup } from "@cluenori/signals"
@@ -14,28 +15,139 @@ const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
  * - `tooEarly`: nothing worse yet, but it ran less than an hour, or no operation ran 100 times in
  *   both releases.
  * - `first`: no release before it to compare with.
+ * - `unmeasured`: no telemetry from it yet, as for a build only App Store Connect knows, or a deploy
+ *   just reported.
  */
-export const Verdict = Schema.Literals(["worse", "better", "same", "tooEarly", "first"]).annotate({
+export const Verdict = Schema.Literals(["worse", "better", "same", "tooEarly", "first", "unmeasured"]).annotate({
   identifier: "Verdict",
 })
 export type Verdict = typeof Verdict.Type
 
 /**
- * One release of a component in one environment, as its operations show it: when it ran, how much,
- * and how it compares with the release before it.
+ * A release's commit in its component's repository, and the tag that names it when one does. A
+ * commit only a deploy report named has what the report said; one found on GitHub has the rest.
+ */
+export const ReleaseCommit = Schema.Struct({
+  sha: CommitSha,
+  tag: Schema.optionalKey(Schema.String),
+  /** The first line of its message. */
+  message: Schema.optionalKey(Schema.String),
+  author: Schema.optionalKey(Schema.String),
+  committedAt: Schema.optionalKey(Instant),
+  /** Its page on GitHub. */
+  url: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "ReleaseCommit" })
+export type ReleaseCommit = typeof ReleaseCommit.Type
+
+/** One commit between two releases, with the pull request it came from when its message names one. */
+export const ChangedCommit = Schema.Struct({
+  sha: CommitSha,
+  message: Schema.String,
+  author: Schema.String,
+  committedAt: Instant,
+  /** Its page on GitHub; absent for commits only a deploy report listed. */
+  url: Schema.optionalKey(Schema.String),
+  pullRequest: Schema.optionalKey(Schema.Int),
+}).annotate({ identifier: "ChangedCommit" })
+export type ChangedCommit = typeof ChangedCommit.Type
+
+/** A pull request merged between two releases. */
+export const MergedPullRequest = Schema.Struct({
+  number: Schema.Int,
+  title: Schema.String,
+  author: Schema.String,
+  url: Schema.String,
+  labels: Schema.Array(Schema.String),
+}).annotate({ identifier: "MergedPullRequest" })
+export type MergedPullRequest = typeof MergedPullRequest.Type
+
+/**
+ * What changed in the repository since the release before: its commits, the newest first, at most
+ * 250; the pull requests they name, at most 30, read from GitHub; and, from GitHub, the files
+ * changed. From a deploy report alone, the commits git listed and nothing GitHub knows.
+ */
+export const ReleaseChanges = Schema.Struct({
+  totalCommits: Count,
+  commits: Schema.Array(ChangedCommit),
+  pullRequests: Schema.Array(MergedPullRequest),
+  filesChanged: Schema.optionalKey(Count),
+  additions: Schema.optionalKey(Count),
+  deletions: Schema.optionalKey(Count),
+  /** GitHub's page comparing the two. */
+  url: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "ReleaseChanges" })
+export type ReleaseChanges = typeof ReleaseChanges.Type
+
+/**
+ * Where an app's build stands in App Store Connect:
+ * - `processing`, `failed`: Apple is processing it, or it failed processing;
+ * - `testing`: in TestFlight, with no App Store version shipping it;
+ * - `waitingForReview`, `inReview`, `rejected`: in App Review;
+ * - `pendingRelease`: approved, waiting to be released;
+ * - `releasing`: in a phased release; `live`: on the App Store;
+ * - `replaced`: a later version took its place; `expired`: its TestFlight build expired;
+ * - `other`: a state this version doesn't know, given in `appStoreState`.
+ */
+export const StoreStage = Schema.Literals([
+  "processing",
+  "failed",
+  "testing",
+  "waitingForReview",
+  "inReview",
+  "rejected",
+  "pendingRelease",
+  "releasing",
+  "live",
+  "replaced",
+  "expired",
+  "other",
+]).annotate({ identifier: "StoreStage" })
+export type StoreStage = typeof StoreStage.Type
+
+/** A phased release of an App Store version: Apple's state, when it began, and its day of 7. */
+export const PhasedRelease = Schema.Struct({
+  state: Schema.String,
+  startedAt: Schema.optionalKey(Instant),
+  day: Schema.optionalKey(Count),
+}).annotate({ identifier: "PhasedRelease" })
+export type PhasedRelease = typeof PhasedRelease.Type
+
+/** An app's build in App Store Connect: its version and number, and where it stands. */
+export const StoreBuild = Schema.Struct({
+  version: Schema.String,
+  buildNumber: Schema.String,
+  uploadedAt: Instant,
+  stage: StoreStage,
+  /** Apple's word for the state of the App Store version that ships it, when one does. */
+  appStoreState: Schema.optionalKey(Schema.String),
+  /** Apple's words for its TestFlight state, for internal and external testers. */
+  internalTesting: Schema.optionalKey(Schema.String),
+  externalTesting: Schema.optionalKey(Schema.String),
+  /** Its phased release, when its App Store version has one. */
+  phasedRelease: Schema.optionalKey(PhasedRelease),
+  /** When its App Store version may be released at the earliest, when one was set. */
+  earliestReleaseAt: Schema.optionalKey(Instant),
+}).annotate({ identifier: "StoreBuild" })
+export type StoreBuild = typeof StoreBuild.Type
+
+/**
+ * One release of a component in one environment: when it ran and how much, as its operations show
+ * it, and how it compares with the release before it; its commit and tag in the component's
+ * repository; and, for an app, its build in App Store Connect. A release only the store knows has
+ * no telemetry, so no times, counts, or environment.
  */
 export const ReleaseSummary = Schema.Struct({
   component: ComponentKey,
   /** Absent when the component didn't say. */
   environment: Schema.optionalKey(EnvironmentKey),
   release: ReleaseVersion,
-  /** The start of the first minute it ran in. */
-  firstSeen: Instant,
-  /** The end of the last minute it ran in. */
-  lastSeen: Instant,
-  /** How many operations it ran, and how many of them failed. */
-  count: Count,
-  errors: Count,
+  /** The start of the first minute it ran in; absent without telemetry. */
+  firstSeen: Schema.optionalKey(Instant),
+  /** The end of the last minute it ran in; absent without telemetry. */
+  lastSeen: Schema.optionalKey(Instant),
+  /** How many operations it ran, and how many of them failed; absent without telemetry. */
+  count: Schema.optionalKey(Count),
+  errors: Schema.optionalKey(Count),
   /** The release before it; absent for the first. */
   previous: Schema.optionalKey(ReleaseVersion),
   verdict: Verdict,
@@ -43,10 +155,20 @@ export const ReleaseSummary = Schema.Struct({
   slower: Count,
   failingMore: Count,
   newErrors: Count,
+  /** Its commit, once found in the component's repository; absent until then, or without one linked. */
+  commit: Schema.optionalKey(ReleaseCommit),
+  /** Its build in App Store Connect, for an app linked to one. */
+  store: Schema.optionalKey(StoreBuild),
+  /** When a deploy of it was reported, by `cluenori-release` in the component's CI; absent without one. */
+  deployedAt: Schema.optionalKey(Instant),
 }).annotate({ identifier: "ReleaseSummary" })
 export type ReleaseSummary = typeof ReleaseSummary.Type
 
-/** Which releases to list: those that ran in `period`, optionally of one environment or component. */
+/**
+ * Which releases to list: those that ran in `period`, optionally of one environment or component.
+ * A release that names no environment, such as an app's build only App Store Connect knows, is in
+ * every environment its project calls production.
+ */
 export const ReleaseListQuery = Schema.Struct({
   period: Period,
   environment: Schema.optionalKey(EnvironmentKey),
@@ -54,9 +176,27 @@ export const ReleaseListQuery = Schema.Struct({
 })
 export type ReleaseListQuery = typeof ReleaseListQuery.Type
 
-/** The releases that ran in a period, the latest first seen first: at most 30. */
+/** Where a release's facts come from besides telemetry. */
+export const ReleaseSource = Schema.Literals(["github", "appStoreConnect"]).annotate({ identifier: "ReleaseSource" })
+export type ReleaseSource = typeof ReleaseSource.Type
+
+/** Why a component's releases lack their commits or store builds: the source refused, or failed lately. */
+export const SourceProblem = Schema.Struct({
+  component: ComponentKey,
+  source: ReleaseSource,
+  /** What it said, in words for the person who fixes it. */
+  problem: Schema.String,
+  at: Instant,
+}).annotate({ identifier: "SourceProblem" })
+export type SourceProblem = typeof SourceProblem.Type
+
+/**
+ * The releases that ran or were uploaded in a period, the latest first: at most 30. `problems` says
+ * which sources couldn't be read lately, so missing commits or builds aren't mistaken for none.
+ */
 export const ReleaseList = Schema.Struct({
   releases: Schema.Array(ReleaseSummary),
+  problems: Schema.Array(SourceProblem),
 }).annotate({ identifier: "ReleaseList" })
 export type ReleaseList = typeof ReleaseList.Type
 
@@ -96,6 +236,10 @@ export const ReleaseDetail = Schema.Struct({
   /** Errors first seen in it, with how often they happened while it ran. */
   newErrors: Schema.Array(ErrorGroup),
   incidents: Schema.Array(Incident),
+  /** What changed in the repository since the release before; absent until both commits are found. */
+  changes: Schema.optionalKey(ReleaseChanges),
+  /** Why its component's commits or store builds may be missing: the sources that failed lately. */
+  problems: Schema.Array(SourceProblem),
 }).annotate({ identifier: "ReleaseDetail" })
 export type ReleaseDetail = typeof ReleaseDetail.Type
 
@@ -104,3 +248,41 @@ export class ReleaseNotFound extends Schema.TaggedError<ReleaseNotFound>()("Rele
   component: ComponentKey,
   release: ReleaseVersion,
 }) {}
+
+/** One commit, as `git log` gives it to `cluenori-release`. */
+export const ReportedCommit = Schema.Struct({
+  sha: CommitSha,
+  /** Its message's first line. */
+  message: Schema.String.check(Schema.isMaxLength(1000)),
+  author: Schema.String.check(Schema.isMaxLength(200)),
+  committedAt: Instant,
+}).annotate({ identifier: "ReportedCommit" })
+export type ReportedCommit = typeof ReportedCommit.Type
+
+/**
+ * A deploy of a release, as `cluenori-release` reports it from the component's CI with its ingest
+ * key: the release, as the component will report it in `service.version`; where it went; its
+ * commit, and the tag that names it; and the commits since the release reported before it, newest
+ * first, at most 250.
+ */
+export const ReleaseReport = Schema.Struct({
+  release: ReleaseVersion,
+  environment: Schema.optionalKey(EnvironmentKey),
+  commit: CommitSha,
+  tag: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(255))),
+  commits: Schema.optionalKey(Schema.Array(ReportedCommit).check(Schema.isMaxLength(250))),
+}).annotate({ identifier: "ReleaseReport" })
+export type ReleaseReport = typeof ReleaseReport.Type
+
+/** Which environment's last reported deploy to ask about; all of the component's without one. */
+export const LastReportQuery = Schema.Struct({
+  environment: Schema.optionalKey(EnvironmentKey),
+}).annotate({ identifier: "LastReportQuery" })
+export type LastReportQuery = typeof LastReportQuery.Type
+
+/** The last deploy reported of a component: its release and commit, which the next report's commits start after. */
+export const LastReport = Schema.Struct({
+  release: Schema.optionalKey(ReleaseVersion),
+  commit: Schema.optionalKey(CommitSha),
+}).annotate({ identifier: "LastReport" })
+export type LastReport = typeof LastReport.Type

@@ -43,7 +43,7 @@ export class Notifications extends Context.Service<
   {
     /**
      * Alerts every phone with a push token whose member sees the project about the incident
-     * activity among `activity`, at its level: an alarm when Down or Failing opens or gets worse; time sensitive when Stopped opens or
+     * activity among `activity` in its project's production environments, at its level: an alarm when Down or Failing opens or gets worse; time sensitive when Stopped opens or
      * any incident reopens; quiet when one recovers or someone acknowledges it, which also stops its
      * alarm. Nothing about an incident someone is on, nor for other activity. An alarm more than 10
      * minutes late comes as time sensitive.

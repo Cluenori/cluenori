@@ -53,9 +53,11 @@ const envelope = yield* Schema.decodeUnknownEffect(Envelope)(body)
   migrations (`foundation_migrations`).
 - **Rules about writes:** a write and its activity commit in one transaction; every entry gets its
   ID, time, actor, source, workspace and project from the log, never from the caller.
-- **The module contract** (`defineModule`, `moduleQuery`): a module's ID, scope, queries, and their
-  routes. A query's input, answer and tagged errors are plain Schemas, since the host serves it in
-  the project's Durable Object under `<module>.<query>`; its sidebar entry, actions, records and the
+- **The module contract** (`defineModule`, `moduleQuery`, `moduleIngest`): a module's ID, scope,
+  queries and their routes; its own services (its records and clients), built from settings the
+  host reads; its background work on the project's alarm; and its ingest writes, which components'
+  own tooling sends with their ingest key. Inputs, answers and tagged errors are plain Schemas,
+  since the host serves them in the project's Durable Object; its sidebar entry, actions and the
   rest of `concept/Foundation.md`'s contract come with the first module that needs each.
 
 ## Does not own

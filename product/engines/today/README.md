@@ -20,7 +20,8 @@ didn't answer in `unanswered`, never as one with nothing to do.
 
 ## Owns
 
-- **Rules:** the detectors (`itemsOf`), each item with its evidence:
+- **Rules:** the detectors (`itemsOf`), each item with its evidence, in the environments the
+  project calls production (Projects' settings):
   - **An open incident,** acknowledged or not.
   - **An error new or happening now:** first seen in the last day, or seen in the last 15 minutes
     (Signals' `errorStatusOf`).

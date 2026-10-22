@@ -29,11 +29,16 @@ export const ErrorGroup = Schema.Struct({
 }).annotate({ identifier: "ErrorGroup" })
 export type ErrorGroup = typeof ErrorGroup.Type
 
-/** Which errors to show: those that happened in `period`, optionally of one environment or component. */
+/**
+ * Which errors to show: those that happened in `period`, optionally of one environment, component,
+ * or release. Warnings and errors from before October 2026 without a release in their record have
+ * none, so a release finds none of them.
+ */
 export const ErrorQuery = Schema.Struct({
   period: Period,
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
+  release: Schema.optionalKey(ReleaseVersion),
 })
 export type ErrorQuery = typeof ErrorQuery.Type
 
@@ -76,6 +81,7 @@ export const LogQuery = Schema.Struct({
   category: Schema.optionalKey(Schema.String),
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
+  release: Schema.optionalKey(ReleaseVersion),
   trace: Schema.optionalKey(TraceId),
   error: Schema.optionalKey(ErrorGroupId),
   before: Schema.optionalKey(Schema.Int),
@@ -108,6 +114,7 @@ export const LogCountQuery = Schema.Struct({
   minimumLevel: Schema.optionalKey(IndexedLevel),
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
+  release: Schema.optionalKey(ReleaseVersion),
   error: Schema.optionalKey(ErrorGroupId),
 })
 export type LogCountQuery = typeof LogCountQuery.Type

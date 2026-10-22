@@ -3,9 +3,10 @@
 // show these; they don't work them out again. Every rule is pure: "now" is the time an answer
 // covers up to, never the clock, so a page renders the same for the same answers.
 
-import type { Period, ProjectKey } from "@cluenori/foundation"
+import type { EnvironmentKey, Period, ProjectKey } from "@cluenori/foundation"
 import type { Incident, IncidentList } from "@cluenori/incidents"
-import type { ReleaseSummary } from "@cluenori/releases"
+import type { ProjectSettings } from "@cluenori/projects"
+import type { ReleaseChanges, ReleaseCommit, ReleaseSource, ReleaseSummary, StoreBuild } from "@cluenori/releases"
 import type {
   Compared,
   OperationRow,
@@ -29,7 +30,7 @@ import { DateTime } from "effect"
 import { componentColor } from "@/lib/colors"
 import { ago, axisTime, count, dayOf, duration, viewerTimeZone } from "@/lib/format"
 import type { PeriodKey } from "@/project-data"
-import { periodMillis } from "@/project-data"
+import { periodMillis, periods } from "@/project-data"
 import type { Route } from "@/router"
 import type { Attention } from "@/views/attention-list"
 import { titleParts } from "@/views/error-group"
@@ -52,6 +53,50 @@ const zoneNameAt = (epochMillis: number) =>
 
 /** A component's color, by its place among its project's components: the same on every page. */
 export const colorOf = (component: string, components: ReadonlyArray<string>) => componentColor(component, components)
+
+// ---- Environments ----------------------------------------------------------------------------------
+
+/**
+ * The environments a project's pages offer, production first, and the one they show. A deployment
+ * from before October 2026 says neither the project's settings nor its environments: it offers none.
+ */
+export type Environments = {
+  /** The one every question asks about; absent where none is offered or named. */
+  readonly shown?: EnvironmentKey
+  /** Those its telemetry named in the last 30 days, production first, with the one shown. */
+  readonly offered: ReadonlyArray<EnvironmentKey>
+  /** The project's production environments, seen lately or not. */
+  readonly production: ReadonlyArray<EnvironmentKey>
+}
+
+/**
+ * Which environment a project's page shows: the one `chosen`, named by the address or picked
+ * before; else production, the first of the project's production environments its telemetry named
+ * lately; else the first it named. While the project isn't known yet, pass `{}`.
+ */
+export const environmentsOf = (
+  project: { readonly settings?: ProjectSettings; readonly environments?: ReadonlyArray<EnvironmentKey> },
+  chosen: EnvironmentKey | undefined,
+): Environments => {
+  const seen = project.settings === undefined ? [] : (project.environments ?? [])
+  const production = project.settings?.productionEnvironments ?? []
+  const shown = chosen ?? production.find((environment) => seen.includes(environment)) ?? seen[0]
+  return {
+    ...(shown === undefined ? {} : { shown }),
+    offered: shown === undefined || seen.includes(shown) ? seen : [...seen, shown],
+    production,
+  }
+}
+
+/**
+ * Whether something of `environment` belongs on a page showing `environments`: anything, when it
+ * shows none; else what is of the environment shown; and, when that is production, what doesn't
+ * say its environment, which counts as production, as for alerts.
+ */
+export const isShownIn = (environments: Environments, environment: EnvironmentKey | undefined) =>
+  environments.shown === undefined ||
+  environment === environments.shown ||
+  (environment === undefined && environments.production.includes(environments.shown))
 
 // ---- Charts over time ------------------------------------------------------------------------------
 
@@ -264,30 +309,32 @@ const byHowMuchSlower = (left: Slower, right: Slower) => right.p95Ms / right.usu
 
 /**
  * Where an incident's evidence is, as a link: its operation's page, or, for a monitor, its
- * component's performance.
+ * component's performance, in the incident's environment.
  */
-export const incidentActionOf = (project: ProjectKey, incident: Incident) =>
-  incident.evidence._tag === "down"
-    ? { label: "Open the performance", to: { page: "performance" as const, project, component: incident.component } }
+export const incidentActionOf = (project: ProjectKey, incident: Incident) => {
+  const filters = {
+    component: incident.component,
+    ...(incident.environment === undefined ? {} : { environment: incident.environment }),
+  }
+  return incident.evidence._tag === "down"
+    ? { label: "Open the performance", to: { page: "performance" as const, project, ...filters } }
     : {
         label: "Open the operation",
-        to: {
-          page: "operation" as const,
-          project,
-          component: incident.component,
-          operation: incident.evidence.operation,
-        },
+        to: { page: "operation" as const, project, ...filters, operation: incident.evidence.operation },
       }
+}
 
 /**
  * What needs attention in the project now, the worst first: its open incidents, which the server's
  * detectors keep, an acknowledged one in yellow; errors happening now; new errors; then operations
- * that got slower. An error both new and happening now is one item. Each item is one click from its
- * detail. "Now" is the time an answer covers up to: when the detectors last looked, and the end
+ * that got slower, all of the environment shown. An error both new and happening now is one item.
+ * Each item is one click from its detail. "Now" is the time an answer covers up to: when the detectors last looked, and the end
  * of the errors' period.
  */
 export const attentionOf = (facts: {
   readonly project: ProjectKey
+  /** The environment the page shows: its incidents only, as the errors and operations are its. */
+  readonly environments: Environments
   readonly incidents: IncidentList
   readonly errors: ErrorTable
   readonly compared: Compared
@@ -302,7 +349,8 @@ export const attentionOf = (facts: {
       return found === undefined ? [] : [{ row, ...found }]
     })
     .toSorted(byHowMuchSlower)
-  const errorRoute = (error: ErrorGroupId) => ({ page: "error" as const, project, error })
+  const inShown = facts.environments.shown === undefined ? {} : { environment: facts.environments.shown }
+  const errorRoute = (error: ErrorGroupId) => ({ page: "error" as const, project, ...inShown, error })
   // Nothing of the period is kept when it has no end, so there are no errors to judge.
   const groups =
     now === undefined
@@ -313,8 +361,9 @@ export const attentionOf = (facts: {
           firstSeen: ago(DateTime.toEpochMillis(group.firstSeen), now),
           lastSeen: ago(DateTime.toEpochMillis(group.lastSeen), now),
         }))
+  const open = facts.incidents.open.filter((incident) => isShownIn(facts.environments, incident.environment))
   return [
-    ...facts.incidents.open.map((incident) => {
+    ...open.map((incident) => {
       const opened = DateTime.toEpochMillis(incident.openedAt)
       return {
         key: `incident ${incident.id}`,
@@ -349,7 +398,13 @@ export const attentionOf = (facts: {
       detail: `p95 ${duration(entry.p95Ms)} over the last day, usually ${duration(entry.usualP95Ms)}`,
       action: {
         label: "Open the operation",
-        to: { page: "operation" as const, project, component: entry.row.component, operation: entry.row.operation },
+        to: {
+          page: "operation" as const,
+          project,
+          component: entry.row.component,
+          ...inShown,
+          operation: entry.row.operation,
+        },
       },
     })),
   ]
@@ -360,9 +415,30 @@ export const attentionOf = (facts: {
 /** A release is live while it ran in the last 15 minutes: the window an error is happening now in. */
 export const liveForMs = errorRule.ongoingForMs
 
-/** Whether a release still runs: it ran within `liveForMs` of `asOf`, the time its answer is of. */
+/** When a release ran: from the start of the first minute it ran in to the end of the last. */
+export type Ran = { readonly firstSeen: DateTime.Utc; readonly lastSeen: DateTime.Utc }
+
+/** When a release ran, or absent for one without telemetry, which hasn't run as far as anyone can tell. */
+export const ranOf = (release: ReleaseSummary): Ran | undefined =>
+  release.firstSeen === undefined || release.lastSeen === undefined
+    ? undefined
+    : { firstSeen: release.firstSeen, lastSeen: release.lastSeen }
+
+/**
+ * Whether a release still runs: it ran within `liveForMs` of `asOf`, the time its answer is of. One
+ * without telemetry doesn't.
+ */
 export const isLive = (release: ReleaseSummary, asOf: DateTime.Utc) =>
-  DateTime.toEpochMillis(asOf) - DateTime.toEpochMillis(release.lastSeen) < liveForMs
+  release.lastSeen !== undefined && DateTime.toEpochMillis(asOf) - DateTime.toEpochMillis(release.lastSeen) < liveForMs
+
+/**
+ * The shortest period that covers a release from when it first ran to `asOf`, so a page filtered to
+ * it shows all of it, in the finest steps that do; the longest period when none covers it all.
+ */
+export const periodCovering = (firstSeen: DateTime.Utc, asOf: DateTime.Utc): PeriodKey => {
+  const span = DateTime.toEpochMillis(asOf) - DateTime.toEpochMillis(firstSeen)
+  return periods.find((period) => periodMillis[period.key] >= span)?.key ?? "90d"
+}
 
 /** How a verdict reads: worse is a warning, better is good news, the rest says there is no news. */
 export type VerdictTone = "warning" | "better" | "quiet"
@@ -392,8 +468,82 @@ export const verdictOf = (release: ReleaseSummary): { readonly words: string; re
       return { words: "Too early to tell", tone: "quiet" }
     case "first":
       return { words: "First release counted", tone: "quiet" }
+    case "unmeasured":
+      return { words: "No telemetry yet", tone: "quiet" }
   }
 }
+
+/** What a release's commit is called: its tag, else the first 7 characters of its SHA, as GitHub shortens it. */
+export const commitNameOf = (commit: Pick<ReleaseCommit, "sha" | "tag">) => commit.tag ?? commit.sha.slice(0, 7)
+
+/** Each source of releases by its name. */
+export const sourceWords: Readonly<Record<ReleaseSource, string>> = {
+  github: "GitHub",
+  appStoreConnect: "App Store Connect",
+}
+
+/**
+ * Apple's word for a state as a person reads it: `IN_BETA_TESTING` is "In beta testing". Words that
+ * aren't one of Apple's constants are kept as they are.
+ */
+export const appleWords = (state: string) =>
+  /^[A-Z][A-Z_]*$/.test(state) ? `${state.slice(0, 1)}${state.slice(1).toLowerCase().replaceAll("_", " ")}` : state
+
+// How many days a phased release takes: Apple's, 7.
+const phasedDays = 7
+
+/**
+ * Where an app's build stands, in words: "In TestFlight", "In review", "Phased release, day 3 of 7",
+ * "On the App Store"; `failed` when Apple failed or rejected it, which is said in red.
+ */
+export const storeStageOf = (build: StoreBuild): { readonly words: string; readonly failed: boolean } => {
+  switch (build.stage) {
+    case "processing":
+      return { words: "Processing", failed: false }
+    case "failed":
+      return { words: "Failed processing", failed: true }
+    case "testing":
+      return { words: "In TestFlight", failed: false }
+    case "waitingForReview":
+      return { words: "Waiting for review", failed: false }
+    case "inReview":
+      return { words: "In review", failed: false }
+    case "rejected":
+      return { words: "Rejected in review", failed: true }
+    case "pendingRelease":
+      return { words: "Approved, waiting for release", failed: false }
+    case "releasing": {
+      const phased = build.phasedRelease
+      const paused = phased?.state === "PAUSED" ? " paused" : ""
+      const day = phased?.day === undefined ? "" : `, day ${count(phased.day)} of ${count(phasedDays)}`
+      return { words: `Phased release${paused}${day}`, failed: false }
+    }
+    case "live":
+      return { words: "On the App Store", failed: false }
+    case "replaced":
+      return { words: "Replaced by a later build", failed: false }
+    case "expired":
+      return { words: "Expired in TestFlight", failed: false }
+    case "other":
+      return {
+        words: build.appStoreState === undefined ? "In a state Cluenori doesn't know" : appleWords(build.appStoreState),
+        failed: false,
+      }
+  }
+}
+
+/**
+ * How much changed since the release before, as far as it is known: "12 commits, 34 files,
+ * +820 −112"; from a deploy report alone, only its commits.
+ */
+export const changesCountOf = (changes: ReleaseChanges) =>
+  [
+    counted(changes.totalCommits, "commit", "commits"),
+    ...(changes.filesChanged === undefined ? [] : [counted(changes.filesChanged, "file", "files")]),
+    ...(changes.additions === undefined || changes.deletions === undefined
+      ? []
+      : [`+${count(changes.additions)} −${count(changes.deletions)}`]),
+  ].join(", ")
 
 /** A release's own page: by its component and version, and its environment when it has one. */
 export const releaseRouteOf = (project: ProjectKey, release: ReleaseSummary): Route => ({

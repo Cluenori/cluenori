@@ -100,6 +100,7 @@ export const logStore = Effect.gen(function* () {
         time,
         component,
         environment: entry.environment ?? "",
+        release: entry.release ?? "",
         level: entry.level,
         category: entry.category,
         error: entry.error ?? null,
@@ -156,12 +157,17 @@ export const logStore = Effect.gen(function* () {
 
   const filtersOf = (
     covered: { readonly from: number; readonly to: number },
-    query: { readonly environment?: EnvironmentKey; readonly component?: ComponentKey },
+    query: {
+      readonly environment?: EnvironmentKey
+      readonly component?: ComponentKey
+      readonly release?: ReleaseVersion
+    },
   ) => [
     sql`l.time >= ${covered.from}`,
     sql`l.time < ${covered.to}`,
     ...(query.environment === undefined ? [] : [sql`l.environment = ${query.environment}`]),
     ...(query.component === undefined ? [] : [sql`l.component = ${query.component}`]),
+    ...(query.release === undefined ? [] : [sql`l.release = ${query.release}`]),
   ]
 
   const findGroups = (

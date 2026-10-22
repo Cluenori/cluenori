@@ -1,5 +1,6 @@
 import { webCryptoLayer } from "@bagatka/web-crypto"
 import { MemberId, WorkspaceKey } from "@cluenori/foundation"
+import { releasesModule } from "@cluenori/releases"
 import { env } from "cloudflare:workers"
 import { Config, ConfigProvider, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { HttpRouter, HttpServer } from "effect/http"
@@ -12,6 +13,7 @@ import { CluenoriApi } from "./cluenori-api.ts"
 import { IncidentsHandlers } from "./incidents-handlers.ts"
 import { memberAuthorizationLayer } from "./member-authorization-layer.ts"
 import { MemberProjects } from "./member-projects.ts"
+import { moduleIngestRoute } from "./module-ingest.ts"
 import { OtlpLogs, OtlpMetrics, OtlpTraces } from "./otlp-ingest.ts"
 import {
   NotificationsHandlers,
@@ -92,7 +94,16 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
 // Built once per isolate, at module scope, and reused for every request (PATTERNS.md, "The Worker
 // entry"). Building does no I/O, which Workers don't allow outside a request.
 const app = HttpRouter.toWebHandler(
-  Layer.mergeAll(ApiRoutes, OtlpTraces, OtlpLogs, OtlpMetrics, AppleAppSiteAssociation).pipe(
+  Layer.mergeAll(
+    ApiRoutes,
+    OtlpTraces,
+    OtlpLogs,
+    OtlpMetrics,
+    AppleAppSiteAssociation,
+    // Modules' ingest writes, each on a line: what components' own tooling sends with their ingest key.
+    moduleIngestRoute(releasesModule, "report"),
+    moduleIngestRoute(releasesModule, "last"),
+  ).pipe(
     // The OTLP route asks for these per request, so they are outputs of the app's layer.
     Layer.provideMerge(Projects),
     Layer.provideMerge(Workspace),

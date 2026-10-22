@@ -1,7 +1,29 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-
+    "%lld commits" : {
+      "comment" : "How many commits a release has since the one before. The variable is a count.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld commit"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld commits"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   },
   "version" : "1.0"
 }

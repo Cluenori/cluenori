@@ -1,5 +1,5 @@
 import { ComponentKey, EnvironmentKey, Period, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
-import type { ComparedOperation, ReleaseSummary } from "@cluenori/releases"
+import type { ComparedOperation, ReleaseSummary, StoreBuild } from "@cluenori/releases"
 import { Console, Effect, Option } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 
@@ -27,10 +27,62 @@ const verdictText = (release: ReleaseSummary) => {
       return "Too early to tell"
     case "first":
       return "First release counted"
+    case "unmeasured":
+      return "No telemetry yet"
   }
 }
 
-const ranText = (release: ReleaseSummary) => `${utcMinute(release.firstSeen)} to ${utcMinute(release.lastSeen)}`
+// Where an app's build stands, in words.
+const stageText = (store: StoreBuild) => {
+  switch (store.stage) {
+    case "processing":
+      return "Processing"
+    case "failed":
+      return "Failed processing"
+    case "testing":
+      return "In TestFlight"
+    case "waitingForReview":
+      return "Waiting for review"
+    case "inReview":
+      return "In review"
+    case "rejected":
+      return "Rejected"
+    case "pendingRelease":
+      return "Pending release"
+    case "releasing":
+      return store.phasedRelease?.day === undefined
+        ? "Phased release"
+        : `Phased release, day ${store.phasedRelease.day} of 7`
+    case "live":
+      return "On the App Store"
+    case "replaced":
+      return "Replaced"
+    case "expired":
+      return "Expired"
+    case "other":
+      return store.appStoreState ?? "Unknown"
+  }
+}
+
+// When it ran, was deployed, or was uploaded, as one line.
+const whenText = (release: ReleaseSummary) => {
+  if (release.firstSeen !== undefined && release.lastSeen !== undefined) {
+    return `${utcMinute(release.firstSeen)} to ${utcMinute(release.lastSeen)}`
+  }
+  if (release.deployedAt !== undefined) {
+    return `deployed ${utcMinute(release.deployedAt)}`
+  }
+  return release.store === undefined ? "" : `uploaded ${utcMinute(release.store.uploadedAt)}`
+}
+
+// Its commit as people know it: its tag, else its short SHA.
+const commitText = (release: ReleaseSummary) =>
+  release.commit === undefined ? "" : (release.commit.tag ?? release.commit.sha.slice(0, 7))
+
+const runsText = (release: ReleaseSummary) =>
+  release.count === undefined || release.errors === undefined
+    ? ["", ""]
+    : [count(release.count), share(release.errors, release.count)]
 
 /** `cluenori releases <project>`. */
 export const releases = Command.make(
@@ -39,7 +91,7 @@ export const releases = Command.make(
     ...filters,
     last: Flag.Literals("last", ["1h", "6h", "24h", "7d", "14d", "30d", "90d"]).pipe(
       Flag.withDefault("30d"),
-      Flag.withDescription("How far back to look for releases that ran."),
+      Flag.withDescription("How far back to look for releases that ran, were deployed, or were uploaded."),
     ),
   },
   (input) =>
@@ -53,21 +105,25 @@ export const releases = Command.make(
         }),
       )
       yield* Console.log(`${headline(project, target, new Period({ from: query.from, to: query.to }), "")}\n`)
+      for (const problem of list.problems) {
+        yield* Console.log(`${problem.component}: ${problem.problem}`)
+      }
       if (list.releases.length === 0) {
         return yield* Console.log(
-          "No releases ran in this period. A component's releases show once it reports its version in service.version.",
+          "No releases in this period. A component's releases show once it reports its version in service.version, its CI runs cluenori-release, or its app is linked to App Store Connect.",
         )
       }
       yield* Console.log(
         columns([
-          ["Release", "Component", "Environment", "Ran", "Runs", "Errors", "Verdict"],
+          ["Release", "Component", "Environment", "When", "Commit", "Store", "Runs", "Errors", "Verdict"],
           ...list.releases.map((release) => [
             release.release,
             release.component,
-            release.environment ?? "unknown",
-            ranText(release),
-            count(release.count),
-            share(release.errors, release.count),
+            release.environment ?? "",
+            whenText(release),
+            commitText(release),
+            release.store === undefined ? "" : stageText(release.store),
+            ...runsText(release),
             verdictText(release),
           ]),
         ]).join("\n"),
@@ -78,7 +134,7 @@ export const releases = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Each component's releases, as its services report them, each compared with the release before it.",
+    "Each component's releases, from its telemetry, its deploys, and App Store Connect, each compared with the release before it.",
   ),
 )
 
@@ -133,14 +189,32 @@ export const release = Command.make(
           }),
         )
       const summary = detail.summary
-      yield* Console.log(
-        `${summary.release} of ${summary.component} in ${summary.environment ?? "an unknown environment"}, ${ranText(summary)}: ${count(summary.count)} runs, ${share(summary.errors, summary.count)} failed.`,
-      )
-      yield* Console.log(
-        summary.previous === undefined
-          ? `${verdictText(summary)}: there is no release before it to compare with.`
-          : `Compared with ${summary.previous}. ${verdictText(summary)}.`,
-      )
+      const where = summary.environment === undefined ? "" : ` in ${summary.environment}`
+      const runs =
+        summary.count === undefined || summary.errors === undefined
+          ? "no telemetry yet"
+          : `${count(summary.count)} runs, ${share(summary.errors, summary.count)} failed`
+      yield* Console.log(`${summary.release} of ${summary.component}${where}, ${whenText(summary)}: ${runs}.`)
+      if (summary.commit !== undefined) {
+        const commit = summary.commit
+        const tagged = commit.tag === undefined ? "" : `, tagged ${commit.tag}`
+        const message = commit.message === undefined ? "" : `: ${commit.message}`
+        yield* Console.log(`Commit ${commit.sha.slice(0, 7)}${tagged}${message}`)
+      }
+      if (summary.store !== undefined) {
+        yield* Console.log(
+          `App Store Connect: build ${summary.store.version} (${summary.store.buildNumber}), ${stageText(summary.store)}.`,
+        )
+      }
+      if (summary.verdict === "unmeasured") {
+        yield* Console.log(
+          "No telemetry from it yet, so nothing to compare: it shows once it reports this version in service.version.",
+        )
+      } else if (summary.previous === undefined) {
+        yield* Console.log(`${verdictText(summary)}: there is no release before it to compare with.`)
+      } else {
+        yield* Console.log(`Compared with ${summary.previous}. ${verdictText(summary)}.`)
+      }
       const sections: ReadonlyArray<readonly [string, ReadonlyArray<ComparedOperation>]> = [
         ["Slower", detail.slower],
         ["Fails more", detail.failingMore],
@@ -176,5 +250,26 @@ export const release = Command.make(
       if (detail.newOperations.length > 0) {
         yield* Console.log(`\nNew operations:\n${detail.newOperations.join("\n")}`)
       }
+      const changes = detail.changes
+      if (changes !== undefined) {
+        const files =
+          changes.filesChanged === undefined
+            ? ""
+            : `, ${count(changes.filesChanged)} files (+${count(changes.additions ?? 0)} -${count(changes.deletions ?? 0)})`
+        yield* Console.log(
+          `\nChanged since ${summary.previous ?? "the release before"}: ${count(changes.totalCommits)} commits${files}.`,
+        )
+        for (const pull of changes.pullRequests) {
+          yield* Console.log(`  #${pull.number} ${pull.title} (${pull.author})`)
+        }
+        if (changes.pullRequests.length === 0) {
+          for (const commit of changes.commits.slice(0, 20)) {
+            yield* Console.log(`  ${commit.sha.slice(0, 7)} ${commit.message} (${commit.author})`)
+          }
+        }
+        if (changes.url !== undefined) {
+          yield* Console.log(`  ${changes.url}`)
+        }
+      }
     }),
-).pipe(Command.withDescription("One release compared with the release before it: what got slower or fails more."))
+).pipe(Command.withDescription("One release compared with the release before it: what got slower, and what changed."))

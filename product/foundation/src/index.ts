@@ -13,8 +13,16 @@ export { Envelope, EnvelopeKind, EnvelopeName, ModuleKind, Source } from "./enve
 export { FeatureKey } from "./feature-key.ts"
 export { Instant } from "./instant.ts"
 export { AccountId, AgentRunId, EnvelopeId, InstallationId, MemberId, PersonId, SessionId, Uuidv7 } from "./ids.ts"
-export { defineModule, moduleQuery } from "./module.ts"
-export type { ErrorSchema, ModuleDefinition, ModuleQueries, ModuleQuery, PlainSchema } from "./module.ts"
+export { defineModule, moduleIngest, moduleQuery } from "./module.ts"
+export type {
+  ErrorSchema,
+  ModuleDefinition,
+  ModuleIngest,
+  ModuleIngests,
+  ModuleQueries,
+  ModuleQuery,
+  PlainSchema,
+} from "./module.ts"
 export { Period } from "./period.ts"
 export { ReleaseVersion } from "./release-version.ts"
 export { ComponentKey, EnvironmentKey, ProjectKey, WorkspaceKey } from "./scope-keys.ts"

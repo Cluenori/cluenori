@@ -6,6 +6,7 @@
     "typecheck": "tsc"
   },
   "devDependencies": {
+    "@bagatka/github": "workspace:*",
     "@bagatka/webauthn": "workspace:*",
     "@cloudflare/vitest-plugin": "catalog:",
     "@cluenori/foundation": "workspace:*",

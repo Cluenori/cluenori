@@ -1,25 +1,52 @@
 import { webCryptoLayer } from "@bagatka/web-crypto"
-import type { ErrorSchema, ModuleDefinition, ModuleQuery, PlainSchema as QuerySchema } from "@cluenori/foundation"
-import { ActivityLog, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
+import type { ErrorSchema, ModuleIngest, ModuleQuery, PlainSchema as QuerySchema } from "@cluenori/foundation"
+import { ActivityLog, Period, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
 import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
-import { releasesModule } from "@cluenori/releases"
+import type { ReleaseRecords, ReleaseSources } from "@cluenori/releases"
+import { releasesLayer, releasesModule } from "@cluenori/releases"
 import { Signals } from "@cluenori/signals"
 import { Today } from "@cluenori/today"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
-import { Clock, Duration, Effect, Exit, Layer, ManagedRuntime, Redacted, Schema } from "effect"
+import {
+  Clock,
+  Config,
+  ConfigProvider,
+  DateTime,
+  Duration,
+  Effect,
+  Exit,
+  Layer,
+  ManagedRuntime,
+  Redacted,
+  Schema,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 
 import { sendActivity } from "./activity-queue.ts"
 import type { PlainSchema } from "./object-calls.ts"
 import { exitText, serve } from "./object-calls.ts"
 import type { EngineCallName, ProjectCall, ProjectCallName } from "./project-calls.ts"
-import { moduleCall, projectCalls } from "./project-calls.ts"
+import { moduleCall, moduleIngestCall, projectCalls } from "./project-calls.ts"
 import { r2ArchiveLayer } from "./r2-archive.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 
-type ProjectServices = Projects | Signals | Incidents | Today
+// The engines, and the modules' own services, in each project's object.
+type ProjectServices = Projects | Signals | Incidents | Today | ReleaseRecords | ReleaseSources
+
+// Where the Releases module reads besides telemetry, each absent until `./cluenori github setup` or
+// `./cluenori appstore setup` gives its credentials (PATTERNS.md, "Configuration").
+const releasesSettings = Config.all({
+  github: Config.option(Config.all({ token: Config.Redacted("CLUENORI_GITHUB_TOKEN") })),
+  appStoreConnect: Config.option(
+    Config.all({
+      key: Config.Redacted("CLUENORI_ASC_KEY"),
+      keyId: Config.String("CLUENORI_ASC_KEY_ID"),
+      issuerId: Config.String("CLUENORI_ASC_ISSUER_ID"),
+    }),
+  ),
+})
 
 // How often the detectors look: the object's alarm runs `Incidents.check` this often.
 const checkEvery = Duration.toMillis(Duration.minutes(1))
@@ -60,7 +87,39 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
     () =>
       Effect.gen(function* () {
         const projects = yield* Projects
-        return { project: yield* projects.project, components: yield* projects.components }
+        const signals = yield* Signals
+        const settings = yield* projects.settings
+        const now = yield* DateTime.now
+        const seen = yield* signals.environments(new Period({ from: DateTime.subtract(now, { days: 30 }), to: now }))
+        // Production first, in the order the project chose, then the rest by name.
+        const environments = [
+          ...settings.productionEnvironments.filter((environment) => seen.includes(environment)),
+          ...seen.filter((environment) => !settings.productionEnvironments.includes(environment)),
+        ]
+        return {
+          project: yield* projects.project,
+          components: yield* projects.components,
+          settings,
+          environments,
+        }
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  updateSettings: served(
+    projectCalls.updateSettings,
+    ({ actor, settings }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        return yield* projects.updateSettings(actor, settings)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  linkComponent: served(
+    projectCalls.linkComponent,
+    ({ actor, component, links }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        return yield* projects.linkComponent(actor, component, links)
       }),
     new ProjectNotFound({ project }),
   ),
@@ -235,18 +294,23 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
   ),
 })
 
-// The modules every project's object serves, each on a visible line; their queries read the engines.
-const modules: ReadonlyArray<
-  ModuleDefinition<
-    string,
-    Readonly<Record<string, ModuleQuery<QuerySchema, QuerySchema, ErrorSchema, ProjectServices>>>
-  >
-> = [releasesModule]
+// What the object uses of a module: its queries, its ingest writes, and its background work, each
+// reading and writing the engines and the module's own services here.
+interface ServedModule {
+  readonly id: string
+  readonly queries: Readonly<Record<string, ModuleQuery<QuerySchema, QuerySchema, ErrorSchema, ProjectServices>>>
+  readonly ingest: Readonly<Record<string, ModuleIngest<QuerySchema, QuerySchema, ErrorSchema, ProjectServices>>>
+  readonly background?: Effect.Effect<void, never, ProjectServices>
+}
 
-// Each module's queries, under `<module>.<query>`, answered by the module's own `run`.
+// The modules every project's object serves, each on a visible line.
+const modules: ReadonlyArray<ServedModule> = [releasesModule]
+
+// Each module's queries, under `<module>.<query>`, and its ingest writes, under
+// `<module>.ingest.<name>` for the component whose ingest key comes with them.
 const servedModules = (project: ProjectKey) =>
-  modules.flatMap((module) =>
-    Object.entries(module.queries).map(([name, query]) => {
+  modules.flatMap((module) => [
+    ...Object.entries(module.queries).map(([name, query]) => {
       const call = moduleCall(module, name)
       const entry: readonly [ProjectCallName, Served] = [
         call.name,
@@ -254,7 +318,24 @@ const servedModules = (project: ProjectKey) =>
       ]
       return entry
     }),
-  )
+    ...Object.entries(module.ingest).map(([name, ingest]) => {
+      const call = moduleIngestCall(module, name)
+      const entry: readonly [ProjectCallName, Served] = [
+        call.name,
+        served(
+          call,
+          ({ ingestKey, input }) =>
+            Effect.gen(function* () {
+              const projects = yield* Projects
+              const component = yield* projects.authenticate(Redacted.make(ingestKey))
+              return yield* ingest.run(component, input)
+            }),
+          new IngestKeyRejected(),
+        ),
+      ]
+      return entry
+    }),
+  ])
 
 /**
  * One project's Durable Object, named `<workspace>/<project>`: its database, and the engines that
@@ -280,6 +361,12 @@ export class ProjectObject extends DurableObject<Env> {
       Today.layer.pipe(
         Layer.provideMerge(Incidents.layer),
         Layer.provideMerge(Layer.mergeAll(Projects.layer({ project }), Signals.layer({ workspace, project }))),
+        // Each module's own services, on its own line, from the settings this host reads.
+        Layer.provideMerge(
+          Layer.unwrap(
+            Effect.map(releasesSettings, (settings) => releasesLayer({ ...settings, signing: crypto.subtle })),
+          ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie),
+        ),
         Layer.provideMerge(ActivityLog.layer({ workspace, project })),
         Layer.provide(webCryptoLayer(crypto)),
         Layer.provide(r2ArchiveLayer(env.ARCHIVE)),
@@ -326,6 +413,14 @@ export class ProjectObject extends DurableObject<Env> {
         yield* Effect.promise(() => storage.setAlarm(now + checkEvery))
         const incidents = yield* Incidents
         yield* incidents.check.pipe(Effect.catchCause((cause) => Effect.logError("The detectors' check failed", cause)))
+        // Each module's background work; one that fails doesn't hold up the others or the delivery.
+        for (const module of modules) {
+          if (module.background !== undefined) {
+            yield* module.background.pipe(
+              Effect.catchCause((cause) => Effect.logError(`The ${module.id} module's background work failed`, cause)),
+            )
+          }
+        }
         // What the check and the calls since committed goes to the queue; what the queue doesn't
         // take goes next time.
         const log = yield* ActivityLog
