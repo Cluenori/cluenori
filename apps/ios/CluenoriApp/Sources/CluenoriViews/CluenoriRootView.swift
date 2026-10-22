@@ -93,7 +93,9 @@ struct RouteScreen: View {
         switch route {
         case .operations(.project), .errors(.project), .error(.project, _), .logs(.project), .releases: true
         case .operation(let operation): operation.release == nil
-        case .project, .release, .operations(.release), .errors(.release), .error(.release, _), .logs(.release): false
+        case .project, .release, .operations(.release), .errors(.release), .error(.release, _), .logs(.release),
+            .notes, .notesStyle:
+            false
         }
     }
 }
@@ -148,11 +150,17 @@ private struct Screen: View {
             ReleasesScreen(
                 releases: models.releases(project, environment: environment, period: navigation.period),
                 environments: environments,
+                versions: models.versions(project),
                 navigation: navigation
             )
         // A release is compared whole, whatever the period, in its own environment.
         case .release(let release):
             ReleaseScreen(release: models.release(release))
+        // The same release's model as its screen's, so the notes it edits are those it promotes with.
+        case .notes(let release):
+            NotesScreen(release: models.release(release))
+        case .notesStyle(let project):
+            NotesStyleScreen(style: models.notesStyle(project))
         }
     }
 }

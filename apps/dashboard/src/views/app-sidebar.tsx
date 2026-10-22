@@ -2,6 +2,7 @@ import type { ProjectKey } from "@cluenori/foundation"
 import {
   ActivityIcon,
   BugIcon,
+  GitBranchIcon,
   LayoutGridIcon,
   LogOutIcon,
   MonitorIcon,
@@ -72,7 +73,7 @@ export function AppSidebar({
   onSignOut,
 }: {
   readonly route: Route
-  /** Whether who is signed in is an owner, who manages the members. */
+  /** Whether who is signed in is an owner, who manages the members and connects GitHub. */
   readonly owner: boolean
   /** The project the page shows, if any. */
   readonly current: ProjectKey | undefined
@@ -202,6 +203,19 @@ export function AppSidebar({
               >
                 <UsersIcon />
                 <span>Members</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+          {owner && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={route.page === "github"}
+                tooltip="GitHub"
+                render={<Link to={{ page: "github" }} />}
+                className="text-muted-foreground"
+              >
+                <GitBranchIcon />
+                <span>GitHub</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}

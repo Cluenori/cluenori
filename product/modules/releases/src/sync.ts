@@ -1,6 +1,7 @@
 import type { AppStoreConnect } from "@bagatka/app-store-connect"
-import type { Commit, GitHub, Repository } from "@bagatka/github"
-import type { ComponentKey } from "@cluenori/foundation"
+import type { Commit, Repository } from "@bagatka/github"
+import { GitHub } from "@bagatka/github"
+import type { ComponentKey, EnvironmentKey } from "@cluenori/foundation"
 import { ReleaseVersion } from "@cluenori/foundation"
 import type { BundleId } from "@cluenori/projects"
 import { Projects } from "@cluenori/projects"
@@ -9,6 +10,7 @@ import { DateTime, Duration, Effect, Option, Schema } from "effect"
 import type { KnownRelease } from "./catalog.ts"
 import { knownReleases, previousOf } from "./catalog.ts"
 import { pullRequestOf, releaseOfBuild, shaInVersion, stageOf, tagFor, tagSearches } from "./identity.ts"
+import type { Sync } from "./records.ts"
 import { ReleaseRecords } from "./records.ts"
 import type { MergedPullRequest, ReleaseChanges, ReleaseCommit, StoreBuild } from "./release.ts"
 import { ReleaseSources } from "./sources.ts"
@@ -168,26 +170,18 @@ const syncRepository = Effect.fn("Releases.syncRepository")(function* (
   }
 })
 
-// Reads an app's builds and App Store versions, at most every 15 minutes.
+// Reads the builds and App Store versions of the app an environment's builds go to; a problem, if
+// App Store Connect has no such app.
 const syncStore = Effect.fn("Releases.syncStore")(function* (
   appStoreConnect: AppStoreConnect["Service"],
   component: ComponentKey,
+  environment: EnvironmentKey,
   bundleId: BundleId,
-  lastRead: DateTime.Utc | undefined,
 ) {
   const records = yield* ReleaseRecords
-  const now = yield* DateTime.now
-  if (lastRead !== undefined && Duration.isLessThan(DateTime.distance(lastRead, now), storeEvery)) {
-    return
-  }
   const app = yield* appStoreConnect.app(bundleId)
   if (Option.isNone(app)) {
-    return yield* records.saveSync({
-      component,
-      source: "appStoreConnect",
-      at: now,
-      problem: `App Store Connect has no app with the bundle ID ${bundleId} on the API key's team.`,
-    })
+    return Option.some(`App Store Connect has no app with the bundle ID ${bundleId} on the API key's team.`)
   }
   const builds = yield* appStoreConnect.builds(app.value.id, buildsRead)
   const versions = yield* appStoreConnect.appStoreVersions(app.value.id, versionsRead)
@@ -223,69 +217,107 @@ const syncStore = Effect.fn("Releases.syncStore")(function* (
     }
     return [{ component, release: release.value, build: storeBuild }]
   })
-  yield* records.replaceStoreBuilds(component, stored)
-  yield* records.saveSync({ component, source: "appStoreConnect", at: now, problem: undefined })
+  yield* records.replaceStoreBuilds(component, environment, stored)
+  return Option.none<string>()
 })
 
-// What a source said when it refused or failed, for the person who fixes it.
+// Reads each of a component's apps, one for each deploy target with one, at most every 15 minutes,
+// and notes the first problem.
+const syncStores = Effect.fn("Releases.syncStores")(function* (
+  appStoreConnect: AppStoreConnect["Service"],
+  component: ComponentKey,
+  targets: ReadonlyArray<{ readonly environment: EnvironmentKey; readonly bundleId: BundleId }>,
+  lastRead: DateTime.Utc | undefined,
+) {
+  const records = yield* ReleaseRecords
+  const now = yield* DateTime.now
+  if (lastRead !== undefined && Duration.isLessThan(DateTime.distance(lastRead, now), storeEvery)) {
+    return
+  }
+  const problems = yield* Effect.forEach(targets, (target) =>
+    syncStore(appStoreConnect, component, target.environment, target.bundleId),
+  )
+  const problem = problems.flatMap((each) => Option.toArray(each))[0]
+  yield* records.saveSync({ component, source: "appStoreConnect", at: now, problem })
+})
+
+// What a source said when it refused or failed, for the person who fixes it. GitHub's refusals
+// through the workspace's app say what to do; App Store Connect's are about its key.
 const problemOf = (
   source: "GitHub" | "App Store Connect",
   error: { readonly _tag: string; readonly reason: string },
-) =>
-  error._tag.endsWith("Refused")
-    ? `${source} refused: ${error.reason}. Check its credentials and what they may read.`
-    : `${source} didn't answer: ${error.reason}. Cluenori tries again.`
+) => {
+  if (!error._tag.endsWith("Refused")) {
+    return `${source} didn't answer: ${error.reason}. Cluenori tries again.`
+  }
+  return source === "GitHub"
+    ? `GitHub refused: ${error.reason}.`
+    : `${source} refused: ${error.reason}. Check its credentials and what they may read.`
+}
 
-// Notes what a source said for the releases list, and in the log; the next minute tries again.
+// Notes what a source said for the releases list, and in the log when it is new; the next minute
+// tries again.
 const noteProblem = Effect.fn("Releases.noteProblem")(function* (
   component: ComponentKey,
   source: "github" | "appStoreConnect",
   problem: string,
+  syncs: ReadonlyArray<Sync>,
 ) {
   const records = yield* ReleaseRecords
   const at = yield* DateTime.now
-  yield* Effect.logWarning("A release source failed", { component, source, problem })
+  const before = syncs.find((sync) => sync.component === component && sync.source === source)
+  if (before?.problem !== problem) {
+    yield* Effect.logWarning("A release source failed", { component, source, problem })
+  }
   yield* records.saveSync({ component, source, at, problem })
 })
 
 /**
  * The module's background work, each minute on the project's alarm: for each component linked to
- * a repository, finds a few releases' commits and what changed between them; for each linked to an
- * app, reads App Store Connect every 15 minutes. A source that refuses or fails is noted for the
+ * a repository, finds a few releases' commits and what changed between them; for each with deploy
+ * targets in App Store apps, reads App Store Connect every 15 minutes, each app's builds as its
+ * environment's. A source that refuses or fails is noted for the
  * releases list, and the next minute tries again; nothing else is held up by it.
  */
 export const syncReleases = Effect.gen(function* () {
   const projects = yield* Projects
   const sources = yield* ReleaseSources
+  const github = yield* GitHub
   const records = yield* ReleaseRecords
   const components = yield* projects.components.pipe(Effect.catchTag("ProjectNotFound", () => Effect.succeed([])))
-  if (components.every((component) => component.repository === undefined && component.appStoreBundleId === undefined)) {
+  // Each component's apps: its deploy targets with an App Store app.
+  const appsOf = (component: (typeof components)[number]) =>
+    (component.deployTargets ?? []).flatMap((target) =>
+      target.appStore === undefined ? [] : [{ environment: target.environment, bundleId: target.appStore.bundleId }],
+    )
+  if (components.every((component) => component.repository === undefined && appsOf(component).length === 0)) {
     return
   }
   const releases = yield* knownReleases
   const syncs = yield* records.syncs
   for (const component of components) {
-    if (component.repository !== undefined && Option.isSome(sources.github)) {
+    if (component.repository !== undefined) {
       const repository = component.repository
-      yield* syncRepository(sources.github.value, component.key, repository, releases).pipe(
+      yield* syncRepository(github, component.key, repository, releases).pipe(
         Effect.andThen(DateTime.now),
         Effect.flatMap((at) =>
           records.saveSync({ component: component.key, source: "github", at, problem: undefined }),
         ),
         Effect.catchTags({
-          GitHubRefused: (error) => noteProblem(component.key, "github", problemOf("GitHub", error)),
-          GitHubUnavailable: (error) => noteProblem(component.key, "github", problemOf("GitHub", error)),
+          GitHubRefused: (error) => noteProblem(component.key, "github", problemOf("GitHub", error), syncs),
+          GitHubUnavailable: (error) => noteProblem(component.key, "github", problemOf("GitHub", error), syncs),
         }),
       )
     }
-    if (component.appStoreBundleId !== undefined && Option.isSome(sources.appStoreConnect)) {
+    const apps = appsOf(component)
+    if (apps.length > 0 && Option.isSome(sources.appStoreConnect)) {
       const lastRead = syncs.find((sync) => sync.component === component.key && sync.source === "appStoreConnect")
-      yield* syncStore(sources.appStoreConnect.value, component.key, component.appStoreBundleId, lastRead?.at).pipe(
+      yield* syncStores(sources.appStoreConnect.value, component.key, apps, lastRead?.at).pipe(
         Effect.catchTags({
           AppStoreConnectRefused: (error) =>
-            noteProblem(component.key, "appStoreConnect", problemOf("App Store Connect", error)),
+            noteProblem(component.key, "appStoreConnect", problemOf("App Store Connect", error), syncs),
           AppStoreConnectUnavailable: (error) =>
-            noteProblem(component.key, "appStoreConnect", problemOf("App Store Connect", error)),
+            noteProblem(component.key, "appStoreConnect", problemOf("App Store Connect", error), syncs),
         }),
       )
     }

@@ -1,7 +1,7 @@
 # @cluenori/cli
 
 `cluenori`: runs Cluenori on this computer, deploys and updates it, creates projects and components,
-asks about their operations, and checks this repository.
+asks about their operations, numbers and promotes their releases, and checks this repository.
 
 ## Use it
 
@@ -23,6 +23,24 @@ asks about their operations, and checks this repository.
 ./cluenori monitor add <project> <component> <url>         fetch it every minute; two failures open an incident
 ./cluenori monitor remove <project> <monitor id>
 ./cluenori trace <project> <trace id> [--at <ISO time>]   a trace's spans and every log line, found by its ID in the archive
+./cluenori component link <project> <component> --repository <owner/name> \
+    --deploy <environment>=<workflow.yml> --testflight <environment>=<bundle ID> --app-store <environment>=<bundle ID>
+                                                           its deploy targets, one for each environment; an option left out unlinks
+./cluenori version <project> [<component>] [<version> | patch | minor | major] [--first-build <number>]
+                                                           what its next builds are numbered in: 1.4.0 makes 1.4.0+58
+./cluenori releases <project> [--last ...]                each release, compared with the one before it
+./cluenori release <project> <component> <release>        what changed, its notes, promotions, and deploy targets
+./cluenori notes <project> <component> <release> [--draft <environment> [--save]]
+./cluenori notes <project> <component> <release> --locale en-US (--text "<note>" | --file <file or ->)
+                                                           shows, drafts, or writes one language; the others stay
+./cluenori notes-style <project> [--set "<how they read>"]
+                                                           how its release notes read, which drafts follow
+./cluenori promote <project> <component> <release> --to <environment> [--reason <text>]
+    [--runner auto|local|cloud] [--release-manually] [--all-at-once]
+./cluenori release-approved <project> <promotion id>      releases an app App Store review approved
+./cluenori github                                          whether the deployment is connected to GitHub, and where
+./cluenori appstore setup <key.p8> --issuer <issuer ID> [--manager]
+                                                           a Developer key reads builds; an App Manager key (--manager) submits them
 bun run check            … cluenori check     dependency rules, suppression comments, generated files
 bun run generate         cluenori generate    rewrites apps/worker/openapi.json
 ```
@@ -47,6 +65,8 @@ When something is off, it says what and how to fix it, and exits with code 1:
 ```
 Nothing answers at http://localhost:8787. Start Cluenori on this computer with ./run, in another terminal.
 "Folio Live" isn't a project key: Expected lowercase letters, digits and single hyphens, starting with a letter, such as notes-ios
+Nothing started: 1.4.0+58 has no notes in de-DE, which com.notesapp.notes shows
+Write its notes for each of the app's languages: ./cluenori notes notes notes-ios 1.4.0+58 --draft production
 ```
 
 ## Owns
@@ -71,8 +91,9 @@ Nothing answers at http://localhost:8787. Start Cluenori on this computer with .
 
 - `@bagatka/workspace-rules`, to check the dependency rules.
 - `@cluenori/worker`, for the API definition: the typed client and the OpenAPI document.
-- `@cluenori/foundation`, `@cluenori/projects`, and `@cluenori/signals`, for the Schemas of what the
-  commands send (ARCHITECTURE.md, open decision "How clients import the API definition").
+- `@cluenori/foundation`, `@cluenori/projects`, `@cluenori/releases`, and `@cluenori/signals`, for
+  the Schemas of what the commands send (ARCHITECTURE.md, open decision "How clients import the API
+  definition").
 - `effect/cli` for commands, and `@effect/platform-bun` for the file system, child processes, and
   `Crypto`.
 
@@ -93,5 +114,11 @@ Nothing answers at http://localhost:8787. Start Cluenori on this computer with .
   (`WRANGLER_OUTPUT_FILE_PATH`), and sets the API token with `wrangler secret bulk` from a file only
   its user can read, deleted after. Running setup on another computer makes a new token, and the
   old one stops working.
+- **Writing one language's release note** reads the release's notes and saves them all, with that
+  one replaced, as the API saves a release's notes whole. A note saved by someone else in between is
+  lost. `--file -` reads the note from standard input, as `/dev/stdin`.
+- **App Store Connect takes two keys:** the one `appstore setup` gives reads builds and versions,
+  with the Developer role; the one `--manager` gives submits them to review and releases them, with
+  the App Manager role. Both share the issuer ID.
 - **Failures.** An expected failure prints what went wrong and exits with code 1; a defect prints
   its full cause.

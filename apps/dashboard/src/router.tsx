@@ -27,13 +27,26 @@ export type Filters = {
 }
 
 /**
+ * What GitHub sent the browser back to the GitHub page with: the app connected
+ * (`/github?connected`), why connecting didn't finish (`?problem=<what to do>`), the app installed
+ * on an account (`?installation_id=…&setup_action=install`), or an organization's owners asked to
+ * approve it (`?setup_action=request`).
+ */
+export type GitHubReturn =
+  | { readonly _tag: "connected" }
+  | { readonly _tag: "installed" }
+  | { readonly _tag: "requested" }
+  | { readonly _tag: "problem"; readonly problem: string }
+
+/**
  * Every page the dashboard has. The start, `/`, shows the first project; a project opens on its
  * overview; each area is a page with its `Filters`; performance leads to every operation and then
  * to one; the errors page leads to one error, with all it was sent with; the releases page leads to
  * one release, by its component and version, and its environment when it has one
  * (`/notes/releases/notes-api/2.4.0+312?environment=production`); a trace is a page of its own, by
  * its ID, with the time it happened when a link knows it (`?around=<ISO 8601>`), keeping the
- * environment and release of the page it came from. `hrefOf` and `routeOf` convert to and from
+ * environment and release of the page it came from; the GitHub page says what GitHub sent the
+ * browser back with (`GitHubReturn`). `hrefOf` and `routeOf` convert to and from
  * URLs. An address is untrusted input, so its keys are decoded here, once: one that isn't a page's
  * is `missing`.
  */
@@ -71,6 +84,7 @@ export type Route =
   | { readonly page: "phones" }
   | { readonly page: "browsers" }
   | { readonly page: "members" }
+  | { readonly page: "github"; readonly returned?: GitHubReturn }
   | { readonly page: "invite" }
   | { readonly page: "kit" }
 
@@ -89,6 +103,43 @@ const withQuery = (path: string, query: Filters & { readonly around?: DateTime.U
     ...(query.release === undefined ? [] : [`release=${encodeURIComponent(query.release)}`]),
   ]
   return pairs.length === 0 ? path : `${path}?${pairs.join("&")}`
+}
+
+// What GitHub sends the browser back with, as its address says it.
+const gitHubQuery = (returned: GitHubReturn) => {
+  switch (returned._tag) {
+    case "connected":
+      return "connected"
+    case "installed":
+      return "setup_action=install"
+    case "requested":
+      return "setup_action=request"
+    case "problem":
+      return `problem=${encodeURIComponent(returned.problem)}`
+  }
+}
+
+// The longest problem the GitHub page shows from its address: the Worker's say what to do in a
+// sentence; anyone can put text in a link, so a long one is cut, and it is only ever shown as text.
+const problemLength = 500
+
+// What GitHub sent the browser back with, if anything: the Worker's redirect after connecting, or
+// GitHub's after installing the app.
+const gitHubReturnOf = (query: URLSearchParams): GitHubReturn | undefined => {
+  const problem = query.get("problem")?.trim()
+  if (problem !== undefined && problem !== "") {
+    return { _tag: "problem", problem: problem.slice(0, problemLength) }
+  }
+  if (query.has("connected")) {
+    return { _tag: "connected" }
+  }
+  if (query.get("setup_action") === "request") {
+    return { _tag: "requested" }
+  }
+  if (query.has("installation_id") || query.get("setup_action") === "install") {
+    return { _tag: "installed" }
+  }
+  return undefined
 }
 
 export const hrefOf = (route: Route): string => {
@@ -120,6 +171,8 @@ export const hrefOf = (route: Route): string => {
       return "/browsers"
     case "members":
       return "/members"
+    case "github":
+      return route.returned === undefined ? "/github" : `/github?${gitHubQuery(route.returned)}`
     case "invite":
       return "/invite"
     case "kit":
@@ -149,11 +202,17 @@ export const routeOf = (path: string, search: string): Route => {
   if (first === undefined) {
     return { page: "start" }
   }
-  // Not handled: a project whose key is `kit`, `phones`, `browsers`, `members` or `invite` opens
-  // these pages instead of its own; reserving them at project creation would take an error in
+  // Not handled: a project whose key is `kit`, `phones`, `browsers`, `members`, `github` or `invite`
+  // opens these pages instead of its own; reserving them at project creation would take an error in
   // Projects.
   if (first === "kit") {
     return { page: "kit" }
+  }
+  if (first === "github") {
+    const returned = gitHubReturnOf(query)
+    return page === undefined
+      ? { page: "github", ...(returned === undefined ? {} : { returned }) }
+      : { page: "missing" }
   }
   if (first === "phones" || first === "browsers" || first === "members" || first === "invite") {
     return page === undefined ? { page: first } : { page: "missing" }

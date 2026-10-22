@@ -4,12 +4,16 @@ import Foundation
 import SwiftUI
 
 /// The releases of a project that ran, were deployed, or were uploaded over the period, the latest
-/// first, each with its verdict against the release before it; and the sources of commits and builds
-/// that couldn't be read lately.
+/// first, each with its verdict against the release before it; the sources of commits and builds
+/// that couldn't be read lately; then its components' versions, which its builds are numbered in,
+/// and how its release notes read.
 struct ReleasesScreen: View {
     let releases: ReleasesModel
     let environments: EnvironmentChoice
+    let versions: VersionsModel
     @Bindable var navigation: Navigation
+    @State private var bumping: Bumping? = nil
+    @State private var setting: VersionLine? = nil
 
     // The API lists at most this many: a list this long may leave older ones out.
     private static let listedAtMost = 30
@@ -34,6 +38,23 @@ struct ReleasesScreen: View {
                         }
                     }
                 }
+                if list.releases.isEmpty && list.problems.isEmpty {
+                    // In the list, not over it, so the versions below stay in reach.
+                    Section {
+                        NothingInPeriod(
+                            title: Text(
+                                "No releases", bundle: #bundle, comment: "A project had no releases in the period."),
+                            systemImage: "shippingbox",
+                            period: $navigation.period,
+                            note: Text(
+                                "A release shows once a service reports its version in `service.version`, `cluenori-release` reports a deploy, or App Store Connect has a build.",
+                                bundle: #bundle,
+                                comment:
+                                    "What makes releases appear. service.version and cluenori-release are names, as is."
+                            )
+                        )
+                    }
+                }
                 if !list.releases.isEmpty {
                     Section {
                         ForEach(list.releases, id: \.self) { summary in
@@ -49,31 +70,40 @@ struct ReleasesScreen: View {
                         }
                     }
                 }
-            }
-        }
-        .overlay {
-            if let list = releases.list.value {
-                if list.releases.isEmpty && list.problems.isEmpty {
-                    NothingInPeriod(
-                        title: Text(
-                            "No releases", bundle: #bundle, comment: "A project had no releases in the period."),
-                        systemImage: "shippingbox",
-                        period: $navigation.period,
-                        note: Text(
-                            "A release shows once a service reports its version in `service.version`, `cluenori-release` reports a deploy, or App Store Connect has a build.",
-                            bundle: #bundle,
-                            comment:
-                                "What makes releases appear. service.version and cluenori-release are names, as is."
-                        )
-                    )
-                }
             } else {
-                AnswerPlaceholder(problem: releases.list.problem)
+                Section {
+                    AnswerPlaceholder(problem: releases.list.problem)
+                }
+            }
+            VersionsSection(versions: versions, bumping: $bumping, setting: $setting)
+            Section {
+                NavigationLink(value: Route.notesStyle(project: releases.project)) {
+                    Label {
+                        Text("Notes Style", bundle: #bundle, comment: "Opens how a project's release notes read.")
+                    } icon: {
+                        Image(systemName: "text.quote")
+                    }
+                }
+            } footer: {
+                Text(
+                    "How drafts of release notes read, in the project's own words.",
+                    bundle: #bundle,
+                    comment: "Below the link to a project's notes style."
+                )
             }
         }
+        .versionChanges(versions, bumping: $bumping, setting: $setting)
         .navigationTitle(Text("Releases", bundle: #bundle, comment: "Title of every release of a project."))
-        .refreshable { await releases.list.load() }
-        .task { await releases.list.load() }
+        .refreshable {
+            async let list: Void = releases.list.load()
+            async let lines: Void = versions.load()
+            _ = await (list, lines)
+        }
+        .task {
+            async let list: Void = releases.list.load()
+            async let lines: Void = versions.load()
+            _ = await (list, lines)
+        }
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: releases.list.problem, receivedAt: releases.list.receivedAt)
         }
@@ -331,10 +361,11 @@ extension Verdict {
     }
 }
 
-/// One release compared with the one before it: what got slower or fails more, its new errors, the
-/// incidents while it ran, then what changed since the release before and its store build, then what
-/// got faster or fails less and what's new in it; each section only when it has something. Its
-/// operations, errors, and logs open narrowed to it.
+/// One release compared with the one before it: its promotions and promoting it, what got slower or
+/// fails more, its new errors, the incidents while it ran, then what changed since the release before
+/// and its store build, then what got faster or fails less and what's new in it; each section only
+/// when it has something. Its operations, errors, and logs open narrowed to it. While a promotion
+/// hasn't ended, it asks again every 15 seconds.
 struct ReleaseScreen: View {
     let release: ReleaseModel
 
@@ -375,7 +406,12 @@ struct ReleaseScreen: View {
                 if !detail.problems.isEmpty {
                     SourceProblemsSection(problems: detail.problems, of: .release)
                 }
-                InThisReleaseSection(release: summary.ref(in: release.release.project))
+                PromotionsSection(release: release)
+                InThisReleaseSection(
+                    release: summary.ref(in: release.release.project),
+                    notes: release.release,
+                    noteLocales: release.notes.savedNotes.map(\.locale)
+                )
                 ComparedSection(
                     title: Text("Slower", bundle: #bundle, comment: "Section of the operations a release made slower."),
                     release: release.release,
@@ -476,10 +512,27 @@ struct ReleaseScreen: View {
             }
         }
         .navigationTitle(Text("Release", bundle: #bundle, comment: "Title of one release."))
-        .refreshable { await release.detail.load() }
-        .task { await release.detail.load() }
+        .refreshable { await release.refresh() }
+        .task { await release.refresh() }
+        // Runs again once a promotion is shown that hasn't ended, as one just started; stops when the
+        // screen leaves.
+        .task(id: release.hasUnendedPromotions) { await release.followPromotions() }
+        .sheet(item: promoting) { promote in
+            PromoteSheet(promote: promote, release: release, cancel: release.cancelPromoting)
+        }
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: release.detail.problem, receivedAt: release.detail.receivedAt)
+        }
+    }
+
+    // The promote sheet, while the release's model has one open; dismissed, it is cancelled.
+    private var promoting: Binding<PromoteModel?> {
+        Binding {
+            release.promote
+        } set: { promote in
+            if promote == nil {
+                release.cancelPromoting()
+            }
         }
     }
 
@@ -643,9 +696,13 @@ struct VerdictReason: View {
 }
 
 /// The project's operations, errors, and logs of one release: the screens the app has, narrowed to
-/// it.
+/// it; and its notes for its users.
 struct InThisReleaseSection: View {
     let release: ReleaseRef
+    /// The release whose notes screen opens: the one the screen shows, whose notes it edits.
+    let notes: ReleaseRef
+    /// The languages it has notes in.
+    let noteLocales: [String]
 
     var body: some View {
         Section {
@@ -668,6 +725,21 @@ struct InThisReleaseSection: View {
                     Text("Logs", bundle: #bundle, comment: "Opens the warnings and errors logged by one release.")
                 } icon: {
                     Image(systemName: "text.page")
+                }
+            }
+            NavigationLink(value: Route.notes(notes)) {
+                LabeledContent {
+                    if noteLocales.isEmpty {
+                        Text("None yet", bundle: #bundle, comment: "A release without notes.")
+                    } else {
+                        Text(verbatim: noteLocales.formatted(.list(type: .and, width: .narrow)))
+                    }
+                } label: {
+                    Label {
+                        Text("Release Notes", bundle: #bundle, comment: "Opens a release's notes for its users.")
+                    } icon: {
+                        Image(systemName: "text.bubble")
+                    }
                 }
             }
         } header: {

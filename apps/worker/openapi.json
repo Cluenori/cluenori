@@ -1129,7 +1129,7 @@
             }
           }
         },
-        "description": "Replaces a component's links, where its releases come from beside its telemetry: `repository`, its GitHub repository as owner/name, whose tags and commits name its releases, and `appStoreBundleId`, its app's bundle ID in App Store Connect. One left out is unlinked. Returns the component.",
+        "description": "Replaces a component's links: `repository`, its GitHub repository as owner/name, whose commits its releases are; and `deployTargets`, where its releases go in each environment: the GitHub Actions workflow that builds and deploys a release there, started with the inputs `release`, `environment`, `commit` and `runner`, and, for an app, the App Store Connect app its builds go to, for TestFlight only or through to the App Store. One left out is unlinked. Returns the component.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2876,6 +2876,167 @@
         "description": "What needs attention now across every project, the most urgent first: open incidents not acknowledged, errors happening now (seen in the last 15 minutes), acknowledged incidents, new errors (first seen in the last day), operations whose p95 over the last day is at least 1.5 times and 100 ms more than over the 7 days before, and projects with components that sent nothing in the last day. Each item has its evidence and its project; `projects` names every project asked; a project that didn't answer is in `unanswered`, its items missing."
       }
     },
+    "/api/github": {
+      "get": {
+        "tags": [
+          "github"
+        ],
+        "operationId": "github.github",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "GitHubStatus",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          }
+        },
+        "description": "Whether Cluenori is connected to GitHub: its GitHub App, absent until an owner connects it, and the accounts it is installed on, read from GitHub now; `problem` says why they couldn't be. Owners only."
+      },
+      "delete": {
+        "tags": [
+          "github"
+        ],
+        "operationId": "github.disconnectGitHub",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          }
+        },
+        "description": "Disconnects GitHub: Cluenori forgets its app, and stops reading and promoting through it. The app stays on GitHub until its owner deletes it there. Owners only."
+      }
+    },
+    "/api/github/connect": {
+      "post": {
+        "tags": [
+          "github"
+        ],
+        "operationId": "github.connectGitHub",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "GitHubAppForm",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubAppForm"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "GitHubAlreadyConnected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubAlreadyConnected"
+                }
+              }
+            }
+          }
+        },
+        "description": "Starts connecting GitHub: the form the owner's browser posts to `action`, with the field `manifest`, so GitHub creates Cluenori's app in `organization` or their own account. It may read code and pull requests, and start workflows, where it is installed. GitHub then sends the browser back to `/api/github/connected`, which finishes, good once within an hour. Owners only; 409 while an app is connected.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectGitHub"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/projects/{project}/releases": {
       "get": {
         "tags": [
@@ -3063,7 +3224,708 @@
             }
           }
         },
-        "description": "One release compared with the one before it, in `environment`, or without it the environment it last ran in: the operations that got slower, fail more, got faster, or fail less, each the biggest change first; the operations new in it; the errors first seen in it; and the incidents that opened while it ran, of those the project keeps."
+        "description": "One release compared with the one before it, in `environment`, or without it the environment it last ran in: the operations that got slower, fail more, got faster, or fail less, each the biggest change first; the operations new in it; the errors first seen in it; the incidents that opened while it ran, of those the project keeps; its promotions; and the environments it can be promoted to, its component's deploy workflows."
+      }
+    },
+    "/api/projects/{project}/releases/{component}/{release}/promotions": {
+      "post": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.promote",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "release",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Promotion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Promotion_1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ReleaseNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReleaseNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PromotionInProgress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionInProgress"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "PromotionRefused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionRefused"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "PromotionUnavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "description": "Promotes a release to an environment, for the member who asks, by its component's deploy target there: starts its workflow on the repository's default branch with the inputs `release`, `environment`, `commit` (when known) and `runner` (`auto` unless given), as the workspace's GitHub App; and, when the target has an App Store Connect app, follows its build there once processed: for TestFlight, sets What to Test from the release's notes; for the App Store, submits it for review with its notes as What's New, as `submission` says (as soon as approved, phased, unless given). Cluenori follows it each minute until it ends, and records who started it and why. 409 while the component's last promotion to that environment hasn't ended; 422 when it can't start until someone fixes what `reason` says, where `fix` says; 503 when GitHub didn't answer. Each call that succeeds starts a run.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteTo"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/projects/{project}/promotions/{promotion}/release": {
+      "post": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.releaseApproved",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "promotion",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Promotion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Promotion"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | PromotionNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PromotionNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "PromotionRefused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionRefused"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "PromotionUnavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "description": "Releases a promotion that App Store review approved and that waits for a member, submitted to be released manually: App Store Connect makes it live, and the promotion ends once it is. 404 for no promotion of that ID waiting so."
+      }
+    },
+    "/api/projects/{project}/versions": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.versions",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ComponentVersions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentVersions"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Each component's version, `MAJOR.MINOR.PATCH`, which its next builds are numbered in, and the last build number given: a commit built for the first time becomes `<version>+<last + 1>`, for good. A component whose version was never set isn't listed; its CI can't number builds until it is."
+      }
+    },
+    "/api/projects/{project}/versions/{component}": {
+      "put": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.setVersion",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ComponentVersion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentVersion"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VersionRefused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionRefused"
+                }
+              }
+            }
+          }
+        },
+        "description": "Sets a component's version, such as a bump of its patch, minor or major: the same or higher than now. Its build numbers continue, or from `firstBuild`, above the last given. 422 for a lower version, a first build at or below the last, or a component the project lacks.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionTo"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/projects/{project}/releases/{component}/{release}/notes": {
+      "put": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.saveNotes",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "release",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReleaseNote"
+                  },
+                  "maxItems": 40
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ReleaseNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReleaseNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Replaces a release's notes for its users, one for each language, up to 4000 characters each: its What's New when it goes to the App Store, and What to Test in TestFlight.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotesOf"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/projects/{project}/releases/{component}/{release}/notes/draft": {
+      "post": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.draftNotes",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "release",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "NotesDraft",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotesDraft"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ReleaseNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReleaseNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "DraftUnavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "description": "Drafts a release's notes for where it goes: written by the project's language model from the commits since the release current in `environment` (on the App Store, the live one), in the project's notes style, with its last notes as examples; one for each language of the app the environment's builds go to, or English. Saves nothing: edit the draft and save it. 503 when its commits aren't known, or GitHub or the model don't answer.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftFor"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/projects/{project}/notes-style": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.notesStyle",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "NotesStyle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotesStyle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "How the project's release notes read, in its own words, which drafts follow: the project's, or Cluenori's default until it sets one."
+      },
+      "put": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.setNotesStyle",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "NotesStyle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotesStyle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Sets how the project's release notes read, up to 2000 characters.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotesStyle"
+              }
+            }
+          },
+          "required": true
+        }
       }
     }
   },
@@ -3085,6 +3947,60 @@
         "required": [
           "_tag",
           "message"
+        ],
+        "additionalProperties": false
+      },
+      "ProjectNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "ProjectNotFound"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "_tag",
+          "project"
+        ],
+        "additionalProperties": false
+      },
+      "NotesStyle": {
+        "type": "object",
+        "properties": {
+          "style": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          }
+        },
+        "required": [
+          "style"
+        ],
+        "additionalProperties": false
+      },
+      "DraftUnavailable": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "DraftUnavailable"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "reason"
         ],
         "additionalProperties": false
       },
@@ -3113,23 +4029,507 @@
         ],
         "additionalProperties": false
       },
-      "ProjectNotFound": {
+      "NotesDraft": {
         "type": "object",
         "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": [
-              "ProjectNotFound"
-            ]
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseNote"
+            },
+            "maxItems": 40
           },
-          "project": {
+          "since": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "commits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "notes",
+          "commits"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseNote": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          }
+        },
+        "required": [
+          "locale",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "DraftFor": {
+        "type": "object",
+        "properties": {
+          "environment": {
             "type": "string",
             "maxLength": 40
           }
         },
         "required": [
+          "environment"
+        ],
+        "additionalProperties": false
+      },
+      "NotesOf": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseNote"
+            },
+            "maxItems": 40
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "additionalProperties": false
+      },
+      "VersionRefused": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "VersionRefused"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
           "_tag",
-          "project"
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "ComponentVersion": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "version": {
+            "type": "string"
+          },
+          "lastBuild": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "setAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "component",
+          "version",
+          "lastBuild",
+          "setAt"
+        ],
+        "additionalProperties": false
+      },
+      "VersionTo": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "firstBuild": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999999999
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "ComponentVersions": {
+        "type": "object",
+        "properties": {
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComponentVersion"
+            }
+          }
+        },
+        "required": [
+          "versions"
+        ],
+        "additionalProperties": false
+      },
+      "PromotionUnavailable": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PromotionUnavailable"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "PromotionRefused": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PromotionRefused"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "fix": {
+            "$ref": "#/components/schemas/PromotionFix"
+          }
+        },
+        "required": [
+          "_tag",
+          "reason",
+          "fix"
+        ],
+        "additionalProperties": false
+      },
+      "PromotionFix": {
+        "type": "string",
+        "enum": [
+          "github",
+          "links",
+          "repository",
+          "notes",
+          "appStore"
+        ]
+      },
+      "PromotionNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PromotionNotFound"
+            ]
+          },
+          "promotion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "promotion"
+        ],
+        "additionalProperties": false
+      },
+      "Promotion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "repository": {
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowFile"
+          },
+          "runner": {
+            "$ref": "#/components/schemas/Runner"
+          },
+          "appStore": {
+            "$ref": "#/components/schemas/AppStoreTarget"
+          },
+          "submission": {
+            "$ref": "#/components/schemas/AppStoreSubmission"
+          },
+          "startedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PromotionState"
+          },
+          "run": {
+            "$ref": "#/components/schemas/PromotionRun"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "storeVersionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "release",
+          "environment",
+          "startedAt",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "PromotionRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "PromotionState": {
+        "type": "string",
+        "enum": [
+          "starting",
+          "queued",
+          "waiting",
+          "running",
+          "processing",
+          "inReview",
+          "approved",
+          "releasing",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "rejected",
+          "lost"
+        ]
+      },
+      "AppStoreSubmission": {
+        "type": "object",
+        "properties": {
+          "releaseType": {
+            "$ref": "#/components/schemas/AppStoreReleaseType"
+          },
+          "phased": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "releaseType",
+          "phased"
+        ],
+        "additionalProperties": false
+      },
+      "AppStoreReleaseType": {
+        "type": "string",
+        "enum": [
+          "afterApproval",
+          "manual"
+        ]
+      },
+      "AppStoreTarget": {
+        "type": "object",
+        "properties": {
+          "bundleId": {
+            "type": "string",
+            "maxLength": 155
+          },
+          "distribution": {
+            "$ref": "#/components/schemas/AppStoreDistribution"
+          }
+        },
+        "required": [
+          "bundleId",
+          "distribution"
+        ],
+        "additionalProperties": false
+      },
+      "AppStoreDistribution": {
+        "type": "string",
+        "enum": [
+          "testFlight",
+          "appStore"
+        ]
+      },
+      "Runner": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "local",
+          "cloud"
+        ]
+      },
+      "WorkflowFile": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "PromotionInProgress": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PromotionInProgress"
+            ]
+          },
+          "promotion": {
+            "$ref": "#/components/schemas/Promotion"
+          }
+        },
+        "required": [
+          "_tag",
+          "promotion"
+        ],
+        "additionalProperties": false
+      },
+      "Promotion_1": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "repository": {
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowFile"
+          },
+          "runner": {
+            "$ref": "#/components/schemas/Runner"
+          },
+          "appStore": {
+            "$ref": "#/components/schemas/AppStoreTarget"
+          },
+          "submission": {
+            "$ref": "#/components/schemas/AppStoreSubmission"
+          },
+          "startedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PromotionState"
+          },
+          "run": {
+            "$ref": "#/components/schemas/PromotionRun"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "storeVersionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "release",
+          "environment",
+          "startedAt",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "PromoteTo": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          },
+          "runner": {
+            "$ref": "#/components/schemas/Runner"
+          },
+          "submission": {
+            "$ref": "#/components/schemas/AppStoreSubmission"
+          }
+        },
+        "required": [
+          "environment"
         ],
         "additionalProperties": false
       },
@@ -3197,6 +4597,27 @@
             "items": {
               "$ref": "#/components/schemas/SourceProblem"
             }
+          },
+          "promotions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Promotion"
+            }
+          },
+          "deployTargets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeployTarget"
+            }
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseNote"
+            }
+          },
+          "repository": {
+            "type": "string"
           }
         },
         "required": [
@@ -3208,7 +4629,29 @@
           "newOperations",
           "newErrors",
           "incidents",
-          "problems"
+          "problems",
+          "promotions",
+          "deployTargets",
+          "notes"
+        ],
+        "additionalProperties": false
+      },
+      "DeployTarget": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowFile"
+          },
+          "appStore": {
+            "$ref": "#/components/schemas/AppStoreTarget"
+          }
+        },
+        "required": [
+          "environment"
         ],
         "additionalProperties": false
       },
@@ -3863,6 +5306,153 @@
         "required": [
           "releases",
           "problems"
+        ],
+        "additionalProperties": false
+      },
+      "NotAllowed": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "NotAllowed"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
+      "GitHubAlreadyConnected": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "GitHubAlreadyConnected"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
+      "GitHubAppForm": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "manifest"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectGitHub": {
+        "type": "object",
+        "properties": {
+          "organization": {
+            "type": "string",
+            "maxLength": 39
+          }
+        },
+        "additionalProperties": false
+      },
+      "GitHubStatus": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "$ref": "#/components/schemas/GitHubAppSummary"
+          },
+          "installations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GitHubInstallation"
+            }
+          },
+          "problem": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "installations"
+        ],
+        "additionalProperties": false
+      },
+      "GitHubInstallation": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "accountType": {
+            "$ref": "#/components/schemas/GitHubAccountType"
+          },
+          "repositories": {
+            "$ref": "#/components/schemas/GitHubRepositoryAccess"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "accountType",
+          "repositories"
+        ],
+        "additionalProperties": false
+      },
+      "GitHubRepositoryAccess": {
+        "type": "string",
+        "enum": [
+          "all",
+          "selected"
+        ]
+      },
+      "GitHubAccountType": {
+        "type": "string",
+        "enum": [
+          "User",
+          "Organization"
+        ]
+      },
+      "GitHubAppSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "installUrl": {
+            "type": "string"
+          },
+          "organization": {
+            "type": "string",
+            "maxLength": 39
+          },
+          "connectedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "slug",
+          "url",
+          "installUrl",
+          "connectedAt"
         ],
         "additionalProperties": false
       },
@@ -5427,9 +7017,12 @@
           "repository": {
             "type": "string"
           },
-          "appStoreBundleId": {
-            "type": "string",
-            "maxLength": 155
+          "deployTargets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeployTarget"
+            },
+            "maxItems": 20
           }
         },
         "required": [
@@ -5445,9 +7038,12 @@
           "repository": {
             "type": "string"
           },
-          "appStoreBundleId": {
-            "type": "string",
-            "maxLength": 155
+          "deployTargets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeployTarget"
+            },
+            "maxItems": 20
           }
         },
         "additionalProperties": false
@@ -5523,21 +7119,6 @@
         "required": [
           "key",
           "name"
-        ],
-        "additionalProperties": false
-      },
-      "NotAllowed": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": [
-              "NotAllowed"
-            ]
-          }
-        },
-        "required": [
-          "_tag"
         ],
         "additionalProperties": false
       },
@@ -6174,6 +7755,9 @@
     },
     {
       "name": "today"
+    },
+    {
+      "name": "github"
     },
     {
       "name": "releases"

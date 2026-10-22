@@ -28,6 +28,9 @@
   ],
   // Every export, kept 90 days by the bucket's lifecycle rule, which ./setup adds.
   "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "cluenori-archive" }],
+  // Workers AI, which drafts release notes. It has no local copy: ./run calls the real models, billed
+  // to your account, only when a draft is asked for.
+  "ai": { "binding": "AI" },
   // Activity, from each project's object to what reacts to it in the workspace's: alerts on phones.
   // ./setup and ./update make the queue. A batch waits at most a second, and one that fails is
   // tried again every 30 seconds, 10 times.
@@ -60,6 +63,7 @@
         ],
       },
       "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "cluenori-archive", "jurisdiction": "eu" }],
+      "ai": { "binding": "AI" },
       // The queue is made in the EU; its binding names it alone.
       "queues": {
         "producers": [{ "binding": "ACTIVITY", "queue": "cluenori-activity" }],

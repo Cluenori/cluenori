@@ -1,5 +1,5 @@
-import { Repository } from "@bagatka/github"
-import { ComponentKey, Instant } from "@cluenori/foundation"
+import { Repository, WorkflowFile } from "@bagatka/github"
+import { ComponentKey, EnvironmentKey, Instant } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 /** What people call a component: 1 to 100 characters, without space at either end. */
@@ -20,13 +20,60 @@ export const BundleId = Schema.String.check(
 export type BundleId = typeof BundleId.Type
 
 /**
- * Where a component's releases come from beside its telemetry: its repository on GitHub, whose tags
- * and commits name them, and, for an app, its bundle ID in App Store Connect. Each absent until
+ * How far an App Store Connect app's builds go in an environment: TestFlight only, or on to App Store
+ * review and the App Store.
+ */
+export const AppStoreDistribution = Schema.Literals(["testFlight", "appStore"]).annotate({
+  identifier: "AppStoreDistribution",
+})
+export type AppStoreDistribution = typeof AppStoreDistribution.Type
+
+/** The App Store Connect app an environment's builds go to, by its bundle ID, and how far. */
+export const AppStoreTarget = Schema.Struct({ bundleId: BundleId, distribution: AppStoreDistribution }).annotate({
+  identifier: "AppStoreTarget",
+})
+export type AppStoreTarget = typeof AppStoreTarget.Type
+
+/**
+ * Where a component's releases go in one environment, and how they get there:
+ * - `workflow`: the GitHub Actions workflow in its repository that builds a release's commit and
+ *   deploys or uploads it there, started with the inputs `release`, `environment`, `commit` and
+ *   `runner`;
+ * - `appStore`: for an app, the App Store Connect app its builds go to there.
+ * At least one of them.
+ */
+export const DeployTarget = Schema.Struct({
+  environment: EnvironmentKey,
+  workflow: Schema.optionalKey(WorkflowFile),
+  appStore: Schema.optionalKey(AppStoreTarget),
+})
+  .check(
+    Schema.makeFilter(
+      (target: { readonly workflow?: unknown; readonly appStore?: unknown }) =>
+        target.workflow !== undefined || target.appStore !== undefined,
+      { expected: "a workflow, an App Store app, or both" },
+    ),
+  )
+  .annotate({ identifier: "DeployTarget" })
+export type DeployTarget = typeof DeployTarget.Type
+
+/** A component's deploy targets: at most 20, one for each environment. */
+const DeployTargets = Schema.Array(DeployTarget).check(
+  Schema.isMaxLength(20),
+  Schema.makeFilter(
+    (targets: ReadonlyArray<DeployTarget>) => new Set(targets.map((each) => each.environment)).size === targets.length,
+    { expected: "one deploy target for each environment" },
+  ),
+)
+
+/**
+ * Where a component's releases come from beside its telemetry, and where they go: its repository on
+ * GitHub, whose commits they are, and its deploy target in each environment. Each absent until
  * linked.
  */
 export const ComponentLinks = Schema.Struct({
   repository: Schema.optionalKey(Repository),
-  appStoreBundleId: Schema.optionalKey(BundleId),
+  deployTargets: Schema.optionalKey(DeployTargets),
 }).annotate({ identifier: "ComponentLinks" })
 export type ComponentLinks = typeof ComponentLinks.Type
 

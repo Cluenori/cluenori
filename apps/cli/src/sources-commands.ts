@@ -1,50 +1,63 @@
-import { Console, Effect, Redacted, Schema } from "effect"
-import { Argument, Command, Flag, Prompt } from "effect/cli"
+import { Console, Effect, Schema } from "effect"
+import { Argument, Command, Flag } from "effect/cli"
 
-import { refuse } from "./api-client.ts"
+import { apiClient, reachFailures, refuse } from "./api-client.ts"
+import { apiTarget } from "./api-settings.ts"
 import { appleKeyOf } from "./apple-key.ts"
 import { setDeploymentSecrets } from "./deployment-secrets.ts"
-import { parsed } from "./question.ts"
+import { local, parsed } from "./question.ts"
+import { columns } from "./terminal-text.ts"
 
 // An App Store Connect issuer ID: a UUID.
 const IssuerId = Schema.String.check(
   Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, { expected: "a UUID" }),
 )
 
-// What GitHub's tokens start with: fine-grained `github_pat_`, classic `ghp_`.
-const githubToken = /^(github_pat_|ghp_)[A-Za-z0-9_]{20,255}$/
-
-/** `cluenori github setup`: asks for the token without showing it. */
-export const githubSetup = Command.make("setup", {}, () =>
+/** `cluenori github`: whether the deployment is connected to GitHub, and where its app is installed. */
+export const github = Command.make("github", { local }, (input) =>
   Effect.gen(function* () {
-    const token = yield* Prompt.run(
-      Prompt.Hidden({
-        message:
-          "A GitHub fine-grained token, read-only, for your components' repositories: Contents, Metadata, and Pull requests. Paste it; it isn't shown.",
-        validate: (value) =>
-          githubToken.test(value.trim())
-            ? Effect.succeed(value)
-            : Effect.fail("That isn't a GitHub token: one starts with github_pat_ or ghp_."),
+    const target = yield* apiTarget(input.local)
+    const client = yield* apiClient(target)
+    const status = yield* client.github.github().pipe(
+      Effect.catchTags({
+        ...reachFailures(target),
+        NotAllowed: () => refuse("Only an owner sees how the deployment is connected to GitHub."),
       }),
-    ).pipe(Effect.catchTag("QuitError", () => refuse("Stopped before it changed anything.")))
-    yield* setDeploymentSecrets({ CLUENORI_GITHUB_TOKEN: Redacted.value(token).trim() })
-    yield* Console.log(
-      "\nGitHub is set up. Link a component to its repository: ./cluenori component link <project> <component> --repository owner/name",
     )
+    const app = status.app
+    if (app === undefined) {
+      return yield* Console.log(
+        `${target.url} isn't connected to GitHub. An owner connects it on the web, where GitHub creates its app in one step: ${target.url}/github`,
+      )
+    }
+    yield* Console.log(`Connected to GitHub as ${app.name}: ${app.url}`)
+    if (status.problem !== undefined) {
+      return yield* Console.log(`Its installations couldn't be read: ${status.problem}.`)
+    }
+    if (status.installations.length === 0) {
+      return yield* Console.log(
+        `It isn't installed anywhere yet. Install it on the accounts whose repositories your components link: ${app.installUrl}`,
+      )
+    }
+    yield* Console.log(
+      `\n${columns([
+        ["Installed on", "Kind", "Repositories"],
+        ...status.installations.map((installation) => [
+          installation.account,
+          installation.accountType === "Organization" ? "organization" : "user",
+          installation.repositories === "all" ? "all" : "chosen ones",
+        ]),
+      ]).join("\n")}`,
+    )
+    yield* Console.log(`\nInstall it on another account: ${app.installUrl}`)
   }),
 ).pipe(
   Command.withDescription(
-    "Give the deployment a read-only GitHub token, as a Worker secret, to find releases' commits and what changed.",
+    "Whether the deployment is connected to GitHub, where releases' commits and changes come from and promotions start, and the accounts its app is installed on.",
   ),
 )
 
-/** `cluenori github ...`. */
-export const github = Command.make("github").pipe(
-  Command.withDescription("Set up GitHub, where releases' commits and changes come from."),
-  Command.withSubcommands([githubSetup]),
-)
-
-/** `cluenori appstore setup <key file> --issuer <issuer ID>`. */
+/** `cluenori appstore setup <key file> --issuer <issuer ID> [--key-id <key ID>] [--manager]`. */
 export const appStoreSetup = Command.make(
   "setup",
   {
@@ -58,28 +71,47 @@ export const appStoreSetup = Command.make(
     issuer: Flag.String("issuer").pipe(
       Flag.withDescription("The issuer ID App Store Connect shows above your API keys."),
     ),
+    manager: Flag.Boolean("manager").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription(
+        "The key is the second one, with the App Manager role, used only to submit builds to App Store review and release them. Without it, the key is the one that reads, with the Developer role.",
+      ),
+    ),
   },
   (input) =>
     Effect.gen(function* () {
       const key = yield* appleKeyOf(input.keyFile, input.keyId)
       const issuer = yield* parsed(IssuerId, input.issuer, "an issuer ID")
-      yield* setDeploymentSecrets({
-        CLUENORI_ASC_KEY: key.key,
-        CLUENORI_ASC_KEY_ID: key.id,
-        CLUENORI_ASC_ISSUER_ID: issuer.toLowerCase(),
-      })
+      // Both keys are the same team's, so they share the issuer.
+      yield* setDeploymentSecrets(
+        input.manager
+          ? {
+              CLUENORI_ASC_MANAGER_KEY: key.key,
+              CLUENORI_ASC_MANAGER_KEY_ID: key.id,
+              CLUENORI_ASC_ISSUER_ID: issuer.toLowerCase(),
+            }
+          : {
+              CLUENORI_ASC_KEY: key.key,
+              CLUENORI_ASC_KEY_ID: key.id,
+              CLUENORI_ASC_ISSUER_ID: issuer.toLowerCase(),
+            },
+      )
       yield* Console.log(
-        "\nApp Store Connect is set up. Link an app's component to it: ./cluenori component link <project> <component> --app-store <bundle ID>",
+        input.manager
+          ? "\nCluenori can submit builds to App Store review and release them now, with this App Manager key. Promote one to an environment linked with --app-store: ./cluenori promote <project> <component> <release> --to <environment>"
+          : "\nApp Store Connect is set up to read apps' builds and versions, with this Developer key. Link an app's component to it: ./cluenori component link <project> <component> --testflight <environment>=<bundle ID> --app-store <environment>=<bundle ID>\nTo submit builds to App Store review, add a second key, with the App Manager role: ./cluenori appstore setup <key.p8> --issuer <issuer ID> --manager",
       )
     }),
 ).pipe(
   Command.withDescription(
-    "Give the deployment an App Store Connect API key, as Worker secrets, to follow apps' builds and App Store versions.",
+    "Give the deployment an App Store Connect API key, as Worker secrets: one with the Developer role, to follow apps' builds and App Store versions; and with --manager, a second one with the App Manager role, to submit builds to review and release them.",
   ),
 )
 
 /** `cluenori appstore ...`. */
 export const appStore = Command.make("appstore").pipe(
-  Command.withDescription("Set up App Store Connect, where apps' builds and App Store versions come from."),
+  Command.withDescription(
+    "Set up App Store Connect, where apps' builds and App Store versions come from, and where promotions submit them to review.",
+  ),
   Command.withSubcommands([appStoreSetup]),
 )

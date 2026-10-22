@@ -35,23 +35,29 @@ Pages, each with a permanent URL (`src/router.tsx`):
                                                  opened from it keeps them
 /notes/releases?component=notes-api              the releases that ran, were deployed or uploaded, the latest first: how each
                                                  shipped (commit, store stage, deploy), each against the release before it;
-                                                 sources that failed lately; where each component's releases come from
+                                                 sources that failed lately; each component's version and next build, bumped
+                                                 or set; where each component's releases come from and go (its deploy
+                                                 targets); how AI drafts of release notes read
 /notes/releases/notes-api/2.4.0+312?environment=production
                                                  one release against the one before, one click from its performance, errors
-                                                 and logs: its commit, its App Store build, the pull requests or commits since,
+                                                 and logs: its commit, its App Store build, its promotions and promoting it to
+                                                 each deploy target, releasing one App Store review approved, its notes for
+                                                 its users (drafted with AI, edited, saved), the pull requests or commits since,
                                                  what got slower or fails more, its new errors, the incidents while it ran,
                                                  what got faster or fails less, new operations
 /notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
 /phones                                          the paired phones, removing one, and adding one by its QR code
 /browsers                                        the browsers signed in with passkeys, signing one out, and adding a passkey
 /members                                         owners: the members, the projects each sees, inviting and removing
+/github                                          owners: connecting GitHub, its app and the accounts it is installed on,
+                                                 and disconnecting it; what GitHub sent the browser back with, said once
 /invite#<code>                                   accepting an invitation: making a passkey, which signs this browser in
 /kit                                             every view in the theme, to review the design; opens signed out too
 ```
 
 An address with a key that isn't one, such as `/Notes!`, opens a page that says so. `/phones`,
-`/browsers`, `/members`, `/invite` and `/kit` are the deployment's own, so a project with one of
-those keys has no pages.
+`/browsers`, `/members`, `/github`, `/invite` and `/kit` are the deployment's own, so a project with
+one of those keys has no pages.
 
 ## Owns
 
@@ -64,7 +70,9 @@ those keys has no pages.
   than 30 seconds, as it is shown and when the tab comes back into view.
 - **What the pages say about the answers,** `src/project-facts.ts`: what needs attention, when
   failures jumped, which errors are new or happening now, and which operations got slower. A step a
-  series has no point for is unknown, never zero; "now" is the time an answer covers up to.
+  series has no point for is unknown, never zero; "now" is the time an answer covers up to. What
+  only the releases pages say, about promotions, deploy targets and versions, is
+  `src/release-facts.ts`, which loads with them, not with the first load.
 - **Showing what "slower", "new" and "happening now" mean:** the rules are Signals'
   (`slowerOf`, `errorStatusOf` in `@cluenori/signals`), which Today on the server uses too; the
   pages mark them and say them in words. There is no fixed limit and no setting: an operation slow
@@ -86,8 +94,32 @@ those keys has no pages.
   the project's answer only when nothing names its environment, so it asks its questions once.
 - **Choosing production,** on the overview: the environments seen and any typed in, checked by the
   API's rule for a key (`src/views/production-dialog.tsx`).
-- **Linking a component to its sources,** from the Releases page: its GitHub repository and App
-  Store bundle ID, checked by the API's own schemas before they are sent (`src/views/links-dialog.tsx`).
+- **Linking a component to its sources,** from the Releases page and a release's: its GitHub
+  repository and its deploy targets, one per environment, each a workflow file, an App Store
+  Connect app going to TestFlight or App Store review, or both (the project's environments
+  suggested), checked by the API's own schemas before they are sent, every link sent each time, as
+  the API replaces them all (`src/views/links-dialog.tsx`).
+- **Promoting a release,** from its page: a button for each deploy target, a confirmation that
+  says what happens step by step, where the workflow runs (Auto, your Mac, the cloud), for App Store
+  review when an approved version goes live and whether phased, the notes it sends, and an optional
+  reason (`src/views/promote-dialog.tsx`, loaded when asked for); the API's refusals said in it with
+  where they are fixed (its `fix`: the GitHub page, the notes, the links, an App Manager key). Its
+  promotions, the latest first, in words (`promotionStates` in `src/release-facts.ts`,
+  `src/views/promotion-list.tsx`), the one just started shown at once, one approved in review
+  released after asking (`src/views/release-now-dialog.tsx`), and asked for again every 15 seconds
+  while one hasn't ended.
+- **A release's notes,** on its page when its component has an App Store Connect app or it has
+  notes: a field per language, with how long it is of the 4000 characters a store takes, languages
+  added by the API's rule; a draft with AI for where it goes, which fills the fields and never
+  saves; and saving (`src/views/notes-editor.tsx`). The project's notes style, which drafts follow,
+  is on the Releases page (`src/views/notes-style-editor.tsx`).
+- **Versions,** on the Releases page: each component's version and the release its next build will
+  be, bumped from a menu that shows what each bump becomes, or set with a first build number
+  (`src/views/version-list.tsx`).
+- **Connecting GitHub,** for owners (`src/pages/github-page.tsx`, loaded when opened): the API's
+  form for GitHub, posted there as it is, so GitHub creates Cluenori's own app; the app and the
+  accounts it is installed on; disconnecting it. What GitHub sends the browser back with is in the
+  address (`GitHubReturn` in `src/router.tsx`), said once, then dropped from it.
 - **What a color means,** `src/lib/colors.ts`: each component keeps one color everywhere; red is
   failure, yellow a warning.
 - **The panel** every question is answered in, `src/views/panel.tsx`, an answer's three states,
@@ -116,7 +148,8 @@ those keys has no pages.
 
 - The public API's definition, `CluenoriApi` from `@cluenori/worker`, and the Schemas of its answers
   from `@cluenori/foundation`, `@cluenori/projects`, `@cluenori/signals`, `@cluenori/incidents`,
-  `@cluenori/phones`, and `@cluenori/releases`, whose verdict rules the releases pages also say.
+  `@cluenori/phones`, `@cluenori/members`, `@cluenori/github`, and `@cluenori/releases`, whose
+  verdict rules the releases pages also say.
 - `@bagatka/qr-code`, to draw a pairing link as a QR code. Their packages are
   side-effect free and keep schemas apart from server code, so only the definitions reach the
   bundle.
@@ -161,9 +194,10 @@ those keys has no pages.
   what it did before an error); and an operation's origin. Their views
   wait in the design kit, "Ahead of the API", on sample data (`src/sample/`), which nothing else
   reads.
-- **Navigation is instant:** the pages most visits open are in the first load; one error's page, a
-  trace, the releases' pages and the overview's list of releases load right after start, as search
-  does, so they are there before anyone opens them. An answer a page showed a moment ago is shown again at once, and refreshed in the
+- **Navigation is instant:** the pages most visits open are in the first load; one operation's page,
+  one error's page, a trace, the releases' pages and the overview's list of releases load right
+  after start, as search, signing in and the phone's sidebar sheet (with Base UI's dialog
+  machinery, `src/views/ui/sidebar-sheet.tsx`) do, so they are there before anyone opens them. An answer a page showed a moment ago is shown again at once, and refreshed in the
   background when stale.
 - **The first load's budget** is 248 KB of scripts, compressed, of which the typed API client is
   about 75 KB; `vite.config.ts` fails a build over it. The first load is one chunk: left to itself,

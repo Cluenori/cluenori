@@ -12,12 +12,23 @@ import type {
   ReleaseVersion,
   TraceId,
 } from "@cluenori/foundation"
+import type { ConnectGitHub } from "@cluenori/github"
 import type { Email, InviteCode, SignInId } from "@cluenori/members"
 import type { PhoneId } from "@cluenori/phones"
 import type { ComponentLinks, ProjectSettings } from "@cluenori/projects"
+import type {
+  AppStoreSubmission,
+  BuildNumber,
+  NotesStyle,
+  PromotionId,
+  PromotionReason,
+  ReleaseNote,
+  Runner,
+  SemanticVersion,
+} from "@cluenori/releases"
 import type { ErrorGroupId, IndexedLevel, LogCountsBy, SeriesStep } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
-import { DateTime, Duration, Effect, Redacted } from "effect"
+import { DateTime, Duration, Effect, Option, Redacted } from "effect"
 import { Atom, AsyncResult } from "effect/reactivity"
 
 import { CluenoriClient } from "@/api-client"
@@ -396,12 +407,160 @@ export const releaseAtom = Atom.family((key: ReleaseScope) =>
 )
 
 /**
- * Replaces a component's links, its GitHub repository and its App Store bundle ID, one left out
- * unlinked, and asks for the project again, whose components show them. Fails with
+ * Promotes a release to an environment by its component's deploy target there, for the member
+ * signed in: its workflow on `runner`, then, for an app, App Store Connect, submitted to review as
+ * `submission` says; and asks for the release again, whose promotions then have it. Each call that
+ * succeeds starts a run. Fails with `PromotionRefused` until someone fixes what its reason says,
+ * where its `fix` says; `PromotionInProgress` while the last promotion to the environment runs;
+ * and `PromotionUnavailable` when GitHub didn't answer, so nothing started.
+ */
+export const promoteAtom = CluenoriClient.runtime.fn(
+  (input: {
+    readonly release: ReleaseScope
+    readonly environment: EnvironmentKey
+    readonly reason?: PromotionReason
+    readonly runner?: Runner
+    readonly submission?: AppStoreSubmission
+  }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const promotion = yield* client.releases.promote({
+        params: { project: input.release.project, component: input.release.component, release: input.release.release },
+        payload: {
+          environment: input.environment,
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+          ...(input.runner === undefined ? {} : { runner: input.runner }),
+          ...(input.submission === undefined ? {} : { submission: input.submission }),
+        },
+      })
+      yield* Atom.refresh(releaseAtom(input.release))
+      return promotion
+    }),
+)
+
+/**
+ * Releases a promotion App Store review approved, which waits for a member: App Store Connect makes
+ * it live, and the promotion ends once it is. Asks for the release again. Fails with
+ * `PromotionNotFound` when it isn't waiting any more.
+ */
+export const releaseApprovedAtom = CluenoriClient.runtime.fn(
+  (input: { readonly release: ReleaseScope; readonly promotion: PromotionId }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const promotion = yield* client.releases.releaseApproved({
+        params: { project: input.release.project, promotion: input.promotion },
+      })
+      yield* Atom.refresh(releaseAtom(input.release))
+      return promotion
+    }),
+)
+
+/**
+ * Replaces a release's notes, one for each language given and none in others, and asks for the
+ * release again, whose notes then are these.
+ */
+export const saveNotesAtom = CluenoriClient.runtime.fn(
+  (input: { readonly release: ReleaseScope; readonly notes: ReadonlyArray<ReleaseNote> }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const saved = yield* client.releases.saveNotes({
+        params: { project: input.release.project, component: input.release.component, release: input.release.release },
+        payload: { notes: input.notes },
+      })
+      yield* Atom.refresh(releaseAtom(input.release))
+      return saved
+    }),
+)
+
+/**
+ * A draft of a release's notes for where `environment`'s builds go, written by the project's
+ * language model from the commits since the release current there. Saves nothing. Fails with
+ * `DraftUnavailable`, saying why, when no draft could be written.
+ */
+export const draftNotesAtom = CluenoriClient.runtime.fn(
+  (input: { readonly release: ReleaseScope; readonly environment: EnvironmentKey }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.releases.draftNotes({
+        params: { project: input.release.project, component: input.release.component, release: input.release.release },
+        payload: { environment: input.environment },
+      })
+    }),
+)
+
+/** Each component's version, which its next builds are numbered in; one never set isn't listed. */
+export const versionsAtom = Atom.family((project: ProjectKey) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.releases.versions({ params: { project } })
+      }),
+    ),
+  ),
+)
+
+/**
+ * Sets a component's version, the same or higher, its builds continuing, or from `firstBuild`; asks
+ * for the versions again. Fails with `VersionRefused`, saying why, for a lower version.
+ */
+export const setVersionAtom = CluenoriClient.runtime.fn(
+  (input: {
+    readonly project: ProjectKey
+    readonly component: ComponentKey
+    readonly version: SemanticVersion
+    readonly firstBuild?: BuildNumber
+  }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const set = yield* client.releases.setVersion({
+        params: { project: input.project, component: input.component },
+        payload: {
+          version: input.version,
+          ...(input.firstBuild === undefined ? {} : { firstBuild: input.firstBuild }),
+        },
+      })
+      yield* Atom.refresh(versionsAtom(input.project))
+      return set
+    }),
+)
+
+/** How the project's release notes read, which drafts follow: its own, or Cluenori's default. */
+export const notesStyleAtom = Atom.family((project: ProjectKey) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.releases.notesStyle({ params: { project } })
+      }),
+    ),
+  ),
+)
+
+/** Sets how the project's release notes read, and asks for it again. */
+export const setNotesStyleAtom = CluenoriClient.runtime.fn(
+  (input: { readonly project: ProjectKey; readonly style: NotesStyle }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const set = yield* client.releases.setNotesStyle({ params: { project: input.project }, payload: input.style })
+      yield* Atom.refresh(notesStyleAtom(input.project))
+      return set
+    }),
+)
+
+/**
+ * Replaces a component's links, its GitHub repository and its deploy targets, one left out unlinked,
+ * and asks for the project again, whose components show them, and for the `release` a page shows,
+ * whose deploy targets are its component's. Fails with
  * `ComponentNotFound` for a component the project no longer has.
  */
 export const linkComponentAtom = CluenoriClient.runtime.fn(
-  (input: { readonly project: ProjectKey; readonly component: ComponentKey; readonly links: ComponentLinks }) =>
+  (input: {
+    readonly project: ProjectKey
+    readonly component: ComponentKey
+    readonly links: ComponentLinks
+    readonly release?: ReleaseScope
+  }) =>
     Effect.gen(function* () {
       const client = yield* CluenoriClient
       const linked = yield* client.projects.linkComponent({
@@ -409,6 +568,9 @@ export const linkComponentAtom = CluenoriClient.runtime.fn(
         payload: input.links,
       })
       yield* Atom.refresh(projectAtom(input.project))
+      if (input.release !== undefined) {
+        yield* Atom.refresh(releaseAtom(input.release))
+      }
       return linked
     }),
 )
@@ -524,6 +686,41 @@ export const signInsAtom = CluenoriClient.runtime.atom(
   Effect.gen(function* () {
     const client = yield* CluenoriClient
     return yield* client.members.signIns()
+  }),
+)
+
+/**
+ * Whether Cluenori is connected to GitHub: its app and the accounts it is installed on, read from
+ * GitHub as it is asked. Owners only: a member is answered `NotAllowed`.
+ */
+export const gitHubAtom = CluenoriClient.runtime.atom(
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    return yield* client.github.github()
+  }),
+)
+
+/**
+ * Starts connecting GitHub: the form the browser posts to GitHub, which creates Cluenori's app.
+ * None when Cluenori turns out to be connected already, after asking for the connection again,
+ * which then shows it.
+ */
+export const connectGitHubAtom = CluenoriClient.runtime.fn((input: ConnectGitHub) =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    return yield* client.github.connectGitHub({ payload: input }).pipe(
+      Effect.asSome,
+      Effect.catchTag("GitHubAlreadyConnected", () => Atom.refresh(gitHubAtom).pipe(Effect.as(Option.none()))),
+    )
+  }),
+)
+
+/** Disconnects GitHub: Cluenori forgets its app, which stays on GitHub; asks for the connection again. */
+export const disconnectGitHubAtom = CluenoriClient.runtime.fn(() =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    yield* client.github.disconnectGitHub()
+    yield* Atom.refresh(gitHubAtom)
   }),
 )
 

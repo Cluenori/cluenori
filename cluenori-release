@@ -1,15 +1,18 @@
 #!/bin/sh
-# cluenori-release: tells Cluenori a release was deployed, from any CI. It sends the release, as
-# the component reports it in service.version; where it went; its commit; and the commits since
-# the release reported before it, so Cluenori knows each release's commit and what changed. Needs
-# git and curl, nothing else. Copy this file into your repository and run it after each deploy; to
-# stop, delete it and its line in CI.
+# cluenori-release: a component's CI and Cluenori, from any CI, with git and curl only. Copy this
+# file into your repository; to stop, delete it and its lines in CI.
+#
+#   ./cluenori-release number [--commit REF]   prints the release the commit is, such as 1.4.0+58:
+#       the next number of the component's version in Cluenori, or the one it got before.
+#   ./cluenori-release runner [--want auto]    prints where the build runs, local or cloud: auto is
+#       local when the repository's self-hosted runner labelled "local" is online.
+#   ./cluenori-release --release 1.4.0+58 --environment prod   after a deploy: reports it, with its
+#       commit and the commits since the release reported before.
 #
 #   CLUENORI_URL=https://cluenori.example \
-#   CLUENORI_INGEST_KEY=cluenori.<project>.<component>.<secret> \
-#     ./cluenori-release --release 2026.10.21-e91f09c --environment prod
+#   CLUENORI_INGEST_KEY=cluenori.<project>.<component>.<secret> ./cluenori-release ...
 #
-# Options:
+# Options of a report:
 #   --release VERSION    The version the component reports in service.version. Required.
 #   --environment NAME   Where it was deployed, as its telemetry's deployment.environment.
 #   --commit REF         The commit deployed; HEAD when absent.
@@ -17,9 +20,10 @@
 #                        commit, if it doesn't exist, and pushed to origin.
 #   --push-tag
 #
-# The ingest key is the component's, the one its telemetry is sent with. A mistake in how it is
-# called (a missing option, a wrong key) exits 1; a Cluenori that can't be reached only warns, so a
-# deploy never fails because of it.
+# The ingest key is the component's, the one its telemetry is sent with. A report's mistake (a
+# missing option, a wrong key) exits 1; a Cluenori that can't be reached only warns, so a deploy
+# never fails because of it. `number` exits 1 when it can't number, since a build needs its number;
+# `runner` answers cloud when Cluenori can't say.
 set -eu
 
 release=""
@@ -27,11 +31,17 @@ environment=""
 commit_ref="HEAD"
 tag=""
 push_tag=false
+want="auto"
 
 usage() {
-  sed -n '2,22s/^# \{0,1\}//p' "$0" >&2
+  sed -n '2,30s/^# \{0,1\}//p' "$0" >&2
   exit 1
 }
+
+mode="report"
+case "${1:-}" in
+  number | runner) mode="$1"; shift ;;
+esac
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,19 +50,62 @@ while [ $# -gt 0 ]; do
     --commit) commit_ref="${2:-}"; shift 2 ;;
     --tag) tag="${2:-}"; shift 2 ;;
     --push-tag) push_tag=true; shift ;;
+    --want) want="${2:-}"; shift 2 ;;
     -h | --help) usage ;;
     *) echo "cluenori-release: unknown option $1" >&2; usage ;;
   esac
 done
 
-[ -n "$release" ] || { echo "cluenori-release: --release is required." >&2; exit 1; }
 [ -n "${CLUENORI_URL:-}" ] || { echo "cluenori-release: set CLUENORI_URL to your Cluenori's address." >&2; exit 1; }
 [ -n "${CLUENORI_INGEST_KEY:-}" ] || {
   echo "cluenori-release: set CLUENORI_INGEST_KEY to the component's ingest key." >&2
   exit 1
 }
 
+# POSTs a JSON body to one of Cluenori's ingest writes; prints the answer, and its status last.
+post() {
+  curl --silent --show-error --max-time 30 --write-out '\n%{http_code}' \
+    --header "Authorization: Bearer $CLUENORI_INGEST_KEY" \
+    --header "Content-Type: application/json" \
+    --data "$2" "${CLUENORI_URL%/}/ingest/v1/releases/$1"
+}
+
+if [ "$mode" = runner ]; then
+  case "$want" in
+    local | cloud) echo "$want"; exit 0 ;;
+    auto) ;;
+    *) echo "cluenori-release: --want is auto, local or cloud." >&2; exit 1 ;;
+  esac
+  if answer=$(post runner '{}') && [ "$(printf '%s\n' "$answer" | tail -n 1)" = 200 ]; then
+    printf '%s\n' "$answer" | sed -n 's/.*"runner":"\([a-z]*\)".*/\1/p' | head -n 1
+  else
+    echo "cluenori-release: Cluenori couldn't say whether the local runner is online; using cloud." >&2
+    echo cloud
+  fi
+  exit 0
+fi
+
 commit=$(git rev-parse --verify "$commit_ref^{commit}")
+
+if [ "$mode" = number ]; then
+  if ! answer=$(post number "{\"commit\":\"$commit\"}"); then
+    echo "cluenori-release: couldn't reach Cluenori at $CLUENORI_URL to number $commit." >&2
+    exit 1
+  fi
+  status=$(printf '%s\n' "$answer" | tail -n 1)
+  case "$status" in
+    200) printf '%s\n' "$answer" | sed -n 's/.*"release":"\([^"]*\)".*/\1/p' | head -n 1 ;;
+    401) echo "cluenori-release: Cluenori refused the ingest key." >&2; exit 1 ;;
+    422)
+      echo "cluenori-release: set the component's version in Cluenori first; it numbers builds in it." >&2
+      exit 1
+      ;;
+    *) echo "cluenori-release: Cluenori answered $status; $commit wasn't numbered." >&2; exit 1 ;;
+  esac
+  exit 0
+fi
+
+[ -n "$release" ] || { echo "cluenori-release: --release is required." >&2; exit 1; }
 
 if [ "$push_tag" = true ]; then
   [ -n "$tag" ] || { echo "cluenori-release: --push-tag needs --tag." >&2; exit 1; }
@@ -70,14 +123,6 @@ json_text() {
     if (NR > 1) print "\\n"
     print
   }'
-}
-
-# POSTs a JSON body to one of Cluenori's ingest writes; prints the answer, and its status last.
-post() {
-  curl --silent --show-error --max-time 30 --write-out '\n%{http_code}' \
-    --header "Authorization: Bearer $CLUENORI_INGEST_KEY" \
-    --header "Content-Type: application/json" \
-    --data "$2" "${CLUENORI_URL%/}/ingest/v1/releases/$1"
 }
 
 environment_field=""

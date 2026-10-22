@@ -126,6 +126,16 @@ public final class Answer<Value: Codable & Equatable & Sendable> {
         }
     }
 
+    /// Shows `value` as the answer, as a write's answer says it is now, and keeps it on the phone, as
+    /// if the question had been asked.
+    func show(_ value: Value) {
+        let now = Date.now
+        self.value = value
+        receivedAt = now
+        problem = nil
+        context.store.write(value, receivedAt: now, question.key)
+    }
+
     /// Changes the question, such as to another period, showing what the phone kept for it, if
     /// anything, until `load` asks it.
     func change(to next: Question) {

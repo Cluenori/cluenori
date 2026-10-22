@@ -229,7 +229,7 @@ describe("releases journey", () => {
 
       const failed = screen.getByRole("region", { name: "Sources that failed" })
       yield* Effect.promise(() =>
-        expect.element(failed.getByText(/^GitHub refused the token: Bad credentials\./)).toBeVisible(),
+        expect.element(failed.getByText(/^GitHub refused: Cluenori isn.t connected to GitHub yet/)).toBeVisible(),
       )
       yield* Effect.promise(() => expect.element(failed.getByText("notes-api", { exact: true })).toBeVisible())
       yield* expectAccessible()
@@ -238,7 +238,9 @@ describe("releases journey", () => {
       open("/notes")
       yield* Effect.promise(() =>
         expect
-          .element(screen.getByRole("region", { name: "Releases" }).getByText(/^GitHub refused the token/))
+          .element(
+            screen.getByRole("region", { name: "Releases" }).getByText(/^GitHub refused: Cluenori isn.t connected/),
+          )
           .toBeVisible(),
       )
     }),
@@ -327,7 +329,7 @@ describe("releases journey", () => {
 
       const sources = screen.getByRole("region", { name: "Where releases come from" })
       yield* Effect.promise(() => expect.element(sources.getByText("Not linked")).toBeVisible())
-      yield* Effect.promise(() => expect.element(sources.getByText("com.notesapp.notes")).toBeVisible())
+      yield* Effect.promise(() => expect.element(sources.getByText("com.notesapp.notes, App Store")).toBeVisible())
       yield* Effect.promise(() => sources.getByRole("button", { name: "Change links of notes-ios" }).click())
 
       // A repository that isn't one is refused with GitHub's rule, before anything is sent.
@@ -353,7 +355,7 @@ describe("releases journey", () => {
       )
       yield* expectAccessible()
 
-      // Saved: the dialog closes, and the component shows its repository, its bundle ID kept.
+      // Saved: the dialog closes, and the component shows its repository, its deploy target kept.
       yield* Effect.promise(() => dialog.getByRole("button", { name: "Save the links" }).click())
       yield* Effect.promise(() => expect.element(dialog).not.toBeInTheDocument())
       yield* Effect.promise(() =>
@@ -367,11 +369,11 @@ describe("releases journey", () => {
         [
           [
             "projects/notes/components/notes-ios/links",
-            '{"repository":"notesapp/notes-ios","appStoreBundleId":"com.notesapp.notes"}',
+            '{"repository":"notesapp/notes-ios","deployTargets":[{"environment":"production","appStore":{"bundleId":"com.notesapp.notes","distribution":"appStore"}}]}',
           ],
           [
             "projects/notes/components/notes-ios/links",
-            '{"repository":"notesapp/notes-ios","appStoreBundleId":"com.notesapp.notes"}',
+            '{"repository":"notesapp/notes-ios","deployTargets":[{"environment":"production","appStore":{"bundleId":"com.notesapp.notes","distribution":"appStore"}}]}',
           ],
         ],
       )

@@ -11,10 +11,13 @@
     "typecheck": "wrangler types > /dev/null && tsc"
   },
   "dependencies": {
+    "@bagatka/cloudflare-workers-ai": "workspace:*",
+    "@bagatka/github": "workspace:*",
     "@bagatka/otlp": "workspace:*",
     "@bagatka/web-crypto": "workspace:*",
     "@bagatka/webauthn": "workspace:*",
     "@cluenori/foundation": "workspace:*",
+    "@cluenori/github": "workspace:*",
     "@cluenori/incidents": "workspace:*",
     "@cluenori/members": "workspace:*",
     "@cluenori/notifications": "workspace:*",

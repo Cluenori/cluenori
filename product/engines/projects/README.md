@@ -32,8 +32,9 @@ isn't one of the project's components', whatever is wrong with it, fails with `I
 
 - **Data:** the project of its Durable Object and its settings, the environments it calls
   production (`projects_project`, one row), and its components
-  with the SHA-256 digest of each ingest key and their links, a GitHub repository and an App Store
-  bundle ID, where their releases come from beside telemetry (`projects_components`). The key itself is kept
+  with the SHA-256 digest of each ingest key and their links: a GitHub repository, where their
+  releases come from beside telemetry, and a deploy target for each environment, a workflow and
+  an App Store Connect app, where they go (`projects_components`). The key itself is kept
   nowhere. In the workspace's object, the index of its projects (`projects_index`): their keys,
   names, and when they were created. Each project's object is what it is; the index only lists it,
   so it emits no activity of its own.
@@ -53,13 +54,13 @@ isn't one of the project's components', whatever is wrong with it, fails with `I
 
 `src/index.ts`. The host builds `Projects` in each project's object and `ProjectIndex` in the
 workspace's; the API's `ProjectsGroup` defines listing projects, showing one with its components,
-creating projects, adding components, and linking them to their repository and App Store app; `IngestKey` and `ingestKeyScope` let the Worker
+creating projects, adding components, and linking them to their repository and deploy targets; `IngestKey` and `ingestKeyScope` let the Worker
 route a key to its project before the project checks it.
 
 ## Depends on
 
 `@cluenori/foundation`, for the scope keys and `ActivityLog`, through which every write commits;
-`@bagatka/github`, for what a repository's name may be.
+`@bagatka/github`, for what a repository's and a workflow file's names may be.
 
 ## Activity
 

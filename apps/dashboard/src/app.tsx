@@ -9,7 +9,6 @@ import { lazy, Suspense, useEffect, useState } from "react"
 import { useEnvironments } from "@/hooks/use-environments"
 import { ErrorsPage } from "@/pages/errors-page"
 import { LogsPage } from "@/pages/logs-page"
-import { OperationPage } from "@/pages/operation-page"
 import { OperationsPage } from "@/pages/operations-page"
 import { OverviewPage } from "@/pages/overview-page"
 import { PerformancePage } from "@/pages/performance-page"
@@ -20,7 +19,6 @@ import { Link, useRoute } from "@/router"
 import { AppSidebar } from "@/views/app-sidebar"
 import { failureText } from "@/views/loaded"
 import { Panel } from "@/views/panel"
-import { SignIn } from "@/views/sign-in"
 import { Button, buttonVariants } from "@/views/ui/button"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/views/ui/sidebar"
 import { TooltipProvider } from "@/views/ui/tooltip"
@@ -29,13 +27,20 @@ import { TooltipProvider } from "@/views/ui/tooltip"
 // React.lazy takes a module with a default export; ours are named.
 const KitPage = lazy(() => import("@/pages/kit-page").then((module) => ({ default: module.KitPage })))
 
+// Signing in, which a visit signed in already doesn't need, loads after start too, so it is there
+// by the time the API says a visit is signed out.
+const signIn = import("@/views/sign-in")
+const SignIn = lazy(() => signIn.then((module) => ({ default: module.SignIn })))
+
 // Search, with the command library only it uses, isn't part of the first load: it starts loading as
 // the app starts, so it is there by the time anyone presses ⌘K.
 const searchDialog = import("@/views/search-dialog")
 const SearchDialog = lazy(() => searchDialog.then((module) => ({ default: module.SearchDialog })))
 
-// One error's page and one trace load after start too: most visits begin on a summary,
-// and they are there by the time anyone opens one.
+// One operation's page, one error's and one trace load after start too: most visits begin on a
+// summary, and they are there by the time anyone opens one.
+const operationPage = import("@/pages/operation-page")
+const OperationPage = lazy(() => operationPage.then((module) => ({ default: module.OperationPage })))
 const errorPage = import("@/pages/error-page")
 const ErrorPage = lazy(() => errorPage.then((module) => ({ default: module.ErrorPage })))
 const tracePage = import("@/pages/trace-page")
@@ -55,6 +60,8 @@ const BrowsersPage = lazy(() => browsersPage.then((module) => ({ default: module
 const membersPage = import("@/pages/members-page")
 const MembersPage = lazy(() => membersPage.then((module) => ({ default: module.MembersPage })))
 const invitePage = import("@/pages/invite-page")
+// Connecting GitHub, once per deployment, loads when opened.
+const GitHubPage = lazy(() => import("@/pages/github-page").then((module) => ({ default: module.GitHubPage })))
 const InvitePage = lazy(() => invitePage.then((module) => ({ default: module.InvitePage })))
 
 // While a page that loads after start isn't there yet, on a visit that opens on it.
@@ -167,12 +174,14 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
       return (
         <WithEnvironments project={route.project} named={route.environment}>
           {(environments) => (
-            <OperationPage
-              project={route.project}
-              operation={route.operation}
-              environments={environments}
-              {...filterProps(route)}
-            />
+            <Suspense fallback={opening}>
+              <OperationPage
+                project={route.project}
+                operation={route.operation}
+                environments={environments}
+                {...filterProps(route)}
+              />
+            </Suspense>
           )}
         </WithEnvironments>
       )
@@ -260,6 +269,12 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
           <MembersPage />
         </Suspense>
       )
+    case "github":
+      return (
+        <Suspense fallback={opening}>
+          <GitHubPage {...(route.returned === undefined ? {} : { returned: route.returned })} />
+        </Suspense>
+      )
     case "invite":
       return <NoSuchPage />
     case "kit":
@@ -310,7 +325,11 @@ function Dashboard() {
     )
   }
   if (route.page !== "kit" && isSignedOut(projects)) {
-    return <SignIn />
+    return (
+      <Suspense fallback={opening}>
+        <SignIn />
+      </Suspense>
+    )
   }
   if (route.page !== "kit" && !AsyncResult.isSuccess(projects)) {
     return (

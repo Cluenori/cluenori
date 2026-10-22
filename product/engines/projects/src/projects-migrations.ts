@@ -32,5 +32,15 @@ export const migrateProjects = Migrator.make({})({
       const sql = yield* SqlClient.SqlClient
       yield* sql`ALTER TABLE projects_project ADD COLUMN settings TEXT`
     }),
+    // A component's deploy targets, as JSON, null until linked. An App Store app linked before
+    // becomes the target of production, through to the App Store; its old column is no longer read.
+    "0004_deploy_targets": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE projects_components ADD COLUMN deploy_targets TEXT`
+      yield* sql`UPDATE projects_components SET deploy_targets = json_array(json_object(
+          'environment', 'production',
+          'appStore', json_object('bundleId', app_store_bundle_id, 'distribution', 'appStore')))
+        WHERE app_store_bundle_id IS NOT NULL`
+    }),
   }),
 })

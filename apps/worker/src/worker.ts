@@ -10,6 +10,7 @@ import { activityOf } from "./activity-queue.ts"
 import { ApiToken } from "./api-token.ts"
 import { AppleAppSiteAssociation } from "./apple-app-site.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
+import { GitHubConnected, GitHubHandlers } from "./github-handlers.ts"
 import { IncidentsHandlers } from "./incidents-handlers.ts"
 import { memberAuthorizationLayer } from "./member-authorization-layer.ts"
 import { MemberProjects } from "./member-projects.ts"
@@ -53,13 +54,7 @@ const Projects = Layer.unwrap(
     return ProjectObjects.layer(namespace, workspace)
   }),
 )
-const Workspace = Layer.unwrap(
-  Effect.gen(function* () {
-    const where = yield* jurisdiction
-    const namespace = Option.isSome(where) ? env.WORKSPACE.jurisdiction(where.value) : env.WORKSPACE
-    return WorkspaceObjects.layer(namespace, workspace)
-  }),
-)
+const Workspace = WorkspaceObjects.layerInJurisdiction(env.WORKSPACE, workspace)
 
 // Every route group is provided on its own line.
 const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi.json" }).pipe(
@@ -77,6 +72,7 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
   Layer.provide(NotificationsHandlers),
   Layer.provide(TodayHandlers),
   Layer.provide(ReleasesHandlers),
+  Layer.provide(GitHubHandlers),
   Layer.provide(memberAuthorizationLayer),
   // Handlers reach projects only through it, which keeps to what the member sees (.oxlintrc.json);
   // they ask for it per request, so it is an output.
@@ -100,9 +96,12 @@ const app = HttpRouter.toWebHandler(
     OtlpLogs,
     OtlpMetrics,
     AppleAppSiteAssociation,
+    GitHubConnected,
     // Modules' ingest writes, each on a line: what components' own tooling sends with their ingest key.
     moduleIngestRoute(releasesModule, "report"),
     moduleIngestRoute(releasesModule, "last"),
+    moduleIngestRoute(releasesModule, "number"),
+    moduleIngestRoute(releasesModule, "runner"),
   ).pipe(
     // The OTLP route asks for these per request, so they are outputs of the app's layer.
     Layer.provideMerge(Projects),

@@ -171,8 +171,8 @@ export const listReleases = Effect.fn("Releases.list")(function* (query: Release
 
 /**
  * One release compared with the one before it: what moved, the errors first seen in it, the
- * incidents that opened while it ran, and what changed in its repository since; without an
- * environment, of the one it last ran in. Fails with `ReleaseNotFound` for a release the module
+ * incidents that opened while it ran, what changed in its repository since, its promotions, and
+ * where it can be promoted; without an environment, of the one it last ran in. Fails with `ReleaseNotFound` for a release the module
  * doesn't know. Reads only.
  */
 export const releaseDetail = Effect.fn("Releases.detail")(function* (key: ReleaseKey) {
@@ -206,6 +206,9 @@ export const releaseDetail = Effect.fn("Releases.detail")(function* (key: Releas
       : yield* records.changes(release.component, release.release, previous.release)
   const incidents = yield* Incidents
   const list = yield* incidents.incidents
+  const projects = yield* Projects
+  const components = yield* projects.components.pipe(Effect.catchTag("ProjectNotFound", () => Effect.succeed([])))
+  const linked = components.find((component) => component.key === release.component)
   const ran = release.ran
   const detail: ReleaseDetail = {
     summary,
@@ -232,6 +235,10 @@ export const releaseDetail = Effect.fn("Releases.detail")(function* (key: Releas
         ? []
         : [{ component: sync.component, source: sync.source, problem: sync.problem, at: sync.at }],
     ),
+    promotions: yield* records.promotions(release.component, release.release),
+    deployTargets: linked?.deployTargets ?? [],
+    notes: yield* records.notes(release.component, release.release),
+    ...(linked?.repository === undefined ? {} : { repository: linked.repository }),
   }
   return detail
 })

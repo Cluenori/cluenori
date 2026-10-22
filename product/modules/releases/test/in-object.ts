@@ -1,3 +1,4 @@
+import { GitHub, GitHubRefused } from "@bagatka/github"
 import { webCryptoLayer } from "@bagatka/web-crypto"
 import { ActivityLog, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
 import { Incidents } from "@cluenori/incidents"
@@ -6,7 +7,9 @@ import { ArchiveStore, Signals } from "@cluenori/signals"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
-import { Effect, Layer, Option } from "effect"
+import type { Crypto } from "effect"
+import { Effect, Layer, Option, Stream } from "effect"
+import { AiError, LanguageModel } from "effect/ai"
 import { HttpClient, HttpClientError } from "effect/http"
 import { TestClock } from "effect/testing"
 
@@ -24,23 +27,81 @@ const unreachableWeb = Layer.succeed(
   ),
 )
 
-/** Sources with nothing set up: no GitHub token, no App Store Connect key. */
-export const noSources = Layer.succeed(
-  ReleaseSources,
-  ReleaseSources.of({ github: Option.none(), appStoreConnect: Option.none() }),
+/** GitHub before the workspace's app is connected: every call is refused. */
+export const notConnected = GitHub.layerFor(() =>
+  Effect.fail(new GitHubRefused({ status: 0, reason: "Cluenori isn't connected to GitHub yet" })),
+).pipe(Layer.provide(unreachableWeb))
+
+/** A language model that answers `answer` to every prompt, keeping each prompt it was given. */
+export const fakeModel = (answer: (prompt: string) => string, prompts: Array<string> = []) =>
+  Layer.effect(
+    LanguageModel.LanguageModel,
+    LanguageModel.make({
+      generateText: (options) =>
+        Effect.sync(() => {
+          const text = options.prompt.content
+            .map((message) =>
+              typeof message.content === "string"
+                ? message.content
+                : message.content.map((part) => (part.type === "text" ? part.text : "")).join(""),
+            )
+            .join("\n\n")
+          prompts.push(text)
+          return [{ type: "text" as const, text: answer(text) }]
+        }),
+      streamText: () => Stream.empty,
+    }),
+  )
+
+/** A language model that never answers. */
+export const noModel = Layer.effect(
+  LanguageModel.LanguageModel,
+  LanguageModel.make({
+    generateText: () =>
+      Effect.fail(
+        AiError.make({
+          module: "test",
+          method: "generateText",
+          reason: new AiError.UnknownError({ description: "No model in the test" }),
+        }),
+      ),
+    streamText: () => Stream.empty,
+  }),
+)
+
+/** Sources with nothing set up: GitHub not connected, no App Store Connect key, no language model. */
+export const noSources = Layer.mergeAll(
+  Layer.succeed(
+    ReleaseSources,
+    ReleaseSources.of({ appStoreConnect: Option.none(), appStoreConnectManager: Option.none() }),
+  ),
+  notConnected,
+  noModel,
 )
 
 /**
  * Runs `program` inside the Durable Object of project `project`, starting at the time `now` (Unix
  * ms), with the engines built on its storage the way the host builds them, the archive in memory,
  * a web that answers nothing, the module's records, and `sources` for GitHub and App Store Connect,
- * none unless given. `TestClock.setTime` moves time within it. Tests use projects of their own.
+ * neither set up unless given. `TestClock.setTime` moves time within it. Tests use projects of their own.
  */
 export const inProject = <A, E>(
   project: string,
   now: number,
-  program: Effect.Effect<A, E, Incidents | Signals | Projects | ActivityLog | ReleaseRecords | ReleaseSources>,
-  sources: Layer.Layer<ReleaseSources> = noSources,
+  program: Effect.Effect<
+    A,
+    E,
+    | Incidents
+    | Signals
+    | Projects
+    | ActivityLog
+    | ReleaseRecords
+    | ReleaseSources
+    | GitHub
+    | Crypto.Crypto
+    | LanguageModel.LanguageModel
+  >,
+  sources: Layer.Layer<ReleaseSources | GitHub | LanguageModel.LanguageModel> = noSources,
 ) =>
   Effect.promise(() =>
     runInDurableObject(env.PROJECT.getByName(project), (_instance, state) =>
@@ -61,7 +122,7 @@ export const inProject = <A, E>(
               ),
               Layer.provide(ArchiveStore.layerMemory),
               Layer.provide(unreachableWeb),
-              Layer.provide(webCryptoLayer(crypto)),
+              Layer.provideMerge(webCryptoLayer(crypto)),
               Layer.provide(SqliteClient.layer({ storage: state.storage })),
               Layer.provideMerge(TestClock.layer()),
             ),

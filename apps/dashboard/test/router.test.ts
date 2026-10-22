@@ -58,6 +58,30 @@ describe("routeOf", () => {
     assert.deepStrictEqual(readBack({ page: "kit" }), { page: "kit" })
   })
 
+  it("reads what GitHub sent the browser back to the GitHub page with", () => {
+    for (const returned of [
+      { _tag: "connected" },
+      { _tag: "installed" },
+      { _tag: "requested" },
+      { _tag: "problem", problem: "GitHub sent no app back: connect GitHub again" },
+    ] as const) {
+      assert.deepStrictEqual(readBack({ page: "github", returned }), { page: "github", returned })
+    }
+    assert.deepStrictEqual(routeOf("/github", "?installation_id=72&setup_action=install"), {
+      page: "github",
+      returned: { _tag: "installed" },
+    })
+    assert.deepStrictEqual(routeOf("/github", ""), { page: "github" })
+    assert.deepStrictEqual(routeOf("/github", "?problem=%20"), { page: "github" })
+    assert.deepStrictEqual(routeOf("/github/apps", ""), { page: "missing" })
+    // Anyone can put text in a link: a long problem is cut.
+    const long = routeOf("/github", `?problem=${"a".repeat(2_000)}`)
+    assert.strictEqual(
+      long.page === "github" && long.returned?._tag === "problem" ? long.returned.problem.length : 0,
+      500,
+    )
+  })
+
   it("opens a page that says so for an address with a key that isn't one", () => {
     assert.deepStrictEqual(routeOf("/Folio!/errors", ""), { page: "missing" })
     assert.deepStrictEqual(routeOf("/folio/errors/not-an-id", ""), { page: "missing" })

@@ -1,8 +1,12 @@
-import { CommitSha } from "@bagatka/github"
+import { CommitSha, Repository } from "@bagatka/github"
 import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, Period, ReleaseVersion } from "@cluenori/foundation"
 import { Incident } from "@cluenori/incidents"
+import { DeployTarget } from "@cluenori/projects"
 import { ErrorGroup } from "@cluenori/signals"
 import { Schema } from "effect"
+
+import { ReleaseNote } from "./note.ts"
+import { Promotion } from "./promotion.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
@@ -240,6 +244,14 @@ export const ReleaseDetail = Schema.Struct({
   changes: Schema.optionalKey(ReleaseChanges),
   /** Why its component's commits or store builds may be missing: the sources that failed lately. */
   problems: Schema.Array(SourceProblem),
+  /** Its promotions, to every environment, the latest first: at most 20. */
+  promotions: Schema.Array(Promotion),
+  /** Where it can be promoted: its component's deploy targets. */
+  deployTargets: Schema.Array(DeployTarget),
+  /** Its notes for its users, one for each language saved. */
+  notes: Schema.Array(ReleaseNote),
+  /** Its component's repository on GitHub, where its deploy workflows run; absent until linked. */
+  repository: Schema.optionalKey(Repository),
 }).annotate({ identifier: "ReleaseDetail" })
 export type ReleaseDetail = typeof ReleaseDetail.Type
 

@@ -12,6 +12,9 @@ public final class DeploymentModels {
 
     private let api: CluenoriAPI
     private let context: AnswerContext
+    // The member the phone acts for, which says whose promotions are its own: asked by a release's
+    // screen until known, and kept on the phone, since a pairing acts for one member.
+    private let member: Answer<Member>
     private var kept: [String: AnyObject] = [:]
     // Each project's environment choice, kept apart from the screens' models: one per project.
     private var choices: [String: EnvironmentChoice] = [:]
@@ -24,6 +27,7 @@ public final class DeploymentModels {
         self.context = context
         today = TodayModel(api: api, context: context)
         projects = ProjectsModel(api: api, context: context)
+        member = Answer(context, .init(key: "me") { () async throws(APIError) in try await api.me() })
         alerts = AlertsModel(api: api, phone: phone, system: alertSystem, keyRejected: context.keyRejected)
     }
 
@@ -111,9 +115,21 @@ public final class DeploymentModels {
         }
     }
 
+    /// A project's components' versions, which its builds are numbered in.
+    public func versions(_ project: String) -> VersionsModel {
+        model("versions \(project)") {
+            VersionsModel(project: project, projectDetail: environments(project).detail, api: api, context: context)
+        }
+    }
+
+    /// How a project's release notes read, which drafts follow.
+    public func notesStyle(_ project: String) -> NotesStyleModel {
+        model("notes style \(project)") { NotesStyleModel(project: project, api: api, context: context) }
+    }
+
     /// One release, whatever the period: its comparison is of the whole release.
     public func release(_ release: ReleaseRef) -> ReleaseModel {
-        model("release \(release)") { ReleaseModel(release: release, api: api, context: context) }
+        model("release \(release)") { ReleaseModel(release: release, api: api, context: context, member: member) }
     }
 
     // The release `telemetry` is narrowed to, whose span its screens look over.

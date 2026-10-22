@@ -69,19 +69,32 @@ the Cluenori `./run` serves instead of the deployment.
 ## Follow releases
 
 A service's releases come from the version it reports in `service.version`, compared each with
-the one before it. Tell Cluenori about each deploy from CI with `cluenori-release`, one file to
-copy into your repository: it needs only `git` and `curl`, and sends the release's commit and the
-commits since the release before. Link a component to its GitHub repository and its App Store app
-for tags, pull requests, and store builds:
+the one before it. Cluenori numbers every build: you set a component's version, such as `0.6.0`,
+and each new commit its CI builds becomes the next, `0.6.0+12`, the same commit in every
+environment. CI asks for the number, and reports each deploy, with `cluenori-release`, one file to
+copy into your repository: it needs only `git` and `curl`.
+
+Connect GitHub once, on the web's GitHub page (`<your Cluenori>/github`): GitHub creates Cluenori's
+own app in one step, and you install it on the accounts whose repositories your components link.
+Each component's deploy targets say how a release reaches each environment: a workflow in its
+repository, and for an app, the App Store Connect app its builds go to. Anyone who sees the project
+promotes a release from its page, the iPhone app or the CLI: Cluenori starts the workflow, follows
+the build into TestFlight, or through App Store review with the release's notes as What's New,
+which the project's language model drafts and you edit.
 
 ```sh
 CLUENORI_URL=<your Cluenori> CLUENORI_INGEST_KEY=<the component's ingest key> \
-  ./cluenori-release --release 2026.10.21-e91f09c --environment prod   # in CI, after deploying
-./cluenori component link notes notes-api --repository owner/notes-api
-./cluenori github setup                      # a read-only token, for tags, commits, pull requests
-./cluenori appstore setup AuthKey_ABC123DEFG.p8 --issuer <issuer ID>   # for an app's builds
+  ./cluenori-release number                  # in CI: the release this commit is, such as 0.6.0+12
+./cluenori component link notes notes-ios --repository owner/notes-ios \
+  --deploy beta=ios.yml --testflight beta=com.example.notes.beta \
+  --deploy production=ios.yml --app-store production=com.example.notes
+./cluenori version notes notes-ios 0.6.0     # what its next builds are numbered in; or patch, minor, major
+./cluenori github                            # whether GitHub is connected, and where it's installed
+./cluenori appstore setup AuthKey_ABC123DEFG.p8 --issuer <issuer ID>             # reads builds
+./cluenori appstore setup AuthKey_DEF456GHIJ.p8 --issuer <issuer ID> --manager   # submits them
 ./cluenori releases notes                    # each release and how it compares with the one before
-./cluenori release notes notes-api <release> # what moved, what changed, and where its build stands
+./cluenori notes notes notes-ios 0.6.0+12 --draft production --save   # release notes, drafted by AI
+./cluenori promote notes notes-ios 0.6.0+12 --to production --reason "Faster notes"
 ```
 
 ## Work on it

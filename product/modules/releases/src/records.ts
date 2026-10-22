@@ -1,9 +1,13 @@
 import { CommitSha } from "@bagatka/github"
-import { ComponentKey, EnvironmentKey, ReleaseVersion } from "@cluenori/foundation"
+import { Actor, ComponentKey, EnvironmentKey, ReleaseVersion } from "@cluenori/foundation"
 import { Context, DateTime, Effect, Layer, Option, Schema } from "effect"
 import { Migrator, SqlClient, SqlSchema } from "effect/sql"
 
+import type { ReleaseNote } from "./note.ts"
+import { NoteLocale, NoteText } from "./note.ts"
+import { hasEnded, Promotion } from "./promotion.ts"
 import { ReleaseChanges, ReleaseCommit, StoreBuild } from "./release.ts"
+import { SemanticVersion } from "./version.ts"
 
 /** Where a release's facts came from. */
 export type Source = "github" | "appStoreConnect"
@@ -17,11 +21,29 @@ export interface Deploy {
   readonly deployedAt: DateTime.Utc
 }
 
-/** An app's build, kept with its component and the release it is. */
+/** An app's build, kept with its component, the environment whose app it is in, and the release it is. */
 export interface StoredBuild {
   readonly component: ComponentKey
+  readonly environment: EnvironmentKey
   readonly release: ReleaseVersion
   readonly build: StoreBuild
+}
+
+/** What a component's next builds are numbered from: its version, and the last build number given; 0 for none yet. */
+export interface VersionLine {
+  readonly component: ComponentKey
+  readonly version: SemanticVersion
+  readonly lastBuild: number
+  readonly setAt: DateTime.Utc
+}
+
+/** The release a commit was numbered as, once and for good. */
+export interface NumberedCommit {
+  readonly component: ComponentKey
+  readonly commit: CommitSha
+  readonly release: ReleaseVersion
+  readonly version: SemanticVersion
+  readonly build: number
 }
 
 /** A source's last read of a component: when, and what went wrong, if anything. */
@@ -82,12 +104,82 @@ const migrate = Migrator.make({})({
         PRIMARY KEY (component, source)
       ) WITHOUT ROWID`
     }),
+    // Promotions, each as JSON, with the actor who started it, and what they are found by: their
+    // component, environment and release, when they started (Unix ms), and whether they ended.
+    "0002_promotions": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE releases_promotions (
+        id TEXT PRIMARY KEY,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended INTEGER NOT NULL,
+        actor TEXT NOT NULL,
+        promotion_json TEXT NOT NULL
+      ) WITHOUT ROWID`
+      yield* sql`CREATE INDEX releases_promotions_by_release ON releases_promotions (component, release, started_at)`
+      yield* sql`CREATE INDEX releases_promotions_unended ON releases_promotions (started_at) WHERE ended = 0`
+    }),
+    // Store builds by the environment whose App Store app they are in, as each deploy target has its
+    // own app; those kept before are read again within a minute. Each component's version line, and
+    // each commit's number, unique for good.
+    "0003_versions": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`DROP TABLE releases_store_builds`
+      yield* sql`CREATE TABLE releases_store_builds (
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        uploaded_at INTEGER NOT NULL,
+        build_json TEXT NOT NULL,
+        PRIMARY KEY (component, environment, release)
+      ) WITHOUT ROWID`
+      yield* sql`DELETE FROM releases_syncs WHERE source = 'appStoreConnect'`
+      yield* sql`CREATE TABLE releases_versions (
+        component TEXT PRIMARY KEY,
+        version TEXT NOT NULL,
+        last_build INTEGER NOT NULL,
+        set_at INTEGER NOT NULL
+      ) WITHOUT ROWID`
+      yield* sql`CREATE TABLE releases_numbers (
+        component TEXT NOT NULL,
+        commit_sha TEXT NOT NULL,
+        release TEXT NOT NULL,
+        version TEXT NOT NULL,
+        build INTEGER NOT NULL,
+        numbered_at INTEGER NOT NULL,
+        PRIMARY KEY (component, commit_sha),
+        UNIQUE (component, release)
+      ) WITHOUT ROWID`
+    }),
+    // Releases' notes, one for each language, and when each was saved (Unix ms); and the project's
+    // notes style, one row at most.
+    "0004_notes": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE releases_notes (
+        component TEXT NOT NULL,
+        release TEXT NOT NULL,
+        locale TEXT NOT NULL,
+        text TEXT NOT NULL,
+        saved_at INTEGER NOT NULL,
+        PRIMARY KEY (component, release, locale)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE TABLE releases_notes_style (
+        only INTEGER PRIMARY KEY CHECK (only = 1),
+        style TEXT NOT NULL
+      )`
+    }),
   }),
 })
 
 const CommitJson = Schema.fromJsonString(ReleaseCommit)
 const ChangesJson = Schema.fromJsonString(ReleaseChanges)
 const BuildJson = Schema.fromJsonString(StoreBuild)
+const PromotionJson = Schema.fromJsonString(Promotion)
+
+// A release's promotions are listed up to this many, the latest first.
+const promotionsListed = 20
 
 /**
  * What the Releases module keeps in the project's database: releases' commits and changes, apps'
@@ -122,13 +214,40 @@ export class ReleaseRecords extends Context.Service<
       previous: ReleaseVersion,
       changes: ReleaseChanges,
     ) => Effect.Effect<void>
-    /** Apps' builds, of every component or one, each with the release it is: `2.4.0+312`. */
+    /** Apps' builds, of every component or one, each with its environment and the release it is: `2.4.0+312`. */
     readonly storeBuilds: (component?: ComponentKey) => Effect.Effect<ReadonlyArray<StoredBuild>>
-    /** Replaces an app's builds with those App Store Connect listed now, by release. */
+    /** Replaces the builds of an environment's app with those App Store Connect listed now, by release. */
     readonly replaceStoreBuilds: (
       component: ComponentKey,
+      environment: EnvironmentKey,
       builds: ReadonlyArray<{ readonly release: ReleaseVersion; readonly build: StoreBuild }>,
     ) => Effect.Effect<void>
+    /** Every component's version line. */
+    readonly versionLines: Effect.Effect<ReadonlyArray<VersionLine>>
+    /** Sets a component's version, and its last build number. */
+    readonly saveVersionLine: (line: VersionLine) => Effect.Effect<void>
+    /** The release `commit` was numbered as, if it was. */
+    readonly numberOf: (component: ComponentKey, commit: CommitSha) => Effect.Effect<Option.Option<NumberedCommit>>
+    /** Keeps the release a commit was numbered as. A commit or release numbered before is a defect. */
+    readonly saveNumber: (numbered: NumberedCommit, at: DateTime.Utc) => Effect.Effect<void>
+    /** A release's notes, by language. */
+    readonly notes: (component: ComponentKey, release: ReleaseVersion) => Effect.Effect<ReadonlyArray<ReleaseNote>>
+    /** Replaces a release's notes. */
+    readonly saveNotes: (
+      component: ComponentKey,
+      release: ReleaseVersion,
+      notes: ReadonlyArray<ReleaseNote>,
+      at: DateTime.Utc,
+    ) => Effect.Effect<void>
+    /** The latest notes saved of a component's other releases, the latest first: at most `count` releases'. */
+    readonly recentNotes: (
+      component: ComponentKey,
+      except: ReleaseVersion,
+      count: number,
+    ) => Effect.Effect<ReadonlyArray<{ readonly release: ReleaseVersion; readonly notes: ReadonlyArray<ReleaseNote> }>>
+    /** The project's notes style, once set. */
+    readonly notesStyle: Effect.Effect<Option.Option<string>>
+    readonly saveNotesStyle: (style: string) => Effect.Effect<void>
     /** Deploys reported, the latest first, of every component or one. */
     readonly deploys: (component?: ComponentKey) => Effect.Effect<ReadonlyArray<Deploy>>
     /** Records a deploy; one of the same release and environment reported again keeps the first time. */
@@ -136,6 +255,17 @@ export class ReleaseRecords extends Context.Service<
     /** Each source's last read of each component. */
     readonly syncs: Effect.Effect<ReadonlyArray<Sync>>
     readonly saveSync: (sync: Sync) => Effect.Effect<void>
+    /** A release's promotions, to every environment, the latest first: at most 20. */
+    readonly promotions: (component: ComponentKey, release: ReleaseVersion) => Effect.Effect<ReadonlyArray<Promotion>>
+    /** The promotions that haven't ended, the oldest first, of every component or one environment's. */
+    readonly unendedPromotions: (where?: {
+      readonly component: ComponentKey
+      readonly environment: EnvironmentKey
+    }) => Effect.Effect<ReadonlyArray<Promotion>>
+    /** Records a promotion that just started, with the actor who started it. */
+    readonly startPromotion: (promotion: Promotion, actor: Actor) => Effect.Effect<void>
+    /** Records what changed about a promotion: its run, its state, and when it ended. */
+    readonly updatePromotion: (promotion: Promotion) => Effect.Effect<void>
   }
 >()("@cluenori/releases/records/ReleaseRecords") {
   /** The records on the project's database, first creating or updating its tables. */
@@ -166,9 +296,14 @@ export class ReleaseRecords extends Context.Service<
       })
       const findBuilds = SqlSchema.findAll({
         Request: Schema.Struct({ component: Schema.optionalKey(ComponentKey) }),
-        Result: Schema.Struct({ component: ComponentKey, release: ReleaseVersion, build: BuildJson }),
+        Result: Schema.Struct({
+          component: ComponentKey,
+          environment: EnvironmentKey,
+          release: ReleaseVersion,
+          build: BuildJson,
+        }),
         execute: (asked) =>
-          sql`SELECT component, release, build_json AS "build" FROM releases_store_builds
+          sql`SELECT component, environment, release, build_json AS "build" FROM releases_store_builds
             ${asked.component === undefined ? sql`` : sql`WHERE component = ${asked.component}`}
             ORDER BY uploaded_at DESC`,
       })
@@ -200,6 +335,75 @@ export class ReleaseRecords extends Context.Service<
       const encodeCommit = Schema.encodeEffect(CommitJson)
       const encodeChanges = Schema.encodeEffect(ChangesJson)
       const encodeBuild = Schema.encodeEffect(BuildJson)
+      const encodePromotion = Schema.encodeEffect(PromotionJson)
+      const NoteRow = Schema.Struct({ release: ReleaseVersion, locale: NoteLocale, text: NoteText })
+      const findNotes = SqlSchema.findAll({
+        Request: Schema.Struct({ component: ComponentKey, release: ReleaseVersion }),
+        Result: NoteRow,
+        execute: (key) =>
+          sql`SELECT release, locale, text FROM releases_notes
+            WHERE component = ${key.component} AND release = ${key.release} ORDER BY locale`,
+      })
+      const findRecentNotes = SqlSchema.findAll({
+        Request: Schema.Struct({ component: ComponentKey, except: ReleaseVersion, count: Schema.Int }),
+        Result: NoteRow,
+        execute: (asked) =>
+          sql`SELECT release, locale, text FROM releases_notes
+            WHERE component = ${asked.component} AND release IN (
+              SELECT release FROM releases_notes WHERE component = ${asked.component} AND release <> ${asked.except}
+              GROUP BY release ORDER BY MAX(saved_at) DESC LIMIT ${asked.count})
+            ORDER BY saved_at DESC, locale`,
+      })
+      const findStyle = SqlSchema.findOneOption({
+        Request: Schema.Void,
+        Result: Schema.Struct({ style: Schema.String }),
+        execute: () => sql`SELECT style FROM releases_notes_style`,
+      })
+      const findVersionLines = SqlSchema.findAll({
+        Request: Schema.Void,
+        Result: Schema.Struct({
+          component: ComponentKey,
+          version: SemanticVersion,
+          lastBuild: Schema.Int,
+          setAt: Schema.Int,
+        }),
+        execute: () =>
+          sql`SELECT component, version, last_build AS "lastBuild", set_at AS "setAt" FROM releases_versions ORDER BY component`,
+      })
+      const findNumber = SqlSchema.findOneOption({
+        Request: Schema.Struct({ component: ComponentKey, commit: CommitSha }),
+        Result: Schema.Struct({
+          component: ComponentKey,
+          commit: CommitSha,
+          release: ReleaseVersion,
+          version: SemanticVersion,
+          build: Schema.Int,
+        }),
+        execute: (key) =>
+          sql`SELECT component, commit_sha AS "commit", release, version, build FROM releases_numbers
+            WHERE component = ${key.component} AND commit_sha = ${key.commit}`,
+      })
+      const encodeActor = Schema.encodeEffect(Schema.fromJsonString(Actor))
+      const findPromotions = SqlSchema.findAll({
+        Request: Schema.Struct({ component: ComponentKey, release: ReleaseVersion }),
+        Result: Schema.Struct({ promotion: PromotionJson }),
+        execute: (key) =>
+          sql`SELECT promotion_json AS "promotion" FROM releases_promotions
+            WHERE component = ${key.component} AND release = ${key.release}
+            ORDER BY started_at DESC LIMIT ${promotionsListed}`,
+      })
+      const findUnended = SqlSchema.findAll({
+        Request: Schema.Struct({
+          component: Schema.optionalKey(ComponentKey),
+          environment: Schema.optionalKey(EnvironmentKey),
+        }),
+        Result: Schema.Struct({ promotion: PromotionJson }),
+        execute: (where) =>
+          sql`SELECT promotion_json AS "promotion" FROM releases_promotions WHERE ended = 0
+            ${where.component === undefined ? sql`` : sql`AND component = ${where.component}`}
+            ${where.environment === undefined ? sql`` : sql`AND environment = ${where.environment}`}
+            ORDER BY started_at`,
+      })
 
       return ReleaseRecords.of({
         commits: (component) =>
@@ -237,13 +441,14 @@ export class ReleaseRecords extends Context.Service<
               ON CONFLICT (component, release, previous) DO UPDATE SET changes_json = excluded.changes_json`
           }).pipe(Effect.orDie),
         storeBuilds: (component) => findBuilds(component === undefined ? {} : { component }).pipe(Effect.orDie),
-        replaceStoreBuilds: (component, builds) =>
+        replaceStoreBuilds: (component, environment, builds) =>
           Effect.gen(function* () {
-            yield* sql`DELETE FROM releases_store_builds WHERE component = ${component}`
+            yield* sql`DELETE FROM releases_store_builds WHERE component = ${component} AND environment = ${environment}`
             for (const { release, build } of builds) {
               const json = yield* encodeBuild(build)
               yield* sql`INSERT OR REPLACE INTO releases_store_builds ${sql.insert({
                 component,
+                environment,
                 release,
                 uploaded_at: DateTime.toEpochMillis(build.uploadedAt),
                 build_json: json,
@@ -294,6 +499,96 @@ export class ReleaseRecords extends Context.Service<
             Effect.asVoid,
             Effect.orDie,
           ),
+        versionLines: findVersionLines(undefined).pipe(
+          Effect.orDie,
+          Effect.map((rows) => rows.map((row): VersionLine => ({ ...row, setAt: DateTime.makeUnsafe(row.setAt) }))),
+        ),
+        saveVersionLine: (line) =>
+          sql`INSERT INTO releases_versions ${sql.insert({
+            component: line.component,
+            version: line.version,
+            last_build: line.lastBuild,
+            set_at: DateTime.toEpochMillis(line.setAt),
+          })}
+            ON CONFLICT (component) DO UPDATE SET version = excluded.version, last_build = excluded.last_build,
+              set_at = excluded.set_at`.pipe(Effect.asVoid, Effect.orDie),
+        numberOf: (component, commit) => findNumber({ component, commit }).pipe(Effect.orDie),
+        saveNumber: (numbered, at) =>
+          sql`INSERT INTO releases_numbers ${sql.insert({
+            component: numbered.component,
+            commit_sha: numbered.commit,
+            release: numbered.release,
+            version: numbered.version,
+            build: numbered.build,
+            numbered_at: DateTime.toEpochMillis(at),
+          })}`.pipe(Effect.asVoid, Effect.orDie),
+        notes: (component, release) =>
+          findNotes({ component, release }).pipe(
+            Effect.orDie,
+            Effect.map((rows) => rows.map((row): ReleaseNote => ({ locale: row.locale, text: row.text }))),
+          ),
+        saveNotes: (component, release, notes, at) =>
+          Effect.gen(function* () {
+            yield* sql`DELETE FROM releases_notes WHERE component = ${component} AND release = ${release}`
+            for (const note of notes) {
+              yield* sql`INSERT INTO releases_notes ${sql.insert({
+                component,
+                release,
+                locale: note.locale,
+                text: note.text,
+                saved_at: DateTime.toEpochMillis(at),
+              })}`
+            }
+          }).pipe(Effect.orDie),
+        recentNotes: (component, except, count) =>
+          findRecentNotes({ component, except, count }).pipe(
+            Effect.orDie,
+            Effect.map((rows) => {
+              const byRelease = new Map<ReleaseVersion, Array<ReleaseNote>>()
+              for (const row of rows) {
+                byRelease.set(row.release, [
+                  ...(byRelease.get(row.release) ?? []),
+                  { locale: row.locale, text: row.text },
+                ])
+              }
+              return Array.from(byRelease, ([release, notes]) => ({ release, notes }))
+            }),
+          ),
+        notesStyle: findStyle(undefined).pipe(Effect.orDie, Effect.map(Option.map((row) => row.style))),
+        saveNotesStyle: (style) =>
+          sql`INSERT INTO releases_notes_style ${sql.insert({ only: 1, style })}
+            ON CONFLICT (only) DO UPDATE SET style = excluded.style`.pipe(Effect.asVoid, Effect.orDie),
+        promotions: (component, release) =>
+          findPromotions({ component, release }).pipe(
+            Effect.orDie,
+            Effect.map((rows) => rows.map((row) => row.promotion)),
+          ),
+        unendedPromotions: (where) =>
+          findUnended(where ?? {}).pipe(
+            Effect.orDie,
+            Effect.map((rows) => rows.map((row) => row.promotion)),
+          ),
+        startPromotion: (promotion, actor) =>
+          Effect.gen(function* () {
+            const json = yield* encodePromotion(promotion)
+            const actorJson = yield* encodeActor(actor)
+            yield* sql`INSERT INTO releases_promotions ${sql.insert({
+              id: promotion.id,
+              component: promotion.component,
+              environment: promotion.environment,
+              release: promotion.release,
+              started_at: DateTime.toEpochMillis(promotion.startedAt),
+              ended: hasEnded(promotion.state) ? 1 : 0,
+              actor: actorJson,
+              promotion_json: json,
+            })}`
+          }).pipe(Effect.orDie),
+        updatePromotion: (promotion) =>
+          Effect.gen(function* () {
+            const json = yield* encodePromotion(promotion)
+            yield* sql`UPDATE releases_promotions SET ended = ${hasEnded(promotion.state) ? 1 : 0},
+              promotion_json = ${json} WHERE id = ${promotion.id}`
+          }).pipe(Effect.orDie),
       })
     }),
   )

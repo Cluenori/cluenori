@@ -1,12 +1,12 @@
-import { Repository } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, ProjectKey } from "@cluenori/foundation"
-import { BundleId, ComponentName, ProjectName } from "@cluenori/projects"
+import { ComponentName, ProjectName } from "@cluenori/projects"
 import { Console, Effect, Option, Redacted } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 
 import { apiClient, reachFailures, refuse } from "./api-client.ts"
 import { apiTarget } from "./api-settings.ts"
-import { local, optionalKey, parsed } from "./question.ts"
+import { componentLinksOf, deployTargetLines } from "./deploy-targets.ts"
+import { local, parsed } from "./question.ts"
 
 /** `cluenori project create <key> --name <name>`. */
 export const projectCreate = Command.make(
@@ -128,7 +128,11 @@ export const componentAdd = Command.make(
     }),
 ).pipe(Command.withDescription("Add a component to a project, and get the ingest key its telemetry is sent with."))
 
-/** `cluenori component link <project> <component> [--repository owner/name] [--app-store bundle-id]`. */
+/**
+ * `cluenori component link <project> <component> [--repository owner/name]
+ * [--deploy environment=workflow.yml ...] [--testflight environment=bundle-id ...]
+ * [--app-store environment=bundle-id ...]`.
+ */
 export const componentLink = Command.make(
   "link",
   {
@@ -136,11 +140,27 @@ export const componentLink = Command.make(
     component: Argument.String("component").pipe(Argument.withDescription("The component's key.")),
     repository: Flag.String("repository").pipe(
       Flag.optional,
-      Flag.withDescription("Its GitHub repository, owner/name, whose tags and commits name its releases."),
+      Flag.withDescription(
+        "Its GitHub repository, owner/name: whose commits its releases are, and where its deploy workflows run.",
+      ),
+    ),
+    deploy: Flag.String("deploy").pipe(
+      Flag.atLeast(0),
+      Flag.withDescription(
+        "An environment and the workflow in the repository that builds and deploys a release there, such as production=deploy.yml; once for each environment. Promoting starts it with the inputs release, environment, commit and runner.",
+      ),
+    ),
+    testFlight: Flag.String("testflight").pipe(
+      Flag.atLeast(0),
+      Flag.withDescription(
+        "An environment and the bundle ID of the App Store Connect app its builds go to in TestFlight, such as beta=com.example.notes.beta; once for each environment.",
+      ),
     ),
     appStore: Flag.String("app-store").pipe(
-      Flag.optional,
-      Flag.withDescription("Its app's bundle ID in App Store Connect, for an iPhone app."),
+      Flag.atLeast(0),
+      Flag.withDescription(
+        "An environment and the bundle ID of the App Store Connect app its builds go to through App Store review to the App Store, such as production=com.example.notes.",
+      ),
     ),
     local,
   },
@@ -148,14 +168,14 @@ export const componentLink = Command.make(
     Effect.gen(function* () {
       const project = yield* parsed(ProjectKey, input.project, "a project key")
       const component = yield* parsed(ComponentKey, input.component, "a component key")
-      const repository = yield* optionalKey(Repository, input.repository, "a repository, owner/name")
-      const appStoreBundleId = yield* optionalKey(BundleId, input.appStore, "a bundle ID")
+      const links = yield* componentLinksOf({
+        repository: input.repository,
+        deploy: input.deploy,
+        testFlight: input.testFlight,
+        appStore: input.appStore,
+      })
       const target = yield* apiTarget(input.local)
       const client = yield* apiClient(target)
-      const links = {
-        ...Option.match(repository, { onNone: () => ({}), onSome: (value) => ({ repository: value }) }),
-        ...Option.match(appStoreBundleId, { onNone: () => ({}), onSome: (value) => ({ appStoreBundleId: value }) }),
-      }
       const linked = yield* client.projects.linkComponent({ params: { project, component }, payload: links }).pipe(
         Effect.catchTags({
           ...reachFailures(target),
@@ -163,20 +183,23 @@ export const componentLink = Command.make(
           ComponentNotFound: () => refuse(`${project} has no component ${component}.`),
         }),
       )
+      const targets = linked.deployTargets ?? []
+      const repository = linked.repository === undefined ? ", with no repository" : ` to ${linked.repository}`
+      yield* Console.log(`Linked ${linked.name} (${linked.key})${repository}.\n`)
       yield* Console.log(
-        [
-          `Linked ${linked.name} (${linked.key}):`,
-          `  Repository  ${linked.repository ?? "none"}`,
-          `  App Store   ${linked.appStoreBundleId ?? "none"}`,
-        ].join("\n"),
+        targets.length === 0
+          ? "It has no deploy targets, so its releases can't be promoted from Cluenori: add them with --deploy, --testflight and --app-store."
+          : `Its deploy targets:\n${deployTargetLines(targets)
+              .map((line) => `  ${line}`)
+              .join("\n")}`,
       )
       yield* Console.log(
-        "\nIts releases' commits and store builds appear within a few minutes, once the deployment has credentials: ./cluenori github setup, ./cluenori appstore setup.",
+        "\nIts releases' commits and store builds appear within a few minutes, once the deployment is connected to GitHub (./cluenori github) and has App Store Connect's key (./cluenori appstore setup).",
       )
     }),
 ).pipe(
   Command.withDescription(
-    "Link a component to its GitHub repository and its App Store app, where its releases come from beside its telemetry. An option left out unlinks it.",
+    "Link a component to its GitHub repository and its deploy targets: in each environment, the workflow that deploys its releases, the App Store Connect app its builds go to, or both. An option left out unlinks it.",
   ),
 )
 
@@ -188,6 +211,8 @@ export const project = Command.make("project").pipe(
 
 /** `cluenori component ...`. */
 export const component = Command.make("component").pipe(
-  Command.withDescription("Add components to projects, and link them to their repository and App Store app."),
+  Command.withDescription(
+    "Add components to projects, and link them to their repository and deploy targets: where their releases go.",
+  ),
   Command.withSubcommands([componentAdd, componentLink]),
 )

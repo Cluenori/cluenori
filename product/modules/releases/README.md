@@ -1,64 +1,88 @@
 # @cluenori/releases
 
 Each component's releases, from its telemetry, its CI's deploy reports, and App Store Connect, each
-compared with the release before it, with its commit and what changed in its repository since: the
-hub where a release's version, code, store build, performance and errors meet.
+compared with the release before it, with its commit and what changed in its repository since. It
+numbers each build, so a number always means one commit; promotes a release to an environment
+through its deploy target, as far as App Store review and release; and keeps the release's notes
+for its users, which its language model drafts. It is the hub where a release's version, code,
+store build, deploys, performance and errors meet.
 
 ## Use it
 
 ```ts
 // Inside the project's Durable Object; the host serves these.
 const { releases, problems } = yield* releasesModule.queries.list.run({ period: lastMonth })
-// [{ release: "2026.10.22-f00ba47", component: "notes-api", environment: "production",
-//    previous: "2026.10.21-e91f09c", verdict: "worse", slower: 1, failingMore: 1, newErrors: 0,
-//    commit: { sha, tag: "prod-2026.10.22-f00ba47", message, ... }, deployedAt, ... },
-//  { release: "2.4.0+313", component: "notes-ios", verdict: "unmeasured",
+// [{ release: "1.4.0+58", component: "notes-api", environment: "prod", previous: "1.4.0+57",
+//    verdict: "worse", slower: 1, failingMore: 1, newErrors: 0, commit: { sha, tag: "v1.4.0+58", ... } },
+//  { release: "0.6.0+2", component: "notes-ios", environment: "production", verdict: "unmeasured",
 //    store: { stage: "releasing", phasedRelease: { day: 2 }, ... } }]
-// problems: [{ component: "notes-api", source: "github", problem: "GitHub refused: Bad credentials..." }]
 
-const detail = yield* releasesModule.queries.release.run({ component, release: releases[0].release })
-// detail.slower: [{ operation: "GET /api/notes/{id}", p95Ms: 299, previousP95Ms: 33, ... }]
-// detail.changes: { totalCommits: 4, pullRequests: [{ number: 12, title: "Faster notes", ... }], ... }
-// detail.problems: why its component's commits or builds may be missing, as the list's are
+// CI numbers a commit before it builds (`cluenori-release number`); a member set the version first.
+yield* releasesModule.actions.setVersion.run(member, { component, version: "0.6.0", firstBuild: 2 })
+const numbered = yield* releasesModule.ingest.number.run(component, { commit })
+// { release: "0.6.0+2", version: "0.6.0", build: 2, commit }: the same commit asks again, the same answer.
+// Before a version is set: VersionNotSet.
 
-// What cluenori-release sends from CI with the component's ingest key, at /ingest/v1/releases/report.
-yield* releasesModule.ingest.report.run(component, { release, environment, commit, tag, commits })
+// Notes for its users, drafted by the project's language model, edited and saved by a person.
+const draft = yield* releasesModule.actions.draftNotes.run(member, { component, release, environment: production })
+// { notes: [{ locale: "en-US", text: "Tap the tab you're on to go back to the top." }], since: "0.5.0+1", commits: 12 }
+yield* releasesModule.actions.saveNotes.run(member, { component, release, notes: draft.notes })
 
-// A release the module doesn't know fails with ReleaseNotFound.
+// A member promotes it by its deploy target: the workflow, then the build through App Store review.
+const promotion = yield* releasesModule.actions.promote.run(member, {
+  component, release, environment: production, runner: "auto",
+  submission: { releaseType: "manual", phased: true },
+})
+// { state: "starting", workflow: "ios.yml", appStore: { bundleId, distribution: "appStore" }, ... }
+// Later: processing → inReview → approved, released with releaseApproved → succeeded.
+// Without notes for the App Store: PromotionRefused { fix: "notes" }.
 ```
 
 ## Owns
 
-- **Rules** (`src/verdict.ts`, `src/identity.ts`, `src/catalog.ts`):
+- **Rules** (`src/verdict.ts`, `src/identity.ts`, `src/catalog.ts`, `src/numbering.ts`, `src/promote.ts`, `src/notes.ts`):
   - **The release before:** the latest before it, of the same component and environment, known from telemetry, a deploy, or a store build.
   - **When an operation compares:** 100 runs in both releases.
   - **Slower and faster:** Today's rule, a p95 at least 1.5 times the other's, and 100 ms more.
   - **Fails more and less:** at least 5 failures, 2%, three times the other's rate.
   - **The verdict:** `worse` at once; otherwise `tooEarly` until it ran an hour and an operation compares; `unmeasured` without telemetry.
-  - **A release's commit:**
-    - its reported deploy's;
-    - else the tag named the version, or ending with it after a separator, such as `prod-<version>` or `v<version>`;
-    - else a SHA inside the version.
-  - **A pull request:** the one a commit's first line names.
-  - **An app's build:** it is the release `<version>+<build>`, and its stage comes from App Store Connect's states.
+  - **Numbers:** a commit becomes `<component version>+<last build + 1>` the first time its CI asks, and that release for good; a version only goes up, and build numbers never go back.
+  - **A release's commit:** the one it was numbered for; else its reported deploy's; else the tag named the version, or ending with it after a separator, such as `v<version>`; else a SHA inside the version.
+  - **An app's build:** it is the release `<version>+<build>`, in the environment whose deploy target its App Store Connect app is; its stage comes from App Store Connect's states.
+  - **A promotion:**
+    - by the component's deploy target for the environment: its workflow, on the repository's default branch, with the inputs `release`, `environment`, `commit` and `runner`; then, for an app, its build in the target's app, processed; TestFlight gets What to Test from the notes, and the App Store a version submitted for review with the notes as What's New;
+    - one at a time for each component and environment;
+    - followed each minute; lost when no run shows within 10 minutes, it doesn't end within a day, or review takes over 30 days.
+  - **Where a build runs, for `auto`:** `local` while a self-hosted runner of the repository's organization labelled `local` is online, as GitHub says; else `cloud`.
+  - **Notes:** at most 4000 characters a language; required before App Store review, except for an app's first version; a draft is written from the commits since the release current in that environment (on the App Store, the one live), in the project's notes style, with its last 5 notes as examples, and saved only by a person.
 - **Data,** in each project's database:
   - releases' commits (`releases_commits`) and lookups that found none, retried hourly (`releases_lookups`);
   - what changed between releases (`releases_changes`);
-  - apps' builds (`releases_store_builds`);
+  - apps' builds, by environment (`releases_store_builds`);
   - deploys reported (`releases_deploys`);
-  - each source's last read and problem (`releases_syncs`).
+  - each source's last read and problem (`releases_syncs`);
+  - promotions, with who started them and why (`releases_promotions`);
+  - components' versions (`releases_versions`) and each commit's number (`releases_numbers`);
+  - releases' notes (`releases_notes`) and the project's notes style (`releases_notes_style`).
 
 ## Does not own
 
 - **Counting by release, each release's span, and errors by release:** `@cluenori/signals`.
-- **Which repository and App Store app a component has:** `@cluenori/projects`, its links.
-- **Triggering a release's workflow, notes, flags and rollouts:** later slices.
+- **Which repository and deploy targets a component has:** `@cluenori/projects`, its links.
+- **GitHub's credentials:** `@cluenori/github` keeps the workspace's app; the host gives this module the `GitHub` client that acts as it.
+- **Which model writes drafts:** the host provides `effect/ai`'s `LanguageModel`.
+- **What a deploy does:** the repository's workflow; its `cluenori-release` step reports it.
+- **The changelog, flags and rollouts:** later modules; the notes are their first part.
 
 ## Contract
 
 `src/index.ts`:
-- **`releasesModule`:** its queries, its ingest writes (`report`, `last`), and its background work.
-- **`releasesLayer`:** its records and clients, from `ReleasesSettings`.
+- **`releasesModule`:**
+  - its queries: `list`, `release`, `versions`, `notesStyle`;
+  - its actions: `promote`, `releaseApproved`, `setVersion`, `saveNotes`, `draftNotes`, `setNotesStyle`;
+  - its ingest writes: `report`, `last`, `number`, `runner`;
+  - and its background work.
+- **`releasesLayer`:** its records and App Store Connect clients, from `ReleasesSettings`.
 - **`ReleasesGroup`:** its routes.
 - **The Schemas** they carry.
 
@@ -67,35 +91,59 @@ yield* releasesModule.ingest.report.run(component, { release, environment, commi
 - **Engines:**
   - `@cluenori/signals`: releases, operations and errors by release;
   - `@cluenori/incidents`: incidents while a release ran;
-  - `@cluenori/projects`: components' links, and their keys for deploy reports.
+  - `@cluenori/projects`: components' links and deploy targets, and their keys for CI's writes.
 - **Capabilities:**
-  - `@bagatka/github`: tags, commits, comparisons, pull requests;
-  - `@bagatka/app-store-connect`: builds and App Store versions;
-  - `@bagatka/es256-jwt`: App Store Connect's tokens.
+  - `@bagatka/github`: tags, commits, comparisons, pull requests, starting workflows and following their runs, and organizations' self-hosted runners, through the `GitHub` service the host provides;
+  - `@bagatka/app-store-connect`: builds, versions and languages; preparing, submitting and releasing versions; What to Test;
+  - `@bagatka/es256-jwt`: App Store Connect's tokens;
+  - `effect/ai`'s `LanguageModel`, which the host provides, for drafts.
 - **Foundation:** `@cluenori/foundation`, for `defineModule`.
 
 ## Settings
 
-`releasesLayer({ github, appStoreConnect, signing })`: a read-only GitHub token and an App Store
-Connect API key, each absent until `./cluenori github setup` and `./cluenori appstore setup` store
-it as Worker secrets; and Web Crypto, which signs App Store Connect's tokens.
+`releasesLayer({ appStoreConnect, appStoreConnectManager, signing })`:
+- **App Store Connect keys:** one that reads, with the Developer role, and one that submits and releases, with the App Manager role. Each is absent until `./cluenori appstore setup` (with `--manager` for the second) stores it as Worker secrets.
+- **Web Crypto,** which signs App Store Connect's tokens.
+
+GitHub and the language model aren't settings: the host provides them. GitHub refuses with what to do until an owner connects and installs it.
 
 ## Background work
 
 Each minute, on the project's alarm:
 - **Each component linked to a repository:** it looks up at most 5 releases' commits and compares at most 2 pairs.
-- **Each linked app:** it reads App Store Connect every 15 minutes, keeping the 50 latest builds and the 20 latest App Store versions.
+- **Each component with App Store apps in its deploy targets:** it reads App Store Connect every 15 minutes, keeping each app's 50 latest builds and 20 latest App Store versions.
+- **Each promotion that hasn't ended:** at most 10, the oldest first:
+  - it asks GitHub about its run, then App Store Connect about its build;
+  - it submits the build for review once processed, for the App Store, recording `promotion.submitted`;
+  - it records `promotion.ended` once it ends.
 
-A source that refuses or fails is noted for the list, and tried again the next minute.
+A source that refuses or fails is noted for the list, logged when its problem is new, and tried again the next minute.
+
+## Activity
+
+- **By a member:**
+  - `promotion.started`, with their reason;
+  - `version.set`;
+  - `release_notes.saved`;
+  - `notes_style.set`.
+- **By the process `releases.promotions`:** `promotion.submitted` and `promotion.ended`.
+- **By the process `releases.numbering`:** `release.numbered`, when CI numbers a commit.
 
 ## Decisions and constraints
 
 - **Counted from October 2026.** Telemetry from before has no release.
+- **A number is a commit.** One commit built for several environments, such as an app's internal, beta and production apps, is one release everywhere; each environment's app has its own file of it.
+- **Promoting starts a workflow and follows the store; it doesn't deploy.** The repository's workflow decides what deploying means. Its `cluenori-release` step reports the deploy, which then shows here as the release's deploy in that environment.
+- **A promotion's run is found, not told,** when GitHub doesn't say which run a dispatch started: the first run of its workflow on `workflow_dispatch` created since, that no other promotion claims.
+- **Submitting is App Store Connect's API, not CI's:** no Mac or workflow is needed once the build is processed.
+- **A draft treats commit messages as data.** The prompt says so, and a person edits and saves every note; nothing is sent to a store that a person didn't save.
 - **A deploy report is the generic way:** `cluenori-release`, at the repository's root, runs in any CI with `git` and `curl`, and needs no token. GitHub then adds pull requests, files, and links.
 - **An app reports `<version>+<build>`** in `service.version`, so its telemetry joins its store build.
 - **Incidents** are those the project keeps: the open ones and those resolved in the last 7 days.
 - **Not handled:**
   - a release deployed again after a later one stays where it first ran;
   - a component that reports no environment beside one that does counts both under one release;
-  - a repository with more than 100 tags matching a version.
+  - a repository with more than 100 tags matching a version;
+  - GitHub not answering a dispatch it may have started: asking again may start a second run;
+  - pausing or resuming a phased release from Cluenori (the client can; no action uses it yet).
 - **A list compares at most 30 releases,** two operation tables and an error table each, read in the project's object.

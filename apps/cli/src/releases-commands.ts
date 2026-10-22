@@ -1,12 +1,31 @@
 import { ComponentKey, EnvironmentKey, Period, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
-import type { ComparedOperation, ReleaseSummary, StoreBuild } from "@cluenori/releases"
+import type { AppStoreTarget } from "@cluenori/projects"
+import type {
+  AppStoreSubmission,
+  ComparedOperation,
+  Promotion,
+  PromotionFix,
+  ReleaseSummary,
+  Runner,
+  StoreBuild,
+} from "@cluenori/releases"
+import { PromotionId, PromotionReason } from "@cluenori/releases"
 import { Console, Effect, Option } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 
 import { apiClient, reachFailures, refuse } from "./api-client.ts"
+import type { ApiTarget } from "./api-settings.ts"
 import { apiTarget } from "./api-settings.ts"
+import { deployTargetLines } from "./deploy-targets.ts"
 import { filters, headline, optionalKey, parsed, questionOf } from "./question.ts"
 import { columns, count, milliseconds, share, utcMinute } from "./terminal-text.ts"
+
+const componentArgument = Argument.String("component").pipe(
+  Argument.withDescription("The component's key, such as notes-api."),
+)
+const releaseArgument = Argument.String("release").pipe(
+  Argument.withDescription("The release, as ./cluenori releases lists it, such as 1.4.0+58."),
+)
 
 // What a verdict says, with what it counts.
 const verdictText = (release: ReleaseSummary) => {
@@ -61,6 +80,66 @@ const stageText = (store: StoreBuild) => {
       return "Expired"
     case "other":
       return store.appStoreState ?? "Unknown"
+  }
+}
+
+// Where a promotion stands, in words; once approved, how to release it.
+const promotionText = (project: ProjectKey, promotion: Promotion) => {
+  switch (promotion.state) {
+    case "starting":
+      return "Starting"
+    case "queued":
+      return "Queued"
+    case "waiting":
+      return "Waiting for approval on GitHub"
+    case "running":
+      return "Running"
+    case "processing":
+      return "Processing in App Store Connect"
+    case "inReview":
+      return "In App Store review"
+    case "approved":
+      return `Approved: ./cluenori release-approved ${project} ${promotion.id}`
+    case "releasing":
+      return "Releasing on the App Store"
+    case "succeeded":
+      return "Succeeded"
+    case "failed":
+      return "Failed"
+    case "cancelled":
+      return "Cancelled"
+    case "rejected":
+      return "Rejected in review"
+    case "lost":
+      return promotion.appStore === undefined
+        ? "Not followed: see GitHub"
+        : "Not followed: see GitHub and App Store Connect"
+  }
+}
+
+// What to do about a refused promotion, by where it is fixed, for the release it was of; `where`
+// has placeholders when the release isn't known.
+const fixText = (
+  fix: PromotionFix,
+  where: {
+    readonly target: ApiTarget
+    readonly project: ProjectKey
+    readonly component: string
+    readonly release: string
+    readonly environment: string
+  },
+) => {
+  switch (fix) {
+    case "github":
+      return `Fix it on the web's GitHub page: ${where.target.url}/github`
+    case "links":
+      return `Link its repository and deploy targets, all of them, as an option left out unlinks: ./cluenori component link ${where.project} ${where.component} --repository <owner/name> --deploy ${where.environment}=<workflow.yml> …`
+    case "repository":
+      return "Fix the workflow in the repository: on its default branch, started on workflow_dispatch with the inputs release, environment, commit and runner."
+    case "notes":
+      return `Write its notes for each of the app's languages: ./cluenori notes ${where.project} ${where.component} ${where.release} --draft ${where.environment}`
+    case "appStore":
+      return "Give the deployment an App Manager key: ./cluenori appstore setup <key.p8> --issuer <issuer ID> --manager"
   }
 }
 
@@ -158,10 +237,8 @@ export const release = Command.make(
   "release",
   {
     project: filters.project,
-    component: Argument.String("component").pipe(Argument.withDescription("The component's key, such as notes-api.")),
-    release: Argument.String("release").pipe(
-      Argument.withDescription("The release, as ./cluenori releases lists it, such as 2026.10.21-e91f09c."),
-    ),
+    component: componentArgument,
+    release: releaseArgument,
     environment: filters.environment,
     local: filters.local,
   },
@@ -194,7 +271,10 @@ export const release = Command.make(
         summary.count === undefined || summary.errors === undefined
           ? "no telemetry yet"
           : `${count(summary.count)} runs, ${share(summary.errors, summary.count)} failed`
-      yield* Console.log(`${summary.release} of ${summary.component}${where}, ${whenText(summary)}: ${runs}.`)
+      const when = whenText(summary)
+      yield* Console.log(
+        `${summary.release} of ${summary.component}${where}${when === "" ? "" : `, ${when}`}: ${runs}.`,
+      )
       if (summary.commit !== undefined) {
         const commit = summary.commit
         const tagged = commit.tag === undefined ? "" : `, tagged ${commit.tag}`
@@ -250,6 +330,50 @@ export const release = Command.make(
       if (detail.newOperations.length > 0) {
         yield* Console.log(`\nNew operations:\n${detail.newOperations.join("\n")}`)
       }
+      if (detail.notes.length > 0) {
+        const width = Math.max(...detail.notes.map((note) => note.locale.length))
+        const firstLines = detail.notes.map(
+          (note) => `  ${note.locale.padEnd(width)}  ${note.text.split("\n")[0] ?? ""}`,
+        )
+        yield* Console.log(
+          `\nNotes, each language's first line:\n${firstLines.join("\n")}\nRead them whole: ./cluenori notes ${project} ${component} ${version}`,
+        )
+      } else if (detail.deployTargets.some((each) => each.appStore !== undefined)) {
+        yield* Console.log(
+          `\nNo notes yet, which TestFlight and the App Store show: ./cluenori notes ${project} ${component} ${version} --draft <environment>`,
+        )
+      }
+      if (detail.promotions.length > 0) {
+        yield* Console.log(
+          `\nPromotions:\n${columns([
+            ["Started", "To", "State", "Reason", "Run"],
+            ...detail.promotions.map((promotion) => [
+              utcMinute(promotion.startedAt),
+              promotion.environment,
+              // The command that releases an approved one is too long for a column: it follows.
+              promotion.state === "approved" ? "Approved" : promotionText(project, promotion),
+              promotion.reason ?? "",
+              promotion.run?.url ?? "",
+            ]),
+          ]).join("\n")}`,
+        )
+        for (const approved of detail.promotions.filter((promotion) => promotion.state === "approved")) {
+          yield* Console.log(
+            `Approved for ${approved.environment}, it waits for you to release it: ./cluenori release-approved ${project} ${approved.id}`,
+          )
+        }
+      }
+      if (detail.deployTargets.length > 0) {
+        const lines = deployTargetLines(detail.deployTargets).map((line) => `  ${line}`)
+        yield* Console.log(
+          `\nDeploy targets${detail.repository === undefined ? "" : `, in ${detail.repository}`}:\n${lines.join("\n")}\n`,
+        )
+        for (const each of detail.deployTargets) {
+          yield* Console.log(
+            `Promote it to ${each.environment}: ./cluenori promote ${project} ${component} ${version} --to ${each.environment}`,
+          )
+        }
+      }
       const changes = detail.changes
       if (changes !== undefined) {
         const files =
@@ -272,4 +396,188 @@ export const release = Command.make(
         }
       }
     }),
-).pipe(Command.withDescription("One release compared with the release before it: what got slower, and what changed."))
+).pipe(
+  Command.withDescription(
+    "One release compared with the release before it: what got slower and what changed; its notes, its promotions, and where it can be promoted.",
+  ),
+)
+
+// Where a promotion's workflow runs, in words.
+const runnerText = (runner: Runner) => {
+  switch (runner) {
+    case "auto":
+      return " on the local runner if it is online, else the cloud one"
+    case "local":
+      return " on the local runner"
+    case "cloud":
+      return " on the cloud runner"
+  }
+}
+
+// Where an app's build goes once its workflow ends, and how, in a sentence or two.
+const storeText = (project: ProjectKey, promotion: Promotion, app: AppStoreTarget) => {
+  const processed = `Cluenori waits for App Store Connect to process its build in ${app.bundleId}`
+  switch (app.distribution) {
+    case "testFlight":
+      return `${processed}, then sets What to Test from its notes.`
+    case "appStore": {
+      const submission = promotion.submission ?? { releaseType: "afterApproval", phased: true }
+      const reach = submission.phased ? "phased over 7 days" : "to everyone at once"
+      const released =
+        submission.releaseType === "manual"
+          ? `it waits for you to release it, ${reach}: ./cluenori release-approved ${project} ${promotion.id}`
+          : `it is released, ${reach}.`
+      return `${processed}, then submits it for App Store review with its notes as What's New. Once approved, ${released}`
+    }
+  }
+}
+
+/**
+ * `cluenori promote <project> <component> <release> --to <environment> [--reason <text>]
+ * [--runner auto|local|cloud] [--release-manually] [--all-at-once]`.
+ */
+export const promote = Command.make(
+  "promote",
+  {
+    project: filters.project,
+    component: componentArgument,
+    release: releaseArgument,
+    to: Flag.String("to").pipe(Flag.withDescription("The environment to deploy it to, such as production.")),
+    reason: Flag.String("reason").pipe(
+      Flag.optional,
+      Flag.withDescription("Why, in a few words, kept with the promotion: up to 500 characters."),
+    ),
+    runner: Flag.Literals("runner", ["auto", "local", "cloud"]).pipe(
+      Flag.optional,
+      Flag.withDescription(
+        "Where its workflow runs: local, your own machine's self-hosted runner; cloud, the repository's hosted one; or auto, the default, local while it is online.",
+      ),
+    ),
+    releaseManually: Flag.Boolean("release-manually").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription(
+        "For the App Store: once review approves it, wait until you release it with ./cluenori release-approved, in place of releasing it at once.",
+      ),
+    ),
+    allAtOnce: Flag.Boolean("all-at-once").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription(
+        "For the App Store: release it to everyone at once, in place of a phased release over 7 days.",
+      ),
+    ),
+    local: filters.local,
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const project = yield* parsed(ProjectKey, input.project, "a project key")
+      const target = yield* apiTarget(input.local)
+      const component = yield* parsed(ComponentKey, input.component, "a component key")
+      const version = yield* parsed(ReleaseVersion, input.release, "a release")
+      const environment = yield* parsed(EnvironmentKey, input.to, "an environment key")
+      const reason = yield* optionalKey(PromotionReason, input.reason, "a reason of 1 to 500 characters")
+      // Sent only when asked, so the API's default holds otherwise; a target without an App Store
+      // app has no use for it.
+      const submissionAsked = input.releaseManually || input.allAtOnce
+      const submission: AppStoreSubmission = {
+        releaseType: input.releaseManually ? "manual" : "afterApproval",
+        phased: !input.allAtOnce,
+      }
+      const client = yield* apiClient(target)
+      const promotion = yield* client.releases
+        .promote({
+          params: { project, component, release: version },
+          payload: {
+            environment,
+            ...Option.match(reason, { onNone: () => ({}), onSome: (text) => ({ reason: text }) }),
+            ...Option.match(input.runner, { onNone: () => ({}), onSome: (runner) => ({ runner }) }),
+            ...(submissionAsked ? { submission } : {}),
+          },
+        })
+        .pipe(
+          Effect.catchTags({
+            ...reachFailures(target),
+            ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
+            ReleaseNotFound: () =>
+              refuse(
+                `${project} has no release ${version} of ${component}. ./cluenori releases ${project} lists those it has.`,
+              ),
+            PromotionInProgress: ({ promotion: running }) =>
+              refuse(
+                `${component} is being promoted to ${environment} already: ${running.release}, started ${utcMinute(running.startedAt)}${running.run === undefined ? "" : `, ${running.run.url}`}. ${promotionText(project, running)}.\nPromote again once it ends.`,
+              ),
+            PromotionRefused: (refused) =>
+              refuse(
+                `Nothing started: ${refused.reason}\n${fixText(refused.fix, { target, project, component, release: version, environment })}`,
+              ),
+            PromotionUnavailable: (unavailable) =>
+              refuse(`GitHub didn't answer, so nothing started: ${unavailable.reason}. Try again.`),
+          }),
+        )
+      const runner = promotion.runner === undefined ? "" : runnerText(promotion.runner)
+      yield* Console.log(
+        promotion.workflow === undefined || promotion.repository === undefined
+          ? `Promoting ${version} of ${component} to ${environment}: ${promotionText(project, promotion)}.`
+          : `Started ${promotion.workflow} in ${promotion.repository}${runner}, to deploy ${version} of ${component} to ${environment}.`,
+      )
+      if (promotion.run !== undefined) {
+        yield* Console.log(`Its run: ${promotion.run.url}`)
+      } else if (promotion.workflow !== undefined) {
+        yield* Console.log("Its run shows in the repository's Actions on GitHub.")
+      }
+      if (promotion.appStore !== undefined) {
+        yield* Console.log(
+          `${promotion.workflow === undefined ? "" : "Once it ends, "}${storeText(project, promotion, promotion.appStore)}`,
+        )
+      }
+      yield* Console.log(`Cluenori follows it each minute: ./cluenori release ${project} ${component} ${version}`)
+    }),
+).pipe(
+  Command.withDescription(
+    "Promote a release to an environment by its component's deploy target there: start its workflow on GitHub, and for an app, follow its build into TestFlight, or through App Store review with its notes as What's New. Promoting an older release rolls back.",
+  ),
+)
+
+/** `cluenori release-approved <project> <promotion>`. */
+export const releaseApproved = Command.make(
+  "release-approved",
+  {
+    project: filters.project,
+    promotion: Argument.String("promotion").pipe(
+      Argument.withDescription("The promotion's ID, as ./cluenori release shows it once approved."),
+    ),
+    local: filters.local,
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const project = yield* parsed(ProjectKey, input.project, "a project key")
+      const id = yield* parsed(PromotionId, input.promotion, "a promotion's ID")
+      const target = yield* apiTarget(input.local)
+      const client = yield* apiClient(target)
+      const promotion = yield* client.releases.releaseApproved({ params: { project, promotion: id } }).pipe(
+        Effect.catchTags({
+          ...reachFailures(target),
+          ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
+          PromotionNotFound: () =>
+            refuse(
+              `${project} has no promotion ${id} approved and waiting to be released. A release's promotions: ./cluenori release ${project} <component> <release>`,
+            ),
+          PromotionRefused: (refused) =>
+            refuse(
+              `Nothing was released: ${refused.reason}\n${fixText(refused.fix, { target, project, component: "<component>", release: "<release>", environment: "<environment>" })}`,
+            ),
+          PromotionUnavailable: (unavailable) =>
+            refuse(`App Store Connect didn't answer, so nothing was released: ${unavailable.reason}. Try again.`),
+        }),
+      )
+      yield* Console.log(
+        `${promotionText(project, promotion)}: ${promotion.release} of ${promotion.component}${promotion.appStore === undefined ? "" : `, as ${promotion.appStore.bundleId}`}. It goes live shortly.`,
+      )
+      yield* Console.log(
+        `Cluenori follows it until it is: ./cluenori release ${project} ${promotion.component} ${promotion.release}`,
+      )
+    }),
+).pipe(
+  Command.withDescription(
+    "Release an app that App Store review approved, promoted with --release-manually: App Store Connect makes it live, and its promotion ends once it is.",
+  ),
+)

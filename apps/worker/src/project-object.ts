@@ -1,6 +1,15 @@
+import { WorkersAi, WorkersAiModel } from "@bagatka/cloudflare-workers-ai"
+import type { GitHub } from "@bagatka/github"
 import { webCryptoLayer } from "@bagatka/web-crypto"
-import type { ErrorSchema, ModuleIngest, ModuleQuery, PlainSchema as QuerySchema } from "@cluenori/foundation"
+import type {
+  ErrorSchema,
+  ModuleAction,
+  ModuleIngest,
+  ModuleQuery,
+  PlainSchema as QuerySchema,
+} from "@cluenori/foundation"
 import { ActivityLog, Period, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
+import { gitHubAsApp } from "@cluenori/github"
 import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
 import type { ReleaseRecords, ReleaseSources } from "@cluenori/releases"
@@ -9,6 +18,7 @@ import { Signals } from "@cluenori/signals"
 import { Today } from "@cluenori/today"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
+import type { Crypto } from "effect"
 import {
   Clock,
   Config,
@@ -22,23 +32,37 @@ import {
   Redacted,
   Schema,
 } from "effect"
+import type { LanguageModel } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 
 import { sendActivity } from "./activity-queue.ts"
 import type { PlainSchema } from "./object-calls.ts"
 import { exitText, serve } from "./object-calls.ts"
 import type { EngineCallName, ProjectCall, ProjectCallName } from "./project-calls.ts"
-import { moduleCall, moduleIngestCall, projectCalls } from "./project-calls.ts"
+import { moduleActionCall, moduleCall, moduleIngestCall, projectCalls } from "./project-calls.ts"
 import { r2ArchiveLayer } from "./r2-archive.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
+import { workspaceCalls } from "./workspace-calls.ts"
+import { WorkspaceObjects } from "./workspace-objects.ts"
 
-// The engines, and the modules' own services, in each project's object.
-type ProjectServices = Projects | Signals | Incidents | Today | ReleaseRecords | ReleaseSources
+// The engines, the modules' own services, GitHub as the workspace's app, and the activity log, in
+// each project's object.
+type ProjectServices =
+  | Projects
+  | Signals
+  | Incidents
+  | Today
+  | ReleaseRecords
+  | ReleaseSources
+  | GitHub
+  | ActivityLog
+  | Crypto.Crypto
+  | LanguageModel.LanguageModel
 
-// Where the Releases module reads besides telemetry, each absent until `./cluenori github setup` or
-// `./cluenori appstore setup` gives its credentials (PATTERNS.md, "Configuration").
+// Where the Releases module reads and writes besides telemetry and GitHub, each absent until
+// `./cluenori appstore setup` gives its key: one that reads, and one, `--manager`, that submits
+// (PATTERNS.md, "Configuration").
 const releasesSettings = Config.all({
-  github: Config.option(Config.all({ token: Config.Redacted("CLUENORI_GITHUB_TOKEN") })),
   appStoreConnect: Config.option(
     Config.all({
       key: Config.Redacted("CLUENORI_ASC_KEY"),
@@ -46,7 +70,21 @@ const releasesSettings = Config.all({
       issuerId: Config.String("CLUENORI_ASC_ISSUER_ID"),
     }),
   ),
+  appStoreConnectManager: Config.option(
+    Config.all({
+      key: Config.Redacted("CLUENORI_ASC_MANAGER_KEY"),
+      keyId: Config.String("CLUENORI_ASC_MANAGER_KEY_ID"),
+      issuerId: Config.String("CLUENORI_ASC_ISSUER_ID"),
+    }),
+  ),
 })
+
+// The Workers AI model the project's language model is, which drafts release notes.
+const languageModelSetting = Config.schema(WorkersAiModel, "CLUENORI_AI_MODEL").pipe(
+  Config.withDefault(WorkersAiModel.make("@cf/moonshotai/kimi-k2.6")),
+)
+// A draft's longest answer: release notes are at most 4000 characters, about 1000 tokens.
+const draftTokens = 1500
 
 // How often the detectors look: the object's alarm runs `Incidents.check` this often.
 const checkEvery = Duration.toMillis(Duration.minutes(1))
@@ -294,11 +332,12 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
   ),
 })
 
-// What the object uses of a module: its queries, its ingest writes, and its background work, each
-// reading and writing the engines and the module's own services here.
+// What the object uses of a module: its queries, its actions, its ingest writes, and its background
+// work, each reading and writing the engines and the module's own services here.
 interface ServedModule {
   readonly id: string
   readonly queries: Readonly<Record<string, ModuleQuery<QuerySchema, QuerySchema, ErrorSchema, ProjectServices>>>
+  readonly actions: Readonly<Record<string, ModuleAction<QuerySchema, QuerySchema, ErrorSchema, ProjectServices>>>
   readonly ingest: Readonly<Record<string, ModuleIngest<QuerySchema, QuerySchema, ErrorSchema, ProjectServices>>>
   readonly background?: Effect.Effect<void, never, ProjectServices>
 }
@@ -306,8 +345,9 @@ interface ServedModule {
 // The modules every project's object serves, each on a visible line.
 const modules: ReadonlyArray<ServedModule> = [releasesModule]
 
-// Each module's queries, under `<module>.<query>`, and its ingest writes, under
-// `<module>.ingest.<name>` for the component whose ingest key comes with them.
+// Each module's queries, under `<module>.<query>`, its actions, under `<module>.action.<name>` for
+// the actor who asks, and its ingest writes, under `<module>.ingest.<name>` for the component whose
+// ingest key comes with them.
 const servedModules = (project: ProjectKey) =>
   modules.flatMap((module) => [
     ...Object.entries(module.queries).map(([name, query]) => {
@@ -315,6 +355,14 @@ const servedModules = (project: ProjectKey) =>
       const entry: readonly [ProjectCallName, Served] = [
         call.name,
         served(call, (input) => query.run(input), new ProjectNotFound({ project })),
+      ]
+      return entry
+    }),
+    ...Object.entries(module.actions).map(([name, action]) => {
+      const call = moduleActionCall(module, name)
+      const entry: readonly [ProjectCallName, Served] = [
+        call.name,
+        served(call, ({ actor, input }) => action.run(actor, input), new ProjectNotFound({ project })),
       ]
       return entry
     }),
@@ -368,7 +416,36 @@ export class ProjectObject extends DurableObject<Env> {
           ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie),
         ),
         Layer.provideMerge(ActivityLog.layer({ workspace, project })),
-        Layer.provide(webCryptoLayer(crypto)),
+        // The project's language model, on the Worker's Workers AI binding.
+        Layer.provideMerge(
+          Layer.unwrap(
+            Effect.map(languageModelSetting, (model) =>
+              WorkersAi.layer({ binding: env.AI, model, maxTokens: draftTokens }),
+            ),
+          ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie),
+        ),
+        // GitHub, as the workspace's app: each repository's token comes from the workspace's object,
+        // which keeps the app's key.
+        Layer.provideMerge(
+          Layer.unwrap(
+            Effect.gen(function* () {
+              const objects = yield* WorkspaceObjects
+              return gitHubAsApp((repository) =>
+                objects
+                  .call(workspaceCalls.gitHubToken, repository)
+                  .pipe(Effect.map(({ token, expiresAt }) => ({ token: Redacted.make(token), expiresAt }))),
+              )
+            }),
+          ).pipe(
+            Layer.provide(
+              WorkspaceObjects.layerInJurisdiction(env.WORKSPACE, workspace).pipe(
+                Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
+                Layer.orDie,
+              ),
+            ),
+          ),
+        ),
+        Layer.provideMerge(webCryptoLayer(crypto)),
         Layer.provide(r2ArchiveLayer(env.ARCHIVE)),
         Layer.provide(FetchHttpClient.layer),
         Layer.provide(SqliteClient.layer({ storage: ctx.storage })),

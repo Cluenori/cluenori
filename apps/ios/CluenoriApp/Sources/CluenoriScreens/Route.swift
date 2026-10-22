@@ -106,15 +106,19 @@ public enum Route: Hashable, Sendable {
     case logs(of: Telemetry)
     case releases(project: String, environment: String? = nil)
     case release(ReleaseRef)
+    /// A release's notes for its users, edited.
+    case notes(ReleaseRef)
+    /// How the project's release notes read, which drafts follow.
+    case notesStyle(project: String)
 
     /// The project the screen is of.
     public var project: String {
         switch self {
-        case .project(let key, _), .releases(let key, _): key
+        case .project(let key, _), .releases(let key, _), .notesStyle(let key): key
         case .operations(let telemetry), .errors(let telemetry), .error(let telemetry, _), .logs(let telemetry):
             telemetry.project
         case .operation(let operation): operation.project
-        case .release(let release): release.project
+        case .release(let release), .notes(let release): release.project
         }
     }
 
@@ -170,6 +174,8 @@ public enum Route: Hashable, Sendable {
         case .project: [self]
         case .releases(let key, let environment): [.project(key, environment: environment), self]
         case .release(let release): Self.releaseChain(release)
+        case .notes(let release): Self.releaseChain(release) + [self]
+        case .notesStyle(let key): [.project(key), .releases(project: key), self]
         case .operations(let telemetry), .errors(let telemetry), .logs(let telemetry):
             Self.chain(of: telemetry) + [self]
         case .operation(let operation):
@@ -192,8 +198,9 @@ public enum Route: Hashable, Sendable {
 
     /// The screen a link names, `cluenori://projects/notes/errors/4f1c9a2e7b3d5068`; nil for any
     /// other link: `cluenori://projects/<key>`, and under it `/operations`, `/errors`,
-    /// `/errors/<id>`, `/logs`, `/releases`, and `/releases/<component>/<release>`, under which
-    /// `/operations`, `/errors`, `/errors/<id>`, and `/logs` are the release's alone. Each takes
+    /// `/errors/<id>`, `/logs`, `/releases`, `/notes-style`, and `/releases/<component>/<release>`,
+    /// under which `/operations`, `/errors`, `/errors/<id>`, and `/logs` are the release's alone, and
+    /// `/notes` its notes. Each takes
     /// `?environment=<key>`: the environment a project's screen shows, or, for a release's, the one
     /// its component says it runs in.
     public init?(_ url: URL) {
@@ -226,6 +233,8 @@ public enum Route: Hashable, Sendable {
         case ("errors", 2, _): .error(of: telemetry, id: rest[1])
         case ("logs", 1, _): .logs(of: telemetry)
         case ("releases", 1, .project(let key, let environment)): .releases(project: key, environment: environment)
+        case ("notes-style", 1, .project(let key, _)): .notesStyle(project: key)
+        case ("notes", 1, .release(let release)): .notes(release)
         default: nil
         }
     }

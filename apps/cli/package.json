@@ -10,6 +10,7 @@
     "@bagatka/openapi-swift": "workspace:*",
     "@bagatka/workspace-rules": "workspace:*",
     "@cluenori/foundation": "workspace:*",
+    "@cluenori/github": "workspace:*",
     "@cluenori/incidents": "workspace:*",
     "@cluenori/members": "workspace:*",
     "@cluenori/phones": "workspace:*",
@@ -20,5 +21,9 @@
     "@cluenori/worker": "workspace:*",
     "@effect/platform-bun": "catalog:",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "vitest": "catalog:"
   }
 }

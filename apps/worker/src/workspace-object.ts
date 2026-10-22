@@ -1,6 +1,7 @@
 import { webCryptoLayer } from "@bagatka/web-crypto"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, MemberId, WorkspaceKey } from "@cluenori/foundation"
+import { GitHubConnection } from "@cluenori/github"
 import type { Access } from "@cluenori/members"
 import { Members } from "@cluenori/members"
 import { NoPushToken, Notifications } from "@cluenori/notifications"
@@ -17,7 +18,7 @@ import { SyncScheduler } from "./sync-scheduler.ts"
 import type { WorkspaceCallName } from "./workspace-calls.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
 
-type WorkspaceServices = ProjectIndex | Phones | Notifications | Members
+type WorkspaceServices = ProjectIndex | Phones | Notifications | Members | GitHubConnection
 
 // The owner `./setup` made; the API token stands for them (PATTERNS.md, "Configuration").
 const ownerSetting = Config.option(Config.schema(MemberId, "CLUENORI_OWNER"))
@@ -228,12 +229,44 @@ const servedCalls: Readonly<
       yield* members.addPasskey(actor, registration, site)
     }),
   ),
+  github: serve(workspaceCalls.github, (access) =>
+    Effect.gen(function* () {
+      const github = yield* GitHubConnection
+      return yield* github.status(access)
+    }),
+  ),
+  connectGitHub: serve(workspaceCalls.connectGitHub, ({ actor, access, deployment, organization }) =>
+    Effect.gen(function* () {
+      const github = yield* GitHubConnection
+      return yield* github.startConnecting(actor, access, deployment, organization)
+    }),
+  ),
+  finishConnectingGitHub: serve(workspaceCalls.finishConnectingGitHub, ({ code, state }) =>
+    Effect.gen(function* () {
+      const github = yield* GitHubConnection
+      return yield* github.finishConnecting(code, state)
+    }),
+  ),
+  disconnectGitHub: serve(workspaceCalls.disconnectGitHub, ({ actor, access }) =>
+    Effect.gen(function* () {
+      const github = yield* GitHubConnection
+      yield* github.disconnect(actor, access)
+    }),
+  ),
+  gitHubToken: serve(workspaceCalls.gitHubToken, (repository) =>
+    Effect.gen(function* () {
+      const github = yield* GitHubConnection
+      const issued = yield* github.tokenFor(repository)
+      return { token: Redacted.value(issued.token), expiresAt: issued.expiresAt }
+    }),
+  ),
 }
 
 /**
  * The workspace's own Durable Object, named `<workspace>`: the records that belong to the whole
- * workspace rather than one project: the index of its projects, its members, their phones, and the
- * alerts that reach them. The Worker reaches it through `call`.
+ * workspace rather than one project: the index of its projects, its members, their phones, the
+ * alerts that reach them, and its GitHub App. The Worker, and projects' objects for GitHub's tokens,
+ * reach it through `call`.
  */
 export class WorkspaceObject extends DurableObject<Env> {
   readonly #runtime: ManagedRuntime.ManagedRuntime<WorkspaceServices, never>
@@ -258,7 +291,7 @@ export class WorkspaceObject extends DurableObject<Env> {
       }),
     ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie)
     this.#runtime = ManagedRuntime.make(
-      NotificationsLive.pipe(
+      Layer.mergeAll(NotificationsLive, GitHubConnection.layer({ signing: crypto.subtle })).pipe(
         Layer.provideMerge(Layer.mergeAll(Phones.layer, MembersLive)),
         Layer.provideMerge(ProjectIndex.layer),
         Layer.provide(ActivityLog.layer({ workspace })),

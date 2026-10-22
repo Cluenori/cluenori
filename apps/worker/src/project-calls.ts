@@ -1,4 +1,4 @@
-import type { ModuleIngests, ModuleQueries } from "@cluenori/foundation"
+import type { ModuleActions, ModuleIngests, ModuleQueries } from "@cluenori/foundation"
 import { Actor, ComponentKey, Instant, TraceId } from "@cluenori/foundation"
 import {
   AddMonitor,
@@ -230,5 +230,27 @@ export const moduleIngestCall = <Ingests extends ModuleIngests<Ingests>, K exten
     Schema.Struct({ ingestKey: IngestKey, input: ingest.input }),
     ingest.success,
     Schema.Union([IngestKeyRejected, ingest.error]),
+  )
+}
+
+/**
+ * The call that runs `module`'s action `name` in a project's object, under `<module>.action.<name>`,
+ * for the actor who asks: its failures are the action's, and `ProjectNotFound` for a project that
+ * doesn't exist.
+ */
+export const moduleActionCall = <Actions extends ModuleActions<Actions>, K extends keyof Actions & string>(
+  module: { readonly id: string; readonly actions: Actions },
+  name: K,
+): ProjectCall<
+  Schema.Struct<{ readonly actor: typeof Actor; readonly input: Actions[K]["input"] }>,
+  Actions[K]["success"],
+  Schema.Union<readonly [typeof ProjectNotFound, Actions[K]["error"]]>
+> => {
+  const action: Actions[K] = module.actions[name]
+  return objectCall(
+    `${module.id}.action.${name}`,
+    Schema.Struct({ actor: Actor, input: action.input }),
+    action.success,
+    Schema.Union([ProjectNotFound, action.error]),
   )
 }

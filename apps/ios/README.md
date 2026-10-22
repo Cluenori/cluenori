@@ -5,7 +5,13 @@ code its web shows, and shows Today, what needs attention across the deployment'
 each project over a period: its incidents, load, operations with their percentiles, errors with
 their stacks, logs, and releases, each compared with the release before it, with its commit and
 the changes since that release from GitHub, and its build's stage in App Store Connect; from a
-release, its operations, errors, and logs, narrowed to it, over the release's own span. A project's
+release, its operations, errors, and logs, narrowed to it, over the release's own span. A release
+shows its promotions, each followed through its run on GitHub and its build in App Store Connect,
+TestFlight or App Store review, until it ends; it promotes the release by one of its component's
+deploy targets, choosing where the workflow runs and how an approved version goes live, and
+releases one review approved. Its notes, What's New or What to Test, are edited in each language
+and drafted with AI; a project's releases show its components' versions, bumped or set, and lead
+to how its notes read. A project's
 screens show one environment at a time: its production environment, or the one chosen on the phone. Alerts reach it as pushes: a project that is down rings like an alarm
 clock, through silent mode, with an Acknowledge button (`concept/Modules.md`).
 
@@ -71,9 +77,17 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   phone allows, registering its push token, acknowledging, and a test alarm. Every
   question goes through `Answer`: shown at once from the phone, asked again, and kept when the
   network drops, in the app's caches, a folder per pairing, gone when the phone unpairs.
+  Actions are not questions: promoting (`PromoteModel`, from `ReleaseModel`), releasing an
+  approved version, saving notes (`NotesModel`, one per release) or a notes style
+  (`NotesStyleModel`), and setting a version (`VersionsModel`) are each sent once, never kept to
+  send later; a write that answers with the whole of what a screen shows is shown at once
+  (`Answer.show`), and edits stay in their model while the app runs. A release asks again every 15
+  seconds while its screen shows a promotion that hasn't ended. Who "you" is comes from `/api/me`,
+  asked once a promotion names who started it, and kept for the pairing.
 - **Links to screens:** `cluenori://projects/<key>`, and under it `/operations`, `/errors`,
-  `/errors/<id>`, `/logs`, `/releases`, and `/releases/<component>/<release>`, under which
-  `/operations`, `/errors`, `/errors/<id>`, and `/logs` are that release's alone. Each takes
+  `/errors/<id>`, `/logs`, `/releases`, `/notes-style`, and `/releases/<component>/<release>`,
+  under which `/operations`, `/errors`, `/errors/<id>`, and `/logs` are that release's alone, and
+  `/notes` its notes. Each takes
   `?environment=<key>`: the environment a project's screen shows, or the one a release's component
   says it runs in. Alerts will open them. A screen narrowed to a release (`Telemetry` in its
   `Route`) says so at its top, with its environment and span and a button that shows every release

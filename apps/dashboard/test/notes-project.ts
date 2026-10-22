@@ -2,26 +2,63 @@ import {
   ComponentKey,
   EnvelopeName,
   EnvironmentKey,
+  MemberId,
+  NotAllowed,
   Period,
   ProjectKey,
   ReleaseVersion,
   TraceId,
 } from "@cluenori/foundation"
 import { Incident, IncidentId, IncidentList } from "@cluenori/incidents"
+import { Email, Member, MemberList } from "@cluenori/members"
 import {
   BundleId,
   Component,
   ComponentLinks,
   ComponentName,
   ComponentNotFound,
+  DeployTarget,
   Project,
   ProjectDetail,
   ProjectList,
   ProjectName,
   ProjectSettings,
 } from "@cluenori/projects"
-import type { ComparedOperation, ReleaseChanges, ReleaseSummary, SourceProblem } from "@cluenori/releases"
-import { ReleaseCommit, ReleaseDetail, ReleaseList, ReleaseNotFound } from "@cluenori/releases"
+import type {
+  ComparedOperation,
+  PromotionState,
+  ReleaseChanges,
+  ReleaseNote,
+  ReleaseSummary,
+  SourceProblem,
+} from "@cluenori/releases"
+import {
+  AppStoreSubmission,
+  ComponentVersion,
+  ComponentVersions,
+  defaultNotesStyle,
+  DraftUnavailable,
+  NoteLocale,
+  NotesDraft,
+  NotesStyle,
+  NoteText,
+  Promotion,
+  PromotionId,
+  PromotionNotFound,
+  PromotionReason,
+  PromotionRefused,
+  ReleaseCommit,
+  ReleaseDetail,
+  ReleaseList,
+  ReleaseNotes,
+  ReleaseNotFound,
+  Runner,
+  SemanticVersion,
+  BuildNumber,
+  VersionRefused,
+  compareVersions,
+  hasEnded,
+} from "@cluenori/releases"
 import type { OperationRow, ErrorGroup, LogLine, SeriesStep } from "@cluenori/signals"
 import {
   OperationTable,
@@ -64,11 +101,84 @@ const projects = [
   new Project({ key: ProjectKey.make("landing"), name: ProjectName.make("Landing"), createdAt: created }),
 ]
 
-// The API is linked to its repository; the iPhone app to its App Store app only.
+const production = EnvironmentKey.make("production")
+const staging = EnvironmentKey.make("staging")
+export const workflowFile = (name: string) => DeployTarget.fields.workflow.schema.make(name)
+export const repositoryOf = (name: string) => ComponentLinks.fields.repository.schema.make(name)
+
+// The API is linked to its repository, with a workflow that deploys to each environment; the iPhone
+// app, without its repository, to its App Store app, whose builds go to App Store review.
 const linksAtStart: ReadonlyMap<string, ComponentLinks> = new Map([
-  [api, { repository: ComponentLinks.fields.repository.schema.make("notesapp/notes-api") }],
-  [ios, { appStoreBundleId: BundleId.make("com.notesapp.notes") }],
+  [
+    api,
+    {
+      repository: repositoryOf("notesapp/notes-api"),
+      deployTargets: [
+        { environment: production, workflow: workflowFile("promote-to-prod.yml") },
+        { environment: staging, workflow: workflowFile("promote-to-staging.yml") },
+      ],
+    },
+  ],
+  [
+    ios,
+    {
+      deployTargets: [
+        {
+          environment: production,
+          appStore: { bundleId: BundleId.make("com.notesapp.notes"), distribution: "appStore" },
+        },
+      ],
+    },
+  ],
 ])
+
+/**
+ * The iPhone app linked to three App Store Connect apps: its repository, and a target for internal
+ * testers, one for beta testers, and the App Store, each built by `ios.yml` into its own app.
+ */
+export const iosWithThreeApps: ReadonlyMap<string, ComponentLinks> = new Map([
+  ...linksAtStart,
+  [
+    ios,
+    {
+      repository: repositoryOf("notesapp/notes-ios"),
+      deployTargets: [
+        {
+          environment: EnvironmentKey.make("internal"),
+          workflow: workflowFile("ios.yml"),
+          appStore: { bundleId: BundleId.make("com.notesapp.notes.internal"), distribution: "testFlight" },
+        },
+        {
+          environment: EnvironmentKey.make("beta"),
+          workflow: workflowFile("ios.yml"),
+          appStore: { bundleId: BundleId.make("com.notesapp.notes.beta"), distribution: "testFlight" },
+        },
+        {
+          environment: production,
+          workflow: workflowFile("ios.yml"),
+          appStore: { bundleId: BundleId.make("com.notesapp.notes"), distribution: "appStore" },
+        },
+      ],
+    },
+  ],
+])
+
+// Who signs in: Ada, an owner; Mira is a member.
+export const ada = new Member({
+  id: MemberId.make("0199a000-1111-7aaa-8aaa-000000000001"),
+  role: "owner",
+  email: Email.make("ada@notesapp.dev"),
+  addedAt: created,
+  passkeys: 1,
+})
+export const mira = new Member({
+  id: MemberId.make("0199a000-2222-7bbb-8bbb-000000000002"),
+  role: "member",
+  email: Email.make("mira@notesapp.dev"),
+  projects: [notes],
+  addedAt: created,
+  passkeys: 1,
+})
 
 const componentsWith = (links: ReadonlyMap<string, ComponentLinks>) => [
   new Component({ key: api, name: ComponentName.make("Notes API"), createdAt: created, ...links.get(api) }),
@@ -398,9 +508,8 @@ const trace = (around: number, id: string) => {
 // fail more, with a new error; GitHub knows its pull requests. The one before it made things better;
 // only its deploy report listed its commits. Staging ran the latest first. The iPhone app's latest
 // build is in review, with no telemetry yet; the one before is on day 3 of its phased release, while
-// phones still run the one before that, the first counted. GitHub refused the token 8 minutes ago.
-const production = EnvironmentKey.make("production")
-const staging = EnvironmentKey.make("staging")
+// phones still run the one before that, the first counted. GitHub refused 8 minutes ago: Cluenori
+// isn't connected to it.
 const worseRelease = ReleaseVersion.make("2026.10.21-e91f09c")
 const betterRelease = ReleaseVersion.make("2026.10.20-7b2c4d1")
 const sameRelease = ReleaseVersion.make("2026.10.17-c3d9a02")
@@ -567,10 +676,92 @@ const problemsAt = (now: number): ReadonlyArray<SourceProblem> => [
   {
     component: api,
     source: "github",
-    problem: "GitHub refused the token: Bad credentials. Store a new one with ./cluenori github setup.",
+    problem:
+      "GitHub refused: Cluenori isn't connected to GitHub yet: an owner connects it on the web, on the GitHub page.",
     at: DateTime.makeUnsafe(now - 8 * minute),
   },
 ]
+
+const promotionId = (n: number) => PromotionId.make(`019a1000-0000-7000-8000-${String(n).padStart(12, "0")}`)
+
+// How the API's latest release was promoted from Cluenori: to staging by CI, then to production by
+// Mira, each run ended.
+const promotionsAt = (now: number): ReadonlyArray<Promotion> => [
+  {
+    id: promotionId(2),
+    component: api,
+    release: worseRelease,
+    environment: production,
+    repository: repositoryOf("notesapp/notes-api"),
+    workflow: workflowFile("promote-to-prod.yml"),
+    runner: "auto",
+    startedBy: mira.id,
+    reason: PromotionReason.make("Share links for everyone"),
+    startedAt: DateTime.makeUnsafe(now - 3 * hour - 6 * minute),
+    state: "succeeded",
+    run: { id: 9_120, url: `${repository}/actions/runs/9120` },
+    endedAt: DateTime.makeUnsafe(now - 3 * hour - 2 * minute),
+  },
+  {
+    id: promotionId(1),
+    component: api,
+    release: worseRelease,
+    environment: staging,
+    repository: repositoryOf("notesapp/notes-api"),
+    workflow: workflowFile("promote-to-staging.yml"),
+    runner: "auto",
+    startedAt: DateTime.makeUnsafe(now - 5 * hour - 6 * minute),
+    state: "succeeded",
+    run: { id: 9_087, url: `${repository}/actions/runs/9087` },
+    endedAt: DateTime.makeUnsafe(now - 5 * hour - 3 * minute),
+  },
+]
+
+export const approvedId = PromotionId.make("019a1000-0000-7000-8000-000000000023")
+
+// The iPhone app's promotions: to the App Store, approved and waiting to be released; to beta,
+// processing; and an earlier one to the App Store, rejected.
+export const appStorePromotions = (now: number): ReadonlyArray<Promotion> => {
+  const ofApp = {
+    component: ios,
+    release: appRelease,
+    repository: repositoryOf("notesapp/notes-ios"),
+    workflow: workflowFile("ios.yml"),
+    runner: "auto" as const,
+  }
+  return [
+    {
+      ...ofApp,
+      id: approvedId,
+      environment: production,
+      appStore: { bundleId: BundleId.make("com.notesapp.notes"), distribution: "appStore" },
+      submission: { releaseType: "manual", phased: true },
+      startedAt: DateTime.makeUnsafe(now - 26 * 60 * 60_000),
+      state: "approved",
+      run: { id: 9_310, url: "https://github.com/notesapp/notes-ios/actions/runs/9310" },
+    },
+    {
+      ...ofApp,
+      id: PromotionId.make("019a1000-0000-7000-8000-000000000022"),
+      environment: EnvironmentKey.make("beta"),
+      appStore: { bundleId: BundleId.make("com.notesapp.notes.beta"), distribution: "testFlight" },
+      startedAt: DateTime.makeUnsafe(now - 27 * 60 * 60_000),
+      state: "processing",
+      run: { id: 9_305, url: "https://github.com/notesapp/notes-ios/actions/runs/9305" },
+    },
+    {
+      ...ofApp,
+      id: PromotionId.make("019a1000-0000-7000-8000-000000000021"),
+      environment: production,
+      appStore: { bundleId: BundleId.make("com.notesapp.notes"), distribution: "appStore" },
+      submission: { releaseType: "afterApproval", phased: true },
+      startedAt: DateTime.makeUnsafe(now - 50 * 60 * 60_000),
+      state: "rejected",
+      run: { id: 9_290, url: "https://github.com/notesapp/notes-ios/actions/runs/9290" },
+      endedAt: DateTime.makeUnsafe(now - 40 * 60 * 60_000),
+    },
+  ]
+}
 
 // Whether a release did anything in a period, as the API lists it: ran, was deployed, or was uploaded then.
 const activeIn = (entry: ReleaseSummary, from: number, to: number) => {
@@ -757,8 +948,17 @@ const movedIn = (now: number, summary: ReleaseSummary) => {
   return {}
 }
 
-// One release against the one before it, or the API's 404 for one it doesn't know.
-const releaseDetail = (now: number, component: string, version: string, environment: string | undefined) => {
+// One release against the one before it, with its promotions, the latest first, its notes, and its
+// component's deploy targets; or the API's 404 for one it doesn't know.
+const releaseDetail = (
+  now: number,
+  component: string,
+  version: string,
+  environment: string | undefined,
+  promotions: ReadonlyArray<Promotion>,
+  links: ReadonlyMap<string, ComponentLinks>,
+  releaseNotes: ReadonlyArray<ReleaseNote>,
+) => {
   const summary = releasesAt(now).find(
     (entry) => entry.component === component && entry.release === version && entry.environment === environment,
   )
@@ -779,12 +979,17 @@ const releaseDetail = (now: number, component: string, version: string, environm
     incidents: [],
   }
   const changes = changesOf(now, summary)
+  const linkedRepository = links.get(summary.component)?.repository
   return reply(ReleaseDetail, {
     summary,
     ...none,
     ...movedIn(now, summary),
     ...(changes === undefined ? {} : { changes }),
     problems: problemsAt(now).filter((entry) => entry.component === summary.component),
+    promotions: promotions.filter((entry) => entry.component === summary.component && entry.release === version),
+    deployTargets: links.get(summary.component)?.deployTargets ?? [],
+    notes: releaseNotes,
+    ...(linkedRepository === undefined ? {} : { repository: linkedRepository }),
   })
 }
 
@@ -796,6 +1001,31 @@ const signedOut = reply(
 
 const SignInBody = Schema.fromJsonString(Schema.Struct({ token: Schema.String }))
 const LinksBody = Schema.fromJsonString(ComponentLinks)
+const PromoteBody = Schema.fromJsonString(
+  Schema.Struct({
+    environment: EnvironmentKey,
+    reason: Schema.optionalKey(PromotionReason),
+    runner: Schema.optionalKey(Runner),
+    submission: Schema.optionalKey(AppStoreSubmission),
+  }),
+)
+const NotesBody = Schema.fromJsonString(Schema.Struct({ notes: ReleaseNotes }))
+const DraftBody = Schema.fromJsonString(Schema.Struct({ environment: EnvironmentKey }))
+const VersionBody = Schema.fromJsonString(
+  Schema.Struct({ version: SemanticVersion, firstBuild: Schema.optionalKey(BuildNumber) }),
+)
+const StyleBody = Schema.fromJsonString(NotesStyle)
+
+// The API's version line when the tests start: its builds numbered up to 57 in 1.4.0; the iPhone
+// app has none yet.
+const versionsAt: ReadonlyArray<ComponentVersion> = [
+  { component: api, version: SemanticVersion.make("1.4.0"), lastBuild: 57, setAt: created },
+]
+
+// What a draft of a release's notes says, as the project's language model would write it.
+const draftText = NoteText.make(
+  "Share a note with anyone by a link.\nExports that failed on a bad connection now finish on their own.",
+)
 const SettingsBody = Schema.fromJsonString(ProjectSettings)
 
 const noSuchCall = (method: string, path: ReadonlyArray<string>) =>
@@ -828,25 +1058,62 @@ const incidents = Effect.gen(function* () {
 })
 
 /**
- * The public API with Notes in it, signed in or not; `workspace` replaces the workspace's projects,
- * such as none for a workspace that has just been set up. Notes's telemetry named production and
- * staging lately, or the environments `seen` names; production is production until the dashboard
- * changes it, as it changes components' links. An `older` deployment says neither.
+ * The public API with Notes in it, signed in or not, as Ada, an owner, or as Mira, a member, `as`
+ * says; `workspace` replaces the workspace's projects, such as none for a workspace that has just
+ * been set up. Notes's telemetry named production and staging lately, or the environments `seen`
+ * names; production is production until the dashboard changes it, as it changes components' links
+ * and promotes releases. A promotion started here moves through the states `following` lists, one
+ * each time its release is asked for after it started, as Cluenori follows its run on GitHub; it
+ * stays starting without them. An `older` deployment says neither.
  */
 export const notesApi = ({
   signedIn = true,
+  as = ada,
   workspace = projects,
   seen = [EnvironmentKey.make("production"), EnvironmentKey.make("staging")],
   older = false,
+  following = [],
+  linked = linksAtStart,
+  seeded,
+  drafts = true,
 }: {
   readonly signedIn?: boolean
+  readonly as?: Member
   readonly workspace?: ReadonlyArray<Project>
   readonly seen?: ReadonlyArray<EnvironmentKey>
   readonly older?: boolean
+  readonly following?: ReadonlyArray<PromotionState>
+  /** Each component's links at the start, such as `iosWithThreeApps`. */
+  readonly linked?: ReadonlyMap<string, ComponentLinks>
+  /** The promotions there were, in place of the API's latest release's two. */
+  readonly seeded?: (now: number) => ReadonlyArray<Promotion>
+  /** Whether a draft of notes is written; without, the model doesn't answer. */
+  readonly drafts?: boolean
 } = {}): AnswerApi => {
   let session = signedIn
-  const links = new Map(linksAtStart)
+  const links = new Map(linked)
+  // Each release's notes, by component and version.
+  const notesOf = new Map<string, ReadonlyArray<ReleaseNote>>()
+  let versions: ReadonlyArray<ComponentVersion> = versionsAt
+  let style: string | undefined
   let settings: ProjectSettings = { productionEnvironments: [EnvironmentKey.make("production")] }
+  let promotions: ReadonlyArray<Promotion> | undefined
+  // How many times each promotion started here was asked about since.
+  const timesAsked = new Map<string, number>()
+  // A promotion started here, as Cluenori follows it: the next of `following`, with its run once it
+  // has one, and when it ended once it has.
+  const followed = (promotion: Promotion, now: number): Promotion => {
+    const times = timesAsked.get(promotion.id)
+    if (times === undefined) {
+      return promotion
+    }
+    timesAsked.set(promotion.id, times + 1)
+    const state = following[Math.min(times, following.length - 1)] ?? promotion.state
+    const run = state === "starting" ? {} : { run: { id: 9_200, url: `${repository}/actions/runs/9200` } }
+    const ended = hasEnded(state) ? { endedAt: DateTime.makeUnsafe(now) } : {}
+    // Without a workflow, there is no run.
+    return { ...promotion, state, ...(promotion.workflow === undefined ? {} : run), ...ended }
+  }
   return (call) =>
     Effect.gen(function* () {
       const [first, project, area, id, more] = call.path
@@ -864,6 +1131,14 @@ export const notesApi = ({
       }
       if (!session) {
         return yield* signedOut
+      }
+      if (call.method === "GET" && first === "me" && project === undefined) {
+        return yield* reply(Member, as)
+      }
+      if (call.method === "GET" && first === "members" && project === undefined) {
+        return as.role === "owner"
+          ? yield* reply(MemberList, { members: [ada, mira] })
+          : yield* reply(NotAllowed, new NotAllowed(), 403)
       }
       if (first !== "projects") {
         return yield* noSuchCall(call.method, call.path)
@@ -891,19 +1166,63 @@ export const notesApi = ({
         return yield* reply(ProjectSettings, settings)
       }
       if (call.method === "PUT" && area === "components" && id !== undefined && more === "links") {
-        const linked = componentsWith(links).find((entry) => entry.key === id)
-        if (linked === undefined) {
+        const linkedComponent = componentsWith(links).find((entry) => entry.key === id)
+        if (linkedComponent === undefined) {
           return yield* reply(ComponentNotFound, new ComponentNotFound({ component: ComponentKey.make(id) }), 404)
         }
         const payload = yield* Schema.decodeEffect(LinksBody)(call.body ?? "").pipe(Effect.orDie)
-        links.set(linked.key, payload)
+        links.set(linkedComponent.key, payload)
         return yield* reply(
           Component,
-          new Component({ key: linked.key, name: linked.name, createdAt: created, ...payload }),
+          new Component({ key: linkedComponent.key, name: linkedComponent.name, createdAt: created, ...payload }),
         )
       }
       if (area === "incidents") {
         return yield* incidents
+      }
+      if (area === "versions") {
+        if (call.method === "PUT" && id !== undefined) {
+          const payload = yield* Schema.decodeEffect(VersionBody)(call.body ?? "").pipe(Effect.orDie)
+          const current = versions.find((each) => each.component === id)
+          if (current !== undefined && compareVersions(payload.version, current.version) < 0) {
+            return yield* reply(
+              VersionRefused,
+              new VersionRefused({
+                reason: `${payload.version} is lower than ${id}'s ${current.version}: a version only goes up`,
+              }),
+              422,
+            )
+          }
+          const versionLine: ComponentVersion = {
+            component: ComponentKey.make(id),
+            version: payload.version,
+            lastBuild: Math.max(current?.lastBuild ?? 0, (payload.firstBuild ?? 1) - 1),
+            setAt: DateTime.makeUnsafe(yield* Clock.currentTimeMillis),
+          }
+          versions = [...versions.filter((each) => each.component !== id), versionLine]
+          return yield* reply(ComponentVersion, versionLine)
+        }
+        return yield* reply(ComponentVersions, { versions })
+      }
+      if (area === "notes-style") {
+        if (call.method === "PUT") {
+          const payload = yield* Schema.decodeEffect(StyleBody)(call.body ?? "").pipe(Effect.orDie)
+          style = payload.style
+          return yield* reply(NotesStyle, payload)
+        }
+        return yield* reply(NotesStyle, { style: style ?? defaultNotesStyle })
+      }
+      if (call.method === "POST" && area === "promotions" && id !== undefined && more === "release") {
+        const now = yield* Clock.currentTimeMillis
+        promotions ??= seeded === undefined ? promotionsAt(now) : seeded(now)
+        const approved = promotions.find((each) => each.id === id && each.state === "approved")
+        if (approved === undefined) {
+          return yield* reply(PromotionNotFound, new PromotionNotFound({ promotion: PromotionId.make(id) }), 404)
+        }
+        // Released: App Store Connect has yet to show it live.
+        const released: Promotion = { ...approved, state: "releasing" }
+        promotions = promotions.map((each) => (each.id === id ? released : each))
+        return yield* reply(Promotion, released)
       }
       const asked = yield* Schema.decodeEffect(Asked)(Object.fromEntries(call.query)).pipe(Effect.orDie)
       if (area === "traces" && id !== undefined) {
@@ -912,7 +1231,73 @@ export const notesApi = ({
       }
       if (area === "releases" && id !== undefined && more !== undefined) {
         const now = yield* Clock.currentTimeMillis
-        return yield* releaseDetail(now, id, more, asked.environment)
+        promotions ??= seeded === undefined ? promotionsAt(now) : seeded(now)
+        const noted = `${id} ${more}`
+        if (call.method === "PUT" && call.path[5] === "notes") {
+          const payload = yield* Schema.decodeEffect(NotesBody)(call.body ?? "").pipe(Effect.orDie)
+          notesOf.set(noted, payload.notes)
+          return yield* reply(ReleaseNotes, payload.notes)
+        }
+        if (call.method === "POST" && call.path[5] === "notes" && call.path[6] === "draft") {
+          const payload = yield* Schema.decodeEffect(DraftBody)(call.body ?? "").pipe(Effect.orDie)
+          if (!drafts) {
+            return yield* reply(
+              DraftUnavailable,
+              new DraftUnavailable({ reason: "The language model didn't answer: try again in a minute" }),
+              503,
+            )
+          }
+          // Drafted for the target's app, in English, from what changed since the release live there.
+          return yield* reply(NotesDraft, {
+            notes: [{ locale: NoteLocale.make("en-US"), text: draftText }],
+            ...(payload.environment === production ? { since: firstAppRelease } : {}),
+            commits: 4,
+          })
+        }
+        if (call.method === "POST" && call.path[5] === "promotions") {
+          const payload = yield* Schema.decodeEffect(PromoteBody)(call.body ?? "").pipe(Effect.orDie)
+          const linkedRepository = links.get(id)?.repository
+          const target = links.get(id)?.deployTargets?.find((each) => each.environment === payload.environment)
+          if (target === undefined || (target.workflow !== undefined && linkedRepository === undefined)) {
+            return yield* reply(
+              PromotionRefused,
+              new PromotionRefused({ reason: `${id} has no deploy target for ${payload.environment}`, fix: "links" }),
+              422,
+            )
+          }
+          if (target.appStore?.distribution === "appStore" && (notesOf.get(noted) ?? []).length === 0) {
+            return yield* reply(
+              PromotionRefused,
+              new PromotionRefused({
+                reason: `${more} has no notes: write its What's New in en-US before it goes to App Store review`,
+                fix: "notes",
+              }),
+              422,
+            )
+          }
+          const promotion: Promotion = {
+            id: promotionId(promotions.length + 1),
+            component: ComponentKey.make(id),
+            release: ReleaseVersion.make(more),
+            environment: payload.environment,
+            ...(target.workflow === undefined || linkedRepository === undefined
+              ? {}
+              : { repository: linkedRepository, workflow: target.workflow, runner: payload.runner ?? "auto" }),
+            ...(target.appStore === undefined ? {} : { appStore: target.appStore }),
+            ...(target.appStore?.distribution === "appStore"
+              ? { submission: payload.submission ?? { releaseType: "afterApproval", phased: true } }
+              : {}),
+            startedBy: as.id,
+            ...(payload.reason === undefined ? {} : { reason: payload.reason }),
+            startedAt: DateTime.makeUnsafe(now),
+            state: "starting",
+          }
+          promotions = [promotion, ...promotions]
+          timesAsked.set(promotion.id, 0)
+          return yield* reply(Promotion, promotion, 201)
+        }
+        promotions = promotions.map((promotion) => followed(promotion, now))
+        return yield* releaseDetail(now, id, more, asked.environment, promotions, links, notesOf.get(noted) ?? [])
       }
       if (asked.from === undefined || asked.to === undefined) {
         return yield* Effect.die(`The dashboard asked for ${area} without a period.`)

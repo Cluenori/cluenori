@@ -20,6 +20,7 @@
         "@bagatka/openapi-swift": "workspace:*",
         "@bagatka/workspace-rules": "workspace:*",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/github": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/members": "workspace:*",
         "@cluenori/phones": "workspace:*",
@@ -31,6 +32,10 @@
         "@effect/platform-bun": "catalog:",
         "effect": "catalog:",
       },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
     },
     "apps/dashboard": {
       "name": "@cluenori/dashboard",
@@ -39,6 +44,7 @@
         "@bagatka/webauthn": "workspace:*",
         "@base-ui/react": "catalog:",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/github": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/members": "workspace:*",
         "@cluenori/phones": "workspace:*",
@@ -84,10 +90,13 @@
     "apps/worker": {
       "name": "@cluenori/worker",
       "dependencies": {
+        "@bagatka/cloudflare-workers-ai": "workspace:*",
+        "@bagatka/github": "workspace:*",
         "@bagatka/otlp": "workspace:*",
         "@bagatka/web-crypto": "workspace:*",
         "@bagatka/webauthn": "workspace:*",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/github": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/members": "workspace:*",
         "@cluenori/notifications": "workspace:*",
@@ -125,6 +134,16 @@
         "vitest": "catalog:",
       },
     },
+    "packages/cloudflare-workers-ai": {
+      "name": "@bagatka/cloudflare-workers-ai",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/es256-jwt": {
       "name": "@bagatka/es256-jwt",
       "dependencies": {
@@ -138,6 +157,7 @@
     "packages/github": {
       "name": "@bagatka/github",
       "dependencies": {
+        "@bagatka/rs256-jwt": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -185,6 +205,16 @@
         "vitest": "catalog:",
       },
     },
+    "packages/rs256-jwt": {
+      "name": "@bagatka/rs256-jwt",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/scrub": {
       "name": "@bagatka/scrub",
       "dependencies": {
@@ -223,6 +253,24 @@
       "devDependencies": {
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
+      },
+    },
+    "product/engines/github": {
+      "name": "@cluenori/github",
+      "dependencies": {
+        "@bagatka/github": "workspace:*",
+        "@bagatka/rs256-jwt": "workspace:*",
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/members": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@bagatka/web-crypto": "workspace:*",
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
       },
     },
     "product/engines/incidents": {
@@ -393,6 +441,7 @@
         "@bagatka/webauthn": "workspace:*",
         "@cloudflare/vitest-plugin": "catalog:",
         "@cluenori/foundation": "workspace:*",
+        "@cluenori/github": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/members": "workspace:*",
         "@cluenori/notifications": "workspace:*",
@@ -458,6 +507,8 @@
 
     "@bagatka/app-store-connect": ["@bagatka/app-store-connect@workspace:packages/app-store-connect"],
 
+    "@bagatka/cloudflare-workers-ai": ["@bagatka/cloudflare-workers-ai@workspace:packages/cloudflare-workers-ai"],
+
     "@bagatka/es256-jwt": ["@bagatka/es256-jwt@workspace:packages/es256-jwt"],
 
     "@bagatka/github": ["@bagatka/github@workspace:packages/github"],
@@ -469,6 +520,8 @@
     "@bagatka/qr-code": ["@bagatka/qr-code@workspace:packages/qr-code"],
 
     "@bagatka/quantile-sketch": ["@bagatka/quantile-sketch@workspace:packages/quantile-sketch"],
+
+    "@bagatka/rs256-jwt": ["@bagatka/rs256-jwt@workspace:packages/rs256-jwt"],
 
     "@bagatka/scrub": ["@bagatka/scrub@workspace:packages/scrub"],
 
@@ -505,6 +558,8 @@
     "@cluenori/dashboard": ["@cluenori/dashboard@workspace:apps/dashboard"],
 
     "@cluenori/foundation": ["@cluenori/foundation@workspace:product/foundation"],
+
+    "@cluenori/github": ["@cluenori/github@workspace:product/engines/github"],
 
     "@cluenori/incidents": ["@cluenori/incidents@workspace:product/engines/incidents"],
 

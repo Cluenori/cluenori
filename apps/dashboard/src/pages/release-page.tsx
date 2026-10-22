@@ -1,20 +1,23 @@
 import type { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import type { Incident } from "@cluenori/incidents"
-import type { Component } from "@cluenori/projects"
+import type { Member } from "@cluenori/members"
+import type { Component, DeployTarget } from "@cluenori/projects"
 import type {
   ChangedCommit,
   ComparedOperation,
   MergedPullRequest,
+  Promotion,
   ReleaseChanges,
   ReleaseDetail,
+  ReleaseNote,
   StoreBuild,
   Verdict,
 } from "@cluenori/releases"
-import { comparedFrom, failingMoreRule, judgedAfterMs } from "@cluenori/releases"
+import { comparedFrom, DraftUnavailable, failingMoreRule, judgedAfterMs } from "@cluenori/releases"
 import { slowerRule } from "@cluenori/signals"
-import { useAtom, useAtomValue, useAtomSet } from "@effect/atom-react"
+import { useAtom, useAtomRefresh, useAtomValue, useAtomSet } from "@effect/atom-react"
 import { cn } from "cn"
-import { Cause, DateTime, Option } from "effect"
+import { Cause, DateTime, Exit, Option, Schema } from "effect"
 import { Atom, AsyncResult } from "effect/reactivity"
 import {
   ActivityIcon,
@@ -28,7 +31,9 @@ import {
   GaugeIcon,
   GitCompareArrowsIcon,
   GitPullRequestIcon,
+  NotebookPenIcon,
   PlusIcon,
+  RocketIcon,
   ScrollTextIcon,
   SearchXIcon,
   SmartphoneIcon,
@@ -36,12 +41,24 @@ import {
   ZapIcon,
 } from "lucide-react"
 import type { ReactNode } from "react"
-import { useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 
+import { useEnvironments } from "@/hooks/use-environments"
 import { liveColor } from "@/lib/colors"
 import { count, duration, moment, share } from "@/lib/format"
 import type { ReleaseScope } from "@/project-data"
-import { linkComponentAtom, periodAtom, projectAtom, releaseAtom } from "@/project-data"
+import {
+  draftNotesAtom,
+  linkComponentAtom,
+  meAtom,
+  membersAtom,
+  periodAtom,
+  projectAtom,
+  promoteAtom,
+  releaseApprovedAtom,
+  releaseAtom,
+  saveNotesAtom,
+} from "@/project-data"
 import type { Ran } from "@/project-facts"
 import {
   appleWords,
@@ -55,6 +72,7 @@ import {
   storeStageOf,
   verdictOf,
 } from "@/project-facts"
+import { draftEnvironmentOf, isFollowing, promotionsAskedEveryMs, promotionsShown, starterOf } from "@/release-facts"
 import type { Route } from "@/router"
 import { Link } from "@/router"
 import type { Attention } from "@/views/attention-list"
@@ -64,13 +82,31 @@ import type { Moved } from "@/views/compared-table"
 import { ComparedTable } from "@/views/compared-table"
 import { ErrorList } from "@/views/error-list"
 import { LinksDialog } from "@/views/links-dialog"
-import { Loaded } from "@/views/loaded"
+import { failureText, Loaded } from "@/views/loaded"
+import type { DraftOutcome, SaveOutcome } from "@/views/notes-editor"
+import { NotesEditor } from "@/views/notes-editor"
 import { OperationName } from "@/views/operation-name"
 import type { Stat } from "@/views/panel"
 import { Panel, PanelStats } from "@/views/panel"
+import { PromotionList } from "@/views/promotion-list"
 import { verdictClass } from "@/views/release-list"
+import { ReleaseNowDialog } from "@/views/release-now-dialog"
 import { SourceProblems } from "@/views/source-problems"
 import { Button, buttonVariants } from "@/views/ui/button"
+
+// Promoting loads when it is asked for, now and then.
+const PromoteDialog = lazy(() => import("@/views/promote-dialog").then((module) => ({ default: module.PromoteDialog })))
+
+const isDraftUnavailable = Schema.is(DraftUnavailable)
+
+// Why no draft was written: the API's reason when it gave one, else what failed.
+const draftProblemOf = (cause: Cause.Cause<unknown>) => {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause))
+  return isDraftUnavailable(error) ? error.reason : failureText(cause)
+}
+
+// Where the notes editor is, which promoting to an App Store Connect app leads to.
+const notesEditorId = "release-notes"
 
 const slowerWords = `at least ${slowerRule.times} times and ${duration(slowerRule.byMs)} more`
 const failingWords = `at least ${failingMoreRule.failures} times, ${share(failingMoreRule.rate, 1)} of its runs and ${failingMoreRule.times} times as often`
@@ -382,6 +418,105 @@ function ChangesUnknown({
   )
 }
 
+/**
+ * A release's promotions, the latest first, under a button to promote it to each environment its
+ * component has a deploy target for; one approved in App Store review one click from being
+ * released. Without targets or promotions, a quiet line says how to add a target, one click from
+ * the component's links when the page can change them.
+ */
+function PromotionsPanel({
+  targets,
+  promotions,
+  asOf,
+  starterOf: starterOfPromotion,
+  onPromote,
+  onReleaseNow,
+  onLink,
+}: {
+  readonly targets: ReadonlyArray<DeployTarget>
+  readonly promotions: ReadonlyArray<Promotion>
+  readonly asOf: DateTime.Utc
+  readonly starterOf: (promotion: Promotion) => string
+  readonly onPromote: (target: DeployTarget) => void
+  readonly onReleaseNow: (promotion: Promotion) => void
+  readonly onLink: (() => void) | undefined
+}) {
+  const addOne = (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+      <span>Add a deploy target to promote releases from here.</span>
+      {onLink !== undefined && (
+        <Button variant="link" size="sm" className="h-auto px-0 text-sm" onClick={onLink}>
+          Change links
+        </Button>
+      )}
+    </span>
+  )
+  if (targets.length === 0 && promotions.length === 0) {
+    return <p className="px-1">{addOne}</p>
+  }
+  return (
+    <Panel icon={RocketIcon} title="Promotions" subtitle="Deploys started from Cluenori, the latest first">
+      {targets.length > 0 && (
+        <div className="flex flex-wrap gap-2 border-b px-5 py-3.5">
+          {targets.map((target) => (
+            <Button key={target.environment} variant="outline" onClick={() => onPromote(target)}>
+              <RocketIcon data-icon="inline-start" />
+              Promote to {target.environment}
+            </Button>
+          ))}
+        </div>
+      )}
+      {promotions.length === 0 ? (
+        <p className="px-5 py-5 text-sm text-muted-foreground">Not promoted from Cluenori yet.</p>
+      ) : (
+        <PromotionList promotions={promotions} now={asOf} starterOf={starterOfPromotion} onReleaseNow={onReleaseNow} />
+      )}
+      {targets.length === 0 && <p className="border-t px-5 py-3">{addOne}</p>}
+    </Panel>
+  )
+}
+
+/**
+ * A release's notes for its users, where an app's build takes them: shown for a component with an
+ * App Store Connect app, or a release that has notes. Drafting asks for where the release goes.
+ */
+function NotesPanel({
+  notes,
+  targets,
+  onDraft,
+  onSave,
+}: {
+  readonly notes: ReadonlyArray<ReleaseNote>
+  readonly targets: ReadonlyArray<DeployTarget>
+  readonly onDraft: (environment: DeployTarget["environment"]) => Promise<DraftOutcome>
+  readonly onSave: (notes: ReadonlyArray<ReleaseNote>) => Promise<SaveOutcome>
+}) {
+  return (
+    // The notes editor is where promoting to an App Store Connect app leads.
+    <div id={notesEditorId} tabIndex={-1} className="scroll-mt-4 outline-none">
+      <Panel
+        icon={NotebookPenIcon}
+        title="Release notes"
+        subtitle="What's New on the App Store and What to Test in TestFlight, one for each language"
+      >
+        <NotesEditor
+          notes={notes}
+          draftEnvironments={targets.map((target) => target.environment)}
+          defaultDraftEnvironment={draftEnvironmentOf(targets)}
+          onDraft={onDraft}
+          onSave={onSave}
+        />
+      </Panel>
+    </div>
+  )
+}
+
+/** The deployment's members, for an owner's page to name who did what; none while they load. */
+function WithMembers({ children }: { readonly children: (members: ReadonlyArray<Member> | undefined) => ReactNode }) {
+  const members = useAtomValue(membersAtom)
+  return children(AsyncResult.isSuccess(members) ? members.value.members : undefined)
+}
+
 // The areas a release opens in, filtered to it.
 const areasOut = [
   { page: "performance", label: "Performance", icon: ActivityIcon },
@@ -415,6 +550,20 @@ export function ReleasePage({
   const setPeriod = useAtomSet(periodAtom)
   const [linking, link] = useAtom(linkComponentAtom)
   const [linkingOpen, setLinkingOpen] = useState(false)
+  const environments = useEnvironments(project, environment)
+  const me = useAtomValue(meAtom)
+  const myself = AsyncResult.isSuccess(me) ? me.value : undefined
+  const owner = myself?.role === "owner"
+  const [promoting, promote] = useAtom(promoteAtom)
+  // The target being confirmed, and how many times one was: each confirmation starts fresh.
+  const [confirming, setConfirming] = useState<{ readonly target: DeployTarget; readonly count: number } | undefined>(
+    undefined,
+  )
+  const [releasing, releaseNow] = useAtom(releaseApprovedAtom)
+  const [releasingOne, setReleasingOne] = useState<Promotion | undefined>(undefined)
+  const draftNotes = useAtomSet(draftNotesAtom, { mode: "promiseExit" })
+  const saveNotes = useAtomSet(saveNotesAtom, { mode: "promiseExit" })
+  const askAgain = useAtomRefresh(releaseAtom(key))
   const all = AsyncResult.isSuccess(projectDetail) ? projectDetail.value.components : []
   const components = all.map((entry) => entry.key)
   const linked = all.find((entry) => entry.key === component)
@@ -438,6 +587,54 @@ export function ReleasePage({
     link(Atom.Reset)
     setLinkingOpen(true)
   }
+  const startPromoting = (target: DeployTarget) => {
+    // An answer to an earlier promotion isn't this one's.
+    promote(Atom.Reset)
+    setConfirming((last) => ({ target, count: (last?.count ?? 0) + 1 }))
+  }
+  const startReleasing = (promotion: Promotion) => {
+    releaseNow(Atom.Reset)
+    setReleasingOne(promotion)
+  }
+  // From the promote dialog to the notes editor: the dialog closes, then the editor is scrolled to.
+  const openNotes = () => {
+    setConfirming(undefined)
+    window.setTimeout(() => {
+      const editor = document.getElementById(notesEditorId)
+      editor?.scrollIntoView({ block: "start" })
+      editor?.focus({ preventScroll: true })
+    }, 0)
+  }
+  const draft = (draftFor: DeployTarget["environment"]): Promise<DraftOutcome> =>
+    draftNotes({ release: key, environment: draftFor }).then((exit) =>
+      Exit.isSuccess(exit)
+        ? { _tag: "drafted", draft: exit.value }
+        : { _tag: "unavailable", reason: draftProblemOf(exit.cause) },
+    )
+  const save = (notes: ReadonlyArray<ReleaseNote>): Promise<SaveOutcome> =>
+    saveNotes({ release: key, notes }).then((exit) =>
+      Exit.isSuccess(exit) ? { _tag: "saved" } : { _tag: "failed", problem: failureText(exit.cause) },
+    )
+  // A promotion of this release just started, shown at once, before the release's answer has it.
+  const started =
+    AsyncResult.isSuccess(promoting) && promoting.value.component === component && promoting.value.release === release
+      ? promoting.value
+      : undefined
+  const promotions = shown === undefined ? [] : promotionsShown(shown.detail.promotions, started)
+  // Others' promotions name who started them, by the members' emails, which an owner may read.
+  const byOthers = promotions.some(
+    (promotion) => promotion.startedBy !== undefined && promotion.startedBy !== myself?.id,
+  )
+  const following = isFollowing(promotions)
+
+  // While a promotion runs, its state is asked for again: Cluenori asks GitHub each minute.
+  useEffect(() => {
+    if (!following) {
+      return
+    }
+    const timer = window.setInterval(askAgain, promotionsAskedEveryMs)
+    return () => window.clearInterval(timer)
+  }, [following, askAgain])
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
@@ -505,6 +702,34 @@ export function ReleasePage({
             return (
               <div className="flex flex-col gap-4">
                 <VerdictPanel project={project} detail={detail} live={live} />
+                {owner && byOthers ? (
+                  <WithMembers>
+                    {(members) => (
+                      <PromotionsPanel
+                        targets={detail.deployTargets}
+                        promotions={promotions}
+                        asOf={asOf}
+                        starterOf={(promotion) => starterOf(promotion.startedBy, myself?.id, members)}
+                        onPromote={startPromoting}
+                        onReleaseNow={startReleasing}
+                        onLink={linked === undefined ? undefined : startLinking}
+                      />
+                    )}
+                  </WithMembers>
+                ) : (
+                  <PromotionsPanel
+                    targets={detail.deployTargets}
+                    promotions={promotions}
+                    asOf={asOf}
+                    starterOf={(promotion) => starterOf(promotion.startedBy, myself?.id, undefined)}
+                    onPromote={startPromoting}
+                    onReleaseNow={startReleasing}
+                    onLink={linked === undefined ? undefined : startLinking}
+                  />
+                )}
+                {(detail.notes.length > 0 || detail.deployTargets.some((target) => target.appStore !== undefined)) && (
+                  <NotesPanel notes={detail.notes} targets={detail.deployTargets} onDraft={draft} onSave={save} />
+                )}
                 {store !== undefined && <StorePanel store={store} />}
                 {detail.problems.length > 0 && (
                   <Panel
@@ -599,9 +824,58 @@ export function ReleasePage({
         </Loaded>
       )}
 
+      {confirming !== undefined && (
+        <Suspense fallback={null}>
+          <PromoteDialog
+            key={confirming.count}
+            release={release}
+            target={confirming.target}
+            repository={shown?.detail.repository}
+            notes={shown?.detail.notes ?? []}
+            owner={owner}
+            // Open until it is closed, or the promotion started.
+            open={!AsyncResult.isSuccess(promoting)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setConfirming(undefined)
+              }
+            }}
+            promoting={promoting}
+            onPromote={(input) => promote({ release: key, environment: confirming.target.environment, ...input })}
+            onOpenNotes={openNotes}
+            {...(linked === undefined
+              ? {}
+              : {
+                  onChangeLinks: () => {
+                    setConfirming(undefined)
+                    startLinking()
+                  },
+                })}
+          />
+        </Suspense>
+      )}
+
+      {releasingOne !== undefined && (
+        <ReleaseNowDialog
+          promotion={releasingOne}
+          // Open until it is closed, or it was released.
+          open={!AsyncResult.isSuccess(releasing)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setReleasingOne(undefined)
+            }
+          }}
+          releasing={releasing}
+          onRelease={() => releaseNow({ release: key, promotion: releasingOne.id })}
+        />
+      )}
+
       {linked !== undefined && linkingOpen && (
         <LinksDialog
           component={linked}
+          environments={
+            environments === undefined ? [] : [...new Set([...environments.production, ...environments.offered])]
+          }
           // Open until it is closed, or its save succeeds.
           open={!AsyncResult.isSuccess(linking)}
           onOpenChange={(open) => {
@@ -610,7 +884,7 @@ export function ReleasePage({
             }
           }}
           saving={linking}
-          onSave={(links) => link({ project, component, links })}
+          onSave={(links) => link({ project, component, links, release: key })}
         />
       )}
     </div>

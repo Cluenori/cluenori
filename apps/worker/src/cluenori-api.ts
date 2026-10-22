@@ -1,4 +1,5 @@
 import { AssertionResponse } from "@bagatka/webauthn"
+import { GitHubGroup } from "@cluenori/github"
 import { IncidentsGroup } from "@cluenori/incidents"
 import { MembersGroup, PasskeyRejected, PasskeysGroup } from "@cluenori/members"
 import { NotificationsGroup } from "@cluenori/notifications"
@@ -85,6 +86,7 @@ export class CluenoriApi extends HttpApi.make("cluenori")
   .add(PhonePushGroup)
   .add(NotificationsGroup.middleware(MemberAuthorization))
   .add(TodayGroup.middleware(MemberAuthorization))
+  .add(GitHubGroup.middleware(MemberAuthorization))
   // Modules' routes, each module on a line: its group, not its definition, so clients that build on
   // this definition don't bundle the queries it runs in projects' objects.
   .add(ReleasesGroup.middleware(MemberAuthorization))

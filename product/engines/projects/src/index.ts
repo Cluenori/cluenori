@@ -11,6 +11,9 @@ export {
   ComponentLinks,
   ComponentName,
   ComponentNotFound,
+  AppStoreDistribution,
+  AppStoreTarget,
+  DeployTarget,
 } from "./component.ts"
 export { IngestKey, IngestKeyRejected, ingestKeyScope } from "./ingest-key.ts"
 export {

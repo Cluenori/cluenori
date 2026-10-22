@@ -511,8 +511,12 @@ conflict.
   clock for Down and Failing; members sign in with passkeys and see only the projects an owner
   chose for them. The first module, Releases (`product/modules/releases`), compares each component's
   release with the one before it, with its commit and changes from GitHub, deploys its CI reports
-  with `cluenori-release`, and apps' builds from App Store Connect; only the environments a project
-  calls production alert, and Today counts only them.
+  with `cluenori-release`, and apps' builds from App Store Connect; numbers each build from the
+  component's version; promotes a release by its deploy target, starting its workflow on GitHub and
+  taking an app's build through App Store review, the first actions; and keeps release notes, which
+  the project's language model (Workers AI) drafts. GitHub is reached through the workspace's own
+  GitHub App, which an owner connects from the web (`product/engines/github`);
+  only the environments a project calls production alert, and Today counts only them.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository

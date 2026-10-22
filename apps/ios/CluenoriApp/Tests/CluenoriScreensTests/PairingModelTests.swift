@@ -35,6 +35,7 @@ final class FakeDeployment: Sendable {
     private let offline = Mutex(false)
     private let received = Mutex<[String]>([])
     private let receivedURLs = Mutex<[URL]>([])
+    private let receivedBodies = Mutex<[(request: String, body: Data)]>([])
 
     func answer(_ request: String, _ status: Int, _ body: String = "") {
         answers.withLock { $0[request] = (status, body) }
@@ -57,12 +58,20 @@ final class FakeDeployment: Sendable {
         }
     }
 
+    /// The body of each request `request` names, `"POST /api/phones"`, in order.
+    func bodies(_ request: String) -> [Data] {
+        receivedBodies.withLock { $0.filter { $0.request == request }.map(\.body) }
+    }
+
     var transport: CluenoriAPI.Transport {
         { [self] request in
             let key = "\(request.httpMethod ?? "GET") \(request.url?.path(percentEncoded: true) ?? "")"
             received.withLock { $0.append(key) }
             if let url = request.url {
                 receivedURLs.withLock { $0.append(url) }
+            }
+            if let body = request.httpBody {
+                receivedBodies.withLock { $0.append((key, body)) }
             }
             if offline.withLock({ $0 }) {
                 throw URLError(.notConnectedToInternet)

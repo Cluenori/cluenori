@@ -1,6 +1,16 @@
+import { GitHubRefused, GitHubUnavailable, Repository } from "@bagatka/github"
 import { CreationOptions, RegistrationResponse, RequestOptions, AssertionResponse } from "@bagatka/webauthn"
-import { Actor, Envelope, MemberId, NotAllowed, ProjectKey } from "@cluenori/foundation"
+import { Actor, Envelope, Instant, MemberId, NotAllowed, ProjectKey } from "@cluenori/foundation"
 import { Caller } from "@cluenori/foundation"
+import {
+  ConnectRejected,
+  GitHubAccount,
+  GitHubAlreadyConnected,
+  GitHubAppForm,
+  GitHubAppSummary,
+  GitHubStatus,
+  ManifestCode,
+} from "@cluenori/github"
 import {
   Access,
   Invite,
@@ -66,6 +76,11 @@ export type WorkspaceCallName =
   | "passkeyOptions"
   | "addPasskey"
   | "pairWithPasskey"
+  | "github"
+  | "connectGitHub"
+  | "finishConnectingGitHub"
+  | "disconnectGitHub"
+  | "gitHubToken"
 
 /** One thing the Worker asks the workspace's Durable Object: its input, its answer, and how it fails. */
 export type WorkspaceCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> = ObjectCall<
@@ -84,6 +99,12 @@ const workspaceCall = <I extends PlainSchema, S extends PlainSchema, F extends P
 
 /** Who calls, and what they see. */
 export const Calling = Schema.Struct({ actor: Actor, access: Access })
+
+/**
+ * A token that acts as the workspace's GitHub App on one repository, and when it expires: it
+ * crosses from the workspace's object to a project's only in the answer.
+ */
+const RepositoryToken = Schema.Struct({ token: Schema.String, expiresAt: Instant })
 
 /** A member just signed in, with their browser's sign-in token. */
 const SignedIn = Schema.Struct({ member: Member, signIn: SignInToken })
@@ -199,5 +220,27 @@ export const workspaceCalls = {
     Schema.Struct({ actor: Actor, registration: RegistrationResponse, site: Site }),
     Schema.Void,
     Schema.Union([NotAllowed, PasskeyRejected]),
+  ),
+  github: workspaceCall("github", Access, GitHubStatus, NotAllowed),
+  connectGitHub: workspaceCall(
+    "connectGitHub",
+    Schema.Struct({ ...Calling.fields, deployment: Schema.String, organization: Schema.optionalKey(GitHubAccount) }),
+    GitHubAppForm,
+    Schema.Union([NotAllowed, GitHubAlreadyConnected]),
+  ),
+  // From the browser GitHub sent back, without a sign-in: the state is what an owner started.
+  finishConnectingGitHub: workspaceCall(
+    "finishConnectingGitHub",
+    Schema.Struct({ code: ManifestCode, state: Schema.String }),
+    GitHubAppSummary,
+    ConnectRejected,
+  ),
+  disconnectGitHub: workspaceCall("disconnectGitHub", Calling, Schema.Void, NotAllowed),
+  // A project's object asks it for the repositories it reads and acts on.
+  gitHubToken: workspaceCall(
+    "gitHubToken",
+    Repository,
+    RepositoryToken,
+    Schema.Union([GitHubRefused, GitHubUnavailable]),
   ),
 }

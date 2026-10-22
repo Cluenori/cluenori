@@ -65,7 +65,8 @@ let changedReleaseAnswer = #"""
       "filesChanged":12,"additions":340,"deletions":120,
       "url":"https://github.com/acme/notes/compare/a1b2c3d...e91f09c"},
     "problems":[{"component":"notes-api","source":"github","problem":"GitHub answered 502 three times in a row.",
-      "at":"2026-10-21T12:00:00.000Z"}]}
+      "at":"2026-10-21T12:00:00.000Z"}],
+    "promotions":[],"deployTargets":[],"notes":[]}
     """#
 
 /// A build only App Store Connect knows: nothing measured, and nothing compared.
@@ -75,7 +76,7 @@ let storeOnlyReleaseAnswer = #"""
       "store":{"version":"2.5.0","buildNumber":"318","uploadedAt":"2026-10-21T08:00:00.000Z","stage":"inReview",
         "appStoreState":"IN_REVIEW","internalTesting":"IN_BETA_TESTING","externalTesting":"WAITING_FOR_BETA_REVIEW"}},
     "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"newErrors":[],"incidents":[],
-    "problems":[]}
+    "problems":[],"promotions":[],"deployTargets":[],"notes":[]}
     """#
 
 let releaseAnswer = #"""
@@ -103,7 +104,7 @@ let releaseAnswer = #"""
       "subject":"GET /api/feed","title":"GET /api/feed: p95 210 ms, usually 106 ms",
       "evidence":{"_tag":"failing","operation":"GET /api/feed","failed":18,"count":100,"usualRate":0.001},
       "openedAt":"2026-10-21T10:02:00.000Z","resolvedAt":"2026-10-21T10:14:00.000Z"}],
-    "problems":[]}
+    "problems":[],"promotions":[],"deployTargets":[],"notes":[]}
     """#
 
 let feedRelease = ReleaseRef(
@@ -480,7 +481,7 @@ struct ReleaseTelemetryTests {
               "lastSeen":"2026-10-21T13:40:00.000Z","count":950,"errors":3,"verdict":"first","slower":0,
               "failingMore":0,"newErrors":0},
             "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"newErrors":[],
-            "incidents":[],"problems":[]}
+            "incidents":[],"problems":[],"promotions":[],"deployTargets":[],"notes":[]}
             """#
         )
         let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)

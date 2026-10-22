@@ -534,7 +534,11 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   its settings, which the host reads and builds on its own line in the project's object; its
   `background` runs on the project's alarm, bounded and at its own pace; its `ingest` writes are
   served at `POST /ingest/v1/<module>/<name>` for a component's ingest key
-  (`apps/worker/src/module-ingest.ts`), for tooling such as CI that isn't a member.
+  (`apps/worker/src/module-ingest.ts`), for tooling such as CI that isn't a member. Its `actions`
+  (`moduleAction`) change things for an actor: `run(actor, input)` in the project's object, served
+  under `<module>.action.<name>`, which a handler calls with `moduleActionCall(module, action)` and
+  the caller's actor; it commits its records with their activity through `ActivityLog.commit`
+  (`product/modules/releases/src/promote.ts`).
 - **Canonical examples:** a group, `product/engines/projects/src/projects-api.ts`; the API,
   `apps/worker/src/cluenori-api.ts`; handlers, `apps/worker/src/projects-handlers.ts`. The MCP
   server's comes with the first module.
@@ -587,8 +591,15 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   A client package's own tests do; an engine or module that uses a client may fake the client's
   service instead (`product/modules/releases/test/sources.test.ts`), since the client's tests
   already cover the wire.
+- **A language model is `effect/ai`'s `LanguageModel`,** which the host provides
+  (`@bagatka/cloudflare-workers-ai` on the Worker's `AI` binding); product code asks it with
+  `generateText` and never names a provider. Text from commits, logs or people goes in the prompt
+  as data, with the instruction not to follow it, and what the model writes reaches the outside
+  only after a person saves it (`product/modules/releases/src/notes.ts`). Tests fake it with
+  `LanguageModel.make` (`product/modules/releases/test/in-object.ts`).
 - **JSON Web Tokens are signed with `@bagatka/es256-jwt`,** such as Apple's tokens from a `.p8` key:
-  APNs's and App Store Connect's.
+  APNs's and App Store Connect's; and with `@bagatka/rs256-jwt` for RSA keys, such as a GitHub
+  App's.
   A journey fakes them with Miniflare's `outboundService`, in a Vitest project of its own, so the
   other journeys' requests aren't affected.
 - Canonical examples: `packages/apns`, its tests, and `tests/journeys/vitest.alerts.config.ts`.
@@ -709,6 +720,10 @@ The configuration files are the specification; this entry says what each one own
   canonical example is `product/engines/signals/src/scrubbed.ts`.
 - **Stores keep a digest, never the credential.** Keys and tokens are compared by their SHA-256
   digests, which also makes the comparison take the same time whatever is presented.
+- **A credential Cluenori uses, rather than checks, is a Worker secret** when it is given at setup,
+  such as APNs's key. One a vendor hands over while running, such as the private key GitHub gives
+  the workspace's app, is kept only in the workspace's object: never returned by a route, logged,
+  or put in activity. Others get short-lived tokens from it (`product/engines/github`).
 - **Refusals say nothing about which part was wrong:** an unknown project, component, or secret
   fails the same way.
 - **A key that names where it belongs** (`cluenori.<project>.<component>.<secret>`) lets the Worker
@@ -759,7 +774,8 @@ language.
   a quiet line while it first loads, what failed if it did, the answer dimmed while a newer one
   loads.
 - **What a page says about the answers** (what needs attention, what got slower) is computed once,
-  by pure rules in `src/project-facts.ts`; pages show it. "Now" is the time an answer covers up to,
+  by pure rules in `src/project-facts.ts`, and those only release pages need in
+  `src/release-facts.ts`, which loads with them; pages show it. "Now" is the time an answer covers up to,
   never the clock, and a step without a point is unknown (`runColumnsOf`) unless the API says it
   means none (`logColumnsOf`).
 - **An address is untrusted input:** `src/router.tsx` decodes its keys with the API's own schemas,

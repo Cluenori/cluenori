@@ -30,9 +30,8 @@ const millisOf = (time: DateTime.Utc | undefined) => (time === undefined ? Infin
 
 /**
  * Every release the module knows, the latest first: those Signals counted, kept 15 months after last
- * seen, joined with reported deploys of the same component, environment and release, and with an
- * app's store builds of the same component and release, in every environment it ran in. A store
- * build that ran nowhere and wasn't reported is a release of its own, without an environment.
+ * seen, joined with reported deploys and with apps' store builds of the same component, environment
+ * and release. A store build is in the environment whose deploy target its app is.
  */
 export const knownReleases = Effect.gen(function* () {
   const signals = yield* Signals
@@ -67,16 +66,8 @@ export const knownReleases = Effect.gen(function* () {
     known.set(key, { ...found, deploy: found.deploy ?? deploy })
   }
   for (const stored of builds) {
-    const sameRelease = [...known.entries()].filter(
-      ([, each]) => each.component === stored.component && each.release === stored.release,
-    )
-    if (sameRelease.length === 0) {
-      const { key, found } = entry(stored.component, undefined, stored.release)
-      known.set(key, { ...found, store: stored.build })
-    }
-    for (const [key, each] of sameRelease) {
-      known.set(key, { ...each, store: stored.build })
-    }
+    const { key, found } = entry(stored.component, stored.environment, stored.release)
+    known.set(key, { ...found, store: stored.build })
   }
   return Array.from(known.values(), (each): KnownRelease => {
     const first = Math.min(

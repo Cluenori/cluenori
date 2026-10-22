@@ -1,7 +1,7 @@
 import type { AppStoreConnect, AppStoreVersion, Build } from "@bagatka/app-store-connect"
 import { AppStoreConnectRefused } from "@bagatka/app-store-connect"
-import type { Comparison, GitHub } from "@bagatka/github"
-import { CommitSha, GitHubRefused, Repository } from "@bagatka/github"
+import type { Comparison } from "@bagatka/github"
+import { CommitSha, GitHub, GitHubRefused, Repository } from "@bagatka/github"
 import { SketchValue, sketchOf } from "@bagatka/quantile-sketch"
 import type { Actor } from "@cluenori/foundation"
 import { ComponentKey, EnvelopeName, EnvironmentKey, MemberId, Period, ReleaseVersion } from "@cluenori/foundation"
@@ -13,7 +13,7 @@ import { DateTime, Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 
 import { ReleaseSources, releasesModule } from "../src/index.ts"
-import { inProject } from "./in-object.ts"
+import { inProject, noModel, notConnected } from "./in-object.ts"
 
 // 2026-10-21T10:00:00Z, on a minute.
 const start = 1792576800000
@@ -74,11 +74,27 @@ const linkedProject = Effect.gen(function* () {
   yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
   yield* projects.addComponent(member, { key: ios, name: ComponentName.make("Notes iOS") })
   yield* projects.linkComponent(member, api, { repository })
-  yield* projects.linkComponent(member, ios, { appStoreBundleId: BundleId.make("com.example.notes") })
+  yield* projects.linkComponent(member, ios, {
+    deployTargets: [
+      { environment: production, appStore: { bundleId: BundleId.make("com.example.notes"), distribution: "appStore" } },
+    ],
+  })
 })
 
 const today = new Period({ from: DateTime.makeUnsafe(start - 6 * hour), to: DateTime.makeUnsafe(start) })
 const list = releasesModule.queries.list.run({ period: today })
+
+// Workflows these tests don't start.
+const noWorkflows = {
+  defaultBranch: () => Effect.die("No workflow in these tests"),
+  dispatchWorkflow: () => Effect.die("No workflow in these tests"),
+  workflowRuns: () => Effect.die("No workflow in these tests"),
+  workflowRun: () => Effect.die("No workflow in these tests"),
+  selfHostedRunners: () => Effect.succeed([]),
+} satisfies Pick<
+  GitHub["Service"],
+  "defaultBranch" | "dispatchWorkflow" | "workflowRuns" | "workflowRun" | "selfHostedRunners"
+>
 
 // GitHub with two tags, prod- of each release, and what changed between them.
 const fakeGitHub = (calls: Array<string>): GitHub["Service"] => ({
@@ -136,6 +152,7 @@ const fakeGitHub = (calls: Array<string>): GitHub["Service"] => ({
       url: `https://github.com/notes/notes-api/pull/${number}`,
       labels: ["performance"],
     }),
+  ...noWorkflows,
 })
 
 const build = (buildNumber: string, hoursAgo: number): Build => ({
@@ -147,6 +164,17 @@ const build = (buildNumber: string, hoursAgo: number): Build => ({
   expired: false,
   internalTesting: "IN_BETA_TESTING",
 })
+
+// What these tests don't publish.
+const noPublishing = {
+  appLocales: () => Effect.succeed(["en-US"]),
+  build: () => Effect.succeedNone,
+  prepareVersion: () => Effect.die("Nothing is submitted in these tests"),
+  submitForReview: () => Effect.die("Nothing is submitted in these tests"),
+  releaseVersion: () => Effect.die("Nothing is released in these tests"),
+  setPhasedRelease: () => Effect.die("Nothing is released in these tests"),
+  setWhatToTest: () => Effect.die("Nothing is tested in these tests"),
+} satisfies Partial<AppStoreConnect["Service"]>
 
 // App Store Connect with two builds of 2.4.0, the later one live in a phased release.
 const fakeAppStore = (reads: { count: number }): AppStoreConnect["Service"] => ({
@@ -167,12 +195,17 @@ const fakeAppStore = (reads: { count: number }): AppStoreConnect["Service"] => (
         phasedRelease: { state: "ACTIVE", currentDay: 2 },
       } satisfies AppStoreVersion,
     ]),
+  ...noPublishing,
 })
 
 const sourcesOf = (github: GitHub["Service"] | undefined, appStore: AppStoreConnect["Service"] | undefined) =>
-  Layer.succeed(
-    ReleaseSources,
-    ReleaseSources.of({ github: Option.fromNullishOr(github), appStoreConnect: Option.fromNullishOr(appStore) }),
+  Layer.mergeAll(
+    Layer.succeed(
+      ReleaseSources,
+      ReleaseSources.of({ appStoreConnect: Option.fromNullishOr(appStore), appStoreConnectManager: Option.none() }),
+    ),
+    noModel,
+    github === undefined ? notConnected : Layer.succeed(GitHub, GitHub.of(github)),
   )
 
 const sync = releasesModule.background ?? Effect.void
@@ -271,7 +304,11 @@ describe("Releases' sources", () => {
           ],
         )
         assert.strictEqual(releases[0]?.store?.phasedRelease?.day, 2)
-        // A build names no environment, so it belongs to production, and not to dev.
+        // A build is in the environment whose app it is in: production's, and not dev's.
+        assert.deepStrictEqual(
+          releases.map((release) => release.environment),
+          [production, production],
+        )
         const inProduction = yield* releasesModule.queries.list.run({ period: today, environment: production })
         const inDev = yield* releasesModule.queries.list.run({
           period: today,

@@ -1,4 +1,4 @@
-import { Repository } from "@bagatka/github"
+import { Repository, WorkflowFile } from "@bagatka/github"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvironmentKey, MemberId, ProjectKey } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
@@ -8,6 +8,7 @@ import { SqlClient } from "effect/sql"
 import {
   BundleId,
   ComponentExists,
+  ComponentLinks,
   ComponentName,
   ComponentNotFound,
   defaultProjectSettings,
@@ -75,17 +76,26 @@ describe("Projects", () => {
   )
 
   it.effect(
-    "links a component to its repository and App Store app, with component.linked, and unlinks one left out",
+    "links a component to its repository and deploy targets, with component.linked, and unlinks one left out",
     () =>
       inProject(
         "links",
         Effect.gen(function* () {
           yield* createWithApi
           const projects = yield* Projects
+          const targets = [
+            { environment: EnvironmentKey.make("dev"), workflow: WorkflowFile.make("deploy.yml") },
+            {
+              environment: EnvironmentKey.make("production"),
+              workflow: WorkflowFile.make("ios.yml"),
+              appStore: { bundleId: BundleId.make("com.example.notes"), distribution: "appStore" as const },
+            },
+          ]
           const linked = yield* projects.linkComponent(owner, notesApi.key, {
             repository: Repository.make("notes/notes-api"),
-            appStoreBundleId: BundleId.make("com.example.notes"),
+            deployTargets: targets,
           })
+          const [deploying] = yield* projects.components
           const unlinked = yield* projects.linkComponent(owner, notesApi.key, {
             repository: Repository.make("notes/notes-api"),
           })
@@ -94,18 +104,31 @@ describe("Projects", () => {
           const log = yield* ActivityLog
           const [latest] = yield* log.latest
 
-          assert.deepInclude(linked, {
-            repository: Repository.make("notes/notes-api"),
-            appStoreBundleId: BundleId.make("com.example.notes"),
-          })
-          assert.isUndefined(unlinked.appStoreBundleId)
+          assert.deepInclude(linked, { repository: Repository.make("notes/notes-api"), deployTargets: targets })
+          assert.deepStrictEqual(deploying?.deployTargets, targets)
+          assert.isUndefined(unlinked.deployTargets)
           assert.strictEqual(component?.repository, "notes/notes-api")
-          assert.isUndefined(component?.appStoreBundleId)
+          assert.isUndefined(component?.deployTargets)
           assert.deepStrictEqual(missing, new ComponentNotFound({ component: ComponentKey.make("notes-web") }))
           assert.strictEqual(latest?.name, "component.linked")
           assert.deepStrictEqual(latest?.attrs, { component: "notes-api", repository: "notes/notes-api" })
         }),
       ),
+  )
+
+  it.effect("refuses a deploy target with neither a workflow nor an App Store app, and two for one environment", () =>
+    Effect.sync(() => {
+      const decode = Schema.decodeUnknownResult(ComponentLinks)
+      const empty = decode({ deployTargets: [{ environment: "dev" }] })
+      const twice = decode({
+        deployTargets: [
+          { environment: "dev", workflow: "deploy.yml" },
+          { environment: "dev", workflow: "other.yml" },
+        ],
+      })
+      assert.isTrue(empty._tag === "Failure")
+      assert.isTrue(twice._tag === "Failure")
+    }),
   )
 
   it.effect("calls prod, production and live production until the project chooses, with project.settings_changed", () =>
@@ -131,6 +154,36 @@ describe("Projects", () => {
         assert.strictEqual(latest?.name, "project.settings_changed")
       }),
     ),
+  )
+
+  it.effect("turns an App Store app linked before deploy targets into production's target", () =>
+    Effect.gen(function* () {
+      // A database from before: the app's bundle ID in its old column, and migration 4 not yet run.
+      yield* inProject(
+        "app-store-before",
+        Effect.gen(function* () {
+          yield* createWithApi
+          const sql = yield* SqlClient.SqlClient
+          yield* sql`UPDATE projects_components SET app_store_bundle_id = 'com.example.notes', deploy_targets = NULL`
+          yield* sql`ALTER TABLE projects_components DROP COLUMN deploy_targets`
+          yield* sql`DELETE FROM projects_migrations WHERE migration_id >= 4`
+        }),
+      )
+      const [component] = yield* inProject(
+        "app-store-before",
+        Effect.gen(function* () {
+          const projects = yield* Projects
+          return yield* projects.components
+        }),
+      )
+
+      assert.deepStrictEqual(component?.deployTargets, [
+        {
+          environment: EnvironmentKey.make("production"),
+          appStore: { bundleId: BundleId.make("com.example.notes"), distribution: "appStore" },
+        },
+      ])
+    }),
   )
 
   it.effect("keeps no ingest key anywhere in the project's database", () =>

@@ -44,6 +44,7 @@ struct RouteTests {
         ("cluenori://projects/notes/logs", .logs(of: .project("notes"))),
         ("cluenori://projects/notes/operations", .operations(of: .project("notes"))),
         ("cluenori://projects/notes/releases", .releases(project: "notes")),
+        ("cluenori://projects/notes/notes-style", .notesStyle(project: "notes")),
     ])
     func `reads the screen a link names`(_ text: String, _ route: Route) throws {
         #expect(Route(try #require(URL(string: text))) == route)
@@ -80,6 +81,12 @@ struct RouteTests {
         let release = ReleaseRef(project: "notes", component: "notes-api", environment: nil, version: "1.8.0")
         navigation.open(.release(release))
         #expect(navigation.projectsPath == [.project("notes"), .releases(project: "notes"), .release(release)])
+
+        navigation.open(.notes(release))
+        #expect(navigation.projectsPath.suffix(2) == [.release(release), .notes(release)])
+        navigation.open(.notesStyle(project: "notes"))
+        #expect(
+            navigation.projectsPath == [.project("notes"), .releases(project: "notes"), .notesStyle(project: "notes")])
     }
 
     @Test(arguments: [
@@ -97,6 +104,7 @@ struct RouteTests {
             ("errors", .errors(of: .release(feedRelease))),
             ("errors/4f1c9a2e7b3d5068", .error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068")),
             ("logs", .logs(of: .release(feedRelease))),
+            ("notes", .notes(feedRelease)),
         ]
         for (screen, route) in screens {
             let url = try #require(

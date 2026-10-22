@@ -236,9 +236,11 @@ public struct CluenoriAPI: Sendable {
         return try Self.decoded(ProjectSettings.self, from: answer)
     }
 
-    /// Replaces a component's links, where its releases come from beside its telemetry:
-    /// `repository`, its GitHub repository as owner/name, whose tags and commits name its releases,
-    /// and `appStoreBundleId`, its app's bundle ID in App Store Connect. One left out is unlinked.
+    /// Replaces a component's links: `repository`, its GitHub repository as owner/name, whose
+    /// commits its releases are; and `deployTargets`, where its releases go in each environment:
+    /// the GitHub Actions workflow that builds and deploys a release there, started with the inputs
+    /// `release`, `environment`, `commit` and `runner`, and, for an app, the App Store Connect app
+    /// its builds go to, for TestFlight only or through to the App Store. One left out is unlinked.
     /// Returns the component.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, `.componentNotFound`, or as any call can.
@@ -614,6 +616,39 @@ public struct CluenoriAPI: Sendable {
         return try Self.decoded(TodayList.self, from: answer)
     }
 
+    /// Whether Cluenori is connected to GitHub: its GitHub App, absent until an owner connects it,
+    /// and the accounts it is installed on, read from GitHub now; `problem` says why they couldn't
+    /// be. Owners only.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, or as any call can.
+    @concurrent
+    public func github() async throws(APIError) -> GitHubStatus {
+        let answer = try await self.send("GET", "/api/github")
+        return try Self.decoded(GitHubStatus.self, from: answer)
+    }
+
+    /// Disconnects GitHub: Cluenori forgets its app, and stops reading and promoting through it.
+    /// The app stays on GitHub until its owner deletes it there. Owners only.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, or as any call can.
+    @concurrent
+    public func disconnectGitHub() async throws(APIError) {
+        _ = try await self.send("DELETE", "/api/github")
+    }
+
+    /// Starts connecting GitHub: the form the owner's browser posts to `action`, with the field
+    /// `manifest`, so GitHub creates Cluenori's app in `organization` or their own account. It may
+    /// read code and pull requests, and start workflows, where it is installed. GitHub then sends
+    /// the browser back to `/api/github/connected`, which finishes, good once within an hour.
+    /// Owners only; 409 while an app is connected.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.gitHubAlreadyConnected`, or as any call can.
+    @concurrent
+    public func connectGitHub(_ body: ConnectGitHub) async throws(APIError) -> GitHubAppForm {
+        let answer = try await self.send("POST", "/api/github/connect", body: try Self.encoded(body))
+        return try Self.decoded(GitHubAppForm.self, from: answer)
+    }
+
     /// The releases whose operations ran in a period, the latest first seen first, at most 30: each
     /// component's versions as it reports them in `service.version`, from the first minute each ran
     /// to the last, with a verdict against the release before it of the same component and
@@ -642,8 +677,9 @@ public struct CluenoriAPI: Sendable {
 
     /// One release compared with the one before it, in `environment`, or without it the environment
     /// it last ran in: the operations that got slower, fail more, got faster, or fail less, each
-    /// the biggest change first; the operations new in it; the errors first seen in it; and the
-    /// incidents that opened while it ran, of those the project keeps.
+    /// the biggest change first; the operations new in it; the errors first seen in it; the
+    /// incidents that opened while it ran, of those the project keeps; its promotions; and the
+    /// environments it can be promoted to, its component's deploy workflows.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, `.releaseNotFound`, or as any call can.
     @concurrent
@@ -658,6 +694,128 @@ public struct CluenoriAPI: Sendable {
         let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/releases/\(Self.escaped(Self.text(component)))/\(Self.escaped(Self.text(release)))", query: query)
         return try Self.decoded(ReleaseDetail.self, from: answer)
     }
+
+    /// Promotes a release to an environment, for the member who asks, by its component's deploy
+    /// target there: starts its workflow on the repository's default branch with the inputs
+    /// `release`, `environment`, `commit` (when known) and `runner` (`auto` unless given), as the
+    /// workspace's GitHub App; and, when the target has an App Store Connect app, follows its build
+    /// there once processed: for TestFlight, sets What to Test from the release's notes; for the
+    /// App Store, submits it for review with its notes as What's New, as `submission` says (as soon
+    /// as approved, phased, unless given). Cluenori follows it each minute until it ends, and
+    /// records who started it and why. 409 while the component's last promotion to that environment
+    /// hasn't ended; 422 when it can't start until someone fixes what `reason` says, where `fix`
+    /// says; 503 when GitHub didn't answer. Each call that succeeds starts a run.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.releaseNotFound`, `.promotionInProgress`,
+    /// `.promotionRefused`, `.promotionUnavailable`, or as any call can.
+    @concurrent
+    public func promote(
+        project: String,
+        component: String,
+        release: String,
+        _ body: PromoteTo,
+    ) async throws(APIError) -> Promotion {
+        let answer = try await self.send("POST", "/api/projects/\(Self.escaped(Self.text(project)))/releases/\(Self.escaped(Self.text(component)))/\(Self.escaped(Self.text(release)))/promotions", body: try Self.encoded(body))
+        return try Self.decoded(Promotion.self, from: answer)
+    }
+
+    /// Releases a promotion that App Store review approved and that waits for a member, submitted
+    /// to be released manually: App Store Connect makes it live, and the promotion ends once it is.
+    /// 404 for no promotion of that ID waiting so.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.promotionNotFound`, `.promotionRefused`,
+    /// `.promotionUnavailable`, or as any call can.
+    @concurrent
+    public func releaseApproved(
+        project: String,
+        promotion: String,
+    ) async throws(APIError) -> Promotion {
+        let answer = try await self.send("POST", "/api/projects/\(Self.escaped(Self.text(project)))/promotions/\(Self.escaped(Self.text(promotion)))/release")
+        return try Self.decoded(Promotion.self, from: answer)
+    }
+
+    /// Each component's version, `MAJOR.MINOR.PATCH`, which its next builds are numbered in, and
+    /// the last build number given: a commit built for the first time becomes `<version>+<last +
+    /// 1>`, for good. A component whose version was never set isn't listed; its CI can't number
+    /// builds until it is.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func versions(project: String) async throws(APIError) -> ComponentVersions {
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/versions")
+        return try Self.decoded(ComponentVersions.self, from: answer)
+    }
+
+    /// Sets a component's version, such as a bump of its patch, minor or major: the same or higher
+    /// than now. Its build numbers continue, or from `firstBuild`, above the last given. 422 for a
+    /// lower version, a first build at or below the last, or a component the project lacks.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.versionRefused`, or as any call can.
+    @concurrent
+    public func setVersion(
+        project: String,
+        component: String,
+        _ body: VersionTo,
+    ) async throws(APIError) -> ComponentVersion {
+        let answer = try await self.send("PUT", "/api/projects/\(Self.escaped(Self.text(project)))/versions/\(Self.escaped(Self.text(component)))", body: try Self.encoded(body))
+        return try Self.decoded(ComponentVersion.self, from: answer)
+    }
+
+    /// Replaces a release's notes for its users, one for each language, up to 4000 characters each:
+    /// its What's New when it goes to the App Store, and What to Test in TestFlight.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.releaseNotFound`, or as any call can.
+    @concurrent
+    public func saveNotes(
+        project: String,
+        component: String,
+        release: String,
+        _ body: NotesOf,
+    ) async throws(APIError) -> [ReleaseNote] {
+        let answer = try await self.send("PUT", "/api/projects/\(Self.escaped(Self.text(project)))/releases/\(Self.escaped(Self.text(component)))/\(Self.escaped(Self.text(release)))/notes", body: try Self.encoded(body))
+        return try Self.decoded([ReleaseNote].self, from: answer)
+    }
+
+    /// Drafts a release's notes for where it goes: written by the project's language model from the
+    /// commits since the release current in `environment` (on the App Store, the live one), in the
+    /// project's notes style, with its last notes as examples; one for each language of the app the
+    /// environment's builds go to, or English. Saves nothing: edit the draft and save it. 503 when
+    /// its commits aren't known, or GitHub or the model don't answer.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.releaseNotFound`, `.draftUnavailable`, or
+    /// as any call can.
+    @concurrent
+    public func draftNotes(
+        project: String,
+        component: String,
+        release: String,
+        _ body: DraftFor,
+    ) async throws(APIError) -> NotesDraft {
+        let answer = try await self.send("POST", "/api/projects/\(Self.escaped(Self.text(project)))/releases/\(Self.escaped(Self.text(component)))/\(Self.escaped(Self.text(release)))/notes/draft", body: try Self.encoded(body))
+        return try Self.decoded(NotesDraft.self, from: answer)
+    }
+
+    /// How the project's release notes read, in its own words, which drafts follow: the project's,
+    /// or Cluenori's default until it sets one.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func notesStyle(project: String) async throws(APIError) -> NotesStyle {
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/notes-style")
+        return try Self.decoded(NotesStyle.self, from: answer)
+    }
+
+    /// Sets how the project's release notes read, up to 2000 characters.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func setNotesStyle(
+        project: String,
+        _ body: NotesStyle,
+    ) async throws(APIError) -> NotesStyle {
+        let answer = try await self.send("PUT", "/api/projects/\(Self.escaped(Self.text(project)))/notes-style", body: try Self.encoded(body))
+        return try Self.decoded(NotesStyle.self, from: answer)
+    }
 }
 
 /// Why a call failed: an error the API answered with, no answer at all, or one this client can't read.
@@ -665,7 +823,9 @@ public enum APIError: Error, Sendable {
     case archiveUnavailable(ArchiveUnavailable)
     case componentExists(ComponentExists)
     case componentNotFound(ComponentNotFound)
+    case draftUnavailable(DraftUnavailable)
     case errorGroupNotFound(ErrorGroupNotFound)
+    case gitHubAlreadyConnected(GitHubAlreadyConnected)
     case incidentNotFound(IncidentNotFound)
     case inviteRejected(InviteRejected)
     case memberExists(MemberExists)
@@ -681,12 +841,17 @@ public enum APIError: Error, Sendable {
     case phoneNotFound(PhoneNotFound)
     case projectExists(ProjectExists)
     case projectNotFound(ProjectNotFound)
+    case promotionInProgress(PromotionInProgress)
+    case promotionNotFound(PromotionNotFound)
+    case promotionRefused(PromotionRefused)
+    case promotionUnavailable(PromotionUnavailable)
     case pushNotSetUp(PushNotSetUp)
     case pushRejected(PushRejected)
     case pushUnavailable(PushUnavailable)
     case releaseNotFound(ReleaseNotFound)
     case signInNotFound(SignInNotFound)
     case unauthorized(Unauthorized)
+    case versionRefused(VersionRefused)
     /// The server didn't answer: no connection, a timeout, or a cancelled call.
     case unreachable(URLError)
     /// An answer this client can't read, such as a status or a shape from a newer API, and why.
@@ -722,6 +887,50 @@ public struct AddedComponentResponse: Codable, Hashable, Sendable {
     public init(component: Component, ingestKey: String) {
         self.component = component
         self.ingestKey = ingestKey
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct AppStoreDistribution: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let testFlight = AppStoreDistribution(rawValue: "testFlight")
+    public static let appStore = AppStoreDistribution(rawValue: "appStore")
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct AppStoreReleaseType: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let afterApproval = AppStoreReleaseType(rawValue: "afterApproval")
+    public static let manual = AppStoreReleaseType(rawValue: "manual")
+}
+
+public struct AppStoreSubmission: Codable, Hashable, Sendable {
+    public let releaseType: AppStoreReleaseType
+    public let phased: Bool
+
+    public init(releaseType: AppStoreReleaseType, phased: Bool) {
+        self.releaseType = releaseType
+        self.phased = phased
+    }
+}
+
+public struct AppStoreTarget: Codable, Hashable, Sendable {
+    public let bundleId: String
+    public let distribution: AppStoreDistribution
+
+    public init(bundleId: String, distribution: AppStoreDistribution) {
+        self.bundleId = bundleId
+        self.distribution = distribution
     }
 }
 
@@ -791,20 +1000,20 @@ public struct Component: Codable, Hashable, Sendable {
     public let name: String
     public let createdAt: Date
     public let repository: String?
-    public let appStoreBundleId: String?
+    public let deployTargets: [DeployTarget]?
 
     public init(
         key: String,
         name: String,
         createdAt: Date,
         repository: String? = nil,
-        appStoreBundleId: String? = nil,
+        deployTargets: [DeployTarget]? = nil,
     ) {
         self.key = key
         self.name = name
         self.createdAt = createdAt
         self.repository = repository
-        self.appStoreBundleId = appStoreBundleId
+        self.deployTargets = deployTargets
     }
 }
 
@@ -818,11 +1027,11 @@ public struct ComponentExists: Codable, Hashable, Sendable {
 
 public struct ComponentLinks: Codable, Hashable, Sendable {
     public let repository: String?
-    public let appStoreBundleId: String?
+    public let deployTargets: [DeployTarget]?
 
-    public init(repository: String? = nil, appStoreBundleId: String? = nil) {
+    public init(repository: String? = nil, deployTargets: [DeployTarget]? = nil) {
         self.repository = repository
-        self.appStoreBundleId = appStoreBundleId
+        self.deployTargets = deployTargets
     }
 }
 
@@ -834,6 +1043,36 @@ public struct ComponentNotFound: Codable, Hashable, Sendable {
     }
 }
 
+public struct ComponentVersion: Codable, Hashable, Sendable {
+    public let component: String
+    public let version: String
+    public let lastBuild: Int
+    public let setAt: Date
+
+    public init(component: String, version: String, lastBuild: Int, setAt: Date) {
+        self.component = component
+        self.version = version
+        self.lastBuild = lastBuild
+        self.setAt = setAt
+    }
+}
+
+public struct ComponentVersions: Codable, Hashable, Sendable {
+    public let versions: [ComponentVersion]
+
+    public init(versions: [ComponentVersion]) {
+        self.versions = versions
+    }
+}
+
+public struct ConnectGitHub: Codable, Hashable, Sendable {
+    public let organization: String?
+
+    public init(organization: String? = nil) {
+        self.organization = organization
+    }
+}
+
 public struct CreateProject: Codable, Hashable, Sendable {
     public let key: String
     public let name: String
@@ -841,6 +1080,18 @@ public struct CreateProject: Codable, Hashable, Sendable {
     public init(key: String, name: String) {
         self.key = key
         self.name = name
+    }
+}
+
+public struct DeployTarget: Codable, Hashable, Sendable {
+    public let environment: String
+    public let workflow: String?
+    public let appStore: AppStoreTarget?
+
+    public init(environment: String, workflow: String? = nil, appStore: AppStoreTarget? = nil) {
+        self.environment = environment
+        self.workflow = workflow
+        self.appStore = appStore
     }
 }
 
@@ -855,6 +1106,22 @@ public struct DownEvidence: Codable, Hashable, Sendable {
         self.url = url
         self.failures = failures
         self.problem = problem
+    }
+}
+
+public struct DraftFor: Codable, Hashable, Sendable {
+    public let environment: String
+
+    public init(environment: String) {
+        self.environment = environment
+    }
+}
+
+public struct DraftUnavailable: Codable, Hashable, Sendable {
+    public let reason: String
+
+    public init(reason: String) {
+        self.reason = reason
     }
 }
 
@@ -1008,6 +1275,105 @@ public struct FailingEvidence: Codable, Hashable, Sendable {
         self.failed = failed
         self.count = count
         self.usualRate = usualRate
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct GitHubAccountType: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let User = GitHubAccountType(rawValue: "User")
+    public static let Organization = GitHubAccountType(rawValue: "Organization")
+}
+
+public struct GitHubAlreadyConnected: Codable, Hashable, Sendable {
+    public init() {
+    }
+}
+
+public struct GitHubAppForm: Codable, Hashable, Sendable {
+    public let action: String
+    public let manifest: String
+
+    public init(action: String, manifest: String) {
+        self.action = action
+        self.manifest = manifest
+    }
+}
+
+public struct GitHubAppSummary: Codable, Hashable, Sendable {
+    public let name: String
+    public let slug: String
+    public let url: String
+    public let installUrl: String
+    public let organization: String?
+    public let connectedAt: Date
+
+    public init(
+        name: String,
+        slug: String,
+        url: String,
+        installUrl: String,
+        organization: String? = nil,
+        connectedAt: Date,
+    ) {
+        self.name = name
+        self.slug = slug
+        self.url = url
+        self.installUrl = installUrl
+        self.organization = organization
+        self.connectedAt = connectedAt
+    }
+}
+
+public struct GitHubInstallation: Codable, Hashable, Sendable {
+    public let account: String
+    public let accountType: GitHubAccountType
+    public let repositories: GitHubRepositoryAccess
+    public let url: String?
+
+    public init(
+        account: String,
+        accountType: GitHubAccountType,
+        repositories: GitHubRepositoryAccess,
+        url: String? = nil,
+    ) {
+        self.account = account
+        self.accountType = accountType
+        self.repositories = repositories
+        self.url = url
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct GitHubRepositoryAccess: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let all = GitHubRepositoryAccess(rawValue: "all")
+    public static let selected = GitHubRepositoryAccess(rawValue: "selected")
+}
+
+public struct GitHubStatus: Codable, Hashable, Sendable {
+    public let app: GitHubAppSummary?
+    public let installations: [GitHubInstallation]
+    public let problem: String?
+
+    public init(
+        app: GitHubAppSummary? = nil,
+        installations: [GitHubInstallation],
+        problem: String? = nil,
+    ) {
+        self.app = app
+        self.installations = installations
+        self.problem = problem
     }
 }
 
@@ -1523,6 +1889,34 @@ public struct NotAllowed: Codable, Hashable, Sendable {
     }
 }
 
+public struct NotesDraft: Codable, Hashable, Sendable {
+    public let notes: [ReleaseNote]
+    public let since: String?
+    public let commits: Int
+
+    public init(notes: [ReleaseNote], since: String? = nil, commits: Int) {
+        self.notes = notes
+        self.since = since
+        self.commits = commits
+    }
+}
+
+public struct NotesOf: Codable, Hashable, Sendable {
+    public let notes: [ReleaseNote]
+
+    public init(notes: [ReleaseNote]) {
+        self.notes = notes
+    }
+}
+
+public struct NotesStyle: Codable, Hashable, Sendable {
+    public let style: String
+
+    public init(style: String) {
+        self.style = style
+    }
+}
+
 public struct OperationRow: Codable, Hashable, Sendable {
     public let component: String
     public let environment: String?
@@ -1951,6 +2345,162 @@ public struct ProjectSettings: Codable, Hashable, Sendable {
     }
 }
 
+public struct PromoteTo: Codable, Hashable, Sendable {
+    public let environment: String
+    public let reason: String?
+    public let runner: Runner?
+    public let submission: AppStoreSubmission?
+
+    public init(
+        environment: String,
+        reason: String? = nil,
+        runner: Runner? = nil,
+        submission: AppStoreSubmission? = nil,
+    ) {
+        self.environment = environment
+        self.reason = reason
+        self.runner = runner
+        self.submission = submission
+    }
+}
+
+public struct Promotion: Codable, Hashable, Sendable {
+    public let id: String
+    public let component: String
+    public let release: String
+    public let environment: String
+    public let repository: String?
+    public let workflow: String?
+    public let runner: Runner?
+    public let appStore: AppStoreTarget?
+    public let submission: AppStoreSubmission?
+    public let startedBy: String?
+    public let reason: String?
+    public let startedAt: Date
+    public let state: PromotionState
+    public let run: PromotionRun?
+    public let endedAt: Date?
+    public let storeVersionId: String?
+
+    public init(
+        id: String,
+        component: String,
+        release: String,
+        environment: String,
+        repository: String? = nil,
+        workflow: String? = nil,
+        runner: Runner? = nil,
+        appStore: AppStoreTarget? = nil,
+        submission: AppStoreSubmission? = nil,
+        startedBy: String? = nil,
+        reason: String? = nil,
+        startedAt: Date,
+        state: PromotionState,
+        run: PromotionRun? = nil,
+        endedAt: Date? = nil,
+        storeVersionId: String? = nil,
+    ) {
+        self.id = id
+        self.component = component
+        self.release = release
+        self.environment = environment
+        self.repository = repository
+        self.workflow = workflow
+        self.runner = runner
+        self.appStore = appStore
+        self.submission = submission
+        self.startedBy = startedBy
+        self.reason = reason
+        self.startedAt = startedAt
+        self.state = state
+        self.run = run
+        self.endedAt = endedAt
+        self.storeVersionId = storeVersionId
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct PromotionFix: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let github = PromotionFix(rawValue: "github")
+    public static let links = PromotionFix(rawValue: "links")
+    public static let repository = PromotionFix(rawValue: "repository")
+    public static let notes = PromotionFix(rawValue: "notes")
+    public static let appStore = PromotionFix(rawValue: "appStore")
+}
+
+public struct PromotionInProgress: Codable, Hashable, Sendable {
+    public let promotion: Promotion
+
+    public init(promotion: Promotion) {
+        self.promotion = promotion
+    }
+}
+
+public struct PromotionNotFound: Codable, Hashable, Sendable {
+    public let promotion: String
+
+    public init(promotion: String) {
+        self.promotion = promotion
+    }
+}
+
+public struct PromotionRefused: Codable, Hashable, Sendable {
+    public let reason: String
+    public let fix: PromotionFix
+
+    public init(reason: String, fix: PromotionFix) {
+        self.reason = reason
+        self.fix = fix
+    }
+}
+
+public struct PromotionRun: Codable, Hashable, Sendable {
+    public let id: Int
+    public let url: String
+
+    public init(id: Int, url: String) {
+        self.id = id
+        self.url = url
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct PromotionState: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let starting = PromotionState(rawValue: "starting")
+    public static let queued = PromotionState(rawValue: "queued")
+    public static let waiting = PromotionState(rawValue: "waiting")
+    public static let running = PromotionState(rawValue: "running")
+    public static let processing = PromotionState(rawValue: "processing")
+    public static let inReview = PromotionState(rawValue: "inReview")
+    public static let approved = PromotionState(rawValue: "approved")
+    public static let releasing = PromotionState(rawValue: "releasing")
+    public static let succeeded = PromotionState(rawValue: "succeeded")
+    public static let failed = PromotionState(rawValue: "failed")
+    public static let cancelled = PromotionState(rawValue: "cancelled")
+    public static let rejected = PromotionState(rawValue: "rejected")
+    public static let lost = PromotionState(rawValue: "lost")
+}
+
+public struct PromotionUnavailable: Codable, Hashable, Sendable {
+    public let reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
+}
+
 /// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
 public struct PushEnvironment: RawRepresentable, Codable, Hashable, Sendable {
     public let rawValue: String
@@ -2058,6 +2608,10 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
     public let incidents: [Incident]
     public let changes: ReleaseChanges?
     public let problems: [SourceProblem]
+    public let promotions: [Promotion]
+    public let deployTargets: [DeployTarget]
+    public let notes: [ReleaseNote]
+    public let repository: String?
 
     public init(
         summary: ReleaseSummary,
@@ -2070,6 +2624,10 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
         incidents: [Incident],
         changes: ReleaseChanges? = nil,
         problems: [SourceProblem],
+        promotions: [Promotion],
+        deployTargets: [DeployTarget],
+        notes: [ReleaseNote],
+        repository: String? = nil,
     ) {
         self.summary = summary
         self.slower = slower
@@ -2081,6 +2639,10 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
         self.incidents = incidents
         self.changes = changes
         self.problems = problems
+        self.promotions = promotions
+        self.deployTargets = deployTargets
+        self.notes = notes
+        self.repository = repository
     }
 }
 
@@ -2101,6 +2663,16 @@ public struct ReleaseNotFound: Codable, Hashable, Sendable {
     public init(component: String, release: String) {
         self.component = component
         self.release = release
+    }
+}
+
+public struct ReleaseNote: Codable, Hashable, Sendable {
+    public let locale: String
+    public let text: String
+
+    public init(locale: String, text: String) {
+        self.locale = locale
+        self.text = text
     }
 }
 
@@ -2166,6 +2738,19 @@ public struct ReleaseSummary: Codable, Hashable, Sendable {
         self.store = store
         self.deployedAt = deployedAt
     }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public struct Runner: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let auto = Runner(rawValue: "auto")
+    public static let local = Runner(rawValue: "local")
+    public static let cloud = Runner(rawValue: "cloud")
 }
 
 public struct SearchedFiles: Codable, Hashable, Sendable {
@@ -2598,6 +3183,24 @@ public struct Verdict: RawRepresentable, Codable, Hashable, Sendable {
     public static let unmeasured = Verdict(rawValue: "unmeasured")
 }
 
+public struct VersionRefused: Codable, Hashable, Sendable {
+    public let reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
+}
+
+public struct VersionTo: Codable, Hashable, Sendable {
+    public let version: String
+    public let firstBuild: Int?
+
+    public init(version: String, firstBuild: Int? = nil) {
+        self.version = version
+        self.firstBuild = firstBuild
+    }
+}
+
 /// A value of any JSON shape, as the API sends free-form data.
 public enum JSONValue: Codable, Hashable, Sendable {
     case null
@@ -2691,7 +3294,9 @@ extension CluenoriAPI {
             case "ArchiveUnavailable": return .archiveUnavailable(try jsonDecoder().decode(ArchiveUnavailable.self, from: data))
             case "ComponentExists": return .componentExists(try jsonDecoder().decode(ComponentExists.self, from: data))
             case "ComponentNotFound": return .componentNotFound(try jsonDecoder().decode(ComponentNotFound.self, from: data))
+            case "DraftUnavailable": return .draftUnavailable(try jsonDecoder().decode(DraftUnavailable.self, from: data))
             case "ErrorGroupNotFound": return .errorGroupNotFound(try jsonDecoder().decode(ErrorGroupNotFound.self, from: data))
+            case "GitHubAlreadyConnected": return .gitHubAlreadyConnected(try jsonDecoder().decode(GitHubAlreadyConnected.self, from: data))
             case "IncidentNotFound": return .incidentNotFound(try jsonDecoder().decode(IncidentNotFound.self, from: data))
             case "InviteRejected": return .inviteRejected(try jsonDecoder().decode(InviteRejected.self, from: data))
             case "MemberExists": return .memberExists(try jsonDecoder().decode(MemberExists.self, from: data))
@@ -2707,12 +3312,17 @@ extension CluenoriAPI {
             case "PhoneNotFound": return .phoneNotFound(try jsonDecoder().decode(PhoneNotFound.self, from: data))
             case "ProjectExists": return .projectExists(try jsonDecoder().decode(ProjectExists.self, from: data))
             case "ProjectNotFound": return .projectNotFound(try jsonDecoder().decode(ProjectNotFound.self, from: data))
+            case "PromotionInProgress": return .promotionInProgress(try jsonDecoder().decode(PromotionInProgress.self, from: data))
+            case "PromotionNotFound": return .promotionNotFound(try jsonDecoder().decode(PromotionNotFound.self, from: data))
+            case "PromotionRefused": return .promotionRefused(try jsonDecoder().decode(PromotionRefused.self, from: data))
+            case "PromotionUnavailable": return .promotionUnavailable(try jsonDecoder().decode(PromotionUnavailable.self, from: data))
             case "PushNotSetUp": return .pushNotSetUp(try jsonDecoder().decode(PushNotSetUp.self, from: data))
             case "PushRejected": return .pushRejected(try jsonDecoder().decode(PushRejected.self, from: data))
             case "PushUnavailable": return .pushUnavailable(try jsonDecoder().decode(PushUnavailable.self, from: data))
             case "ReleaseNotFound": return .releaseNotFound(try jsonDecoder().decode(ReleaseNotFound.self, from: data))
             case "SignInNotFound": return .signInNotFound(try jsonDecoder().decode(SignInNotFound.self, from: data))
             case "Unauthorized": return .unauthorized(try jsonDecoder().decode(Unauthorized.self, from: data))
+            case "VersionRefused": return .versionRefused(try jsonDecoder().decode(VersionRefused.self, from: data))
             default: return .unreadable(status: status, reason: "An error this client doesn't know: \(named.error).")
             }
         } catch {

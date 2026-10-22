@@ -9,7 +9,6 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@/views/ui/button"
 import { Input } from "@/views/ui/input"
 import { Separator } from "@/views/ui/separator"
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/views/ui/sheet"
 import { Skeleton } from "@/views/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/views/ui/tooltip"
 
@@ -17,6 +16,11 @@ const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "15rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
+
+// On a phone the sidebar is a sheet, closed until its trigger is pressed: its dialog machinery loads
+// after start, so the first load, mostly on wide screens, doesn't carry it.
+const sidebarSheet = import("@/views/ui/sidebar-sheet")
+const SidebarSheet = React.lazy(() => sidebarSheet.then((module) => ({ default: module.SidebarSheet })))
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
@@ -158,25 +162,11 @@ function Sidebar({
 
   if (isMobile) {
     return (
-      <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
-        <SheetContent
-          dir={dir}
-          data-sidebar="sidebar"
-          data-slot="sidebar"
-          data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
-          style={{
-            "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
-          }}
-          side={side}
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
-          </SheetHeader>
-          <nav className="flex h-full w-full flex-col">{children}</nav>
-        </SheetContent>
-      </Sheet>
+      <React.Suspense fallback={null}>
+        <SidebarSheet open={openMobile} onOpenChange={setOpenMobile} side={side} dir={dir} width={SIDEBAR_WIDTH_MOBILE}>
+          {children}
+        </SidebarSheet>
+      </React.Suspense>
     )
   }
 

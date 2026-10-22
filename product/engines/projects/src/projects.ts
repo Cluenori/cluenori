@@ -7,7 +7,7 @@ import { Base64Url, Hex } from "effect/encoding"
 import { SqlClient, SqlSchema } from "effect/sql"
 
 import type { AddComponent, ComponentLinks } from "./component.ts"
-import { BundleId, Component, ComponentExists, ComponentNotFound, ComponentName } from "./component.ts"
+import { Component, ComponentExists, ComponentNotFound, ComponentName, DeployTarget } from "./component.ts"
 import { IngestKey, IngestKeyRejected, ingestKeyScope } from "./ingest-key.ts"
 import type { ProjectName } from "./project.ts"
 import { defaultProjectSettings, Project, ProjectExists, ProjectNotFound, ProjectSettings } from "./project.ts"
@@ -33,7 +33,7 @@ const ComponentRow = Schema.Struct({
   name: ComponentName,
   createdAt: Instant,
   repository: Schema.NullOr(Repository),
-  appStoreBundleId: Schema.NullOr(BundleId),
+  deployTargets: Schema.NullOr(Schema.fromJsonString(Schema.Array(DeployTarget))),
 })
 
 const componentOf = (row: typeof ComponentRow.Type) =>
@@ -42,7 +42,7 @@ const componentOf = (row: typeof ComponentRow.Type) =>
     name: row.name,
     createdAt: row.createdAt,
     ...(row.repository === null ? {} : { repository: row.repository }),
-    ...(row.appStoreBundleId === null ? {} : { appStoreBundleId: row.appStoreBundleId }),
+    ...(row.deployTargets === null ? {} : { deployTargets: row.deployTargets }),
   })
 
 /**
@@ -73,8 +73,8 @@ export class Projects extends Context.Service<
      */
     readonly authenticate: (key: Redacted.Redacted<IngestKey>) => Effect.Effect<ComponentKey, IngestKeyRejected>
     /**
-     * Replaces a component's links, its repository and App Store bundle ID, with `component.linked`;
-     * one left out is unlinked. Fails with `ComponentNotFound` for a component the project lacks.
+     * Replaces a component's links, its repository and deploy targets, with `component.linked`; one
+     * left out is unlinked. Fails with `ComponentNotFound` for a component the project lacks.
      */
     readonly linkComponent: (
       actor: Actor,
@@ -117,7 +117,7 @@ export class Projects extends Context.Service<
           Request: Schema.Void,
           Result: ComponentRow,
           execute: () =>
-            sql`SELECT key, name, created_at AS "createdAt", repository, app_store_bundle_id AS "appStoreBundleId"
+            sql`SELECT key, name, created_at AS "createdAt", repository, deploy_targets AS "deployTargets"
               FROM projects_components ORDER BY key`,
         })
 
@@ -217,14 +217,18 @@ export class Projects extends Context.Service<
           Effect.withSpan("Projects.components"),
         )
 
+        const encodeTargets = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(DeployTarget)))
+
         const updateLinks = Effect.fn("Projects.updateLinks")(function* (key: ComponentKey, links: ComponentLinks) {
           const all = yield* components
           const current = all.find((component) => component.key === key)
           if (current === undefined) {
             return yield* new ComponentNotFound({ component: key })
           }
+          const targets =
+            links.deployTargets === undefined ? null : yield* encodeTargets(links.deployTargets).pipe(Effect.orDie)
           yield* sql`UPDATE projects_components SET repository = ${links.repository ?? null},
-            app_store_bundle_id = ${links.appStoreBundleId ?? null} WHERE key = ${key}`.pipe(Effect.orDie)
+            deploy_targets = ${targets} WHERE key = ${key}`.pipe(Effect.orDie)
           return new Component({ key, name: current.name, createdAt: current.createdAt, ...links })
         })
 
@@ -242,7 +246,7 @@ export class Projects extends Context.Service<
                 payload: ComponentLinked.make({
                   component: linked.key,
                   ...(linked.repository === undefined ? {} : { repository: linked.repository }),
-                  ...(linked.appStoreBundleId === undefined ? {} : { appStoreBundleId: linked.appStoreBundleId }),
+                  ...(linked.deployTargets === undefined ? {} : { deployTargets: linked.deployTargets }),
                 }),
                 component: linked.key,
               },

@@ -1,6 +1,7 @@
 import type { Effect, Layer, Schema } from "effect"
 import type { HttpApiGroup } from "effect/http-api"
 
+import type { Actor } from "./actor.ts"
 import type { ComponentKey } from "./scope-keys.ts"
 
 /**
@@ -55,6 +56,34 @@ export const moduleIngest = <I extends PlainSchema, S extends PlainSchema, F ext
   ingest: ModuleIngest<I, S, F, R>,
 ): ModuleIngest<I, S, F, R> => ingest
 
+/**
+ * A change a module makes for an actor, such as promoting a release: its input, its answer, its
+ * tagged errors, and how it runs in the project's Durable Object for `actor`, who is recorded on
+ * the activity it commits. The host serves it to every member who sees the project. The rest of the
+ * action layer (classes, policy, approvals, undo) comes with the first action that needs each.
+ */
+export interface ModuleAction<
+  I extends PlainSchema = PlainSchema,
+  S extends PlainSchema = PlainSchema,
+  F extends ErrorSchema = ErrorSchema,
+  R = never,
+> {
+  readonly input: I
+  readonly success: S
+  readonly error: F
+  run(actor: Actor, input: I["Type"]): Effect.Effect<S["Type"], F["Type"], R>
+}
+
+/** An action, with its input's type, and so `run`'s, taken from its Schemas. */
+export const moduleAction = <I extends PlainSchema, S extends PlainSchema, F extends ErrorSchema, R>(
+  action: ModuleAction<I, S, F, R>,
+): ModuleAction<I, S, F, R> => action
+
+/** A module's actions, each under its name. */
+export type ModuleActions<Actions> = Readonly<
+  Record<keyof Actions, ModuleAction<PlainSchema, PlainSchema, ErrorSchema, unknown>>
+>
+
 /** A module's ingest writes, each under its name. */
 export type ModuleIngests<Ingests> = Readonly<
   Record<keyof Ingests, ModuleIngest<PlainSchema, PlainSchema, ErrorSchema, unknown>>
@@ -70,10 +99,10 @@ export type ModuleQueries<Queries> = Readonly<
  * it answers and their routes in the public API, its own services, and its background work. The
  * host serves every query in the project's Durable Object under `<id>.<query>`, adds `api` to the
  * public API, translating each route to its query on a visible line, builds `layer` in each
- * project's object from the settings it reads, runs `background` on the project's alarm, and serves
- * `ingest` to components' own tooling. A
- * module's sidebar entry, actions and the rest of `concept/Foundation.md`'s module contract come with
- * the first module that needs each.
+ * project's object from the settings it reads, runs `background` on the project's alarm, serves
+ * `actions` to the members who see the project, and `ingest` to components' own tooling. A module's
+ * sidebar entry and the rest of `concept/Foundation.md`'s module contract come with the first module
+ * that needs each.
  */
 export interface ModuleDefinition<
   Id extends string = string,
@@ -84,6 +113,7 @@ export interface ModuleDefinition<
   Requirements = never,
   Background = unknown,
   Ingests extends ModuleIngests<Ingests> = ModuleIngests<Record<string, unknown>>,
+  Actions extends ModuleActions<Actions> = ModuleActions<Record<string, unknown>>,
 > {
   /** Its key, as its folder and package are named: `releases`. */
   readonly id: Id
@@ -111,6 +141,11 @@ export interface ModuleDefinition<
    * takes none.
    */
   readonly ingest: Ingests
+  /**
+   * Its actions, which the host serves in the project's Durable Object under `<id>.action.<name>`,
+   * each with its route in `api`, for the member who calls it. `{}` for a module that takes none.
+   */
+  readonly actions: Actions
 }
 
 /** Defines a module: the one value its package's contract exports for the host. */
@@ -123,6 +158,7 @@ export const defineModule = <
   Requirements = never,
   Background = never,
   Ingests extends ModuleIngests<Ingests> = ModuleIngests<Record<string, never>>,
+  Actions extends ModuleActions<Actions> = ModuleActions<Record<string, never>>,
 >(
-  definition: ModuleDefinition<Id, Queries, Api, Settings, Services, Requirements, Background, Ingests>,
-): ModuleDefinition<Id, Queries, Api, Settings, Services, Requirements, Background, Ingests> => definition
+  definition: ModuleDefinition<Id, Queries, Api, Settings, Services, Requirements, Background, Ingests, Actions>,
+): ModuleDefinition<Id, Queries, Api, Settings, Services, Requirements, Background, Ingests, Actions> => definition
