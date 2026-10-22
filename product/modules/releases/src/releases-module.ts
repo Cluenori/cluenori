@@ -4,8 +4,9 @@ import { Effect, Layer, Schema } from "effect"
 import { DraftNotes, DraftUnavailable, NotesDraft, NotesStyle, ReleaseNotes, SaveNotes } from "./note.ts"
 import { draftNotes, notesStyle, saveNotes, setNotesStyle } from "./notes.ts"
 import { componentVersions, numberCommit, setVersion } from "./numbering.ts"
-import { followPromotions, promote, releaseApproved } from "./promote.ts"
+import { followPromotions, promote, promoteLatest, releaseApproved } from "./promote.ts"
 import {
+  PromoteLatest,
   PromoteRelease,
   Promotion,
   PromotionInProgress,
@@ -101,6 +102,13 @@ export const releasesModule = defineModule({
       success: Promotion,
       error: Schema.Union([ReleaseNotFound, PromotionInProgress, PromotionRefused, PromotionUnavailable]),
       run: promote,
+    }),
+    /** Numbers a commit with no release yet, the default branch's newest unless given, and promotes it. */
+    promoteLatest: moduleAction({
+      input: PromoteLatest,
+      success: Promotion,
+      error: Schema.Union([ReleaseNotFound, PromotionInProgress, PromotionRefused, PromotionUnavailable]),
+      run: promoteLatest,
     }),
     /** Releases an App Store promotion approved in review and waiting for a member. */
     releaseApproved: moduleAction({

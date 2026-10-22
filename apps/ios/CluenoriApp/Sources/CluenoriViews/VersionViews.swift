@@ -29,7 +29,9 @@ struct VersionsSection: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(versions.lines) { line in
-                    VersionMenu(line: line, change: versions.changes[line.component]) { bump, next in
+                    VersionMenu(line: line, change: versions.changes[line.component]) {
+                        versions.startPromotingLatest(line.component)
+                    } bump: { bump, next in
                         versions.dismissProblem(of: line.component)
                         bumping = Bumping(line: line, bump: bump, next: next)
                     } set: {
@@ -101,11 +103,27 @@ private struct VersionChanges: ViewModifier {
 struct VersionMenu: View {
     let line: VersionLine
     let change: VersionsModel.Change?
+    /// Opens the sheet that builds and promotes the component's newest commit.
+    let promoteLatest: () -> Void
     let bump: (VersionBump, String) -> Void
     let set: () -> Void
 
     var body: some View {
         Menu {
+            if line.canPromoteLatest {
+                Button(action: promoteLatest) {
+                    Label {
+                        Text(
+                            "Promote Latest…",
+                            bundle: #bundle,
+                            comment: "Opens the sheet that builds and promotes a component's newest commit."
+                        )
+                    } icon: {
+                        Image(systemName: "arrow.up.circle")
+                    }
+                }
+                Divider()
+            }
             if let version = line.version {
                 ForEach(VersionBump.allCases, id: \.self) { kind in
                     if let next = VersionsModel.next(after: version, kind) {
@@ -229,99 +247,123 @@ struct VersionProblemText: View {
     }
 }
 
-/// Setting a component's version, the same or higher than now, and, optionally, where its build
-/// numbers continue from, such as above an app's builds numbered before Cluenori numbered them.
+/// Setting a component's version, in a sheet of its own.
 struct SetVersionSheet: View {
     let line: VersionLine
     let versions: VersionsModel
-    @State private var version: String
-    @State private var firstBuild = ""
     @Environment(\.dismiss) private var dismiss
 
-    init(line: VersionLine, versions: VersionsModel) {
+    var body: some View {
+        NavigationStack {
+            SetVersionForm(
+                line: line,
+                versions: versions,
+                cancel: {
+                    versions.dismissProblem(of: line.component)
+                    dismiss()
+                },
+                done: { dismiss() }
+            )
+        }
+        .interactiveDismissDisabled(versions.changes[line.component] == .sending)
+    }
+}
+
+/// Setting a component's version, the same or higher than now, and, optionally, where its build
+/// numbers continue from, such as above an app's builds numbered before Cluenori numbered them: in
+/// its own sheet, or pushed in another's.
+struct SetVersionForm: View {
+    let line: VersionLine
+    let versions: VersionsModel
+    /// Closes it without setting; nil where going back does.
+    let cancel: (() -> Void)?
+    /// Closes it once the version is set.
+    let done: () -> Void
+    @State private var version: String
+    @State private var firstBuild = ""
+
+    init(line: VersionLine, versions: VersionsModel, cancel: (() -> Void)?, done: @escaping () -> Void) {
         self.line = line
         self.versions = versions
+        self.cancel = cancel
+        self.done = done
         _version = State(initialValue: line.version ?? "")
     }
 
     var body: some View {
         let sending = versions.changes[line.component] == .sending
-        NavigationStack {
-            Form {
-                Section {
-                    TextField(text: $version, prompt: Text(verbatim: "1.0.0")) {
-                        Text("Version", bundle: #bundle, comment: "The field for a component's version.")
-                    }
-                    .monospaced()
-                    .autocorrectionDisabled()
-                    #if os(iOS)
-                        .keyboardType(.numbersAndPunctuation)
-                    #endif
-                } header: {
+        Form {
+            Section {
+                TextField(text: $version, prompt: Text(verbatim: "1.0.0")) {
                     Text("Version", bundle: #bundle, comment: "The field for a component's version.")
-                } footer: {
-                    Text(
-                        "MAJOR.MINOR.PATCH, the same or higher than now.",
-                        bundle: #bundle,
-                        comment: "Below a component's version field. MAJOR.MINOR.PATCH as is."
-                    )
                 }
-                Section {
-                    TextField(text: $firstBuild, prompt: Text(verbatim: "\((line.lastBuild ?? 0) + 1)")) {
-                        Text("First build", bundle: #bundle, comment: "The field for where build numbers continue.")
-                    }
-                    .monospacedDigit()
-                    #if os(iOS)
-                        .keyboardType(.numberPad)
-                    #endif
-                } header: {
+                .monospaced()
+                .autocorrectionDisabled()
+                #if os(iOS)
+                    .keyboardType(.numbersAndPunctuation)
+                #endif
+            } header: {
+                Text("Version", bundle: #bundle, comment: "The field for a component's version.")
+            } footer: {
+                Text(
+                    "MAJOR.MINOR.PATCH, the same or higher than now.",
+                    bundle: #bundle,
+                    comment: "Below a component's version field. MAJOR.MINOR.PATCH as is."
+                )
+            }
+            Section {
+                TextField(text: $firstBuild, prompt: Text(verbatim: "\((line.lastBuild ?? 0) + 1)")) {
                     Text("First build", bundle: #bundle, comment: "The field for where build numbers continue.")
-                } footer: {
-                    Text(
-                        "Optional. Builds continue from \((line.lastBuild ?? 0) + 1); a higher number continues above an app's builds numbered before Cluenori.",
-                        bundle: #bundle,
-                        comment: "Below the first build field. The variable is the next build number."
-                    )
                 }
-                if case .failed(let problem) = versions.changes[line.component] {
-                    Section {
-                        VersionProblemText(problem: problem)
-                            .foregroundStyle(.red)
-                    }
+                .monospacedDigit()
+                #if os(iOS)
+                    .keyboardType(.numberPad)
+                #endif
+            } header: {
+                Text("First build", bundle: #bundle, comment: "The field for where build numbers continue.")
+            } footer: {
+                Text(
+                    "Optional. Builds continue from \((line.lastBuild ?? 0) + 1); a higher number continues above an app's builds numbered before Cluenori.",
+                    bundle: #bundle,
+                    comment: "Below the first build field. The variable is the next build number."
+                )
+            }
+            if case .failed(let problem) = versions.changes[line.component] {
+                Section {
+                    VersionProblemText(problem: problem)
+                        .foregroundStyle(.red)
                 }
             }
-            .navigationTitle(Text(verbatim: line.name))
-            .toolbar {
+        }
+        .navigationTitle(Text(verbatim: line.name))
+        .toolbar {
+            if let cancel {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(role: .cancel) {
-                        versions.dismissProblem(of: line.component)
-                        dismiss()
-                    } label: {
+                    Button(role: .cancel, action: cancel) {
                         Text("Cancel", bundle: #bundle, comment: "Closes a sheet without acting.")
                     }
                     .disabled(sending)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        Task {
-                            if await versions.set(line.component, version: version, firstBuild: firstBuild) {
-                                dismiss()
-                            }
-                        }
-                    } label: {
-                        if sending {
-                            ProgressView()
-                                .accessibilityLabel(
-                                    Text("Setting", bundle: #bundle, comment: "The set button while it sends."))
-                        } else {
-                            Text("Set", bundle: #bundle, comment: "Sets a component's version.")
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    Task {
+                        if await versions.set(line.component, version: version, firstBuild: firstBuild) {
+                            done()
                         }
                     }
-                    .buttonStyle(.glassProminent)
-                    .disabled(sending || version.trimmingCharacters(in: .whitespaces).isEmpty)
+                } label: {
+                    if sending {
+                        ProgressView()
+                            .accessibilityLabel(
+                                Text("Setting", bundle: #bundle, comment: "The set button while it sends."))
+                    } else {
+                        Text("Set", bundle: #bundle, comment: "Sets a component's version.")
+                    }
                 }
+                .buttonStyle(.glassProminent)
+                .disabled(sending || version.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .interactiveDismissDisabled(sending)
     }
 }

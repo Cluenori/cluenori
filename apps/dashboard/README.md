@@ -37,7 +37,8 @@ Pages, each with a permanent URL (`src/router.tsx`):
                                                  shipped (commit, store stage, deploy), each against the release before it;
                                                  sources that failed lately; each component's version and next build, bumped
                                                  or set; where each component's releases come from and go (its deploy
-                                                 targets); how AI drafts of release notes read
+                                                 targets), and promoting its latest commit; how AI drafts of release
+                                                 notes read
 /notes/releases/notes-api/2.4.0+312?environment=production
                                                  one release against the one before, one click from its performance, errors
                                                  and logs: its commit, its App Store build, its promotions and promoting it to
@@ -113,6 +114,11 @@ one of those keys has no pages.
   added by the API's rule; a draft with AI for where it goes, which fills the fields and never
   saves; and saving (`src/views/notes-editor.tsx`). The project's notes style, which drafts follow,
   is on the Releases page (`src/views/notes-style-editor.tsx`).
+- **Promoting a component's latest commit,** from the Releases page, for a component with a deploy
+  target that has a workflow: the same dialog's parts, with the environment chosen and an optional
+  commit (the newest on the default branch without one). Cluenori numbers it as the component's next
+  release and promotes it; that release's page opens, where the promotion shows. A component
+  without a version is pointed at the versions.
 - **Versions,** on the Releases page: each component's version and the release its next build will
   be, bumped from a menu that shows what each bump becomes, or set with a first build number
   (`src/views/version-list.tsx`).

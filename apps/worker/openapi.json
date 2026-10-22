@@ -3352,6 +3352,122 @@
         }
       }
     },
+    "/api/projects/{project}/components/{component}/promotions": {
+      "post": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.promoteLatest",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Promotion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Promotion_2"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ReleaseNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReleaseNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PromotionInProgress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionInProgress"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "PromotionRefused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionRefused"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "PromotionUnavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionUnavailable"
+                }
+              }
+            }
+          }
+        },
+        "description": "Promotes a commit that has no release yet, such as an app's newest: `commit`, or the newest on its repository's default branch, which GitHub is asked for. Cluenori numbers it as the component's next release, as its CI would (a commit numbered before is that release again), then promotes that release as the promote route does, with the same answers. 422 with `fix: version` until the component's version is set.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteLatestTo"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/projects/{project}/promotions/{promotion}/release": {
       "post": {
         "tags": [
@@ -4232,7 +4348,8 @@
           "links",
           "repository",
           "notes",
-          "appStore"
+          "appStore",
+          "version"
         ]
       },
       "PromotionNotFound": {
@@ -4435,6 +4552,104 @@
         "required": [
           "_tag",
           "promotion"
+        ],
+        "additionalProperties": false
+      },
+      "Promotion_2": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "repository": {
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowFile"
+          },
+          "runner": {
+            "$ref": "#/components/schemas/Runner"
+          },
+          "appStore": {
+            "$ref": "#/components/schemas/AppStoreTarget"
+          },
+          "submission": {
+            "$ref": "#/components/schemas/AppStoreSubmission"
+          },
+          "startedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PromotionState"
+          },
+          "run": {
+            "$ref": "#/components/schemas/PromotionRun"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "storeVersionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "release",
+          "environment",
+          "startedAt",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "PromoteLatestTo": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "commit": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+          },
+          "runner": {
+            "$ref": "#/components/schemas/Runner"
+          },
+          "submission": {
+            "$ref": "#/components/schemas/AppStoreSubmission"
+          }
+        },
+        "required": [
+          "environment"
         ],
         "additionalProperties": false
       },

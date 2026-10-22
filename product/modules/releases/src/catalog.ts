@@ -7,6 +7,7 @@ import { DateTime, Effect } from "effect"
 import type { Deploy } from "./records.ts"
 import { ReleaseRecords } from "./records.ts"
 import type { StoreBuild } from "./release.ts"
+import { ReleaseNotFound } from "./release.ts"
 
 /**
  * A release as the module knows it, from any of its sources: its telemetry's span, a reported
@@ -77,6 +78,55 @@ export const knownReleases = Effect.gen(function* () {
     )
     return { ...each, at: DateTime.makeUnsafe(first) }
   }).toSorted((left, right) => DateTime.toEpochMillis(right.at) - DateTime.toEpochMillis(left.at))
+})
+
+/**
+ * `release` of `component` as `releases` know it, in `environment` when given, else the one it last
+ * ran in; or, for a release numbered for a commit that no source has seen yet, before it is
+ * deployed or uploaded anywhere, the newest in `environment`. A release is known once it ran, was
+ * deployed or uploaded, or its commit was numbered. Fails with `ReleaseNotFound`.
+ */
+export const knownRelease = Effect.fn("Releases.knownRelease")(function* (
+  releases: ReadonlyArray<KnownRelease>,
+  key: {
+    readonly component: ComponentKey
+    readonly release: ReleaseVersion
+    readonly environment?: EnvironmentKey | undefined
+  },
+) {
+  const matching = releases.filter(
+    (each) =>
+      each.component === key.component &&
+      each.release === key.release &&
+      (key.environment === undefined || each.environment === key.environment),
+  )
+  const found =
+    matching.reduce<KnownRelease | undefined>(
+      (latest, each) =>
+        each.ran !== undefined &&
+        (latest?.ran === undefined ||
+          DateTime.toEpochMillis(each.ran.lastSeen) > DateTime.toEpochMillis(latest.ran.lastSeen))
+          ? each
+          : latest,
+      undefined,
+    ) ?? matching[0]
+  if (found !== undefined) {
+    return found
+  }
+  const records = yield* ReleaseRecords
+  if (!(yield* records.commits(key.component)).has(key.release)) {
+    return yield* new ReleaseNotFound({ component: key.component, release: key.release })
+  }
+  const unseen: KnownRelease = {
+    component: key.component,
+    environment: key.environment,
+    release: key.release,
+    at: yield* DateTime.now,
+    ran: undefined,
+    deploy: undefined,
+    store: undefined,
+  }
+  return unseen
 })
 
 /** The release before `release`: the latest before it, of the same component and environment. */

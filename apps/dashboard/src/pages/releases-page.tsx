@@ -7,15 +7,17 @@ import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Cause, DateTime, Exit, Option, Schema } from "effect"
 import { Atom, AsyncResult } from "effect/reactivity"
 import { ArrowUpRightIcon, CableIcon, HashIcon, PenLineIcon, TagIcon, TriangleAlertIcon } from "lucide-react"
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 
 import { duration, share } from "@/lib/format"
 import {
   linkComponentAtom,
+  meAtom,
   notesStyleAtom,
   operationsAtom,
   periodAtom,
   projectAtom,
+  promoteLatestAtom,
   releasesAtom,
   setNotesStyleAtom,
   setVersionAtom,
@@ -23,8 +25,9 @@ import {
 } from "@/project-data"
 import type { Environments } from "@/project-facts"
 import { colorOf, isShownIn, liveForMs, periodWords, releaseRouteOf } from "@/project-facts"
-import { distributionWords } from "@/release-facts"
+import { distributionWords, nextReleaseOf } from "@/release-facts"
 import type { Filters } from "@/router"
+import { navigate } from "@/router"
 import { FilterSwitches } from "@/views/filter-switches"
 import { LinksDialog } from "@/views/links-dialog"
 import { failureText, Loaded } from "@/views/loaded"
@@ -36,6 +39,14 @@ import { SourceProblems } from "@/views/source-problems"
 import { Button } from "@/views/ui/button"
 import type { VersionToSet } from "@/views/version-list"
 import { SetVersionDialog, VersionList } from "@/views/version-list"
+
+// Promoting a component's newest commit loads when it is asked for, now and then.
+const PromoteLatestDialog = lazy(() =>
+  import("@/views/promote-dialog").then((module) => ({ default: module.PromoteLatestDialog })),
+)
+
+// Where the versions are, which promoting a commit leads to when a component has none.
+const versionsId = "versions"
 
 const isVersionRefused = Schema.is(VersionRefused)
 
@@ -124,10 +135,13 @@ function Sources({
   components,
   colorOf: colorOfComponent,
   onChange,
+  onPromoteLatest,
 }: {
   readonly components: ReadonlyArray<Component>
   readonly colorOf: (component: string) => string
   readonly onChange: (component: ComponentKey) => void
+  /** Promotes a component's newest commit, for one with a deploy target that builds it. */
+  readonly onPromoteLatest: (component: ComponentKey) => void
 }) {
   if (components.length === 0) {
     return <p className="px-5 py-6 text-sm text-muted-foreground">No components yet.</p>
@@ -153,14 +167,16 @@ function Sources({
               : { value: component.repository, href: `https://github.com/${component.repository}` })}
           />
           <TargetsValue component={component} />
-          <Button
-            variant="outline"
-            size="sm"
-            className="justify-self-start sm:col-span-2 lg:col-span-1"
-            onClick={() => onChange(component.key)}
-          >
-            Change links<span className="sr-only"> of {component.key}</span>
-          </Button>
+          <span className="flex flex-wrap gap-2 justify-self-start sm:col-span-2 lg:col-span-1 lg:justify-self-end">
+            {(component.deployTargets ?? []).some((target) => target.workflow !== undefined) && (
+              <Button variant="outline" size="sm" onClick={() => onPromoteLatest(component.key)}>
+                Promote latest…<span className="sr-only"> of {component.key}</span>
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => onChange(component.key)}>
+              Change links<span className="sr-only"> of {component.key}</span>
+            </Button>
+          </span>
         </li>
       ))}
     </ul>
@@ -240,6 +256,33 @@ export function ReleasesPage({
     })
   }
 
+  // Who is signed in: an owner is told how to fix what only an owner can.
+  const me = useAtomValue(meAtom)
+  const owner = AsyncResult.isSuccess(me) && me.value.role === "owner"
+
+  // Promoting a component's newest commit: on success, its release's page, where the promotion shows.
+  const latest = useAtomValue(promoteLatestAtom)
+  const resetLatest = useAtomSet(promoteLatestAtom)
+  const promoteLatest = useAtomSet(promoteLatestAtom, { mode: "promiseExit" })
+  const [latestOf, setLatestOf] = useState<ComponentKey | undefined>(undefined)
+  const latestComponent = all.find((entry) => entry.key === latestOf)
+  const latestLine = AsyncResult.isSuccess(versions)
+    ? versions.value.versions.find((each) => each.component === latestOf)
+    : undefined
+  const startPromotingLatest = (of: ComponentKey) => {
+    // An answer to an earlier promotion isn't this one's.
+    resetLatest(Atom.Reset)
+    setLatestOf(of)
+  }
+  const openVersions = () => {
+    setLatestOf(undefined)
+    window.setTimeout(() => {
+      const panel = document.getElementById(versionsId)
+      panel?.scrollIntoView({ block: "start" })
+      panel?.focus({ preventScroll: true })
+    }, 0)
+  }
+
   // The project's notes style: its own, or Cluenori's default.
   const notesStyle = useAtomValue(notesStyleAtom(project))
   const [stylePosting, saveStyle] = useAtom(setNotesStyleAtom)
@@ -314,36 +357,40 @@ export function ReleasesPage({
               components={answer.components.filter((entry) => component === undefined || entry.key === component)}
               colorOf={colorOfComponent}
               onChange={startEditing}
+              onPromoteLatest={startPromotingLatest}
             />
           )}
         </Loaded>
       </Panel>
 
-      <Panel
-        icon={HashIcon}
-        title="Versions"
-        subtitle="What each component's next builds are numbered in: CI asks Cluenori for a commit's release"
-      >
-        <Loaded result={versions}>
-          {(answer) => (
-            <VersionList
-              components={shownComponents.map((entry) => ({
-                key: entry.key,
-                name: entry.name,
-                color: colorOfComponent(entry.key),
-              }))}
-              versions={answer.versions}
-              bumping={bumping}
-              problem={bumpProblem}
-              onBump={bump}
-              onSet={(of) => {
-                setSettingState({ saving: false })
-                setSetting(of)
-              }}
-            />
-          )}
-        </Loaded>
-      </Panel>
+      {/* Where promoting a commit leads when the component's version isn't set. */}
+      <div id={versionsId} tabIndex={-1} className="scroll-mt-4 outline-none">
+        <Panel
+          icon={HashIcon}
+          title="Versions"
+          subtitle="What each component's next builds are numbered in: CI asks Cluenori for a commit's release"
+        >
+          <Loaded result={versions}>
+            {(answer) => (
+              <VersionList
+                components={shownComponents.map((entry) => ({
+                  key: entry.key,
+                  name: entry.name,
+                  color: colorOfComponent(entry.key),
+                }))}
+                versions={answer.versions}
+                bumping={bumping}
+                problem={bumpProblem}
+                onBump={bump}
+                onSet={(of) => {
+                  setSettingState({ saving: false })
+                  setSetting(of)
+                }}
+              />
+            )}
+          </Loaded>
+        </Panel>
+      </div>
 
       <Panel
         icon={PenLineIcon}
@@ -365,6 +412,44 @@ export function ReleasesPage({
           )}
         </Loaded>
       </Panel>
+
+      {latestComponent !== undefined && (
+        <Suspense fallback={null}>
+          <PromoteLatestDialog
+            key={latestComponent.key}
+            component={latestComponent.key}
+            targets={(latestComponent.deployTargets ?? []).filter((target) => target.workflow !== undefined)}
+            repository={latestComponent.repository}
+            nextRelease={latestLine === undefined ? undefined : nextReleaseOf(latestLine)}
+            owner={owner}
+            open
+            onOpenChange={(open) => {
+              if (!open) {
+                setLatestOf(undefined)
+              }
+            }}
+            promoting={latest}
+            onPromote={(input) =>
+              void promoteLatest({ project, component: latestComponent.key, ...input }).then((exit) => {
+                if (Exit.isSuccess(exit)) {
+                  navigate({
+                    page: "release",
+                    project,
+                    component: exit.value.component,
+                    release: exit.value.release,
+                    environment: exit.value.environment,
+                  })
+                }
+              })
+            }
+            onOpenVersions={openVersions}
+            onChangeLinks={() => {
+              setLatestOf(undefined)
+              startEditing(latestComponent.key)
+            }}
+          />
+        </Suspense>
+      )}
 
       {setting !== undefined && (
         <SetVersionDialog

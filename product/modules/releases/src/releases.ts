@@ -6,7 +6,7 @@ import { Signals } from "@cluenori/signals"
 import { DateTime, Effect, Option } from "effect"
 
 import type { KnownRelease } from "./catalog.ts"
-import { knownReleases, previousOf } from "./catalog.ts"
+import { knownRelease, knownReleases, previousOf } from "./catalog.ts"
 import { ReleaseRecords } from "./records.ts"
 import type {
   ReleaseDetail,
@@ -16,7 +16,6 @@ import type {
   ReleaseSummary,
   SourceProblem,
 } from "./release.ts"
-import { ReleaseNotFound } from "./release.ts"
 import type { Comparison } from "./verdict.ts"
 import { compare, verdictOf } from "./verdict.ts"
 
@@ -178,26 +177,7 @@ export const listReleases = Effect.fn("Releases.list")(function* (query: Release
 export const releaseDetail = Effect.fn("Releases.detail")(function* (key: ReleaseKey) {
   const releases = yield* knownReleases
   const records = yield* ReleaseRecords
-  // Without an environment, the one it last ran in; else any it is known in.
-  const matching = releases.filter(
-    (each) =>
-      each.component === key.component &&
-      each.release === key.release &&
-      (key.environment === undefined || each.environment === key.environment),
-  )
-  const release =
-    matching.reduce<KnownRelease | undefined>(
-      (latest, each) =>
-        each.ran !== undefined &&
-        (latest?.ran === undefined ||
-          DateTime.toEpochMillis(each.ran.lastSeen) > DateTime.toEpochMillis(latest.ran.lastSeen))
-          ? each
-          : latest,
-      undefined,
-    ) ?? matching[0]
-  if (release === undefined) {
-    return yield* new ReleaseNotFound({ component: key.component, release: key.release })
-  }
+  const release = yield* knownRelease(releases, key)
   const { summary, compared, previous } = yield* summaryOf(releases, release)
   const comparison = Option.getOrUndefined(compared.comparison)
   const changes =

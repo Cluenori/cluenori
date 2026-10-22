@@ -44,6 +44,7 @@ import {
   NoteText,
   Promotion,
   PromotionId,
+  PromotionInProgress,
   PromotionNotFound,
   PromotionReason,
   PromotionRefused,
@@ -958,10 +959,17 @@ const releaseDetail = (
   promotions: ReadonlyArray<Promotion>,
   links: ReadonlyMap<string, ComponentLinks>,
   releaseNotes: ReadonlyArray<ReleaseNote>,
+  numbered: ReadonlyArray<ReleaseSummary>,
 ) => {
-  const summary = releasesAt(now).find(
-    (entry) => entry.component === component && entry.release === version && entry.environment === environment,
-  )
+  // A release numbered for a commit nothing has seen yet is found in whichever environment is asked.
+  const unseen = numbered.find((entry) => entry.component === component && entry.release === version)
+  const summary =
+    releasesAt(now).find(
+      (entry) => entry.component === component && entry.release === version && entry.environment === environment,
+    ) ??
+    (unseen === undefined
+      ? undefined
+      : { ...unseen, ...(environment === undefined ? {} : { environment: EnvironmentKey.make(environment) }) })
   if (summary === undefined) {
     return reply(
       ReleaseNotFound,
@@ -1001,6 +1009,18 @@ const signedOut = reply(
 
 const SignInBody = Schema.fromJsonString(Schema.Struct({ token: Schema.String }))
 const LinksBody = Schema.fromJsonString(ComponentLinks)
+const PromoteLatestBody = Schema.fromJsonString(
+  Schema.Struct({
+    environment: EnvironmentKey,
+    commit: Schema.optionalKey(ReleaseCommit.fields.sha),
+    reason: Schema.optionalKey(PromotionReason),
+    runner: Schema.optionalKey(Runner),
+    submission: Schema.optionalKey(AppStoreSubmission),
+  }),
+)
+// The newest commit on a repository's default branch, as GitHub would say.
+export const newestCommit = sha("5d2e8a7c1b9f4e6a3c0d8b2f7e1a9c4d6b3f0e82")
+
 const PromoteBody = Schema.fromJsonString(
   Schema.Struct({
     environment: EnvironmentKey,
@@ -1095,6 +1115,8 @@ export const notesApi = ({
   // Each release's notes, by component and version.
   const notesOf = new Map<string, ReadonlyArray<ReleaseNote>>()
   let versions: ReadonlyArray<ComponentVersion> = versionsAt
+  // Releases numbered here, from commits that had none.
+  let numbered: ReadonlyArray<ReleaseSummary> = []
   let style: string | undefined
   let settings: ProjectSettings = { productionEnvironments: [EnvironmentKey.make("production")] }
   let promotions: ReadonlyArray<Promotion> | undefined
@@ -1179,6 +1201,73 @@ export const notesApi = ({
       }
       if (area === "incidents") {
         return yield* incidents
+      }
+      if (call.method === "POST" && area === "components" && id !== undefined && more === "promotions") {
+        // A commit that has no release: numbered as the component's next, then promoted.
+        const now = yield* Clock.currentTimeMillis
+        promotions ??= seeded === undefined ? promotionsAt(now) : seeded(now)
+        const payload = yield* Schema.decodeEffect(PromoteLatestBody)(call.body ?? "").pipe(Effect.orDie)
+        const target = links.get(id)?.deployTargets?.find((each) => each.environment === payload.environment)
+        const linkedRepository = links.get(id)?.repository
+        if (target?.workflow === undefined || linkedRepository === undefined) {
+          return yield* reply(
+            PromotionRefused,
+            new PromotionRefused({ reason: `${id} has no workflow for ${payload.environment}`, fix: "links" }),
+            422,
+          )
+        }
+        const versionLine = versions.find((each) => each.component === id)
+        if (versionLine === undefined) {
+          return yield* reply(
+            PromotionRefused,
+            new PromotionRefused({
+              reason: `${id} has no version yet: set it, and its builds are numbered in it`,
+              fix: "version",
+            }),
+            422,
+          )
+        }
+        const running = promotions.find(
+          (each) => each.component === id && each.environment === payload.environment && !hasEnded(each.state),
+        )
+        if (running !== undefined) {
+          return yield* reply(PromotionInProgress, new PromotionInProgress({ promotion: running }), 409)
+        }
+        const build = versionLine.lastBuild + 1
+        const numberedRelease = ReleaseVersion.make(`${versionLine.version}+${build}`)
+        versions = versions.map((each) => (each.component === id ? { ...each, lastBuild: build } : each))
+        numbered = [
+          ...numbered,
+          {
+            component: ComponentKey.make(id),
+            release: numberedRelease,
+            verdict: "unmeasured",
+            slower: 0,
+            failingMore: 0,
+            newErrors: 0,
+            commit: { sha: payload.commit ?? newestCommit },
+          },
+        ]
+        const promotion: Promotion = {
+          id: promotionId(promotions.length + 1),
+          component: ComponentKey.make(id),
+          release: numberedRelease,
+          environment: payload.environment,
+          repository: linkedRepository,
+          workflow: target.workflow,
+          runner: payload.runner ?? "auto",
+          ...(target.appStore === undefined ? {} : { appStore: target.appStore }),
+          ...(target.appStore?.distribution === "appStore"
+            ? { submission: payload.submission ?? { releaseType: "afterApproval", phased: true } }
+            : {}),
+          startedBy: as.id,
+          ...(payload.reason === undefined ? {} : { reason: payload.reason }),
+          startedAt: DateTime.makeUnsafe(now),
+          state: "starting",
+        }
+        promotions = [promotion, ...promotions]
+        timesAsked.set(promotion.id, 0)
+        return yield* reply(Promotion, promotion, 201)
       }
       if (area === "versions") {
         if (call.method === "PUT" && id !== undefined) {
@@ -1297,7 +1386,16 @@ export const notesApi = ({
           return yield* reply(Promotion, promotion, 201)
         }
         promotions = promotions.map((promotion) => followed(promotion, now))
-        return yield* releaseDetail(now, id, more, asked.environment, promotions, links, notesOf.get(noted) ?? [])
+        return yield* releaseDetail(
+          now,
+          id,
+          more,
+          asked.environment,
+          promotions,
+          links,
+          notesOf.get(noted) ?? [],
+          numbered,
+        )
       }
       if (asked.from === undefined || asked.to === undefined) {
         return yield* Effect.die(`The dashboard asked for ${area} without a period.`)

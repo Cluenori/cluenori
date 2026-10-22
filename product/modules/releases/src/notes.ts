@@ -7,11 +7,10 @@ import { DateTime, Effect, Option, Schema } from "effect"
 import { LanguageModel } from "effect/ai"
 
 import type { KnownRelease } from "./catalog.ts"
-import { knownReleases } from "./catalog.ts"
+import { knownRelease, knownReleases } from "./catalog.ts"
 import type { DraftNotes, NotesDraft, NotesStyle, ReleaseNote, SaveNotes } from "./note.ts"
 import { DraftUnavailable, NoteLocale, NoteText } from "./note.ts"
 import { ReleaseRecords } from "./records.ts"
-import { ReleaseNotFound } from "./release.ts"
 import type { ChangedCommit } from "./release.ts"
 import { NotesStyleSet, ReleaseNotesSaved } from "./releases-activity.ts"
 import { ReleaseSources } from "./sources.ts"
@@ -37,10 +36,7 @@ const languagesDrafted = 10
 
 /** Saves a release's notes, replacing those it had, with `release_notes.saved`. Fails with `ReleaseNotFound`. */
 export const saveNotes = Effect.fn("Releases.saveNotes")(function* (actor: Actor, request: SaveNotes) {
-  const releases = yield* knownReleases
-  if (!releases.some((each) => each.component === request.component && each.release === request.release)) {
-    return yield* new ReleaseNotFound({ component: request.component, release: request.release })
-  }
+  yield* knownRelease(yield* knownReleases, request)
   const records = yield* ReleaseRecords
   const log = yield* ActivityLog
   const now = yield* DateTime.now
@@ -137,10 +133,7 @@ const systemPrompt = (style: string, examples: ReadonlyArray<string>, appName: s
  */
 export const draftNotes = Effect.fn("Releases.draftNotes")(function* (_actor: Actor, request: DraftNotes) {
   const releases = yield* knownReleases
-  const release = releases.find((each) => each.component === request.component && each.release === request.release)
-  if (release === undefined) {
-    return yield* new ReleaseNotFound({ component: request.component, release: request.release })
-  }
+  const release = yield* knownRelease(releases, { component: request.component, release: request.release })
   const records = yield* ReleaseRecords
   const projects = yield* Projects
   const components = yield* projects.components.pipe(Effect.catchTag("ProjectNotFound", () => Effect.succeed([])))

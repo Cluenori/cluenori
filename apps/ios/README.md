@@ -10,8 +10,9 @@ shows its promotions, each followed through its run on GitHub and its build in A
 TestFlight or App Store review, until it ends; it promotes the release by one of its component's
 deploy targets, choosing where the workflow runs and how an approved version goes live, and
 releases one review approved. Its notes, What's New or What to Test, are edited in each language
-and drafted with AI; a project's releases show its components' versions, bumped or set, and lead
-to how its notes read. A project's
+and drafted with AI; a project's releases show its components' versions, bumped or set, promote a
+component's newest commit, which the deployment numbers as its next release, and lead to how its
+notes read. A project's
 screens show one environment at a time: its production environment, or the one chosen on the phone. Alerts reach it as pushes: a project that is down rings like an alarm
 clock, through silent mode, with an Acknowledge button (`concept/Modules.md`).
 

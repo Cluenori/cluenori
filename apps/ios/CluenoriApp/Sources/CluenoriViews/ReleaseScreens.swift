@@ -93,6 +93,13 @@ struct ReleasesScreen: View {
             }
         }
         .versionChanges(versions, bumping: $bumping, setting: $setting)
+        .sheet(item: promotingLatest) { promote in
+            PromoteSheet(promote: promote, release: nil, versions: versions, cancel: versions.cancelPromotingLatest) {
+                promotion in
+                // Its release's screen shows the promotion, and follows it.
+                navigation.push(.release(promotion.releaseRef(in: releases.project)))
+            }
+        }
         .navigationTitle(Text("Releases", bundle: #bundle, comment: "Title of every release of a project."))
         .refreshable {
             async let list: Void = releases.list.load()
@@ -106,6 +113,17 @@ struct ReleasesScreen: View {
         }
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: releases.list.problem, receivedAt: releases.list.receivedAt)
+        }
+    }
+
+    // The sheet that promotes a component's newest commit, while open; dismissed, it is cancelled.
+    private var promotingLatest: Binding<PromoteModel?> {
+        Binding {
+            versions.promoteLatest
+        } set: { promote in
+            if promote == nil {
+                versions.cancelPromotingLatest()
+            }
         }
     }
 }
@@ -488,10 +506,25 @@ struct ReleaseScreen: View {
                         )
                     }
                 }
+            } else if !release.promotions.isEmpty {
+                // A commit just promoted from this phone: the deployment knows its release once its
+                // workflow reports a deploy, or its build reaches App Store Connect.
+                Section {
+                    Text(verbatim: release.release.version)
+                        .font(.headline.monospaced())
+                        .textSelection(.enabled)
+                } footer: {
+                    Text(
+                        "Cluenori shows this release once its workflow reports a deploy, or its build reaches App Store Connect. Until then its promotion shows as it started.",
+                        bundle: #bundle,
+                        comment: "A release just numbered and promoted, which the deployment doesn't list yet."
+                    )
+                }
+                PromotionsSection(release: release)
             }
         }
         .overlay {
-            if release.detail.value == nil {
+            if release.detail.value == nil && release.promotions.isEmpty {
                 if release.detail.problem == .missing {
                     ContentUnavailableView {
                         Label {
@@ -518,7 +551,7 @@ struct ReleaseScreen: View {
         // screen leaves.
         .task(id: release.hasUnendedPromotions) { await release.followPromotions() }
         .sheet(item: promoting) { promote in
-            PromoteSheet(promote: promote, release: release, cancel: release.cancelPromoting)
+            PromoteSheet(promote: promote, release: release, versions: nil, cancel: release.cancelPromoting)
         }
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: release.detail.problem, receivedAt: release.detail.receivedAt)

@@ -57,6 +57,7 @@ export {
   AppStoreReleaseType,
   AppStoreSubmission,
   hasEnded,
+  PromoteLatest,
   PromoteRelease,
   Promotion,
   PromotionFix,

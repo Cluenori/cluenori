@@ -1,3 +1,4 @@
+import { CommitSha } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, Period, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import type { AppStoreTarget } from "@cluenori/projects"
 import type {
@@ -140,6 +141,8 @@ const fixText = (
       return `Write its notes for each of the app's languages: ./cluenori notes ${where.project} ${where.component} ${where.release} --draft ${where.environment}`
     case "appStore":
       return "Give the deployment an App Manager key: ./cluenori appstore setup <key.p8> --issuer <issuer ID> --manager"
+    case "version":
+      return `Set its version, which its builds are numbered in: ./cluenori version ${where.project} ${where.component} 1.0.0`
   }
 }
 
@@ -441,7 +444,15 @@ export const promote = Command.make(
   {
     project: filters.project,
     component: componentArgument,
-    release: releaseArgument,
+    release: Argument.String("release").pipe(
+      Argument.withDescription(
+        "The release, as ./cluenori releases lists it, such as 1.4.0+58; or latest, for the newest commit on the repository's default branch (or --commit), numbered as the next release first.",
+      ),
+    ),
+    commit: Flag.String("commit").pipe(
+      Flag.optional,
+      Flag.withDescription("With latest: the commit to number and promote, a full SHA, in place of the newest."),
+    ),
     to: Flag.String("to").pipe(Flag.withDescription("The environment to deploy it to, such as production.")),
     reason: Flag.String("reason").pipe(
       Flag.optional,
@@ -472,7 +483,12 @@ export const promote = Command.make(
       const project = yield* parsed(ProjectKey, input.project, "a project key")
       const target = yield* apiTarget(input.local)
       const component = yield* parsed(ComponentKey, input.component, "a component key")
-      const version = yield* parsed(ReleaseVersion, input.release, "a release")
+      const latest = input.release === "latest"
+      const asked = latest ? Option.none() : Option.some(yield* parsed(ReleaseVersion, input.release, "a release"))
+      const commit = yield* optionalKey(CommitSha, input.commit, "a commit's full SHA")
+      if (!latest && Option.isSome(commit)) {
+        return yield* refuse("--commit goes with latest: a release's commit is its own.")
+      }
       const environment = yield* parsed(EnvironmentKey, input.to, "an environment key")
       const reason = yield* optionalKey(PromotionReason, input.reason, "a reason of 1 to 500 characters")
       // Sent only when asked, so the API's default holds otherwise; a target without an App Store
@@ -483,36 +499,47 @@ export const promote = Command.make(
         phased: !input.allAtOnce,
       }
       const client = yield* apiClient(target)
-      const promotion = yield* client.releases
-        .promote({
-          params: { project, component, release: version },
-          payload: {
-            environment,
-            ...Option.match(reason, { onNone: () => ({}), onSome: (text) => ({ reason: text }) }),
-            ...Option.match(input.runner, { onNone: () => ({}), onSome: (runner) => ({ runner }) }),
-            ...(submissionAsked ? { submission } : {}),
-          },
-        })
-        .pipe(
-          Effect.catchTags({
-            ...reachFailures(target),
-            ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
-            ReleaseNotFound: () =>
-              refuse(
-                `${project} has no release ${version} of ${component}. ./cluenori releases ${project} lists those it has.`,
-              ),
-            PromotionInProgress: ({ promotion: running }) =>
-              refuse(
-                `${component} is being promoted to ${environment} already: ${running.release}, started ${utcMinute(running.startedAt)}${running.run === undefined ? "" : `, ${running.run.url}`}. ${promotionText(project, running)}.\nPromote again once it ends.`,
-              ),
-            PromotionRefused: (refused) =>
-              refuse(
-                `Nothing started: ${refused.reason}\n${fixText(refused.fix, { target, project, component, release: version, environment })}`,
-              ),
-            PromotionUnavailable: (unavailable) =>
-              refuse(`GitHub didn't answer, so nothing started: ${unavailable.reason}. Try again.`),
+      const payload = {
+        environment,
+        ...Option.match(reason, { onNone: () => ({}), onSome: (text) => ({ reason: text }) }),
+        ...Option.match(input.runner, { onNone: () => ({}), onSome: (runner) => ({ runner }) }),
+        ...(submissionAsked ? { submission } : {}),
+      }
+      const named = input.release
+      const promotion = yield* Option.match(asked, {
+        onNone: () =>
+          client.releases.promoteLatest({
+            params: { project, component },
+            payload: {
+              ...payload,
+              ...Option.match(commit, { onNone: () => ({}), onSome: (sha) => ({ commit: sha }) }),
+            },
           }),
-        )
+        onSome: (version) => client.releases.promote({ params: { project, component, release: version }, payload }),
+      }).pipe(
+        Effect.catchTags({
+          ...reachFailures(target),
+          ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
+          ReleaseNotFound: () =>
+            refuse(
+              `${project} has no release ${named} of ${component}. ./cluenori releases ${project} lists those it has.`,
+            ),
+          PromotionInProgress: ({ promotion: running }) =>
+            refuse(
+              `${component} is being promoted to ${environment} already: ${running.release}, started ${utcMinute(running.startedAt)}${running.run === undefined ? "" : `, ${running.run.url}`}. ${promotionText(project, running)}.\nPromote again once it ends.`,
+            ),
+          PromotionRefused: (refused) =>
+            refuse(
+              `Nothing started: ${refused.reason}\n${fixText(refused.fix, { target, project, component, release: named, environment })}`,
+            ),
+          PromotionUnavailable: (unavailable) =>
+            refuse(`GitHub didn't answer, so nothing started: ${unavailable.reason}. Try again.`),
+        }),
+      )
+      const version = promotion.release
+      if (latest) {
+        yield* Console.log(`Numbered ${version} of ${component}.`)
+      }
       const runner = promotion.runner === undefined ? "" : runnerText(promotion.runner)
       yield* Console.log(
         promotion.workflow === undefined || promotion.repository === undefined
@@ -533,7 +560,7 @@ export const promote = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Promote a release to an environment by its component's deploy target there: start its workflow on GitHub, and for an app, follow its build into TestFlight, or through App Store review with its notes as What's New. Promoting an older release rolls back.",
+    "Promote a release to an environment by its component's deploy target there: start its workflow on GitHub, and for an app, follow its build into TestFlight, or through App Store review with its notes as What's New. Promoting an older release rolls back; promoting latest numbers the newest commit as the next release first, such as an app's next build.",
   ),
 )
 

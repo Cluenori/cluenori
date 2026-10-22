@@ -46,11 +46,13 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
   - **Slower and faster:** Today's rule, a p95 at least 1.5 times the other's, and 100 ms more.
   - **Fails more and less:** at least 5 failures, 2%, three times the other's rate.
   - **The verdict:** `worse` at once; otherwise `tooEarly` until it ran an hour and an operation compares; `unmeasured` without telemetry.
+  - **A known release:** one that ran, was deployed or uploaded, or whose commit was numbered; a numbered one opens, is promoted, and takes notes before it is deployed anywhere.
   - **Numbers:** a commit becomes `<component version>+<last build + 1>` the first time its CI asks, and that release for good; a version only goes up, and build numbers never go back.
   - **A release's commit:** the one it was numbered for; else its reported deploy's; else the tag named the version, or ending with it after a separator, such as `v<version>`; else a SHA inside the version.
   - **An app's build:** it is the release `<version>+<build>`, in the environment whose deploy target its App Store Connect app is; its stage comes from App Store Connect's states.
   - **A promotion:**
     - by the component's deploy target for the environment: its workflow, on the repository's default branch, with the inputs `release`, `environment`, `commit` and `runner`; then, for an app, its build in the target's app, processed; TestFlight gets What to Test from the notes, and the App Store a version submitted for review with the notes as What's New;
+    - of a release, or of the default branch's newest commit (or one named), numbered first (`promoteLatest`);
     - one at a time for each component and environment;
     - followed each minute; lost when no run shows within 10 minutes, it doesn't end within a day, or review takes over 30 days.
   - **Where a build runs, for `auto`:** `local` while a self-hosted runner of the repository's organization labelled `local` is online, as GitHub says; else `cloud`.
@@ -79,7 +81,7 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
 `src/index.ts`:
 - **`releasesModule`:**
   - its queries: `list`, `release`, `versions`, `notesStyle`;
-  - its actions: `promote`, `releaseApproved`, `setVersion`, `saveNotes`, `draftNotes`, `setNotesStyle`;
+  - its actions: `promote`, `promoteLatest`, `releaseApproved`, `setVersion`, `saveNotes`, `draftNotes`, `setNotesStyle`;
   - its ingest writes: `report`, `last`, `number`, `runner`;
   - and its background work.
 - **`releasesLayer`:** its records and App Store Connect clients, from `ReleasesSettings`.

@@ -44,6 +44,16 @@ export const ReleasesHandlers = HttpApiBuilder.group(CluenoriApi, "releases", (h
         })
       }),
     )
+    .handle("promoteLatest", ({ params, payload }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, moduleActionCall(releasesModule, "promoteLatest"), {
+          actor: member.actor,
+          input: { component: params.component, ...payload },
+        })
+      }),
+    )
     .handle("releaseApproved", ({ params }) =>
       Effect.gen(function* () {
         const member = yield* CurrentMember

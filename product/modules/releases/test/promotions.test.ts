@@ -8,7 +8,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 
-import { NoteLocale, NoteText, PromotionReason, ReleaseSources, releasesModule } from "../src/index.ts"
+import { NoteLocale, NoteText, PromotionReason, ReleaseSources, releasesModule, SemanticVersion } from "../src/index.ts"
 import { inProject, noModel } from "./in-object.ts"
 
 // 2026-10-21T10:00:00Z, on a minute.
@@ -373,6 +373,65 @@ describe("Promotions", () => {
         Layer.succeed(GitHub, GitHub.of(fakeGitHub(state, true))),
         noModel,
       ),
+    )
+  })
+
+  it.effect("number the default branch's newest commit and promote it, once the component has a version", () => {
+    const state: FakeState = { dispatched: [], runs: [] }
+    const newest = CommitSha.make("e".repeat(40))
+    return inProject(
+      "promotions-latest",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
+        yield* projects.linkComponent(member, api, { repository, deployTargets: [{ environment: dev, workflow }] })
+        const unversioned = yield* releasesModule.actions.promoteLatest
+          .run(member, { component: api, environment: dev })
+          .pipe(Effect.flip)
+        yield* releasesModule.actions.setVersion.run(member, { component: api, version: SemanticVersion.make("1.0.0") })
+        const started = yield* releasesModule.actions.promoteLatest.run(member, { component: api, environment: dev })
+        // Before it is deployed anywhere, the release opens with its promotion, and takes notes.
+        const opened = yield* releasesModule.queries.release.run({ component: api, release: started.release })
+        const notes = [{ locale: NoteLocale.make("en-US"), text: NoteText.make("Notes open faster.") }]
+        yield* releasesModule.actions.saveNotes.run(member, { component: api, release: started.release, notes })
+        const unknown = yield* releasesModule.queries.release
+          .run({ component: api, release: ReleaseVersion.make("1.0.0+9") })
+          .pipe(Effect.flip)
+
+        assert.deepInclude(unversioned, { _tag: "PromotionRefused", fix: "version" })
+        assert.strictEqual(started.release, ReleaseVersion.make("1.0.0+1"))
+        assert.strictEqual(opened.summary.verdict, "unmeasured")
+        assert.strictEqual(opened.summary.commit?.sha, newest)
+        assert.deepStrictEqual(
+          opened.promotions.map((promotion) => promotion.id),
+          [started.id],
+        )
+        assert.strictEqual(unknown._tag, "ReleaseNotFound")
+        assert.deepStrictEqual(state.dispatched, [
+          {
+            workflow,
+            ref: "main",
+            inputs: { release: ReleaseVersion.make("1.0.0+1"), environment: dev, commit: newest, runner: "auto" },
+          },
+        ])
+      }),
+      withGitHub({
+        ...fakeGitHub(state, true),
+        commit: (_repository, ref) =>
+          Effect.succeed(
+            ref === "main"
+              ? Option.some({
+                  sha: newest,
+                  message: "Faster notes",
+                  author: "ada",
+                  committedAt: DateTime.makeUnsafe(start),
+                  url: "https://github.com/notes/notes-api/commit/e",
+                })
+              : Option.none(),
+          ),
+      }),
     )
   })
 

@@ -294,15 +294,23 @@ extension PromotionState {
     }
 }
 
-/// Promoting a release by one deploy target: what happens, step by step, where its workflow runs,
-/// how an App Store version goes live, the notes it takes, an optional reason, why it didn't start
-/// when it didn't, and Cancel and Promote, which shows its progress while it sends. A refusal for
-/// missing notes opens the notes editor in the sheet.
+/// Promoting by one deploy target: a release, or a component's newest commit, which the deployment
+/// numbers as its next release. What happens, step by step; for a commit, the environment and the
+/// commit; where its workflow runs; how an App Store version goes live; the notes it takes; an
+/// optional reason; why it didn't start when it didn't; and Cancel and Promote, which shows its
+/// progress while it sends. A refusal for missing notes opens the notes editor in the sheet, and
+/// one for a missing version the version's.
 struct PromoteSheet: View {
     @Bindable var promote: PromoteModel
-    let release: ReleaseModel
+    /// The release promoted, whose notes the sheet opens; nil for a commit, which has none yet.
+    let release: ReleaseModel?
+    /// The project's versions, set from the sheet when a commit can't be numbered; nil for a release.
+    let versions: VersionsModel?
     let cancel: () -> Void
+    /// Told of the promotion once it started, after the sheet closes.
+    var started: ((Promotion) -> Void)? = nil
     @State private var editsNotes = false
+    @State private var setsVersion = false
 
     var body: some View {
         let sending = promote.state == .sending
@@ -310,17 +318,24 @@ struct PromoteSheet: View {
             Form {
                 if case .failed(let problem) = promote.state {
                     Section {
-                        PromotionProblemView(problem: problem) {
-                            editsNotes = true
-                        }
+                        PromotionProblemView(
+                            problem: problem,
+                            writeNotes: release == nil ? nil : { editsNotes = true },
+                            setVersion: versionLine == nil ? nil : { setsVersion = true }
+                        )
                     }
+                }
+                if case .latestCommit = promote.subject {
+                    LatestCommitSection(promote: promote)
+                        .disabled(sending)
                 }
                 Section {
                     PromotionSteps(
                         workflow: promote.target.workflow,
                         repository: promote.repository,
                         appStore: promote.target.appStore,
-                        release: promote.release.version,
+                        release: promote.releaseVersion,
+                        commit: promote.isCommitValid ? promote.commitSha : nil,
                         environment: promote.environment
                     )
                 } header: {
@@ -335,20 +350,34 @@ struct PromoteSheet: View {
                         .disabled(sending)
                 }
                 if let appStore = promote.target.appStore {
-                    Section {
-                        NavigationLink {
-                            NotesScreen(release: release)
-                        } label: {
-                            NotesLinkLabel(
-                                distribution: appStore.distribution, locales: release.notes.savedNotes.map(\.locale))
+                    if let release {
+                        Section {
+                            NavigationLink {
+                                NotesScreen(release: release)
+                            } label: {
+                                NotesLinkLabel(
+                                    distribution: appStore.distribution,
+                                    locales: release.notes.savedNotes.map(\.locale))
+                            }
+                        } footer: {
+                            if promote.goesToReview {
+                                Text(
+                                    "App Store review needs notes in each of the app's languages.",
+                                    bundle: #bundle,
+                                    comment: "Below the notes a release goes to App Store review with."
+                                )
+                            }
                         }
-                    } footer: {
-                        if promote.goesToReview {
+                    } else if promote.goesToReview {
+                        Section {
                             Text(
-                                "App Store review needs notes in each of the app's languages.",
+                                "App Store review needs the release's notes, which can be written once it's built: promote it to TestFlight first, unless it's the app's first version.",
                                 bundle: #bundle,
-                                comment: "Below the notes a release goes to App Store review with."
+                                comment:
+                                    "Promoting a commit straight to App Store review: it has no release, so no notes, yet. TestFlight is a name."
                             )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -377,15 +406,18 @@ struct PromoteSheet: View {
                     }
                 }
             }
-            .navigationTitle(
-                Text(
-                    "Promote to \(promote.environment)",
-                    bundle: #bundle,
-                    comment: "Title of the sheet that promotes a release. The variable is an environment."
-                )
-            )
+            .navigationTitle(title)
             .navigationDestination(isPresented: $editsNotes) {
-                NotesScreen(release: release)
+                if let release {
+                    NotesScreen(release: release)
+                }
+            }
+            .navigationDestination(isPresented: $setsVersion) {
+                if let versions, let versionLine {
+                    SetVersionForm(line: versionLine, versions: versions, cancel: nil) {
+                        setsVersion = false
+                    }
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -396,7 +428,12 @@ struct PromoteSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        Task { await promote.send() }
+                        Task {
+                            await promote.send()
+                            if case .started(let promotion) = promote.state {
+                                started?(promotion)
+                            }
+                        }
                     } label: {
                         if sending {
                             ProgressView()
@@ -414,22 +451,100 @@ struct PromoteSheet: View {
         }
         .interactiveDismissDisabled(sending)
     }
+
+    private var title: Text {
+        switch promote.subject {
+        case .release:
+            Text(
+                "Promote to \(promote.environment)",
+                bundle: #bundle,
+                comment: "Title of the sheet that promotes a release. The variable is an environment."
+            )
+        case .latestCommit(_, let component):
+            Text(
+                "Promote \(component)",
+                bundle: #bundle,
+                comment: "Title of the sheet that promotes a component's newest commit. The variable is a component."
+            )
+        }
+    }
+
+    // The version line of the component whose commit is promoted, which Set Version changes.
+    private var versionLine: VersionLine? {
+        guard case .latestCommit(_, let component) = promote.subject else { return nil }
+        return versions?.lines.first { $0.component == component }
+    }
 }
 
-/// What promoting by a deploy target does, one step to a row: its workflow on GitHub; then, for an
-/// app, TestFlight with the notes as What to Test, or App Store review with them as What's New.
+/// For a component's newest commit: the environment it goes to, among its deploy targets with a
+/// workflow, and the commit, the default branch's newest unless one is typed.
+struct LatestCommitSection: View {
+    @Bindable var promote: PromoteModel
+
+    var body: some View {
+        if promote.targets.count > 1 {
+            Section {
+                Picker(selection: $promote.target) {
+                    ForEach(promote.targets, id: \.self) { target in
+                        Text(verbatim: target.environment).tag(target)
+                    }
+                } label: {
+                    Text("Environment", bundle: #bundle, comment: "The picker of where a commit is promoted to.")
+                }
+            }
+        }
+        Section {
+            TextField(
+                text: $promote.commit,
+                prompt: Text("Newest on the default branch", bundle: #bundle, comment: "An empty commit field.")
+            ) {
+                Text("Commit", bundle: #bundle, comment: "The field for the commit to promote.")
+            }
+            .monospaced()
+            .autocorrectionDisabled()
+            #if os(iOS)
+                .textInputAutocapitalization(.never)
+            #endif
+        } header: {
+            Text("Commit", bundle: #bundle, comment: "The field for the commit to promote.")
+        } footer: {
+            if promote.isCommitValid {
+                Text(
+                    "Optional: a full commit SHA. A commit promoted before is the same release again.",
+                    bundle: #bundle,
+                    comment: "Below the field for the commit to promote."
+                )
+            } else {
+                Text(
+                    "A full commit SHA has 40 characters, 0 to 9 and a to f.",
+                    bundle: #bundle,
+                    comment: "Below a commit typed that isn't a full SHA."
+                )
+                .foregroundStyle(.red)
+            }
+        }
+    }
+}
+
+/// What promoting by a deploy target does, one step to a row: its workflow on GitHub, for a commit
+/// once it's numbered; then, for an app, TestFlight with the notes as What to Test, or App Store
+/// review with them as What's New.
 struct PromotionSteps: View {
     let workflow: String?
     let repository: String?
     let appStore: AppStoreTarget?
-    let release: String
+    /// The release promoted; nil for a commit, numbered as its component's next.
+    let release: String?
+    /// The commit promoted, when one is typed; nil for the default branch's newest.
+    let commit: String?
     let environment: String
 
     var body: some View {
         if let workflow {
             Label {
                 WhatPromotingStarts(
-                    workflow: workflow, repository: repository, release: release, environment: environment)
+                    workflow: workflow, repository: repository, release: release, commit: commit,
+                    environment: environment)
             } icon: {
                 Image(systemName: "gearshape.2")
                     .foregroundStyle(.secondary)
@@ -462,33 +577,67 @@ struct PromotionSteps: View {
 }
 
 /// What a promotion's workflow starts on GitHub: `Starts deploy.yml in acme/notes on GitHub, with
-/// release 1.4.0+58 and environment production.`; without the repository when the release doesn't
-/// name one.
+/// release 1.4.0+58 and environment production.`; for a commit, numbered first as the next release;
+/// without the repository when the release doesn't name one.
 struct WhatPromotingStarts: View {
     let workflow: String
     let repository: String?
-    let release: String
+    /// Nil for a commit.
+    let release: String?
+    /// The commit typed, for a commit; nil for the default branch's newest.
+    let commit: String?
     let environment: String
 
     var body: some View {
         let workflow = Text(verbatim: workflow).monospaced().fontWeight(.semibold)
-        let release = Text(verbatim: release).monospaced().fontWeight(.semibold)
         let environment = Text(verbatim: environment).fontWeight(.semibold)
-        if let repository {
-            let repository = Text(verbatim: repository).fontWeight(.semibold)
-            Text(
-                "Starts \(workflow) in \(repository) on GitHub, with release \(release) and environment \(environment).",
-                bundle: #bundle,
-                comment:
-                    "What promoting a release does. The variables are a workflow's file, a repository, a release, and an environment. GitHub is a name."
-            )
+        let repository = repository.map { Text(verbatim: $0).fontWeight(.semibold) }
+        if let release {
+            let release = Text(verbatim: release).monospaced().fontWeight(.semibold)
+            if let repository {
+                Text(
+                    "Starts \(workflow) in \(repository) on GitHub, with release \(release) and environment \(environment).",
+                    bundle: #bundle,
+                    comment:
+                        "What promoting a release does. The variables are a workflow's file, a repository, a release, and an environment. GitHub is a name."
+                )
+            } else {
+                Text(
+                    "Starts \(workflow) on GitHub, with release \(release) and environment \(environment).",
+                    bundle: #bundle,
+                    comment:
+                        "What promoting a release does. The variables are a workflow's file, a release, and an environment. GitHub is a name."
+                )
+            }
         } else {
-            Text(
-                "Starts \(workflow) on GitHub, with release \(release) and environment \(environment).",
-                bundle: #bundle,
-                comment:
-                    "What promoting a release does. The variables are a workflow's file, a release, and an environment. GitHub is a name."
-            )
+            let promoted =
+                commit.map {
+                    Text(
+                        "commit \(Text(verbatim: String($0.prefix(7))).monospaced().fontWeight(.semibold))",
+                        bundle: #bundle,
+                        comment: "A commit, inside a sentence. The variable is its short SHA."
+                    )
+                }
+                ?? Text(
+                    "the newest commit on the default branch",
+                    bundle: #bundle,
+                    comment: "The commit promoted when none is typed, inside a sentence."
+                )
+            if let repository {
+                Text(
+                    "Numbers \(promoted) as the next release, then starts \(workflow) in \(repository) on GitHub with it and environment \(environment).",
+                    bundle: #bundle,
+                    comment:
+                        "What promoting a commit does. The variables are a commit, a workflow's file, a repository, and an environment. GitHub is a name."
+                )
+            } else {
+                Text(
+                    "Numbers \(promoted) as the next release, then starts \(workflow) on GitHub with it and environment \(environment).",
+                    bundle: #bundle,
+                    comment:
+                        "What promoting a commit does. The variables are a commit, a workflow's file, and an environment. GitHub is a name."
+                )
+            }
         }
     }
 }
@@ -599,12 +748,15 @@ struct NotesLinkLabel: View {
 }
 
 /// Why a promotion didn't start, or an approved one wasn't released, and what to do: the
-/// deployment's reason for refusing it, with the notes editor when notes are missing; the promotion
-/// already in progress with its run; or that nothing was sent.
+/// deployment's reason for refusing it, with the notes editor when notes are missing, or the
+/// version's when the component has none; the promotion already in progress with its run; or that
+/// nothing was sent.
 struct PromotionProblemView: View {
     let problem: PromotionProblem
     /// Opens the release's notes editor, offered when notes are what's missing.
     var writeNotes: (() -> Void)? = nil
+    /// Opens the component's version, offered when a commit can't be numbered without one.
+    var setVersion: (() -> Void)? = nil
 
     var body: some View {
         Label {
@@ -618,6 +770,14 @@ struct PromotionProblemView: View {
                 if case .refused(_, .notes) = problem, let writeNotes {
                     Button(action: writeNotes) {
                         Text("Write the Notes", bundle: #bundle, comment: "Opens a release's notes editor.")
+                    }
+                    .buttonStyle(.borderless)
+                }
+                if case .refused(_, .version) = problem, let setVersion {
+                    Button(action: setVersion) {
+                        Text(
+                            "Set Version…", bundle: #bundle, comment: "Opens the sheet that sets a component's version."
+                        )
                     }
                     .buttonStyle(.borderless)
                 }

@@ -115,10 +115,15 @@ public final class DeploymentModels {
         }
     }
 
-    /// A project's components' versions, which its builds are numbered in.
+    /// A project's components' versions, which its builds are numbered in, and promoting their newest
+    /// commits.
     public func versions(_ project: String) -> VersionsModel {
         model("versions \(project)") {
-            VersionsModel(project: project, projectDetail: environments(project).detail, api: api, context: context)
+            // A commit's promotion shows on its release's screen at once, before the deployment knows it.
+            VersionsModel(project: project, projectDetail: environments(project).detail, api: api, context: context) {
+                [weak self] promotion in
+                self?.release(promotion.releaseRef(in: project)).show(started: promotion)
+            }
         }
     }
 

@@ -1,4 +1,4 @@
-import { Repository, WorkflowFile } from "@bagatka/github"
+import { CommitSha, Repository, WorkflowFile } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, Instant, MemberId, ReleaseVersion, Uuidv7 } from "@cluenori/foundation"
 import { AppStoreTarget } from "@cluenori/projects"
 import { Schema } from "effect"
@@ -128,6 +128,20 @@ export const PromoteRelease = Schema.Struct({
 export type PromoteRelease = typeof PromoteRelease.Type
 
 /**
+ * Promote a commit that has no release yet, numbered first: `commit`, or the newest on the
+ * repository's default branch; the rest as `PromoteRelease`.
+ */
+export const PromoteLatest = Schema.Struct({
+  component: ComponentKey,
+  environment: EnvironmentKey,
+  commit: Schema.optionalKey(CommitSha),
+  reason: Schema.optionalKey(PromotionReason),
+  runner: Schema.optionalKey(Runner),
+  submission: Schema.optionalKey(AppStoreSubmission),
+}).annotate({ identifier: "PromoteLatest" })
+export type PromoteLatest = typeof PromoteLatest.Type
+
+/**
  * Where what stops a promotion is fixed:
  * - `github`: Cluenori's GitHub App, on the web's GitHub page: connect it, install it on the
  *   repository's account, or let it reach the repository.
@@ -137,10 +151,13 @@ export type PromoteRelease = typeof PromoteRelease.Type
  * - `notes`: the release's notes: write them for each of the app's languages before it goes to App
  *   Store review.
  * - `appStore`: App Store Connect: give the deployment an App Manager key, or fix what it refused.
+ * - `version`: the component's version: set it, so its commits can be numbered.
  */
-export const PromotionFix = Schema.Literals(["github", "links", "repository", "notes", "appStore"]).annotate({
-  identifier: "PromotionFix",
-})
+export const PromotionFix = Schema.Literals(["github", "links", "repository", "notes", "appStore", "version"]).annotate(
+  {
+    identifier: "PromotionFix",
+  },
+)
 export type PromotionFix = typeof PromotionFix.Type
 
 /**

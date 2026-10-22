@@ -18,6 +18,7 @@ import type { PhoneId } from "@cluenori/phones"
 import type { ComponentLinks, ProjectSettings } from "@cluenori/projects"
 import type {
   AppStoreSubmission,
+  ReleaseCommit,
   BuildNumber,
   NotesStyle,
   PromotionId,
@@ -434,6 +435,32 @@ export const promoteAtom = CluenoriClient.runtime.fn(
         },
       })
       yield* Atom.refresh(releaseAtom(input.release))
+      return promotion
+    }),
+)
+
+/**
+ * Promotes a component's commit that has no release yet: `commit`, or the newest on its
+ * repository's default branch. Cluenori numbers it as the component's next release, then promotes
+ * that release as `promoteAtom` does, with the same failures, and `PromotionRefused` with the fix
+ * `version` until the component's version is set. Asks for the versions again, whose next build
+ * this takes.
+ */
+export const promoteLatestAtom = CluenoriClient.runtime.fn(
+  (input: {
+    readonly project: ProjectKey
+    readonly component: ComponentKey
+    readonly environment: EnvironmentKey
+    readonly commit?: ReleaseCommit["sha"]
+    readonly reason?: PromotionReason
+    readonly runner?: Runner
+    readonly submission?: AppStoreSubmission
+  }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const { project, component, ...payload } = input
+      const promotion = yield* client.releases.promoteLatest({ params: { project, component }, payload })
+      yield* Atom.refresh(versionsAtom(project))
       return promotion
     }),
 )

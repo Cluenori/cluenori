@@ -1,3 +1,4 @@
+import { CommitSha } from "@bagatka/github"
 import { ComponentKey, EnvironmentKey, Instant, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import { ProjectNotFound } from "@cluenori/projects"
 import { DateTime, Schema } from "effect"
@@ -75,6 +76,29 @@ export class ReleasesGroup extends HttpApiGroup.make("releases")
     }).annotate(
       OpenApi.Description,
       "Promotes a release to an environment, for the member who asks, by its component's deploy target there: starts its workflow on the repository's default branch with the inputs `release`, `environment`, `commit` (when known) and `runner` (`auto` unless given), as the workspace's GitHub App; and, when the target has an App Store Connect app, follows its build there once processed: for TestFlight, sets What to Test from the release's notes; for the App Store, submits it for review with its notes as What's New, as `submission` says (as soon as approved, phased, unless given). Cluenori follows it each minute until it ends, and records who started it and why. 409 while the component's last promotion to that environment hasn't ended; 422 when it can't start until someone fixes what `reason` says, where `fix` says; 503 when GitHub didn't answer. Each call that succeeds starts a run.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("promoteLatest", "/projects/:project/components/:component/promotions", {
+      params: { project: ProjectKey, component: ComponentKey },
+      payload: Schema.Struct({
+        environment: EnvironmentKey,
+        commit: Schema.optionalKey(CommitSha),
+        reason: Schema.optionalKey(PromotionReason),
+        runner: Schema.optionalKey(Runner),
+        submission: Schema.optionalKey(AppStoreSubmission),
+      }).annotate({ identifier: "PromoteLatestTo" }),
+      success: Promotion.pipe(HttpApiSchema.status(201)),
+      error: [
+        ProjectNotFound.pipe(HttpApiSchema.status(404)),
+        ReleaseNotFound.pipe(HttpApiSchema.status(404)),
+        PromotionInProgress.pipe(HttpApiSchema.status(409)),
+        PromotionRefused.pipe(HttpApiSchema.status(422)),
+        PromotionUnavailable.pipe(HttpApiSchema.status(503)),
+      ],
+    }).annotate(
+      OpenApi.Description,
+      "Promotes a commit that has no release yet, such as an app's newest: `commit`, or the newest on its repository's default branch, which GitHub is asked for. Cluenori numbers it as the component's next release, as its CI would (a commit numbered before is that release again), then promotes that release as the promote route does, with the same answers. 422 with `fix: version` until the component's version is set.",
     ),
   )
   .add(

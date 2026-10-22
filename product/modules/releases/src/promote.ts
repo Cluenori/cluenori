@@ -7,8 +7,9 @@ import type { DeployTarget } from "@cluenori/projects"
 import { Projects } from "@cluenori/projects"
 import { Crypto, DateTime, Duration, Effect, Option } from "effect"
 
-import { knownReleases } from "./catalog.ts"
+import { knownRelease, knownReleases } from "./catalog.ts"
 import { stageOf } from "./identity.ts"
+import { numberCommit } from "./numbering.ts"
 import type {
   AppStoreSubmission,
   PromoteRelease,
@@ -17,7 +18,7 @@ import type {
   PromotionRun,
   PromotionState,
 } from "./promotion.ts"
-import type { ReleaseApproved } from "./promotion.ts"
+import type { PromoteLatest, ReleaseApproved } from "./promotion.ts"
 import {
   hasEnded,
   PromotionId,
@@ -27,7 +28,6 @@ import {
   PromotionUnavailable,
 } from "./promotion.ts"
 import { ReleaseRecords } from "./records.ts"
-import { ReleaseNotFound } from "./release.ts"
 import { PromotionEnded, PromotionReleased, PromotionStarted, PromotionSubmitted } from "./releases-activity.ts"
 import { ReleaseSources } from "./sources.ts"
 
@@ -75,10 +75,7 @@ export const promote = Effect.fn("Releases.promote")(function* (actor: Actor, re
   const projects = yield* Projects
   const records = yield* ReleaseRecords
   const sources = yield* ReleaseSources
-  const releases = yield* knownReleases
-  if (!releases.some((each) => each.component === request.component && each.release === request.release)) {
-    return yield* new ReleaseNotFound({ component: request.component, release: request.release })
-  }
+  yield* knownRelease(yield* knownReleases, { component: request.component, release: request.release })
   const components = yield* projects.components.pipe(Effect.catchTag("ProjectNotFound", () => Effect.succeed([])))
   const component = components.find((each) => each.key === request.component)
   const target = component?.deployTargets?.find((each) => each.environment === request.environment)
@@ -170,6 +167,56 @@ export const promote = Effect.fn("Releases.promote")(function* (actor: Actor, re
     ],
   })
   return promotion
+})
+
+/**
+ * Promotes a commit of `request.component` that has no release yet, such as an app's newest commit
+ * on its repository's default branch: numbers it, as its CI would, with `release.numbered`, then
+ * promotes that release as `promote` does. Without `request.commit`, the default branch's latest,
+ * which GitHub is asked for. A commit numbered before is that release again.
+ *
+ * Fails as `promote` does, and with `PromotionRefused` (fix `version`) until the component's version
+ * is set, or (fix `repository`) for a commit its repository doesn't have.
+ */
+export const promoteLatest = Effect.fn("Releases.promoteLatest")(function* (actor: Actor, request: PromoteLatest) {
+  const projects = yield* Projects
+  const components = yield* projects.components.pipe(Effect.catchTag("ProjectNotFound", () => Effect.succeed([])))
+  const repository = components.find((each) => each.key === request.component)?.repository
+  if (repository === undefined) {
+    return yield* refusedBy("links", `${request.component} isn't linked to a repository on GitHub: link it.`)
+  }
+  const github = yield* GitHub
+  const commit = yield* Effect.gen(function* () {
+    const ref = request.commit ?? (yield* github.defaultBranch(repository))
+    const found = yield* github.commit(repository, ref)
+    if (Option.isNone(found)) {
+      return yield* refusedBy("repository", `${repository} has no commit ${ref}.`)
+    }
+    return found.value.sha
+  }).pipe(
+    Effect.catchTags({
+      GitHubRefused: (refused) => Effect.fail(refusedBy("github", refused.reason)),
+      GitHubUnavailable: (unavailable) => Effect.fail(new PromotionUnavailable({ reason: unavailable.reason })),
+    }),
+  )
+  const numbered = yield* numberCommit(request.component, { commit }).pipe(
+    Effect.catchTag("VersionNotSet", () =>
+      Effect.fail(
+        refusedBy(
+          "version",
+          `${request.component} has no version yet, so its commits can't be numbered: set it, such as 1.0.0.`,
+        ),
+      ),
+    ),
+  )
+  return yield* promote(actor, {
+    component: request.component,
+    release: numbered.release,
+    environment: request.environment,
+    ...(request.reason === undefined ? {} : { reason: request.reason }),
+    ...(request.runner === undefined ? {} : { runner: request.runner }),
+    ...(request.submission === undefined ? {} : { submission: request.submission }),
+  })
 })
 
 // Starts a target's workflow with a promotion's inputs: the run GitHub named, if it did.

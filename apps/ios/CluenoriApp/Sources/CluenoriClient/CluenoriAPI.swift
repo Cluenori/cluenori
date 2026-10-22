@@ -719,6 +719,24 @@ public struct CluenoriAPI: Sendable {
         return try Self.decoded(Promotion.self, from: answer)
     }
 
+    /// Promotes a commit that has no release yet, such as an app's newest: `commit`, or the newest
+    /// on its repository's default branch, which GitHub is asked for. Cluenori numbers it as the
+    /// component's next release, as its CI would (a commit numbered before is that release again),
+    /// then promotes that release as the promote route does, with the same answers. 422 with `fix:
+    /// version` until the component's version is set.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.releaseNotFound`, `.promotionInProgress`,
+    /// `.promotionRefused`, `.promotionUnavailable`, or as any call can.
+    @concurrent
+    public func promoteLatest(
+        project: String,
+        component: String,
+        _ body: PromoteLatestTo,
+    ) async throws(APIError) -> Promotion {
+        let answer = try await self.send("POST", "/api/projects/\(Self.escaped(Self.text(project)))/components/\(Self.escaped(Self.text(component)))/promotions", body: try Self.encoded(body))
+        return try Self.decoded(Promotion.self, from: answer)
+    }
+
     /// Releases a promotion that App Store review approved and that waits for a member, submitted
     /// to be released manually: App Store Connect makes it live, and the promotion ends once it is.
     /// 404 for no promotion of that ID waiting so.
@@ -2345,6 +2363,28 @@ public struct ProjectSettings: Codable, Hashable, Sendable {
     }
 }
 
+public struct PromoteLatestTo: Codable, Hashable, Sendable {
+    public let environment: String
+    public let commit: String?
+    public let reason: String?
+    public let runner: Runner?
+    public let submission: AppStoreSubmission?
+
+    public init(
+        environment: String,
+        commit: String? = nil,
+        reason: String? = nil,
+        runner: Runner? = nil,
+        submission: AppStoreSubmission? = nil,
+    ) {
+        self.environment = environment
+        self.commit = commit
+        self.reason = reason
+        self.runner = runner
+        self.submission = submission
+    }
+}
+
 public struct PromoteTo: Codable, Hashable, Sendable {
     public let environment: String
     public let reason: String?
@@ -2432,6 +2472,7 @@ public struct PromotionFix: RawRepresentable, Codable, Hashable, Sendable {
     public static let repository = PromotionFix(rawValue: "repository")
     public static let notes = PromotionFix(rawValue: "notes")
     public static let appStore = PromotionFix(rawValue: "appStore")
+    public static let version = PromotionFix(rawValue: "version")
 }
 
 public struct PromotionInProgress: Codable, Hashable, Sendable {

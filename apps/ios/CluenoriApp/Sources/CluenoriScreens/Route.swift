@@ -257,6 +257,14 @@ public final class Navigation {
 
     public init() {}
 
+    /// Shows `route`'s screen over the one on top of the tab that shows.
+    public func push(_ route: Route) {
+        switch tab {
+        case .today: todayPath.append(route)
+        case .projects: projectsPath.append(route)
+        }
+    }
+
     /// Shows `route`'s screen, on the projects tab, over the screens that lead to it.
     public func open(_ route: Route) {
         tab = .projects

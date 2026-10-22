@@ -13,12 +13,16 @@ public struct VersionLine: Equatable, Sendable, Identifiable {
     public let version: String?
     /// 0 before the first build.
     public let lastBuild: Int?
+    /// Whether the component has a deploy target with a workflow, which can build and promote its
+    /// newest commit.
+    public let canPromoteLatest: Bool
 
-    public init(component: String, name: String, version: String?, lastBuild: Int?) {
+    public init(component: String, name: String, version: String?, lastBuild: Int?, canPromoteLatest: Bool = false) {
         self.component = component
         self.name = name
         self.version = version
         self.lastBuild = lastBuild
+        self.canPromoteLatest = canPromoteLatest
     }
 
     public var id: String {
@@ -56,8 +60,8 @@ public enum VersionProblem: Equatable, Sendable {
 }
 
 /// A project's components' versions, which Cluenori numbers every build in: each with its next
-/// release, bumped or set by a member. A version never goes lower, so a bump can't be undone; build
-/// numbers continue across versions.
+/// release, bumped or set by a member, and promoting a component's newest commit, which numbers it.
+/// A version never goes lower, so a bump can't be undone; build numbers continue across versions.
 @Observable
 public final class VersionsModel {
     /// Where setting one component's version stands.
@@ -70,16 +74,24 @@ public final class VersionsModel {
     public let list: Answer<ComponentVersions>
     /// Each component's change being sent, or why the last one failed, by component.
     public private(set) var changes: [String: Change] = [:]
+    /// Promoting a component's newest commit, while its sheet is open; nil otherwise.
+    public private(set) var promoteLatest: PromoteModel? = nil
 
     @ObservationIgnored private let projectDetail: Answer<ProjectDetail>
     @ObservationIgnored private let api: CluenoriAPI
     @ObservationIgnored private let keyRejected: () -> Void
+    @ObservationIgnored private let started: (Promotion) -> Void
 
-    /// `projectDetail` is the project's, which lists its components.
-    init(project: String, projectDetail: Answer<ProjectDetail>, api: CluenoriAPI, context: AnswerContext) {
+    /// `projectDetail` is the project's, which lists its components; `started` hears of each
+    /// promotion of a commit that starts.
+    init(
+        project: String, projectDetail: Answer<ProjectDetail>, api: CluenoriAPI, context: AnswerContext,
+        started: @escaping (Promotion) -> Void
+    ) {
         self.project = project
         self.projectDetail = projectDetail
         self.api = api
+        self.started = started
         keyRejected = context.keyRejected
         list = Answer(
             context,
@@ -97,7 +109,8 @@ public final class VersionsModel {
         let listed = components.map { component in
             let line = versions.first { $0.component == component.key }
             return VersionLine(
-                component: component.key, name: component.name, version: line?.version, lastBuild: line?.lastBuild)
+                component: component.key, name: component.name, version: line?.version, lastBuild: line?.lastBuild,
+                canPromoteLatest: !Self.workflowTargets(component).isEmpty)
         }
         let unlisted = versions.filter { line in !components.contains { $0.key == line.component } }.map {
             VersionLine(component: $0.component, name: $0.component, version: $0.version, lastBuild: $0.lastBuild)
@@ -154,6 +167,31 @@ public final class VersionsModel {
         return await send(component, VersionTo(version: version, firstBuild: first))
     }
 
+    /// Opens the sheet that promotes `component`'s newest commit, or another, by one of its deploy
+    /// targets with a workflow, the first at first. Nothing for a component without one.
+    public func startPromotingLatest(_ component: String) {
+        guard let found = projectDetail.value?.components.first(where: { $0.key == component }) else { return }
+        let targets = Self.workflowTargets(found)
+        guard let first = targets.first else { return }
+        promoteLatest = PromoteModel(
+            subject: .latestCommit(project: project, component: component),
+            targets: targets,
+            target: first,
+            repository: found.repository,
+            api: api,
+            keyRejected: keyRejected
+        ) { [weak self] promotion in
+            self?.promoteLatest = nil
+            self?.started(promotion)
+        }
+    }
+
+    /// Closes the sheet, unless it's sending.
+    public func cancelPromotingLatest() {
+        guard promoteLatest?.state != .sending else { return }
+        promoteLatest = nil
+    }
+
     /// Puts away why `component`'s last change failed, once shown.
     public func dismissProblem(of component: String) {
         if case .failed = changes[component] {
@@ -187,6 +225,11 @@ public final class VersionsModel {
             }
             return false
         }
+    }
+
+    // A component's deploy targets that have a workflow, which builds a commit.
+    private static func workflowTargets(_ component: Component) -> [DeployTarget] {
+        (component.deployTargets ?? []).filter { $0.workflow != nil }
     }
 
     // A version's parts, when it is `MAJOR.MINOR.PATCH` as the deployment takes it: ASCII digits,

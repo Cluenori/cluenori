@@ -175,7 +175,8 @@ public final class ReleaseModel {
     /// Opens the sheet that promotes the release by `target`, to its environment.
     public func startPromoting(_ target: DeployTarget) {
         promote = PromoteModel(
-            release: release,
+            subject: .release(release),
+            targets: [target],
             target: target,
             repository: detail.value?.repository,
             api: api,
@@ -184,6 +185,12 @@ public final class ReleaseModel {
             self?.answered[promotion.id] = (promotion, .now)
             self?.promote = nil
         }
+    }
+
+    /// Shows `promotion` at once, started from elsewhere on this phone, such as from its commit
+    /// before the deployment knows the release.
+    func show(started promotion: Promotion) {
+        answered[promotion.id] = (promotion, .now)
     }
 
     /// Closes the sheet, unless it's sending: a promotion sent may start, and the sheet says
