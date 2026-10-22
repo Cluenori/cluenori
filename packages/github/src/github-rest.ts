@@ -18,13 +18,13 @@ const answerTimeout = Duration.seconds(15)
 
 /** One request to GitHub's REST API. */
 export interface Question {
-  readonly method: "GET" | "POST"
+  readonly method: "GET" | "POST" | "PATCH"
   /** The path under `https://api.github.com`, its segments already safe. */
   readonly path: string
   readonly urlParams?: Readonly<Record<string, string | number>>
   /** The bearer: a token or the app's JWT; absent for a request GitHub takes unauthenticated. */
   readonly token?: Redacted.Redacted
-  /** A JSON body, for a POST. */
+  /** A JSON body, for a POST or a PATCH. */
   readonly body?: Schema.JsonObject
 }
 

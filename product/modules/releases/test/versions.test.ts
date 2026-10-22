@@ -58,6 +58,7 @@ const runnersGitHub = (runners: GitHub["Service"]["selfHostedRunners"]) =>
       workflowRuns: () => Effect.succeed([]),
       workflowRun: () => Effect.succeedNone,
       selfHostedRunners: runners,
+      publishRelease: () => Effect.die("No release is published in these tests"),
     }),
   )
 

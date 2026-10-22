@@ -4833,6 +4833,9 @@
           },
           "repository": {
             "type": "string"
+          },
+          "gitHubRelease": {
+            "$ref": "#/components/schemas/GitHubReleasePage"
           }
         },
         "required": [
@@ -4848,6 +4851,23 @@
           "promotions",
           "deployTargets",
           "notes"
+        ],
+        "additionalProperties": false
+      },
+      "GitHubReleasePage": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "url",
+          "publishedAt"
         ],
         "additionalProperties": false
       },

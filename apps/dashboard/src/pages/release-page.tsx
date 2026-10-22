@@ -575,6 +575,7 @@ export function ReleasePage({
   const shown = AsyncResult.isSuccess(answer) ? answer.value : undefined
   const ran = shown === undefined ? undefined : ranOf(shown.detail.summary)
   const commit = shown?.detail.summary.commit
+  const gitHubRelease = shown?.detail.gitHubRelease
   // The release's own environment, which the areas it opens show.
   const ranIn = shown?.detail.summary.environment
   const releaseEnvironment = ranIn === undefined ? {} : { environment: ranIn }
@@ -658,6 +659,17 @@ export function ReleasePage({
                 <CommitName commit={commit} className="text-foreground" />
                 {commit.message !== undefined && <span className="min-w-0 truncate">{commit.message}</span>}
               </span>
+            )}
+            {gitHubRelease !== undefined && (
+              <a
+                href={gitHubRelease.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-foreground underline-offset-4 outline-none hover:underline focus-visible:underline"
+              >
+                Release on GitHub
+                <ArrowUpRightIcon aria-hidden className="size-3.5" />
+              </a>
             )}
           </p>
         </div>

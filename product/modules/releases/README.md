@@ -4,7 +4,8 @@ Each component's releases, from its telemetry, its CI's deploy reports, and App 
 compared with the release before it, with its commit and what changed in its repository since. It
 numbers each build, so a number always means one commit; promotes a release to an environment
 through its deploy target, as far as App Store review and release; and keeps the release's notes
-for its users, which its language model drafts. It is the hub where a release's version, code,
+for its users, which its language model drafts, and publishes each release that reaches production
+on its repository's Releases page. It is the hub where a release's version, code,
 store build, deploys, performance and errors meet.
 
 ## Use it
@@ -56,6 +57,7 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
     - one at a time for each component and environment;
     - followed each minute; lost when no run shows within 10 minutes, it doesn't end within a day, or review takes over 30 days.
   - **Where a build runs, for `auto`:** `local` while a self-hosted runner of the repository's organization labelled `local` is online, as GitHub says; else `cloud`.
+  - **GitHub's Releases page:** a release reaches production when it is deployed to one of the project's production environments (reported again there doesn't count; deployed again after another does), or when its App Store version starts reaching people (releasing in phases, or live; not when its build is uploaded, nor those out before App Store Connect was first read). It is then published as its tag (the reported one, else `v<release>`, made on its commit), marked latest, with its notes (English, else its first language) and the commits since the release before it that reached people there (it ran, was deployed, or was out on the App Store), at most 50, and the comparison's link; and published again when its notes are saved. It waits while its component has no repository or its commit isn't found.
   - **Notes:** at most 4000 characters a language; required before App Store review, except for an app's first version; a draft is written from the commits since the release current in that environment (on the App Store, the one live), in the project's notes style, with its last 5 notes as examples, and saved only by a person.
 - **Data,** in each project's database:
   - releases' commits (`releases_commits`) and lookups that found none, retried hourly (`releases_lookups`);
@@ -65,7 +67,8 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
   - each source's last read and problem (`releases_syncs`);
   - promotions, with who started them and why (`releases_promotions`);
   - components' versions (`releases_versions`) and each commit's number (`releases_numbers`);
-  - releases' notes (`releases_notes`) and the project's notes style (`releases_notes_style`).
+  - releases' notes (`releases_notes`) and the project's notes style (`releases_notes_style`);
+  - releases that reached production, to publish on GitHub, and their pages once published (`releases_github_releases`).
 
 ## Does not own
 
@@ -114,6 +117,7 @@ GitHub and the language model aren't settings: the host provides them. GitHub re
 Each minute, on the project's alarm:
 - **Each component linked to a repository:** it looks up at most 5 releases' commits and compares at most 2 pairs.
 - **Each component with App Store apps in its deploy targets:** it reads App Store Connect every 15 minutes, keeping each app's 50 latest builds and 20 latest App Store versions.
+- **Each release that reached production and isn't published on GitHub yet, or must be again:** at most 3, the earliest first.
 - **Each promotion that hasn't ended:** at most 10, the oldest first:
   - it asks GitHub about its run, then App Store Connect about its build;
   - it submits the build for review once processed, for the App Store, recording `promotion.submitted`;

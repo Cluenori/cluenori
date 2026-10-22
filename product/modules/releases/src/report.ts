@@ -1,5 +1,5 @@
 import type { ComponentKey } from "@cluenori/foundation"
-import { Projects } from "@cluenori/projects"
+import { defaultProjectSettings, isProduction, Projects } from "@cluenori/projects"
 import { DateTime, Effect } from "effect"
 
 import { pullRequestOf } from "./identity.ts"
@@ -10,7 +10,9 @@ import type { LastReport, LastReportQuery, ReleaseChanges, ReleaseReport } from 
  * Records a deploy `cluenori-release` reported for `component`: the release and its commit, now;
  * and, when it listed the commits since the release reported before in the same environment, what
  * changed between them, until GitHub's comparison replaces it. A release reported again in the
- * same environment keeps its first deploy time.
+ * same environment keeps its first deploy time. A release deployed to a production environment,
+ * other than reported again there, is to be published on its repository's Releases page; an app's
+ * build, uploaded to an App Store app, is once App Store Connect says it is out.
  */
 export const reportDeploy = Effect.fn("Releases.reportDeploy")(function* (
   component: ComponentKey,
@@ -23,6 +25,7 @@ export const reportDeploy = Effect.fn("Releases.reportDeploy")(function* (
   const previous = before.find(
     (deploy) => deploy.environment === report.environment && deploy.release !== report.release,
   )
+  const reportedAgain = before.find((deploy) => deploy.environment === report.environment)?.release === report.release
   yield* records.saveDeploy({
     component,
     environment: report.environment,
@@ -33,6 +36,28 @@ export const reportDeploy = Effect.fn("Releases.reportDeploy")(function* (
   const linked = (yield* projects.components.pipe(Effect.orElseSucceed(() => []))).find(
     (each) => each.key === component,
   )
+  const settings = yield* projects.settings.pipe(
+    Effect.catchTag("ProjectNotFound", () => Effect.succeed(defaultProjectSettings)),
+  )
+  // A rollback, an older release deployed again, is the latest there again. An app's build reported
+  // to an environment whose target is an App Store app was only uploaded: it reaches production
+  // when App Store Connect says it is out.
+  const uploaded = linked?.deployTargets?.some(
+    (target) => target.environment === report.environment && target.appStore !== undefined,
+  )
+  if (
+    linked?.repository !== undefined &&
+    uploaded !== true &&
+    !reportedAgain &&
+    isProduction(settings, report.environment)
+  ) {
+    yield* records.queueGitHubRelease({
+      component,
+      release: report.release,
+      environment: report.environment,
+      reachedAt: now,
+    })
+  }
   const urlOf = (sha: string) =>
     linked?.repository === undefined ? {} : { url: `https://github.com/${linked.repository}/commit/${sha}` }
   const own = report.commits?.find((commit) => commit.sha === report.commit)

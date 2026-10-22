@@ -140,6 +140,12 @@ describe("releases journey", () => {
           ),
       )
       yield* Effect.promise(() => expect.element(screen.getByText("Share a note by link (#212)")).toBeVisible())
+      // Its page on the repository's Releases page, which Cluenori published once it reached production.
+      yield* Effect.promise(() =>
+        expect
+          .element(screen.getByRole("link", { name: "Release on GitHub" }))
+          .toHaveAttribute("href", `https://github.com/notesapp/notes-api/releases/tag/${worse}`),
+      )
 
       // The pull requests merged since, each opening on GitHub, with how much changed and the comparison.
       const changes = screen.getByRole("region", { name: `Changes since ${better}` })

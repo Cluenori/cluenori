@@ -21,10 +21,12 @@ const connectLasts = Duration.toMillis(Duration.hours(1))
 const openConnects = 5
 
 // What the app may do where it is installed: read repositories' code and pull requests, for
-// releases; start their workflows, to promote them; and see whether an organization's self-hosted
-// runners are online, to choose where a build runs. Metadata is every app's.
+// releases, and publish releases on their Releases pages, which takes writing contents (GitHub has
+// no narrower permission for releases); start their workflows, to promote them; and see whether an
+// organization's self-hosted runners are online, to choose where a build runs. Metadata is every
+// app's. An app made before keeps its permissions until an owner changes them on GitHub.
 const permissions = {
-  contents: "read",
+  contents: "write",
   pull_requests: "read",
   actions: "write",
   metadata: "read",

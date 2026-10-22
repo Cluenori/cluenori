@@ -7,6 +7,7 @@ import {
   ComparisonAnswer,
   DispatchAnswer,
   PullRequestAnswer,
+  ReleaseAnswer,
   RepositoryAnswer,
   TagsAnswer,
   WorkflowRunAnswer,
@@ -16,7 +17,7 @@ import {
 import type { CommitSha } from "./commit-sha.ts"
 import type { GitHubUnavailable } from "./github-errors.ts"
 import { GitHubRefused, WorkflowNotFound, WorkflowRejected } from "./github-errors.ts"
-import type { Question } from "./github-rest.ts"
+import type { Answer, Question } from "./github-rest.ts"
 import { ask, failure, read, reasonOf } from "./github-rest.ts"
 import type { Repository } from "./repository.ts"
 import type { WorkflowFile } from "./workflow-file.ts"
@@ -83,6 +84,24 @@ export interface PullRequest {
   readonly mergedAt?: DateTime.Utc
   /** Its labels' names. */
   readonly labels: ReadonlyArray<string>
+}
+
+/** A release to publish on a repository's Releases page. */
+export interface ReleaseToPublish {
+  /** The tag it is of, such as `v2.4.0`; made on `commit` when the repository hasn't it. */
+  readonly tag: string
+  readonly commit: CommitSha
+  /** Its title. */
+  readonly name: string
+  /** What it says, in Markdown: at most 125,000 characters, as GitHub takes. */
+  readonly body: string
+  /** Whether it becomes the repository's latest release. */
+  readonly latest: boolean
+}
+
+/** A release published: its page on GitHub. */
+export interface PublishedRelease {
+  readonly url: string
 }
 
 /** The run a dispatch started: its ID, for `workflowRun`, and its page on GitHub. */
@@ -170,6 +189,18 @@ export class GitHub extends Context.Service<
       repository: Repository,
       number: number,
     ) => Effect.Effect<Option.Option<PullRequest>, GitHubRefused | GitHubUnavailable>
+    /**
+     * Publishes the release `release.tag` names: creates it, and the tag on `release.commit` when
+     * the repository hasn't one, or updates the one the repository has, so publishing again changes
+     * it rather than adding another. Two requests. Needs Contents: write.
+     *
+     * Refused when the token may not write the repository's contents, or GitHub rejects the release,
+     * such as a commit the repository doesn't have, saying why.
+     */
+    readonly publishRelease: (
+      repository: Repository,
+      release: ReleaseToPublish,
+    ) => Effect.Effect<PublishedRelease, GitHubRefused | GitHubUnavailable>
     /** The repository's default branch, such as `main`. One request. */
     readonly defaultBranch: (repository: Repository) => Effect.Effect<string, GitHubRefused | GitHubUnavailable>
     /**
@@ -352,6 +383,68 @@ export class GitHub extends Context.Service<
           return yield* failure(answer)
         })
 
+        // What an answer to writing a release means when it isn't the one asked for.
+        const refusedRelease = Effect.fn("GitHub.refusedRelease")(function* (
+          repository: Repository,
+          tag: string,
+          answer: Answer,
+        ) {
+          if (answer.status === 404) {
+            yield* visible(repository)
+            return yield* new GitHubRefused({
+              status: 404,
+              reason: `${repository}'s releases can't be written with this token: it needs Contents: write`,
+            })
+          }
+          if (answer.status === 422) {
+            const reason = yield* reasonOf(answer)
+            return yield* new GitHubRefused({ status: 422, reason: `GitHub rejected the release ${tag}: ${reason}` })
+          }
+          return yield* failure(answer).pipe(
+            Effect.mapError((error) =>
+              error._tag === "GitHubRefused" && error.status === 403
+                ? new GitHubRefused({
+                    status: 403,
+                    reason: `${repository}'s releases can't be written with this token: it needs Contents: write (${error.reason})`,
+                  })
+                : error,
+            ),
+          )
+        })
+
+        const publishRelease = Effect.fn("GitHub.publishRelease")(function* (
+          repository: Repository,
+          release: ReleaseToPublish,
+        ) {
+          const fields = { name: release.name, body: release.body, make_latest: release.latest ? "true" : "false" }
+          const found = yield* askAbout(repository, {
+            method: "GET",
+            path: `/repos/${repository}/releases/tags/${encodeURIComponent(release.tag)}`,
+          })
+          if (found.status !== 200 && found.status !== 404) {
+            return yield* failure(found)
+          }
+          // Not handled: a release made by someone else between the two requests, which GitHub
+          // rejects as already existing; publishing again updates it.
+          const answer =
+            found.status === 200
+              ? yield* askAbout(repository, {
+                  method: "PATCH",
+                  path: `/repos/${repository}/releases/${(yield* read(ReleaseAnswer, found)).id}`,
+                  body: fields,
+                })
+              : yield* askAbout(repository, {
+                  method: "POST",
+                  path: `/repos/${repository}/releases`,
+                  body: { tag_name: release.tag, target_commitish: release.commit, ...fields },
+                })
+          if (answer.status === 200 || answer.status === 201) {
+            const published = yield* read(ReleaseAnswer, answer)
+            return { url: published.html_url } satisfies PublishedRelease
+          }
+          return yield* refusedRelease(repository, release.tag, answer)
+        })
+
         const dispatchWorkflow = Effect.fn("GitHub.dispatchWorkflow")(function* (
           repository: Repository,
           workflow: WorkflowFile,
@@ -464,6 +557,7 @@ export class GitHub extends Context.Service<
           compare,
           pullRequest,
           defaultBranch,
+          publishRelease,
           dispatchWorkflow,
           workflowRuns,
           workflowRun,

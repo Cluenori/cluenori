@@ -1,6 +1,7 @@
 import { defineModule, moduleAction, moduleIngest, moduleQuery } from "@cluenori/foundation"
 import { Effect, Layer, Schema } from "effect"
 
+import { publishGitHubReleases } from "./github-releases.ts"
 import { DraftNotes, DraftUnavailable, NotesDraft, NotesStyle, ReleaseNotes, SaveNotes } from "./note.ts"
 import { draftNotes, notesStyle, saveNotes, setNotesStyle } from "./notes.ts"
 import { componentVersions, numberCommit, setVersion } from "./numbering.ts"
@@ -54,7 +55,8 @@ export const releasesLayer = (settings: ReleasesSettings) =>
 /**
  * The module, as the host serves it: its queries, actions and ingest writes run in the project's
  * Durable Object, its records and clients are built there from its settings, and its background
- * work finds commits and store builds, and follows promotions, on the project's alarm.
+ * work finds commits and store builds, publishes releases that reached production on their
+ * repositories' Releases pages, and follows promotions, on the project's alarm.
  */
 export const releasesModule = defineModule({
   id: "releases",
@@ -81,7 +83,7 @@ export const releasesModule = defineModule({
   },
   api: ReleasesGroup,
   layer: releasesLayer,
-  background: syncReleases.pipe(Effect.andThen(followPromotions)),
+  background: syncReleases.pipe(Effect.andThen(publishGitHubReleases), Effect.andThen(followPromotions)),
   ingest: {
     /** A deploy, from `cluenori-release`. */
     report: moduleIngest({ input: ReleaseReport, success: Schema.Void, error: Schema.Never, run: reportDeploy }),

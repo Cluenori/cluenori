@@ -218,6 +218,10 @@ export const releaseDetail = Effect.fn("Releases.detail")(function* (key: Releas
     promotions: yield* records.promotions(release.component, release.release),
     deployTargets: linked?.deployTargets ?? [],
     notes: yield* records.notes(release.component, release.release),
+    ...Option.match(yield* records.gitHubRelease(release.component, release.release), {
+      onNone: () => ({}),
+      onSome: (page) => ({ gitHubRelease: page }),
+    }),
     ...(linked?.repository === undefined ? {} : { repository: linked.repository }),
   }
   return detail

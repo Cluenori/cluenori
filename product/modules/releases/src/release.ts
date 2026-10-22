@@ -229,6 +229,12 @@ export type ComparedOperation = typeof ComparedOperation.Type
  * Operations compare once they ran 100 times in both releases. Incidents are those the project
  * keeps, the open ones and those resolved in the last 7 days, that opened while it ran.
  */
+/** A release's page on its repository's Releases page on GitHub, and when Cluenori last published it. */
+export const GitHubReleasePage = Schema.Struct({ url: Schema.String, publishedAt: Instant }).annotate({
+  identifier: "GitHubReleasePage",
+})
+export type GitHubReleasePage = typeof GitHubReleasePage.Type
+
 export const ReleaseDetail = Schema.Struct({
   summary: ReleaseSummary,
   slower: Schema.Array(ComparedOperation),
@@ -252,6 +258,12 @@ export const ReleaseDetail = Schema.Struct({
   notes: Schema.Array(ReleaseNote),
   /** Its component's repository on GitHub, where its deploy workflows run; absent until linked. */
   repository: Schema.optionalKey(Repository),
+  /**
+   * Its page on its repository's Releases page, which Cluenori publishes once it reaches production
+   * (deployed to a production environment, or out on the App Store), and again when its notes
+   * change; absent until then.
+   */
+  gitHubRelease: Schema.optionalKey(GitHubReleasePage),
 }).annotate({ identifier: "ReleaseDetail" })
 export type ReleaseDetail = typeof ReleaseDetail.Type
 

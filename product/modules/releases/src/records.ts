@@ -46,6 +46,26 @@ export interface NumberedCommit {
   readonly build: number
 }
 
+/** A release that reached production: to be published, or published again, on GitHub's Releases page. */
+export interface ReachedProduction {
+  readonly component: ComponentKey
+  readonly release: ReleaseVersion
+  /** The production environment it reached; none for a deploy that named none. */
+  readonly environment: EnvironmentKey | undefined
+  readonly reachedAt: DateTime.Utc
+}
+
+/** A release to publish, and how many times it was marked, to tell a mark made while it was published. */
+export interface ReleaseToPublish extends ReachedProduction {
+  readonly marked: number
+}
+
+/** A release's page on GitHub's Releases page, once published. */
+export interface PublishedRelease {
+  readonly url: string
+  readonly publishedAt: DateTime.Utc
+}
+
 /** A source's last read of a component: when, and what went wrong, if anything. */
 export interface Sync {
   readonly component: ComponentKey
@@ -170,6 +190,23 @@ const migrate = Migrator.make({})({
         style TEXT NOT NULL
       )`
     }),
+    // Releases that reached production, to publish on GitHub: the environment ('' for none) and when
+    // (Unix ms); `pending` until published, and again when it must be published again, `marked`
+    // counting each time; its page once published.
+    "0005_github_releases": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE releases_github_releases (
+        component TEXT NOT NULL,
+        release TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        reached_at INTEGER NOT NULL,
+        pending INTEGER NOT NULL,
+        marked INTEGER NOT NULL,
+        url TEXT,
+        published_at INTEGER,
+        PRIMARY KEY (component, release)
+      ) WITHOUT ROWID`
+    }),
   }),
 })
 
@@ -255,6 +292,22 @@ export class ReleaseRecords extends Context.Service<
     /** Each source's last read of each component. */
     readonly syncs: Effect.Effect<ReadonlyArray<Sync>>
     readonly saveSync: (sync: Sync) => Effect.Effect<void>
+    /**
+     * Marks a release that just reached production, in `environment`, to be published on GitHub: a
+     * release published before is published again, as the latest.
+     */
+    readonly queueGitHubRelease: (release: ReachedProduction) => Effect.Effect<void>
+    /** Marks a release published before to be published again, as when its notes change; nothing for another. */
+    readonly requeueGitHubRelease: (component: ComponentKey, release: ReleaseVersion) => Effect.Effect<void>
+    /** The releases to publish, the earliest to reach production first. */
+    readonly gitHubReleasesToPublish: Effect.Effect<ReadonlyArray<ReleaseToPublish>>
+    /** Keeps a release's page, published now; still to publish if it was marked again meanwhile. */
+    readonly saveGitHubRelease: (published: ReleaseToPublish, page: PublishedRelease) => Effect.Effect<void>
+    /** A release's page on GitHub, once published. */
+    readonly gitHubRelease: (
+      component: ComponentKey,
+      release: ReleaseVersion,
+    ) => Effect.Effect<Option.Option<PublishedRelease>>
     /** A release's promotions, to every environment, the latest first: at most 20. */
     readonly promotions: (component: ComponentKey, release: ReleaseVersion) => Effect.Effect<ReadonlyArray<Promotion>>
     /** The promotions that haven't ended, the oldest first, of every component or one environment's. */
@@ -353,6 +406,26 @@ export class ReleaseRecords extends Context.Service<
               SELECT release FROM releases_notes WHERE component = ${asked.component} AND release <> ${asked.except}
               GROUP BY release ORDER BY MAX(saved_at) DESC LIMIT ${asked.count})
             ORDER BY saved_at DESC, locale`,
+      })
+      const findToPublish = SqlSchema.findAll({
+        Request: Schema.Void,
+        Result: Schema.Struct({
+          component: ComponentKey,
+          release: ReleaseVersion,
+          environment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
+          reachedAt: Schema.Int,
+          marked: Schema.Int,
+        }),
+        execute: () =>
+          sql`SELECT component, release, environment, reached_at AS "reachedAt", marked FROM releases_github_releases
+            WHERE pending = 1 ORDER BY reached_at`,
+      })
+      const findPublished = SqlSchema.findOneOption({
+        Request: Schema.Struct({ component: ComponentKey, release: ReleaseVersion }),
+        Result: Schema.Struct({ url: Schema.String, publishedAt: Schema.Int }),
+        execute: (key) =>
+          sql`SELECT url, published_at AS "publishedAt" FROM releases_github_releases
+            WHERE component = ${key.component} AND release = ${key.release} AND url IS NOT NULL`,
       })
       const findStyle = SqlSchema.findOneOption({
         Request: Schema.Void,
@@ -558,6 +631,51 @@ export class ReleaseRecords extends Context.Service<
         saveNotesStyle: (style) =>
           sql`INSERT INTO releases_notes_style ${sql.insert({ only: 1, style })}
             ON CONFLICT (only) DO UPDATE SET style = excluded.style`.pipe(Effect.asVoid, Effect.orDie),
+        queueGitHubRelease: (release) =>
+          sql`INSERT INTO releases_github_releases ${sql.insert({
+            component: release.component,
+            release: release.release,
+            environment: release.environment ?? "",
+            reached_at: DateTime.toEpochMillis(release.reachedAt),
+            pending: 1,
+            marked: 1,
+          })}
+            ON CONFLICT (component, release) DO UPDATE SET environment = excluded.environment,
+              reached_at = excluded.reached_at, pending = 1, marked = marked + 1`.pipe(Effect.asVoid, Effect.orDie),
+        requeueGitHubRelease: (component, release) =>
+          sql`UPDATE releases_github_releases SET pending = 1, marked = marked + 1
+            WHERE component = ${component} AND release = ${release}`.pipe(Effect.asVoid, Effect.orDie),
+        gitHubReleasesToPublish: findToPublish(undefined).pipe(
+          Effect.orDie,
+          Effect.map((rows) =>
+            rows.map((row): ReleaseToPublish => ({
+              component: row.component,
+              release: row.release,
+              environment: row.environment === "" ? undefined : row.environment,
+              reachedAt: DateTime.makeUnsafe(row.reachedAt),
+              marked: row.marked,
+            })),
+          ),
+        ),
+        // Marked again while it was being published, as by notes saved then, it stays to publish.
+        saveGitHubRelease: (published, page) =>
+          sql`UPDATE releases_github_releases SET url = ${page.url},
+              published_at = ${DateTime.toEpochMillis(page.publishedAt)},
+              pending = CASE WHEN marked = ${published.marked} THEN 0 ELSE pending END
+            WHERE component = ${published.component} AND release = ${published.release}`.pipe(
+            Effect.asVoid,
+            Effect.orDie,
+          ),
+        gitHubRelease: (component, release) =>
+          findPublished({ component, release }).pipe(
+            Effect.orDie,
+            Effect.map(
+              Option.map((row): PublishedRelease => ({
+                url: row.url,
+                publishedAt: DateTime.makeUnsafe(row.publishedAt),
+              })),
+            ),
+          ),
         promotions: (component, release) =>
           findPromotions({ component, release }).pipe(
             Effect.orDie,

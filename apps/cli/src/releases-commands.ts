@@ -284,6 +284,9 @@ export const release = Command.make(
         const message = commit.message === undefined ? "" : `: ${commit.message}`
         yield* Console.log(`Commit ${commit.sha.slice(0, 7)}${tagged}${message}`)
       }
+      if (detail.gitHubRelease !== undefined) {
+        yield* Console.log(`On GitHub: ${detail.gitHubRelease.url}`)
+      }
       if (summary.store !== undefined) {
         yield* Console.log(
           `App Store Connect: build ${summary.store.version} (${summary.store.buildNumber}), ${stageText(summary.store)}.`,

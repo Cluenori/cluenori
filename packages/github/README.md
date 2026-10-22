@@ -1,7 +1,8 @@
 # @bagatka/github
 
 Reaches GitHub through its REST API, with a token or as a GitHub App: a repository's tags, commits,
-comparisons, pull requests and default branch; its workflows, started and followed; and the app's
+comparisons, pull requests and default branch; its releases, published; its workflows, started and
+followed; and the app's
 installations, tokens, creation from a manifest, and webhooks' signatures.
 
 ## Use it
@@ -60,6 +61,20 @@ const promote = Effect.gen(function* () {
 })
 ```
 
+Publishing a release on the repository's Releases page, created or, for a tag that has one,
+updated:
+
+```ts
+const published = yield* github.publishRelease(repository, {
+  tag: "v2.4.0", // made on `commit` when the repository hasn't it
+  commit: tags[0].commit,
+  name: "2.4.0",
+  body: "Notes open twice as fast.", // Markdown
+  latest: true,
+})
+// { url: "https://github.com/octo-org/notes/releases/tag/v2.4.0" }
+```
+
 An app whose credentials come while the product runs, as from the manifest flow below, is made
 with `GitHubApp.make(credentials, crypto.subtle)` instead, once per app, and kept: each client
 has its own JWT and token caches.
@@ -69,7 +84,8 @@ isn't installed on fails with `GitHubRefused`, which asking again won't change. 
 5xx, or no answer in 15 s fails with `GitHubUnavailable`, with `retryAfter` when GitHub says when
 to ask again. A dispatch fails with `WorkflowNotFound` for a workflow file the repository doesn't
 have, and `WorkflowRejected`, with GitHub's message, for one GitHub won't start, such as an input
-the workflow doesn't declare.
+the workflow doesn't declare. Publishing a release without Contents: write, or one GitHub rejects,
+fails with `GitHubRefused`, saying which.
 
 Creating the app (GitHub's manifest flow): a page posts `appManifest`'s form to GitHub, the person
 confirms the app there, and GitHub sends them to `redirectUrl` with a `code` and the page's
@@ -101,7 +117,7 @@ for an app and webhooks, the platform's Web Crypto, which the host passes.
 With a token: a fine-grained personal access token, read-only, with Contents, Metadata and Pull
 requests on the repositories it reads. As an app: its ID (or client ID) and private key, from its
 settings or from `convertManifest`; to start workflows, the app needs Actions: write, and to follow
-them Actions: read. They differ per deployment.
+them Actions: read; to publish releases, Contents: write. They differ per deployment.
 
 ## Decisions and constraints
 
@@ -115,6 +131,9 @@ them Actions: read. They differ per deployment.
   February 2026; it then answers 200 with the run's ID and page instead of 204. A 204 is still
   taken, as none. A dispatch isn't idempotent: after `GitHubUnavailable`, look with
   `workflowRuns` before sending it again.
+- **A release is found by its tag, then created or updated:** two requests, so publishing again
+  edits the one release rather than adding another. Creating it makes its tag on the commit when
+  the repository hasn't it; an existing tag is kept, whatever commit it names.
 - **Runs: one page of 20,** created since a time GitHub's search syntax takes to the second, and
   sorted newest first, as GitHub lists them though it doesn't document its order.
 - **The app's JWT** is RS256 through Web Crypto, `iat` 60 s in the past and `exp` 9 minutes ahead,

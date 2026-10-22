@@ -420,6 +420,17 @@ struct ReleaseScreen: View {
                             url: commit.url.flatMap { URL(webPage: $0) }
                         )
                     }
+                    if let page = detail.gitHubRelease.flatMap({ URL(webPage: $0.url) }) {
+                        Link(destination: page) {
+                            Label {
+                                Text(
+                                    "Release on GitHub", bundle: #bundle,
+                                    comment: "Opens a release's page on its repository's Releases page.")
+                            } icon: {
+                                Image(systemName: "arrow.up.forward.app")
+                            }
+                        }
+                    }
                 }
                 if !detail.problems.isEmpty {
                     SourceProblemsSection(problems: detail.problems, of: .release)

@@ -134,7 +134,7 @@ describe("GitHub's connection", () => {
             setup_url: `${deployment}/github`,
             public: true,
             default_permissions: {
-              contents: "read",
+              contents: "write",
               pull_requests: "read",
               actions: "write",
               metadata: "read",

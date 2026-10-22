@@ -275,3 +275,14 @@ export const manifestConversionJson = (secrets: { readonly pem: string; readonly
   webhook_secret: secrets.webhookSecret,
   pem: secrets.pem,
 })
+
+/** A release, as GitHub finds, creates or updates one, with fewer of its fields. */
+export const releaseJson = (release: { readonly id: number; readonly tag: string; readonly name: string }) => ({
+  id: release.id,
+  tag_name: release.tag,
+  name: release.name,
+  url: `${repo}/releases/${release.id}`,
+  html_url: `${page}/releases/tag/${release.tag}`,
+  draft: false,
+  prerelease: false,
+})

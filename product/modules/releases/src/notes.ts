@@ -34,7 +34,10 @@ const examplesRead = 5
 // Drafts are written in at most this many languages at once.
 const languagesDrafted = 10
 
-/** Saves a release's notes, replacing those it had, with `release_notes.saved`. Fails with `ReleaseNotFound`. */
+/**
+ * Saves a release's notes, replacing those it had, with `release_notes.saved`; a release on GitHub's
+ * Releases page is published again with them. Fails with `ReleaseNotFound`.
+ */
 export const saveNotes = Effect.fn("Releases.saveNotes")(function* (actor: Actor, request: SaveNotes) {
   yield* knownRelease(yield* knownReleases, request)
   const records = yield* ReleaseRecords
@@ -43,7 +46,10 @@ export const saveNotes = Effect.fn("Releases.saveNotes")(function* (actor: Actor
   yield* log.commit({
     source,
     actor,
-    write: records.saveNotes(request.component, request.release, request.notes, now),
+    // A release published on GitHub is published again with them.
+    write: records
+      .saveNotes(request.component, request.release, request.notes, now)
+      .pipe(Effect.andThen(records.requeueGitHubRelease(request.component, request.release))),
     activity: () => [
       {
         payload: ReleaseNotesSaved.make({

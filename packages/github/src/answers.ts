@@ -61,6 +61,12 @@ export const RepositoryAnswer = Schema.Struct({ default_branch: Schema.String })
  */
 export const DispatchAnswer = Schema.Struct({ workflow_run_id: Schema.Int, html_url: Schema.String })
 
+/**
+ * A release, as `GET /repos/{owner}/{repo}/releases/tags/{tag}` finds it and creating or updating
+ * one answers it: its ID, to update it, and its page.
+ */
+export const ReleaseAnswer = Schema.Struct({ id: Schema.Int, html_url: Schema.String })
+
 /** A workflow run, as `GET /repos/{owner}/{repo}/actions/runs/{run_id}` answers it and a list holds it. */
 export const WorkflowRunAnswer = Schema.Struct({
   id: Schema.Int,

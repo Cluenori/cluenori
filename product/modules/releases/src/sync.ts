@@ -170,13 +170,19 @@ const syncRepository = Effect.fn("Releases.syncRepository")(function* (
   }
 })
 
+// Whether a build's App Store version reaches people: released, in phases or to all.
+const isOut = (stage: StoreBuild["stage"]) => stage === "releasing" || stage === "live"
+
 // Reads the builds and App Store versions of the app an environment's builds go to; a problem, if
-// App Store Connect has no such app.
+// App Store Connect has no such app. A version that started reaching people since the last read,
+// when `publishes`, is to be published on the component's Releases page; on the first read, those
+// out before are left as they are.
 const syncStore = Effect.fn("Releases.syncStore")(function* (
   appStoreConnect: AppStoreConnect["Service"],
   component: ComponentKey,
   environment: EnvironmentKey,
   bundleId: BundleId,
+  publishes: boolean,
 ) {
   const records = yield* ReleaseRecords
   const app = yield* appStoreConnect.app(bundleId)
@@ -217,7 +223,17 @@ const syncStore = Effect.fn("Releases.syncStore")(function* (
     }
     return [{ component, release: release.value, build: storeBuild }]
   })
+  const before = (yield* records.storeBuilds(component)).filter((each) => each.environment === environment)
   yield* records.replaceStoreBuilds(component, environment, stored)
+  if (publishes && before.length > 0) {
+    const wasOut = new Set(before.filter((each) => isOut(each.build.stage)).map((each) => each.release))
+    const now = yield* DateTime.now
+    for (const each of stored) {
+      if (isOut(each.build.stage) && !wasOut.has(each.release)) {
+        yield* records.queueGitHubRelease({ component, release: each.release, environment, reachedAt: now })
+      }
+    }
+  }
   return Option.none<string>()
 })
 
@@ -228,6 +244,7 @@ const syncStores = Effect.fn("Releases.syncStores")(function* (
   component: ComponentKey,
   targets: ReadonlyArray<{ readonly environment: EnvironmentKey; readonly bundleId: BundleId }>,
   lastRead: DateTime.Utc | undefined,
+  publishes: boolean,
 ) {
   const records = yield* ReleaseRecords
   const now = yield* DateTime.now
@@ -235,7 +252,7 @@ const syncStores = Effect.fn("Releases.syncStores")(function* (
     return
   }
   const problems = yield* Effect.forEach(targets, (target) =>
-    syncStore(appStoreConnect, component, target.environment, target.bundleId),
+    syncStore(appStoreConnect, component, target.environment, target.bundleId, publishes),
   )
   const problem = problems.flatMap((each) => Option.toArray(each))[0]
   yield* records.saveSync({ component, source: "appStoreConnect", at: now, problem })
@@ -243,7 +260,7 @@ const syncStores = Effect.fn("Releases.syncStores")(function* (
 
 // What a source said when it refused or failed, for the person who fixes it. GitHub's refusals
 // through the workspace's app say what to do; App Store Connect's are about its key.
-const problemOf = (
+export const problemOf = (
   source: "GitHub" | "App Store Connect",
   error: { readonly _tag: string; readonly reason: string },
 ) => {
@@ -257,7 +274,7 @@ const problemOf = (
 
 // Notes what a source said for the releases list, and in the log when it is new; the next minute
 // tries again.
-const noteProblem = Effect.fn("Releases.noteProblem")(function* (
+export const noteProblem = Effect.fn("Releases.noteProblem")(function* (
   component: ComponentKey,
   source: "github" | "appStoreConnect",
   problem: string,
@@ -312,7 +329,13 @@ export const syncReleases = Effect.gen(function* () {
     const apps = appsOf(component)
     if (apps.length > 0 && Option.isSome(sources.appStoreConnect)) {
       const lastRead = syncs.find((sync) => sync.component === component.key && sync.source === "appStoreConnect")
-      yield* syncStores(sources.appStoreConnect.value, component.key, apps, lastRead?.at).pipe(
+      yield* syncStores(
+        sources.appStoreConnect.value,
+        component.key,
+        apps,
+        lastRead?.at,
+        component.repository !== undefined,
+      ).pipe(
         Effect.catchTags({
           AppStoreConnectRefused: (error) =>
             noteProblem(component.key, "appStoreConnect", problemOf("App Store Connect", error), syncs),

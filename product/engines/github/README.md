@@ -31,9 +31,12 @@ yield* github.dispatchWorkflow(repository, workflow, "main", { release, environm
 - **Rules:**
   - Only an owner connects, disconnects, or sees the connection.
   - A connect's state is good once, for an hour; at most 5 are open.
-  - What the app may do where it is installed: read code (Contents) and pull requests, start
-    workflows (Actions, write), and see an organization's self-hosted runners (read), to tell
-    whether a build can run on the founder's own machine. It has no webhook yet.
+  - What the app may do where it is installed: read and write code (Contents, write: GitHub has no
+    narrower permission for publishing releases), read pull requests, start workflows (Actions,
+    write), and see an organization's self-hosted runners (read), to tell whether a build can run
+    on the founder's own machine. It has no webhook yet. An app made before keeps the permissions
+    it was made with until an owner changes them in its settings on GitHub and each installation
+    accepts them.
   - The app is public, so it can be installed on organizations as well as the account that made
     it; installed on an account whose repositories no component links, it does nothing.
   - A token acts on the repository asked about, through the installation that reaches it; it is

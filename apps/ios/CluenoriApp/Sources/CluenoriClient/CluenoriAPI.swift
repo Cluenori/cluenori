@@ -1367,6 +1367,16 @@ public struct GitHubInstallation: Codable, Hashable, Sendable {
     }
 }
 
+public struct GitHubReleasePage: Codable, Hashable, Sendable {
+    public let url: String
+    public let publishedAt: Date
+
+    public init(url: String, publishedAt: Date) {
+        self.url = url
+        self.publishedAt = publishedAt
+    }
+}
+
 /// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
 public struct GitHubRepositoryAccess: RawRepresentable, Codable, Hashable, Sendable {
     public let rawValue: String
@@ -2653,6 +2663,7 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
     public let deployTargets: [DeployTarget]
     public let notes: [ReleaseNote]
     public let repository: String?
+    public let gitHubRelease: GitHubReleasePage?
 
     public init(
         summary: ReleaseSummary,
@@ -2669,6 +2680,7 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
         deployTargets: [DeployTarget],
         notes: [ReleaseNote],
         repository: String? = nil,
+        gitHubRelease: GitHubReleasePage? = nil,
     ) {
         self.summary = summary
         self.slower = slower
@@ -2684,6 +2696,7 @@ public struct ReleaseDetail: Codable, Hashable, Sendable {
         self.deployTargets = deployTargets
         self.notes = notes
         self.repository = repository
+        self.gitHubRelease = gitHubRelease
     }
 }
 

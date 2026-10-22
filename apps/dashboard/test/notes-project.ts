@@ -998,6 +998,15 @@ const releaseDetail = (
     deployTargets: links.get(summary.component)?.deployTargets ?? [],
     notes: releaseNotes,
     ...(linkedRepository === undefined ? {} : { repository: linkedRepository }),
+    // Cluenori published the API's production releases on its repository's Releases page.
+    ...(summary.component === "notes-api" && summary.environment === "production" && linkedRepository !== undefined
+      ? {
+          gitHubRelease: {
+            url: `https://github.com/${linkedRepository}/releases/tag/${summary.release}`,
+            publishedAt: DateTime.makeUnsafe(now),
+          },
+        }
+      : {}),
   })
 }
 
