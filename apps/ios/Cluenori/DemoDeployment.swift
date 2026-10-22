@@ -74,6 +74,355 @@
         func remove() throws { saved = nil }
     }
 
+    /// The made-up deployment's answers about the notes project's apps: notes-ios in production, its
+    /// releases 1.0.0+5, 1.1.0+7 (better: fewer hangs) and 1.1.0+9 (worse: cold launch slower, more
+    /// crashes), and in beta 1.2.0+12, too early to tell; weekly retention decaying; a few features;
+    /// one person, `user-1842`; a version policy and two SDK keys, the older revoked. The project's
+    /// other components, and its other environments, sent nothing: they show the empty state.
+    private nonisolated enum DemoAnalytics {
+        private static let minute: TimeInterval = 60
+        private static let hour: TimeInterval = 3_600
+        private static let day: TimeInterval = 86_400
+        private static let project = "/api/projects/notes"
+
+        static func answer(_ method: String, _ path: String, query: [String: String], body: Data?) -> (Int, Data)? {
+            let now = Date.now
+            let apps = query["component"].map { $0 == "notes-ios" } ?? true
+            let environments = query["environment"].map { [$0] } ?? ["production", "beta"]
+            let from =
+                query["from"].flatMap { text in
+                    (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+                        ?? (try? Date(text, strategy: .iso8601))
+                } ?? now.addingTimeInterval(-30 * day)
+            switch (method, path) {
+            case ("GET", "\(project)/usage"):
+                return DemoAnswers.ok(usage(from: from, now: now, sent: apps && environments.contains("production")))
+            case ("GET", "\(project)/retention"):
+                return DemoAnswers.ok(
+                    retention(from: from, now: now, sent: apps && environments.contains("production")))
+            case ("GET", "\(project)/app-health"):
+                let releases = apps ? health(now).filter { environments.contains($0.release.environment) } : []
+                return DemoAnswers.ok(AppHealthList(releases: releases))
+            case ("GET", "\(project)/feature-use"):
+                return DemoAnswers.ok(
+                    FeatureUseTable(features: apps && environments.contains("production") ? features : []))
+            case ("GET", "\(project)/people"):
+                guard query["user"] == "user-1842" else {
+                    return (404, Data(#"{"_tag":"PersonNotFound"}"#.utf8))
+                }
+                return DemoAnswers.ok(person(now))
+            case ("GET", "\(project)/version-policies"):
+                return DemoAnswers.ok(VersionPolicies(policies: [policy(now)]))
+            case ("PUT", "\(project)/version-policies/notes-ios"):
+                let sent = body.flatMap { try? JSONDecoder().decode(VersionPolicyTo.self, from: $0) }
+                return DemoAnswers.ok(
+                    ComponentVersionPolicy(
+                        component: "notes-ios", minimum: sent?.minimum, recommended: sent?.recommended,
+                        storeUrl: sent?.storeUrl ?? storeUrl, minimumOsVersion: sent?.minimumOsVersion,
+                        words: sent?.words ?? [], setAt: now))
+            case ("DELETE", "\(project)/version-policies/notes-ios"):
+                return (204, Data())
+            case ("GET", "\(project)/components/notes-ios/sdk-keys"):
+                return DemoAnswers.ok(SdkKeyList(keys: keys(now)))
+            case ("POST", "\(project)/components/notes-ios/sdk-keys"):
+                return (
+                    201,
+                    DemoAnswers.encoded(
+                        IssuedSdkKey(
+                            key: "cluenori-sdk.notes.notes-ios.ivcJQrxslnJD-RswUMjzeQ", component: "notes-ios",
+                            issuedAt: now))
+                )
+            default:
+                break
+            }
+            // Revoking a key: /api/projects/notes/components/notes-ios/sdk-keys/<key>/revoke
+            let parts = path.split(separator: "/").map(String.init)
+            if method == "POST", parts.count == 8, parts[5] == "sdk-keys", parts[7] == "revoke",
+                let key = keys(now).first(where: { $0.key == parts[6] })
+            {
+                return DemoAnswers.ok(
+                    IssuedSdkKey(key: key.key, component: key.component, issuedAt: key.issuedAt, revokedAt: now))
+            }
+            // Other components' keys: none yet.
+            if method == "GET", parts.count == 6, parts[3] == "components", parts[5] == "sdk-keys" {
+                return DemoAnswers.ok(SdkKeyList(keys: []))
+            }
+            return nil
+        }
+
+        // MARK: Usage
+
+        // The first day the app sent anything: 58 days ago.
+        private static func firstDay(_ now: Date) -> Date {
+            dayStart(now.addingTimeInterval(-58 * day))
+        }
+
+        private static func dayStart(_ date: Date) -> Date {
+            Date(timeIntervalSince1970: (date.timeIntervalSince1970 / day).rounded(.down) * day)
+        }
+
+        private static func dayText(_ date: Date) -> String {
+            date.formatted(Date.ISO8601FormatStyle(timeZone: .gmt).year().month().day())
+        }
+
+        // People on day `index` since the first: growing, quieter at weekends.
+        private static func people(_ index: Int, weekday: Int) -> Int {
+            let base = 420 + index * 7
+            return weekday >= 5 ? base * 3 / 4 : base + (index * 37 % 41)
+        }
+
+        private static func usage(from: Date, now: Date, sent: Bool) -> AppUsage {
+            guard sent else { return AppUsage(days: [], people: 0, installations: 0, sessions: 0, releases: []) }
+            let first = max(dayStart(from), firstDay(now))
+            let count = Int((dayStart(now).timeIntervalSince(first) / day).rounded()) + 1
+            let days = (0..<count).map { offset in
+                let date = first.addingTimeInterval(Double(offset) * day)
+                let index = Int((date.timeIntervalSince(firstDay(now)) / day).rounded())
+                let weekday = (Int(date.timeIntervalSince1970 / day) + 3) % 7
+                // Today, so far: about two thirds of a day.
+                let dau = people(index, weekday: weekday) * (offset == count - 1 ? 2 : 3) / 3
+                return UsageDay(
+                    day: dayText(date), people: dau, installations: dau + dau / 12,
+                    weekPeople: index >= 6 ? 1_900 + index * 21 : nil,
+                    monthPeople: index >= 29 ? 4_100 + index * 30 : nil,
+                    sessions: dau * 3 + index % 17, foregroundMs: Double(dau) * 410_000)
+            }
+            let sessions = days.reduce(0) { $0 + $1.sessions }
+            let people = 3_400 + count * 40
+            return AppUsage(
+                covered: Period(from: first, to: now), days: days, people: people, installations: people + 380,
+                sessions: sessions, sessionsPerPerson: Double(sessions) / Double(people),
+                sessionsPerPersonDay: 2.4,
+                releases: [
+                    ReleaseUsage(
+                        component: "notes-ios", environment: "production", release: "1.1.0+9", people: people * 7 / 10,
+                        installations: people * 3 / 4, sessions: sessions * 6 / 10),
+                    ReleaseUsage(
+                        component: "notes-ios", environment: "production", release: "1.1.0+7", people: people / 4,
+                        installations: people / 4 + 60, sessions: sessions * 3 / 10),
+                    ReleaseUsage(
+                        component: "notes-ios", environment: "production", release: "1.0.0+5", people: people / 20,
+                        installations: people / 20 + 9, sessions: sessions / 10),
+                ])
+        }
+
+        private static func retention(from: Date, now: Date, sent: Bool) -> AppRetention {
+            // Mondays, in UTC: 1970-01-05 was one.
+            func monday(_ date: Date) -> Date {
+                let days = (dayStart(date).timeIntervalSince1970 / day).rounded()
+                return Date(timeIntervalSince1970: (days - (days - 4).truncatingRemainder(dividingBy: 7)) * day)
+            }
+            let current = monday(now)
+            guard sent else { return AppRetention(cohorts: [], currentWeek: dayText(current)) }
+            var cohorts: [RetentionCohort] = []
+            var week = monday(max(from, firstDay(now)))
+            while week <= current {
+                let weeks = Int((current.timeIntervalSince(week) / (7 * day)).rounded())
+                let people = 180 + weeks * 14
+                let active = (0...weeks).map { since -> Int in
+                    guard since > 0 else { return people }
+                    let share = 0.46 * pow(0.82, Double(since - 1))
+                    // The week now is in, so far: about half of it.
+                    return Int(Double(people) * share * (since == weeks ? 0.5 : 1))
+                }
+                cohorts.append(RetentionCohort(week: dayText(week), people: people, active: active))
+                week = week.addingTimeInterval(7 * day)
+            }
+            return AppRetention(cohorts: cohorts, currentWeek: dayText(current))
+        }
+
+        // MARK: App health
+
+        private static func launch(_ launches: Int, _ p50: Double, _ p95: Double, ready: Double? = nil) -> LaunchTimes {
+            LaunchTimes(
+                launches: launches, firstFrameP50Ms: p50, firstFrameP95Ms: p95,
+                ready: ready.map { ReadyTimes(launches: launches * 9 / 10, p50Ms: p50 + $0, p95Ms: p95 + $0 * 1.6) })
+        }
+
+        private static func health(_ now: Date) -> [ReleaseHealth] {
+            func ago(_ seconds: TimeInterval) -> Date { now.addingTimeInterval(-seconds) }
+            let old = AppHealth(
+                sessions: 6_120, people: 410, cold: launch(820, 410, 690, ready: 260), warm: launch(2_400, 150, 290),
+                prewarmed: 140,
+                memory: MemoryUse(samples: 700, peakP95Bytes: 182_000_000, footprintP95Bytes: 131_000_000),
+                diagnostics: AppDiagnostics(
+                    reports: 160, crashes: 21, hangs: 64, cpuExceptions: 1, diskWriteExceptions: 0))
+            let previous = AppHealth(
+                sessions: 22_480, people: 1_310, cold: launch(2_910, 395, 640, ready: 250),
+                warm: launch(9_800, 140, 270),
+                prewarmed: 610,
+                memory: MemoryUse(samples: 2_600, peakP95Bytes: 176_000_000, footprintP95Bytes: 128_000_000),
+                diagnostics: AppDiagnostics(
+                    reports: 520, crashes: 81, hangs: 49, cpuExceptions: 2, diskWriteExceptions: 1))
+            let latest = AppHealth(
+                sessions: 48_210, people: 3_020, cold: launch(6_340, 720, 1_410, ready: 300),
+                warm: launch(21_900, 145, 280),
+                prewarmed: 1_380,
+                memory: MemoryUse(samples: 5_900, peakP95Bytes: 191_000_000, footprintP95Bytes: 133_000_000),
+                diagnostics: AppDiagnostics(
+                    reports: 1_140, crashes: 1_012, hangs: 101, cpuExceptions: 3, diskWriteExceptions: 0))
+            let beta = AppHealth(
+                sessions: 140, people: 18, cold: launch(31, 690, 1_180), warm: launch(96, 150, 300), prewarmed: 6)
+            return [
+                ReleaseHealth(
+                    release: AppRelease(
+                        component: "notes-ios", environment: "beta", release: "1.2.0+12", firstSeen: ago(3 * day),
+                        lastSeen: ago(10 * minute), previous: "1.1.0+9"),
+                    health: beta, previousHealth: latest, verdict: .tooEarly, worse: [], better: []),
+                ReleaseHealth(
+                    release: AppRelease(
+                        component: "notes-ios", environment: "production", release: "1.1.0+9", firstSeen: ago(12 * day),
+                        lastSeen: ago(minute), previous: "1.1.0+7"),
+                    health: latest, previousHealth: previous, crashesPerThousand: 21, hangsPerThousand: 2.1,
+                    previousCrashesPerThousand: 3.6, previousHangsPerThousand: 2.2, verdict: .worse,
+                    worse: [.coldLaunch, .crashes], better: []),
+                ReleaseHealth(
+                    release: AppRelease(
+                        component: "notes-ios", environment: "production", release: "1.1.0+7", firstSeen: ago(26 * day),
+                        lastSeen: ago(hour), previous: "1.0.0+5"),
+                    health: previous, previousHealth: old, crashesPerThousand: 3.6, hangsPerThousand: 2.2,
+                    previousCrashesPerThousand: 3.4, previousHangsPerThousand: 10.5, verdict: .better, worse: [],
+                    better: [.hangs]),
+                ReleaseHealth(
+                    release: AppRelease(
+                        component: "notes-ios", environment: "production", release: "1.0.0+5", firstSeen: ago(58 * day),
+                        lastSeen: ago(5 * hour)),
+                    health: old, crashesPerThousand: 3.4, hangsPerThousand: 10.5, verdict: .first, worse: [], better: []
+                ),
+            ]
+        }
+
+        // MARK: Features
+
+        private static let features = [
+            FeatureUse(
+                feature: "editor", people: 2_940, events: 18_400, screens: 22_100,
+                memory: MemoryUse(samples: 4_100, peakP95Bytes: 188_000_000, footprintP95Bytes: 131_000_000)),
+            FeatureUse(people: 2_610, events: 1_200, screens: 9_800),
+            FeatureUse(
+                feature: "search", people: 1_870, events: 7_300, screens: 5_400,
+                memory: MemoryUse(samples: 1_900, peakP95Bytes: 214_000_000, footprintP95Bytes: 150_000_000)),
+            FeatureUse(feature: "sharing", people: 640, events: 910, screens: 720),
+            FeatureUse(feature: "widgets", people: 410, events: 2_050, screens: 0),
+            FeatureUse(feature: "drafts.sync", people: 122, events: 380, screens: 90),
+        ]
+
+        // MARK: One person
+
+        private static func person(_ now: Date) -> AppPerson {
+            func ago(_ seconds: TimeInterval) -> Date { now.addingTimeInterval(-seconds) }
+            func entry(_ release: String, _ signal: TimelineSignal) -> TimelineEntry {
+                TimelineEntry(
+                    component: "notes-ios", environment: "production", release: release, installation: "inst-5e1a",
+                    signal: signal)
+            }
+            let phone = AppDevice(
+                model: "iPhone17,2", platform: .iOS, osVersion: "27.1", locale: "en_GB", timeZone: "Europe/London")
+            let sdk = AppSdk(name: "cluenori-swift", version: "0.1.0")
+            return AppPerson(
+                person: "prs-7f2c19", users: ["user-1842"], firstSeen: ago(41 * day), lastSeen: ago(14 * minute),
+                installations: [
+                    AppInstallation(
+                        installation: "inst-5e1a", component: "notes-ios", environment: "production",
+                        release: "1.1.0+9",
+                        device: phone, sdk: sdk, country: "GB", firstSeen: ago(41 * day), lastSeen: ago(14 * minute)),
+                    AppInstallation(
+                        installation: "inst-90bc", component: "notes-ios", environment: "beta", release: "1.2.0+12",
+                        device: AppDevice(
+                            model: "iPad16,3", platform: .iPadOS, osVersion: "27.1", locale: "en_GB",
+                            timeZone: "Europe/London"),
+                        sdk: sdk, firstSeen: ago(3 * day), lastSeen: ago(day)),
+                ],
+                days: (0..<26).map { index in
+                    let date = dayStart(now).addingTimeInterval(-Double(index * 3 / 2) * day)
+                    return PersonDay(
+                        day: dayText(date), sessions: 1 + index * 7 % 4, foregroundMs: Double(240_000 + index * 31_000))
+                },
+                timeline: [
+                    entry(
+                        "1.1.0+9",
+                        .sessionEnded(
+                            SessionEnded(id: "sg-9", at: ago(14 * minute), session: "ses-3", foregroundMs: 312_000))),
+                    entry(
+                        "1.1.0+9",
+                        .event(
+                            EventTracked(
+                                id: "sg-8", at: ago(16 * minute), session: "ses-3", user: "user-1842",
+                                feature: "sharing",
+                                name: "note.shared",
+                                properties: ["destination": .string("messages"), "words": .number(240)]))),
+                    entry(
+                        "1.1.0+9",
+                        .screen(
+                            ScreenShown(
+                                id: "sg-7", at: ago(17 * minute), session: "ses-3", feature: "sharing",
+                                screen: "ShareSheet"))),
+                    entry(
+                        "1.1.0+9",
+                        .screen(
+                            ScreenShown(
+                                id: "sg-6", at: ago(19 * minute), session: "ses-3", feature: "editor",
+                                screen: "NoteEditor"))),
+                    entry(
+                        "1.1.0+9",
+                        .appLaunched(
+                            AppLaunched(
+                                id: "sg-5", at: ago(20 * minute), session: "ses-3", start: .cold, prewarmed: false,
+                                firstFrameMs: 1_460, readyMs: 1_790))),
+                    entry(
+                        "1.1.0+9", .sessionStarted(SessionStarted(id: "sg-4", at: ago(20 * minute), session: "ses-3"))),
+                    entry(
+                        "1.1.0+9",
+                        .metrickit(
+                            MetricKitSummary(id: "sg-3", at: ago(5 * hour), report: .diagnostics, crashes: 1, hangs: 0))
+                    ),
+                    entry(
+                        "1.1.0+9",
+                        .sessionEnded(
+                            SessionEnded(id: "sg-2", at: ago(9 * hour), session: "ses-2", foregroundMs: 48_000))),
+                    entry(
+                        "1.1.0+9",
+                        .appLaunched(
+                            AppLaunched(
+                                id: "sg-1", at: ago(9 * hour + minute), session: "ses-2", start: .warm, prewarmed: true,
+                                firstFrameMs: 160))),
+                ])
+        }
+
+        // MARK: Setup
+
+        private static let storeUrl = "https://apps.apple.com/app/id0000000000"
+
+        private static func policy(_ now: Date) -> ComponentVersionPolicy {
+            ComponentVersionPolicy(
+                component: "notes-ios", minimum: "1.0.0", recommended: "1.1.0", storeUrl: storeUrl,
+                minimumOsVersion: "26.0",
+                words: [
+                    UpdateWords(
+                        locale: "en-US", decision: .require,
+                        text: UpdateText(
+                            title: "Update Notes",
+                            message: "This version can't sync your notes any more. Update to keep them safe.")),
+                    UpdateWords(
+                        locale: "en-US", decision: .recommend,
+                        text: UpdateText(
+                            title: "A better Notes", message: "Search is faster and drafts sync across devices.")),
+                ],
+                setAt: now.addingTimeInterval(-4 * day))
+        }
+
+        private static func keys(_ now: Date) -> [IssuedSdkKey] {
+            [
+                IssuedSdkKey(
+                    key: "cluenori-sdk.notes.notes-ios.ZrZMh504IBL2AIGWdn_1Wg", component: "notes-ios",
+                    issuedAt: now.addingTimeInterval(-20 * day)),
+                IssuedSdkKey(
+                    key: "cluenori-sdk.notes.notes-ios.mVzRg7BweK4u1_pnN5vVGw", component: "notes-ios",
+                    issuedAt: now.addingTimeInterval(-58 * day), revokedAt: now.addingTimeInterval(-19 * day)),
+            ]
+        }
+    }
+
     /// The made-up deployment's answers: the notes project, with an API deployed dev then prod, a
     /// worker that ships with it, and an iOS app through TestFlight to the App Store; times are
     /// relative to now.
@@ -81,7 +430,10 @@
         static let transport: CluenoriAPI.Transport = { request in
             let path = request.url?.path(percentEncoded: false) ?? ""
             let method = request.httpMethod ?? "GET"
-            let (status, body) = answer(method, path)
+            let items = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
+            let query = Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { _, last in last })
+            let (status, body) =
+                DemoAnalytics.answer(method, path, query: query, body: request.httpBody) ?? answer(method, path)
             let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
             return (body, response)
         }
@@ -433,11 +785,11 @@
 
         // MARK: Encoding, as the deployment does
 
-        private static func ok(_ value: some Encodable) -> (Int, Data) {
+        static func ok(_ value: some Encodable) -> (Int, Data) {
             (200, encoded(value))
         }
 
-        private static func encoded(_ value: some Encodable) -> Data {
+        static func encoded(_ value: some Encodable) -> Data {
             let encoder = JSONEncoder()
             let instant = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
             encoder.dateEncodingStrategy = .custom { date, encoder in

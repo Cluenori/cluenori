@@ -7,13 +7,13 @@ import {
   ReleaseVersion,
   TraceId,
 } from "@cluenori/foundation"
-import { ErrorGroupId } from "@cluenori/signals"
+import { AppUserId, ErrorGroupId } from "@cluenori/signals"
 import { DateTime, Option, Schema } from "effect"
 import type { ComponentProps, MouseEvent } from "react"
 import { useSyncExternalStore } from "react"
 
 /** The areas of a project that have a page of their own. */
-export type Area = "performance" | "errors" | "logs" | "releases"
+export type Area = "performance" | "errors" | "logs" | "releases" | "analytics"
 
 /**
  * What a page of numbers is narrowed to, in its address: one component, one environment, and one
@@ -73,6 +73,20 @@ export type Route =
       readonly release: ReleaseVersion
       readonly environment?: EnvironmentKey
     }
+  | {
+      readonly page: "analytics" | "appReleases" | "features"
+      readonly project: ProjectKey
+      readonly component?: ComponentKey
+      readonly environment?: EnvironmentKey
+    }
+  | {
+      readonly page: "appRelease"
+      readonly project: ProjectKey
+      readonly component: ComponentKey
+      readonly release: ReleaseVersion
+      readonly environment?: EnvironmentKey
+    }
+  | { readonly page: "person"; readonly project: ProjectKey; readonly user: AppUserId }
   | {
       readonly page: "trace"
       readonly project: ProjectKey
@@ -163,6 +177,21 @@ export const hrefOf = (route: Route): string => {
       const { component: _, release: __, ...query } = route
       return withQuery(`/${route.project}/releases/${route.component}/${encodeURIComponent(route.release)}`, query)
     }
+    case "analytics":
+      return withQuery(`/${route.project}/analytics`, route)
+    case "appReleases":
+      return withQuery(`/${route.project}/analytics/releases`, route)
+    case "features":
+      return withQuery(`/${route.project}/analytics/features`, route)
+    case "appRelease": {
+      const { component: _, release: __, ...query } = route
+      return withQuery(
+        `/${route.project}/analytics/releases/${route.component}/${encodeURIComponent(route.release)}`,
+        query,
+      )
+    }
+    case "person":
+      return `/${route.project}/analytics/people?user=${encodeURIComponent(route.user)}`
     case "trace":
       return withQuery(`/${route.project}/traces/${route.trace}`, route)
     case "phones":
@@ -229,7 +258,8 @@ export const routeOf = (path: string, search: string): Route => {
   const operationsAt = `/${first}/operations/`
   const isOperation = page === "operations" && id !== undefined && path.startsWith(operationsAt)
   const isRelease = page === "releases" && rest.length === 1
-  if (Option.isNone(project) || mistyped || (rest.length > 0 && !isOperation && !isRelease)) {
+  const isAppRelease = page === "analytics" && id === "releases" && rest.length === 2
+  if (Option.isNone(project) || mistyped || (rest.length > 0 && !isOperation && !isRelease && !isAppRelease)) {
     return { page: "missing" }
   }
   const ofEnvironment = Option.isSome(environment) ? { environment: environment.value } : {}
@@ -258,6 +288,9 @@ export const routeOf = (path: string, search: string): Route => {
       return { page: "missing" }
     }
     return { page: "release", project: project.value, component: of.value, release: version.value, ...ofEnvironment }
+  }
+  if (page === "analytics") {
+    return analyticsRouteOf(project.value, id, rest, query, filters)
   }
   if (page === "operations") {
     if (id === undefined) {
@@ -290,6 +323,46 @@ export const routeOf = (path: string, search: string): Route => {
       : { page: "missing" }
   }
   return { page: "missing" }
+}
+
+// The analytics pages: the summary, its releases' app health and one release's, every feature, and
+// one person, by the app's user ID. They show a component and an environment, never a release.
+const analyticsRouteOf = (
+  project: ProjectKey,
+  id: string | undefined,
+  rest: ReadonlyArray<string>,
+  query: URLSearchParams,
+  filters: Filters,
+): Route => {
+  const { release: _, ...shown } = filters
+  if (id === undefined) {
+    return { page: "analytics", project, ...shown }
+  }
+  if (id === "features" && rest.length === 0) {
+    return { page: "features", project, ...shown }
+  }
+  if (id === "people" && rest.length === 0) {
+    const user = keyOf(AppUserId, query.get("user") ?? undefined)
+    return Option.isSome(user) ? { page: "person", project, user: user.value } : { page: "missing" }
+  }
+  if (id !== "releases") {
+    return { page: "missing" }
+  }
+  if (rest.length === 0) {
+    return { page: "appReleases", project, ...shown }
+  }
+  const of = componentKey(rest[0])
+  const version = keyOf(ReleaseVersion, rest[1] === undefined ? undefined : decoded(rest[1]))
+  if (Option.isNone(of) || Option.isNone(version)) {
+    return { page: "missing" }
+  }
+  return {
+    page: "appRelease",
+    project,
+    component: of.value,
+    release: version.value,
+    ...(shown.environment === undefined ? {} : { environment: shown.environment }),
+  }
 }
 
 const subscribe = (onChange: () => void) => {

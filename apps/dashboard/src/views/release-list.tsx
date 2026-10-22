@@ -11,10 +11,13 @@ import { Link } from "@/router"
 import { CommitName } from "@/views/commit-name"
 import { ReleaseRan } from "@/views/release-ran"
 
-/** The color a verdict's words are in: yellow for worse, mint for better, gray for no news. */
+/**
+ * The color a verdict's words are in: yellow for worse, mint for better, gray for no news, each in
+ * the ink that reads on a panel in light mode too.
+ */
 export const verdictClass: Readonly<Record<VerdictTone, string>> = {
-  warning: "text-yellow",
-  better: "text-mint",
+  warning: "text-yellow-ink",
+  better: "text-mint-ink",
   quiet: "text-muted-foreground",
 }
 

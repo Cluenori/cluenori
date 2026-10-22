@@ -1,8 +1,8 @@
 # @cluenori/dashboard
 
 The web app over the public API: each project opens on an overview of what needs attention and a
-summary of each area, and each area (performance, errors, logs, releases) has a page of its own, for
-the whole project or one component. The Worker serves it, and a browser signs in with a passkey, or with the
+summary of each area, and each area (performance, errors, logs, releases, analytics) has a page of its
+own, for the whole project or one component. The Worker serves it, and a browser signs in with a passkey, or with the
 deployment's API token, an owner's way in. Owners invite members to some projects there.
 
 ## Use it
@@ -50,6 +50,19 @@ Pages, each with a permanent URL (`src/router.tsx`):
                                                  the pull requests or commits since, what got slower or fails more, its new
                                                  errors, the incidents while it ran, what got faster or fails less, new
                                                  operations
+/notes/analytics?component=notes-ios             how the apps are used: DAU, WAU, MAU and sessions by UTC day, the releases in
+                                                 use, weekly retention cohorts, the latest releases' app health against the
+                                                 release before each, the features most used, finding a person by the app's
+                                                 user ID; and each component's SDK keys (issued, copied, revoked after asking)
+                                                 and version policy (set, changed, cleared after asking). With no app sending,
+                                                 what to do first
+/notes/analytics/releases                        every release that sent in the period, by its app health and verdict
+/notes/analytics/releases/notes-ios/0.3.0+20?environment=production
+                                                 one release's app health, each measure beside the release before it's, the
+                                                 people on it by day, and its features with the memory each took
+/notes/analytics/features                        every feature key, searchable, sorted by people, events, screens or memory
+/notes/analytics/people?user=user-1842           one person, by the app's own user ID: their installations, days active, and
+                                                 what they did, newest first
 /notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
 /phones                                          the paired phones, removing one, and adding one by its QR code
 /browsers                                        the browsers signed in with passkeys, signing one out, and adding a passkey
@@ -68,7 +81,8 @@ one of those keys has no pages.
 
 - **The look:** the theme's tokens in `src/styles.css` (near-black panels, borders, square corners,
   the simple colors, Inter and Geist Mono, dark by default) and our customization of shadcn/ui's
-  views.
+  views. Words in yellow or mint take their inks (`text-yellow-ink`, `text-mint-ink`), darker in light
+  mode, so they read at 4.5:1 on a panel; red reads as it is.
 - **Where data comes from,** `src/project-data.ts`: one atom for each question the pages ask the
   public API, run on the API's typed client (`src/api-client.ts`), with the period an atom too. An
   answer is kept 5 minutes after the last page showing it closes, and asked again when it is older
@@ -147,6 +161,21 @@ one of those keys has no pages.
   form for GitHub, posted there as it is, so GitHub creates Cluenori's own app; the app and the
   accounts it is installed on; disconnecting it. What GitHub sends the browser back with is in the
   address (`GitHubReturn` in `src/router.tsx`), said once, then dropped from it.
+- **Analytics** (`src/pages/analytics-page.tsx` and the pages it leads to, rules in
+  `src/app-facts.ts`, which loads with them): what Analytics' answers say, in words and charts. Apps
+  are counted by UTC day, so these pages have a period of their own, in days: 7, 30 or 90, 30 at
+  first; charts say UTC. A day the API doesn't list, and a week or month that reaches before the apps
+  first sent, are unknown, hatched, never zero; a measure the API leaves out isn't shown, or is said
+  as unknown beside one that is. Which environment they show (`appEnvironmentsOf`): the one chosen
+  when the apps sent from it, else the first they sent from, production first, from the releases'
+  app health of every environment, as apps name environments of their own. A release's verdict and
+  rules are Analytics' (`@cluenori/analytics`); the pages say them ("Worse: cold launch slower, more
+  crashes") and color them as releases' verdicts are. A project whose apps sent nothing says what to
+  do first, with the SDK's start for this deployment; the overview's summary of the apps shows only
+  once they sent (`src/pages/overview-apps.tsx`). Each component's SDK keys, shown whole since they
+  are public, issued and revoked after asking, and its version policy, set in a dialog checked by the
+  API's own schemas and cleared after asking, are on the Analytics page, for every component: the API
+  doesn't say which are apps.
 - **What a color means,** `src/lib/colors.ts`: each component keeps one color everywhere; red is
   failure, yellow a warning.
 - **The panel** every question is answered in, `src/views/panel.tsx`, an answer's three states,
@@ -175,8 +204,9 @@ one of those keys has no pages.
 
 - The public API's definition, `CluenoriApi` from `@cluenori/worker`, and the Schemas of its answers
   from `@cluenori/foundation`, `@cluenori/projects`, `@cluenori/signals`, `@cluenori/incidents`,
-  `@cluenori/phones`, `@cluenori/members`, `@cluenori/github`, and `@cluenori/releases`, whose
-  verdict rules the releases pages also say.
+  `@cluenori/phones`, `@cluenori/members`, `@cluenori/github`, `@cluenori/manifest`, and
+  `@cluenori/releases` and `@cluenori/analytics`, whose verdict rules the releases and analytics pages
+  also say.
 - `@bagatka/qr-code`, to draw a pairing link as a QR code. Their packages are
   side-effect free and keep schemas apart from server code, so only the definitions reach the
   bundle.
@@ -207,7 +237,7 @@ one of those keys has no pages.
   sentence filters, hover-only numbers, and a page per question):
   - A project opens on its overview, the one place to act: what needs attention, the worst first,
     each one click from its detail, and a summary of each area, the latest releases among them.
-    Later areas (analytics) add their summaries there and their pages beside the others.
+    Analytics adds its summary there once the apps sent anything, and its pages beside the others.
   - Each area is a page with a one-click component switch, kept in the URL and carried between
     pages.
   - Every control is one click: period and log level are visible buttons; projects are listed in
@@ -216,17 +246,17 @@ one of those keys has no pages.
   - Simple colors that each mean one thing; near-black panels; square corners; mono for numbers.
 - **The backend leads the shapes.** Pages show what the API answers and adapt to it; a page's wish
   becomes an API change only when it is right for the API's other clients too.
-- **Not in the API yet, so not on the pages:** which components are apps and which are backends,
-  and everything an app's SDK will send (its start, screens, network calls, sessions, crashes, and
-  what it did before an error); and an operation's origin. Their views
+- **Not in the API yet, so not on the pages:** which components are apps and which are backends;
+  what an app's SDK doesn't send yet (how long its screens take to show, its network calls, and what
+  it did before an error); and an operation's origin. Their views
   wait in the design kit, "Ahead of the API", on sample data (`src/sample/`), which nothing else
   reads.
 - **Navigation is instant:** the pages most visits open are in the first load; one operation's page,
-  one error's page, a trace, the releases' pages and the overview's list of releases load right
-  after start, as search, signing in and the phone's sidebar sheet (with Base UI's dialog
+  one error's page, a trace, the releases' pages, the analytics pages, and the overview's list of
+  releases and summary of the apps load right after start, as search, signing in and the phone's sidebar sheet (with Base UI's dialog
   machinery, `src/views/ui/sidebar-sheet.tsx`) do, so they are there before anyone opens them. An answer a page showed a moment ago is shown again at once, and refreshed in the
   background when stale.
-- **The first load's budget** is 248 KB of scripts, compressed, of which the typed API client is
+- **The first load's budget** is 250 KB of scripts, compressed, of which the typed API client is
   about 75 KB; `vite.config.ts` fails a build over it. The first load is one chunk: left to itself,
   Rolldown split the modules it shares with later pages into eleven, each compressed alone, about
   5 KB heavier.

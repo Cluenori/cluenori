@@ -12,8 +12,9 @@ import { defineConfig } from "vite"
 // needs it before it can show anything. Lowered to 240 KB when one error's page and a
 // trace began loading after start. Raised to 244 KB when the API gained members and passkeys,
 // whose definitions the typed client carries, and to 248 KB when it gained Releases, the first
-// module.
-const firstLoadBudget = { scriptKb: 248, styleKb: 36 }
+// module; and to 250 KB when the pages began asking Analytics' questions (their atoms in
+// project-data.ts, their routes; the pages themselves load after start).
+const firstLoadBudget = { scriptKb: 250, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

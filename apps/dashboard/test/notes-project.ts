@@ -85,6 +85,7 @@ import { Clock, DateTime, Effect, Schema } from "effect"
 
 import type { AnswerApi } from "./fake-api.ts"
 import { reply } from "./fake-api.ts"
+import { withApps } from "./notes-apps.ts"
 
 // A workspace as the public API answers it: Notes, with a .NET backend and an iOS app, and Landing,
 // with nothing yet. Every answer is made for the period asked about, so pages read it as they would
@@ -1544,7 +1545,8 @@ const deliveryOf = (
  * world's until the dashboard changes it, as it changes components' links and promotes releases. A
  * promotion started here moves through the states `following` lists, one each time its release is
  * asked for after it started, as Cluenori follows its run on GitHub; it stays starting without
- * them. An `older` deployment says neither environments nor settings.
+ * them. An `older` deployment says neither environments nor settings. Its apps' analytics, SDK keys
+ * and version policy are `withApps`'.
  */
 export const notesApi = ({
   signedIn = true,
@@ -1599,7 +1601,7 @@ export const notesApi = ({
     // Without a workflow, there is no run.
     return { ...promotion, state, ...(promotion.workflow === undefined ? {} : run), ...ended }
   }
-  return (call) =>
+  return withApps((call) =>
     Effect.gen(function* () {
       const [first, project, area, id, more] = call.path
       if (call.method === "POST" && first === "sign-in") {
@@ -1903,5 +1905,6 @@ export const notesApi = ({
         return yield* releases(question, world)
       }
       return yield* noSuchCall(call.method, call.path)
-    })
+    }),
+  )
 }

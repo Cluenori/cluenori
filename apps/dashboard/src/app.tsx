@@ -50,6 +50,18 @@ const releasesPage = import("@/pages/releases-page")
 const ReleasesPage = lazy(() => releasesPage.then((module) => ({ default: module.ReleasesPage })))
 const releasePage = import("@/pages/release-page")
 const ReleasePage = lazy(() => releasePage.then((module) => ({ default: module.ReleasePage })))
+// Analytics and its pages load after start too: how apps are used, their releases' health, and
+// their keys and version policies.
+const analyticsPage = import("@/pages/analytics-page")
+const AnalyticsPage = lazy(() => analyticsPage.then((module) => ({ default: module.AnalyticsPage })))
+const appReleasesPage = import("@/pages/app-releases-page")
+const AppReleasesPage = lazy(() => appReleasesPage.then((module) => ({ default: module.AppReleasesPage })))
+const appReleasePage = import("@/pages/app-release-page")
+const AppReleasePage = lazy(() => appReleasePage.then((module) => ({ default: module.AppReleasePage })))
+const featuresPage = import("@/pages/features-page")
+const FeaturesPage = lazy(() => featuresPage.then((module) => ({ default: module.FeaturesPage })))
+const personPage = import("@/pages/person-page")
+const PersonPage = lazy(() => personPage.then((module) => ({ default: module.PersonPage })))
 // Phones, with the QR code encoder, are a page of the deployment, opened now and then.
 const phonesPage = import("@/pages/phones-page")
 const PhonesPage = lazy(() => phonesPage.then((module) => ({ default: module.PhonesPage })))
@@ -236,6 +248,40 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
             release={route.release}
             {...(route.environment === undefined ? {} : { environment: route.environment })}
           />
+        </Suspense>
+      )
+    case "analytics":
+    case "appReleases":
+    case "features": {
+      // Apps name environments of their own, so these pages work out which they show themselves.
+      const props = {
+        project: route.project,
+        ...(route.component === undefined ? {} : { component: route.component }),
+        ...(route.environment === undefined ? {} : { named: route.environment }),
+      }
+      return (
+        <Suspense fallback={opening}>
+          {route.page === "analytics" && <AnalyticsPage {...props} />}
+          {route.page === "appReleases" && <AppReleasesPage {...props} />}
+          {route.page === "features" && <FeaturesPage {...props} />}
+        </Suspense>
+      )
+    }
+    case "appRelease":
+      return (
+        <Suspense fallback={opening}>
+          <AppReleasePage
+            project={route.project}
+            component={route.component}
+            release={route.release}
+            {...(route.environment === undefined ? {} : { environment: route.environment })}
+          />
+        </Suspense>
+      )
+    case "person":
+      return (
+        <Suspense fallback={opening}>
+          <PersonPage key={route.user} project={route.project} user={route.user} />
         </Suspense>
       )
     case "trace":

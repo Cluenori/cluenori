@@ -156,6 +156,7 @@ struct ReleaseRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(verbatim: release)
+                        .unhyphenated()
                         .font(.body.monospaced())
                         .lineLimit(2)
                     Spacer(minLength: 12)
@@ -598,6 +599,7 @@ struct ReleaseHeadline: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                 Text(verbatim: release)
+                    .unhyphenated()
                     .font(.title.monospaced().weight(.bold))
                     .lineLimit(2)
                     .minimumScaleFactor(0.6)

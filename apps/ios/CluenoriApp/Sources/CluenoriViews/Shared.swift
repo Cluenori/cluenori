@@ -206,6 +206,7 @@ struct ReleaseFilterSection: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: release.version)
+                        .unhyphenated()
                         .font(.body.monospaced())
                         .lineLimit(2)
                     Text(
@@ -417,6 +418,15 @@ struct NothingShown: View {
         } else {
             NothingInPeriod(title: title, systemImage: systemImage, period: $period)
         }
+    }
+}
+
+extension Text {
+    /// The text as an identifier is written, such as a key, a user ID, a version or a link: wrapped
+    /// where it must be, never hyphenated, since a hyphen added at a break reads as part of it. It is
+    /// typeset as text of no language ("zxx"), which has no hyphenation rules.
+    func unhyphenated() -> Text {
+        typesettingLanguage(Locale.Language(identifier: "zxx"))
     }
 }
 

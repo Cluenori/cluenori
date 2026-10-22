@@ -95,8 +95,10 @@ struct RouteScreen: View {
             .componentReleases:
             true
         case .operation(let operation): operation.release == nil
+        // Analytics look over their own period of UTC days, which their screens follow in place.
         case .project, .component, .release, .operations(.release), .errors(.release), .error(.release, _),
-            .logs(.release), .notes, .notesStyle:
+            .logs(.release), .notes, .notesStyle, .analytics, .features, .appHealth, .person, .versionPolicy,
+            .sdkKeys:
             false
         }
     }
@@ -177,6 +179,37 @@ private struct Screen: View {
             NotesScreen(release: models.release(release))
         case .notesStyle(let project):
             NotesStyleScreen(style: models.notesStyle(project))
+        case .analytics(let analytics):
+            AnalyticsScreen(
+                analytics: models.analytics(analytics, period: navigation.analyticsPeriod),
+                environments: environments,
+                policies: models.versionPolicies(analytics.project),
+                route: route,
+                navigation: navigation
+            )
+        case .features(let analytics):
+            FeaturesScreen(
+                analytics: models.analytics(analytics, period: navigation.analyticsPeriod),
+                environments: environments,
+                route: route,
+                navigation: navigation
+            )
+        // A release's app health is listed in its component's analytics, in its environment.
+        case .appHealth(let release):
+            AppHealthScreen(
+                analytics: models.analytics(of: release, period: navigation.analyticsPeriod),
+                release: release,
+                period: navigation.analyticsPeriod
+            )
+        case .person(let project, let user):
+            PersonScreen(person: models.person(project, user: user))
+        case .versionPolicy(let project, let component):
+            VersionPolicyScreen(
+                policies: models.versionPolicies(project), component: component,
+                name: models.delivery(project).name(of: component))
+        case .sdkKeys(let project, let component):
+            SdkKeysScreen(
+                keys: models.sdkKeys(project, component: component), name: models.delivery(project).name(of: component))
         }
     }
 }

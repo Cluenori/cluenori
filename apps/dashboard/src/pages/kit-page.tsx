@@ -1,5 +1,6 @@
 import { KitActions } from "@/pages/kit-actions"
 import { KitAhead } from "@/pages/kit-ahead"
+import { KitAnalytics } from "@/pages/kit-analytics"
 import { KitAssistant } from "@/pages/kit-assistant"
 import { KitCharts } from "@/pages/kit-charts"
 import { KitDisplay } from "@/pages/kit-display"
@@ -17,6 +18,7 @@ const contents = [
   { id: "display", label: "Display" },
   { id: "charts", label: "Charts" },
   { id: "assistant", label: "Assistant" },
+  { id: "analytics", label: "Analytics" },
   { id: "ahead", label: "Ahead of the API" },
 ] as const
 
@@ -52,6 +54,7 @@ export function KitPage() {
         <KitDisplay />
         <KitCharts />
         <KitAssistant />
+        <KitAnalytics />
         <KitAhead />
       </div>
     </Toaster>

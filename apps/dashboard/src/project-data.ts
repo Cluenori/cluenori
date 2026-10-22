@@ -15,7 +15,7 @@ import type {
 import type { ConnectGitHub } from "@cluenori/github"
 import type { Email, InviteCode, SignInId } from "@cluenori/members"
 import type { PhoneId } from "@cluenori/phones"
-import type { ComponentLinks, ProjectSettings } from "@cluenori/projects"
+import type { ComponentLinks, ProjectSettings, SdkKey } from "@cluenori/projects"
 import type {
   AppStoreSubmission,
   ReleaseCommit,
@@ -26,8 +26,9 @@ import type {
   ReleaseNote,
   Runner,
   SemanticVersion,
+  VersionPolicyTo,
 } from "@cluenori/releases"
-import type { ErrorGroupId, IndexedLevel, LogCountsBy, SeriesStep } from "@cluenori/signals"
+import type { AppUserId, ErrorGroupId, IndexedLevel, LogCountsBy, SeriesStep } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime, Duration, Effect, Option, Redacted } from "effect"
 import { Atom, AsyncResult } from "effect/reactivity"
@@ -626,6 +627,253 @@ export const updateSettingsAtom = CluenoriClient.runtime.fn(
       })
       yield* Atom.refresh(projectAtom(input.project))
       return saved
+    }),
+)
+
+// ---- Apps: analytics, SDK keys, version policies ----------------------------------------------------
+
+/**
+ * How far back the analytics pages look. Apps are counted by UTC day, so their period is in days, a
+ * choice of its own: the other pages' period is in minutes and hours.
+ */
+export type AppPeriodKey = "7d" | "30d" | "90d"
+
+/** Every period of the analytics pages, shortest first, as their switch shows them. */
+export const appPeriods: ReadonlyArray<{ readonly key: AppPeriodKey; readonly label: string; readonly days: number }> =
+  [
+    { key: "7d", label: "7d", days: 7 },
+    { key: "30d", label: "30d", days: 30 },
+    { key: "90d", label: "90d", days: 90 },
+  ]
+
+/** The period the analytics pages show: 30 days at first, kept as the viewer moves between them. */
+export const appPeriodAtom = Atom.make<AppPeriodKey>("30d").pipe(Atom.keepAlive)
+
+// The days an app period ends now with, as the API asks for one: worked out when a question runs.
+const lastDaysOf = (key: AppPeriodKey) => lastOf((appPeriods.find((entry) => entry.key === key)?.days ?? 30) * day)
+
+/** What an app question is about: a project, and optionally one component, environment, or release. */
+export type AppScope = {
+  readonly project: ProjectKey
+  readonly component?: ComponentKey
+  readonly environment?: EnvironmentKey
+  readonly release?: ReleaseVersion
+}
+
+const appScopeOf = (scope: AppScope) => ({
+  ...(scope.component === undefined ? {} : { component: scope.component }),
+  ...(scope.environment === undefined ? {} : { environment: scope.environment }),
+})
+
+/**
+ * How the project's apps were used over the analytics period, by UTC day, with the period asked
+ * about: the days it covers are the chart's, those the answer doesn't list unknown.
+ */
+export const usageAtom = Atom.family((scope: AppScope) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastDaysOf(get(appPeriodAtom))
+        const usage = yield* client.analytics.usage({
+          params: { project: scope.project },
+          query: {
+            ...period,
+            ...appScopeOf(scope),
+            ...(scope.release === undefined ? {} : { release: scope.release }),
+          },
+        })
+        return { usage, period }
+      }),
+    ),
+  ),
+)
+
+/** Weekly cohorts of the people first seen over the analytics period, the oldest first. */
+export const retentionAtom = Atom.family((scope: AppScope) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastDaysOf(get(appPeriodAtom))
+        return yield* client.analytics.retention({
+          params: { project: scope.project },
+          query: { ...period, ...appScopeOf(scope) },
+        })
+      }),
+    ),
+  ),
+)
+
+/**
+ * The app health of the releases that sent anything over the analytics period, the latest first
+ * seen first, at most 30, each beside the release before it; with `asOf`, the end of the period,
+ * which "live" is measured from.
+ */
+export const appHealthAtom = Atom.family((scope: AppScope) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastDaysOf(get(appPeriodAtom))
+        const list = yield* client.analytics.appHealth({
+          params: { project: scope.project },
+          query: { ...period, ...appScopeOf(scope) },
+        })
+        return { releases: list.releases, asOf: period.to }
+      }),
+    ),
+  ),
+)
+
+/**
+ * One release's app health, whatever the period: found among the releases of its component and
+ * environment that sent anything in the last 90 days, none when it sent nothing then; with `asOf`,
+ * when it was asked, which "live" is measured from.
+ */
+export const releaseHealthAtom = Atom.family(
+  (key: {
+    readonly project: ProjectKey
+    readonly component: ComponentKey
+    readonly release: ReleaseVersion
+    readonly environment?: EnvironmentKey
+  }) =>
+    kept(
+      CluenoriClient.runtime.atom(
+        Effect.gen(function* () {
+          const client = yield* CluenoriClient
+          const period = yield* lastOf(90 * day)
+          const list = yield* client.analytics.appHealth({
+            params: { project: key.project },
+            query: { ...period, ...appScopeOf(key) },
+          })
+          // Not handled: a release more than 30 releases back of its component and environment isn't
+          // in the list, so it reads as having sent nothing lately; a route for one release would fix it.
+          const found = list.releases.find((each) => each.release.release === key.release)
+          return { health: Option.fromUndefinedOr(found), asOf: period.to }
+        }),
+      ),
+    ),
+)
+
+/** How each feature key was used over the analytics period, the most people first. */
+export const featureUseAtom = Atom.family((scope: AppScope) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastDaysOf(get(appPeriodAtom))
+        return yield* client.analytics.featureUse({
+          params: { project: scope.project },
+          query: {
+            ...period,
+            ...appScopeOf(scope),
+            ...(scope.release === undefined ? {} : { release: scope.release }),
+          },
+        })
+      }),
+    ),
+  ),
+)
+
+/**
+ * The person the app's own user ID is linked to: their installations, active days and timeline.
+ * Fails with `PersonNotFound` when the apps never sent that user ID.
+ */
+export const personAtom = Atom.family((key: { readonly project: ProjectKey; readonly user: AppUserId }) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const asOf = yield* DateTime.now
+        const person = yield* client.analytics.personByUser({
+          params: { project: key.project },
+          query: { user: key.user },
+        })
+        return { person, asOf }
+      }),
+    ),
+  ),
+)
+
+/** Each of the project's components' version policies; a component without one isn't listed. */
+export const versionPoliciesAtom = Atom.family((project: ProjectKey) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.releases.versionPolicies({ params: { project } })
+      }),
+    ),
+  ),
+)
+
+/**
+ * Replaces a component's version policy, a field left out unset, and asks for the policies again.
+ * Fails with `VersionPolicyRefused`, saying why: no version, a recommended one lower than the
+ * minimum, or no store page given or found.
+ */
+export const setVersionPolicyAtom = CluenoriClient.runtime.fn(
+  (input: { readonly project: ProjectKey; readonly component: ComponentKey; readonly policy: VersionPolicyTo }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const set = yield* client.releases.setVersionPolicy({
+        params: { project: input.project, component: input.component },
+        payload: input.policy,
+      })
+      yield* Atom.refresh(versionPoliciesAtom(input.project))
+      return set
+    }),
+)
+
+/** Removes a component's version policy, and asks for the policies again; removing none does nothing. */
+export const clearVersionPolicyAtom = CluenoriClient.runtime.fn(
+  (input: { readonly project: ProjectKey; readonly component: ComponentKey }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      yield* client.releases.clearVersionPolicy({ params: { project: input.project, component: input.component } })
+      yield* Atom.refresh(versionPoliciesAtom(input.project))
+    }),
+)
+
+/** A component's SDK keys, the newest first, revoked ones too. */
+export const sdkKeysAtom = Atom.family((key: { readonly project: ProjectKey; readonly component: ComponentKey }) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.projects.sdkKeys({ params: { project: key.project, component: key.component } })
+      }),
+    ),
+  ),
+)
+
+/** Issues a new SDK key for a component, its others staying active, and asks for its keys again. */
+export const issueSdkKeyAtom = CluenoriClient.runtime.fn(
+  (input: { readonly project: ProjectKey; readonly component: ComponentKey }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const issued = yield* client.projects.issueSdkKey({
+        params: { project: input.project, component: input.component },
+      })
+      yield* Atom.refresh(sdkKeysAtom(input))
+      return issued
+    }),
+)
+
+/**
+ * Revokes one of a component's SDK keys: builds that carry it are refused from then on. Asks for its
+ * keys again. Revoking one revoked before changes nothing.
+ */
+export const revokeSdkKeyAtom = CluenoriClient.runtime.fn(
+  (input: { readonly project: ProjectKey; readonly component: ComponentKey; readonly key: SdkKey }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const revoked = yield* client.projects.revokeSdkKey({
+        params: { project: input.project, component: input.component, key: input.key },
+      })
+      yield* Atom.refresh(sdkKeysAtom({ project: input.project, component: input.component }))
+      return revoked
     }),
 )
 

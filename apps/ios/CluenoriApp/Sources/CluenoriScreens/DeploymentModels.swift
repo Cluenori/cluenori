@@ -166,6 +166,39 @@ public final class DeploymentModels {
         }
     }
 
+    /// How a project's apps are used and how healthy each release is, of every component or one, in
+    /// an environment; its period changes by `AnalyticsModel.choose`. Its features' screen and its
+    /// releases' app health share it.
+    public func analytics(_ analytics: AnalyticsRef, period: AnalyticsPeriod) -> AnalyticsModel {
+        model("analytics \(analytics.project) \(analytics.component ?? "*") \(analytics.environment ?? "*")") {
+            AnalyticsModel(analytics: analytics, period: period, api: api, context: context)
+        }
+    }
+
+    /// The analytics a release's app health is listed in: its component's, in its environment.
+    public func analytics(of release: ReleaseRef, period: AnalyticsPeriod) -> AnalyticsModel {
+        analytics(
+            AnalyticsRef(project: release.project, component: release.component, environment: release.environment),
+            period: period)
+    }
+
+    /// One person of a project, by the app's own user ID for them.
+    public func person(_ project: String, user: String) -> PersonModel {
+        model("person \(project) \(user)") { PersonModel(project: project, user: user, api: api, context: context) }
+    }
+
+    /// A project's components' version policies.
+    public func versionPolicies(_ project: String) -> VersionPolicyModel {
+        model("version policies \(project)") { VersionPolicyModel(project: project, api: api, context: context) }
+    }
+
+    /// One component's SDK keys.
+    public func sdkKeys(_ project: String, component: String) -> SdkKeysModel {
+        model("sdk keys \(project) \(component)") {
+            SdkKeysModel(project: project, component: component, api: api, context: context)
+        }
+    }
+
     // The release `telemetry` is narrowed to, whose span its screens look over.
     private func release(of telemetry: Telemetry) -> ReleaseModel? {
         telemetry.release.map(release)

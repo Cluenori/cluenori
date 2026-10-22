@@ -17,7 +17,13 @@ and how an approved version goes live; one review approved is released from its 
 release goes anywhere else, such as back to roll an environment back, from a menu of its own. Its
 notes, What's New or What to Test, are edited in each language and drafted with AI, in the
 project's notes style. A project's monitoring screens show one environment at a time: its
-production environment, or the one chosen on the phone. Alerts reach it as pushes: a project that
+production environment, or the one chosen on the phone. A project's analytics show how its apps
+are used, over 7, 30 or 90 UTC days, of every component or one: DAU, WAU, MAU and sessions by day,
+the period's people, installations and sessions, each release's people, weekly retention, each
+release's app health beside the release before it, with its verdict and each measure it sent, and
+each feature's use; one person, found by the app's user ID, with their installations, active days
+and timeline; and a component's version policy, set or cleared, and its SDK keys, issued, copied or
+revoked. Alerts reach it as pushes: a project that
 is down rings like an alarm clock, through silent mode, with an Acknowledge button
 (`concept/Modules.md`).
 
@@ -35,7 +41,9 @@ with a deployment made up on the phone (`Cluenori/DemoDeployment.swift`, which R
 don't have), and opens the link `-CluenoriDemoOpen` names; `-CluenoriDemoStep <environment>` opens a
 component's promote sheet, `-CluenoriDemoScroll <points>` scrolls the screen, and
 `-CluenoriDemoFailure YES` fails the API's last promotion to prod, for screenshots with
-`xcrun simctl io booted screenshot`.
+`xcrun simctl io booted screenshot`. Its notes-ios sends analytics from production and beta, and
+person `user-1842`; its other environments, such as `?environment=prod`, show analytics' empty
+state.
 
 To run it on an iPhone, copy `Config/Local.example.xcconfig` to `Config/Local.xcconfig` with your
 App ID's bundle ID and your team, and your deployment's domain for signing in with a passkey. The scheme Cluenori builds the app for your deployment; Cluenori
@@ -98,16 +106,26 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   version, saving notes (`NotesModel`, one per release) or a notes style (`NotesStyleModel`), and
   setting a version (`VersionsModel`) are each sent once, never kept to send later; a write that
   answers with the whole of what a screen shows is shown at once (`Answer.show`), and edits stay in
-  their model while the app runs. A promotion started on the phone shows at once on its component
+  their model while the app runs. Analytics (`AnalyticsModel`, one per component and environment,
+  which its features' and releases' app health screens share) look over their own period of UTC
+  days (`AnalyticsPeriod`); a measure or a count the deployment leaves out stays out, never 0
+  (`UsageSeries`, `HealthLine`). A person (`PersonModel`) is asked by the app's user ID; one the
+  apps never sent is `missing`. A component's version policy (`VersionPolicyModel`, set keeping its
+  words, or cleared) and its SDK keys (`SdkKeysModel`, issued or revoked) are actions sent once,
+  like a version. Which components are apps the API doesn't say, so every component is offered. A
+  promotion started on the phone shows at once on its component
   and its release. A release, and a project's delivery, ask again every 15 seconds while their
   screen shows a promotion that hasn't ended; the delivery says the last one that failed, until
   something reaches its environment. Who "you" is comes from `/api/me`, asked once a promotion names
   who started it, and kept for the pairing.
 - **Links to screens:** `cluenori://projects/<key>`, and under it `/operations`, `/errors`,
   `/errors/<id>`, `/logs`, `/releases`, `/notes-style`, `/components/<component>` and its every
-  release, `/components/<component>/releases`, and `/releases/<component>/<release>`, under which
+  release, `/components/<component>/releases`, `/components/<component>/version-policy` and
+  `/components/<component>/sdk-keys`, and `/releases/<component>/<release>`, under which
   `/operations`, `/errors`, `/errors/<id>`, and `/logs` are that release's alone, and `/notes` its
-  notes; a release opens over its component. Each takes
+  notes; a release opens over its component. `/analytics` and `/analytics/features` take
+  `?component=<key>` too; `/analytics/app-health/<component>/<release>` opens over its component's
+  analytics; `/people?user=<user ID>` opens one person. Each takes
   `?environment=<key>`: the environment a project's screen shows, or the one a release's component
   says it runs in. Alerts will open them. A screen narrowed to a release (`Telemetry` in its
   `Route`) says so at its top, with its environment and span and a button that shows every release

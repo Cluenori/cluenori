@@ -95,6 +95,32 @@ public enum Telemetry: Hashable, Sendable {
     }
 }
 
+/// Whose app analytics a screen shows: a project's apps, every component's or one's, in one
+/// environment, or, without one, in the one chosen for the project.
+nonisolated public struct AnalyticsRef: Hashable, Sendable {
+    public let project: String
+    /// Only this component's; nil for every component's.
+    public let component: String?
+    /// Nil: the environment chosen for the project (`DeploymentModels.resolved`), else every one.
+    public let environment: String?
+
+    public init(project: String, component: String? = nil, environment: String? = nil) {
+        self.project = project
+        self.component = component
+        self.environment = environment
+    }
+
+    /// The same, in `environment`.
+    func showing(_ environment: String) -> AnalyticsRef {
+        AnalyticsRef(project: project, component: component, environment: environment)
+    }
+
+    /// The same, of `component`; of every component for nil.
+    public func of(_ component: String?) -> AnalyticsRef {
+        AnalyticsRef(project: project, component: component, environment: environment)
+    }
+}
+
 /// A screen of the paired deployment, which navigation opens by value. A screen of a project's
 /// telemetry names its environment, or, without one, shows the one chosen for the project.
 public enum Route: Hashable, Sendable {
@@ -115,13 +141,27 @@ public enum Route: Hashable, Sendable {
     case notes(ReleaseRef)
     /// How the project's release notes read, which drafts follow.
     case notesStyle(project: String)
+    /// How a project's apps are used and how healthy each release is, over the analytics period.
+    case analytics(AnalyticsRef)
+    /// Every feature's use, over the analytics period.
+    case features(AnalyticsRef)
+    /// One release's app health beside the release before it, in the release's environment.
+    case appHealth(ReleaseRef)
+    /// One person, by the app's own user ID for them.
+    case person(project: String, user: String)
+    /// One component's version policy: which releases must update, and which are offered it.
+    case versionPolicy(project: String, component: String)
+    /// One component's SDK keys, which its app's builds carry.
+    case sdkKeys(project: String, component: String)
 
     /// The project the screen is of.
     public var project: String {
         switch self {
         case .project(let key, _), .releases(let key, _), .notesStyle(let key), .component(let key, _),
-            .componentReleases(let key, _):
+            .componentReleases(let key, _), .person(let key, _), .versionPolicy(let key, _), .sdkKeys(let key, _):
             key
+        case .analytics(let analytics), .features(let analytics): analytics.project
+        case .appHealth(let release): release.project
         case .operations(let telemetry), .errors(let telemetry), .error(let telemetry, _), .logs(let telemetry):
             telemetry.project
         case .operation(let operation): operation.project
@@ -159,6 +199,8 @@ public enum Route: Hashable, Sendable {
                 OperationRef(
                     project: operation.project, component: operation.component, environment: environment,
                     name: operation.name))
+        case .analytics(let analytics): return .analytics(analytics.showing(environment))
+        case .features(let analytics): return .features(analytics.showing(environment))
         default: return self
         }
     }
@@ -170,6 +212,8 @@ public enum Route: Hashable, Sendable {
         case .project(_, nil), .releases(_, nil), .operations(.project(_, nil)), .errors(.project(_, nil)),
             .error(.project(_, nil), _), .logs(.project(_, nil)):
             showing(environment, in: project)
+        case .analytics(let analytics) where analytics.environment == nil: showing(environment, in: project)
+        case .features(let analytics) where analytics.environment == nil: showing(environment, in: project)
         default: self
         }
     }
@@ -191,6 +235,21 @@ public enum Route: Hashable, Sendable {
         case .operation(let operation):
             Self.chain(of: operation.telemetry) + [.operations(of: operation.telemetry), self]
         case .error(let telemetry, _): Self.chain(of: telemetry) + [.errors(of: telemetry), self]
+        case .analytics(let analytics): [.project(analytics.project, environment: analytics.environment), self]
+        case .features(let analytics):
+            [.project(analytics.project, environment: analytics.environment), .analytics(analytics), self]
+        // A release's app health comes from its component's analytics, in its environment.
+        case .appHealth(let release):
+            [
+                .project(release.project),
+                .analytics(
+                    AnalyticsRef(
+                        project: release.project, component: release.component, environment: release.environment)),
+                self,
+            ]
+        case .person(let key, _): [.project(key), .analytics(AnalyticsRef(project: key)), self]
+        case .versionPolicy(let key, let component), .sdkKeys(let key, let component):
+            [.project(key), .analytics(AnalyticsRef(project: key, component: component)), self]
         }
     }
 
@@ -213,9 +272,10 @@ public enum Route: Hashable, Sendable {
     /// The screen a link names, `cluenori://projects/notes/errors/4f1c9a2e7b3d5068`; nil for any
     /// other link: `cluenori://projects/<key>`, and under it `/operations`, `/errors`,
     /// `/errors/<id>`, `/logs`, `/releases`, `/notes-style`, `/components/<component>` and its
-    /// `/releases`, and `/releases/<component>/<release>`,
+    /// `/releases`, `/version-policy` and `/sdk-keys`, and `/releases/<component>/<release>`,
     /// under which `/operations`, `/errors`, `/errors/<id>`, and `/logs` are the release's alone, and
-    /// `/notes` its notes. Each takes
+    /// `/notes` its notes; `/analytics` and its `/features`, which take `?component=<key>` too, and
+    /// `/analytics/app-health/<component>/<release>`; and `/people?user=<user ID>`. Each takes
     /// `?environment=<key>`: the environment a project's screen shows, or, for a release's, the one
     /// its component says it runs in.
     public init?(_ url: URL) {
@@ -225,12 +285,36 @@ public enum Route: Hashable, Sendable {
         let named = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .first { $0.name == "environment" }?.value
         let environment = named?.isEmpty == false ? named : nil
+        let query = { (name: String) -> String? in
+            let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                .first { $0.name == name }?.value
+            return value?.isEmpty == false ? value : nil
+        }
         if parts.count >= 3, parts[1] == "components" {
             switch parts.count {
             case 3: self = .component(project: project, component: parts[2])
             case 4 where parts[3] == "releases": self = .componentReleases(project: project, component: parts[2])
+            case 4 where parts[3] == "version-policy": self = .versionPolicy(project: project, component: parts[2])
+            case 4 where parts[3] == "sdk-keys": self = .sdkKeys(project: project, component: parts[2])
             default: return nil
             }
+            return
+        }
+        if parts.count >= 2, parts[1] == "analytics" {
+            let analytics = AnalyticsRef(project: project, component: query("component"), environment: environment)
+            switch parts.count {
+            case 2: self = .analytics(analytics)
+            case 3 where parts[2] == "features": self = .features(analytics)
+            case 5 where parts[2] == "app-health":
+                self = .appHealth(
+                    ReleaseRef(project: project, component: parts[3], environment: environment, version: parts[4]))
+            default: return nil
+            }
+            return
+        }
+        if parts.count == 2, parts[1] == "people" {
+            guard let user = query("user") else { return nil }
+            self = .person(project: project, user: user)
             return
         }
         if parts.count >= 4, parts[1] == "releases" {
@@ -277,6 +361,9 @@ public final class Navigation {
     public var projectsPath: [Route] = []
     /// How far back every screen looks: one choice, kept across screens and projects, as on the web.
     public var period = PeriodKey.day
+    /// How far back analytics screens look, in UTC days: its own choice, as on the web, since apps
+    /// are counted by the day.
+    public var analyticsPeriod = AnalyticsPeriod.month
 
     public init() {}
 
@@ -302,14 +389,42 @@ public final class Navigation {
         projectsPath = projectsPath.map { $0.showing(environment, in: choice.project) }
     }
 
+    /// Shows the analytics screen `route` of `component` instead, every component's for nil, in its
+    /// place on top of the tab it shows on; nothing for another screen, or one not on top.
+    /// `route` is the screen as it shows, in its environment: the one on top may name none, and
+    /// show the one chosen for its project.
+    public func showAnalytics(of component: String?, inPlaceOf route: Route) {
+        let next: Route
+        let shownIn: String?
+        switch route {
+        case .analytics(let analytics):
+            (next, shownIn) = (.analytics(analytics.of(component)), analytics.environment)
+        case .features(let analytics):
+            (next, shownIn) = (.features(analytics.of(component)), analytics.environment)
+        default: return
+        }
+        for top in [todayPath.last, projectsPath.last].compactMap({ $0 }) where top != route {
+            if let shownIn, top.choosing(shownIn) == route {
+                replaceTop(top, with: next)
+                return
+            }
+        }
+        replaceTop(route, with: next)
+    }
+
     /// Shows the screen of `route`, narrowed to a release, without its release, in its place on top
     /// of the tab it shows on; nothing when it isn't narrowed, or isn't on top.
     public func showWithoutRelease(_ route: Route) {
         guard let wider = route.withoutRelease else { return }
+        replaceTop(route, with: wider)
+    }
+
+    // Shows `next` in place of `route` on top of the tab it shows on; nothing when it isn't on top.
+    private func replaceTop(_ route: Route, with next: Route) {
         if todayPath.last == route {
-            todayPath[todayPath.count - 1] = wider
+            todayPath[todayPath.count - 1] = next
         } else if projectsPath.last == route {
-            projectsPath[projectsPath.count - 1] = wider
+            projectsPath[projectsPath.count - 1] = next
         }
     }
 }

@@ -5,11 +5,12 @@ import type { Project } from "@cluenori/projects"
 import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { DateTime, Option, Schema } from "effect"
 import { Atom, AsyncResult } from "effect/reactivity"
-import { CheckIcon, Trash2Icon, UserPlusIcon, UsersIcon } from "lucide-react"
+import { Trash2Icon, UserPlusIcon, UsersIcon } from "lucide-react"
 import { useState } from "react"
 
 import { moment } from "@/lib/format"
 import { inviteAtom, membersAtom, projectsAtom, removeMemberAtom, setProjectsAtom } from "@/project-data"
+import { CopyButton } from "@/views/copy-button"
 import { failureText, Loaded } from "@/views/loaded"
 import { Panel } from "@/views/panel"
 import {
@@ -80,23 +81,6 @@ function ProjectChoice({
   )
 }
 
-function CopyLink({ link }: { readonly link: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="self-start"
-      onClick={() => {
-        void navigator.clipboard.writeText(link).then(() => setCopied(true))
-      }}
-    >
-      {copied ? <CheckIcon data-icon="inline-start" /> : null}
-      {copied ? "Copied" : "Copy the link"}
-    </Button>
-  )
-}
-
 /** The invitation made: the link to send, until when it works. */
 function Invited({ invite, email }: { readonly invite: Invite; readonly email: string }) {
   return (
@@ -106,7 +90,7 @@ function Invited({ invite, email }: { readonly invite: Invite; readonly email: s
         {moment(DateTime.toEpochMillis(invite.expiresAt))}, and makes their passkey.
       </p>
       <pre className="overflow-x-auto border bg-background px-3 py-2 font-mono text-sm">{invite.link}</pre>
-      <CopyLink link={invite.link} />
+      <CopyButton text={invite.link} label="Copy the link" className="self-start" />
     </div>
   )
 }

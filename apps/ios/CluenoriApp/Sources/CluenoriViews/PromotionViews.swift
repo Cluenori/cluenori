@@ -550,6 +550,7 @@ struct PromoteSummarySection: View {
                         .foregroundStyle(.secondary)
                     if let release = promote.releaseVersion {
                         Text(verbatim: release)
+                            .unhyphenated()
                             .font(.title.monospaced().weight(.bold))
                             .lineLimit(2)
                             .minimumScaleFactor(0.6)

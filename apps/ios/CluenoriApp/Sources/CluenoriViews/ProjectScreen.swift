@@ -20,6 +20,7 @@ struct ProjectScreen: View {
         List {
             IncidentsSection(incidents: project.incidents)
             DeliverySection(delivery: delivery)
+            AnalyticsEntrySection(project: project.key, environment: project.environment)
             // What the sections below cover, every environment's delivery above aside.
             Section {
                 EnvironmentRow(choice: environments, shown: project.environment, navigation: navigation)
@@ -59,6 +60,36 @@ struct ProjectScreen: View {
         .task(id: delivery.hasUnendedPromotions) { await delivery.followPromotions() }
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: project.load.problem, receivedAt: project.load.receivedAt)
+        }
+    }
+}
+
+/// The way to a project's app analytics, in the environment the project's screen shows; over a
+/// period of its own, in UTC days.
+struct AnalyticsEntrySection: View {
+    let project: String
+    /// Nil for every environment.
+    let environment: String?
+
+    var body: some View {
+        Section {
+            NavigationLink(value: Route.analytics(AnalyticsRef(project: project, environment: environment))) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Analytics", bundle: #bundle, comment: "Opens a project's app analytics.")
+                        Text(
+                            "People, retention, app health, features", bundle: #bundle,
+                            comment: "Below the row that opens a project's app analytics: what they show."
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "chart.bar.xaxis")
+                }
+            }
+        } header: {
+            Text("Apps", bundle: #bundle, comment: "Section of how a project's apps are used.")
         }
     }
 }

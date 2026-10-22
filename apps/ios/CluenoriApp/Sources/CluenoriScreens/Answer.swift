@@ -7,7 +7,8 @@ public enum AnswerProblem: Equatable, Sendable {
     /// The deployment didn't answer: the phone may be offline.
     case unreachable
     /// The deployment has no such thing, at least in the period asked about: an error that didn't
-    /// happen then, a project since removed, a release it doesn't count.
+    /// happen then, a project since removed, a release it doesn't count, a person the apps never
+    /// sent.
     case missing
     /// The deployment answered in a way this app doesn't understand, such as from a newer version.
     case unreadable
@@ -117,7 +118,7 @@ public final class Answer<Value: Codable & Equatable & Sendable> {
             case .unreachable:
                 problem = .unreachable
             case .projectNotFound, .componentNotFound, .errorGroupNotFound, .incidentNotFound, .monitorNotFound,
-                .releaseNotFound:
+                .releaseNotFound, .personNotFound:
                 problem = .missing
             default:
                 problem = .unreadable

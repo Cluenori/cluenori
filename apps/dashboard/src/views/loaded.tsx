@@ -10,6 +10,9 @@ const failureWords: Readonly<Record<string, string>> = {
   ErrorGroupNotFound: "This error didn't happen in this period.",
   ComponentNotFound: "The project has no such component any more; reload the page to see its components.",
   ArchiveUnavailable: "The archive didn't answer. Try again in a moment.",
+  PersonNotFound:
+    "No person has this user ID: the apps never sent it. Check it is the ID the app gives Cluenori.identify.",
+  SdkKeyNotFound: "The component has no such SDK key any more; reload the page to see its keys.",
 }
 
 const tagOf = (error: unknown) =>

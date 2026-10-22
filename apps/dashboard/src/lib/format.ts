@@ -1,6 +1,8 @@
 // What the dashboard shows people: numbers, durations, and times in the viewer's own locale and time
 // zone, read once from the browser and passed to Intl explicitly (PATTERNS.md, entry 2).
 
+import { DateTime } from "effect"
+
 const locale = navigator.language
 const timeZone = Intl.DateTimeFormat(locale).resolvedOptions().timeZone
 
@@ -33,6 +35,16 @@ const minutes = unitOf("minute")
 const hours = unitOf("hour")
 const days = unitOf("day")
 const regions = new Intl.DisplayNames([locale], { type: "region" })
+// What is counted by calendar day is counted in UTC days, so their dates are UTC's, whatever the
+// viewer's time zone.
+const utcDay = new Intl.DateTimeFormat(locale, { timeZone: "UTC", month: "short", day: "numeric" })
+const utcLongDay = new Intl.DateTimeFormat(locale, { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" })
+const megabytes = new Intl.NumberFormat(locale, {
+  style: "unit",
+  unit: "megabyte",
+  unitDisplay: "short",
+  maximumFractionDigits: 0,
+})
 // Axes are narrow, so their times use a 24-hour clock in every locale: 06:00, 18:30.
 const axisClock = new Intl.DateTimeFormat(locale, { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
 
@@ -121,6 +133,21 @@ export const countryName = (code: string) => {
     return code
   }
 }
+
+// When a calendar day, `2026-10-20`, starts, in Unix ms.
+const dayStart = (calendarDay: string) => DateTime.toEpochMillis(DateTime.makeUnsafe(`${calendarDay}T00:00:00Z`))
+
+/** Oct 20: a calendar day, `2026-10-20`, as the UTC day it is. */
+export const calendarDayText = (calendarDay: string) => utcDay.format(dayStart(calendarDay))
+
+/** Oct 20, 2026: a calendar day with its year. */
+export const calendarDayLong = (calendarDay: string) => utcLongDay.format(dayStart(calendarDay))
+
+/** 182 MB: memory, in megabytes of a million bytes, as iOS's limits and the health rules count it. */
+export const bytes = (value: number) => megabytes.format(value / 1_000_000)
+
+/** 9.4: a ratio, such as sessions per person, to one decimal. */
+export const ratio = (value: number) => oneDecimal.format(value)
 
 /** The viewer's time zone, for saying which one times are in. */
 export const viewerTimeZone = timeZone

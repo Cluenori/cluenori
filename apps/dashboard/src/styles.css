@@ -47,6 +47,8 @@
   --color-sky: var(--sky);
   --color-pink: var(--pink);
   --color-failure: var(--failure);
+  --color-yellow-ink: var(--yellow-ink);
+  --color-mint-ink: var(--mint-ink);
   --color-dot: var(--dot);
 
   --color-chart-1: var(--chart-1);
@@ -102,7 +104,13 @@
   --yellow: light-dark(#c99412, #f5cc6a);
   --sky: light-dark(#5682b8, #9bb8df);
   --pink: light-dark(#c4478f, #e27ab8);
-  --failure: light-dark(#e0373f, #f2555a);
+  --failure: light-dark(#cf2f38, #f2555a);
+  /*
+    Words in yellow or mint: light mode's are too pale to read on a panel (under 4.5:1), so its text
+    takes a darker ink of the same hue; dark mode's are the colors themselves. Red reads as it is.
+  */
+  --yellow-ink: light-dark(#8f6800, #f5cc6a);
+  --mint-ink: light-dark(#127b55, #7ee6b4);
 
   /* shadcn/ui's other variables, named as its views and examples expect. */
   --card-foreground: var(--foreground);

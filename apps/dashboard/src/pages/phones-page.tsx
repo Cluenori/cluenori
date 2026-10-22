@@ -7,6 +7,7 @@ import { useEffect, useState } from "react"
 
 import { ago, countryName, moment } from "@/lib/format"
 import { phonesAtom, removePhoneAtom, startPairingAtom } from "@/project-data"
+import { CopyButton } from "@/views/copy-button"
 import { failureText, Loaded } from "@/views/loaded"
 import { Panel } from "@/views/panel"
 import { QrCode } from "@/views/qr-code"
@@ -48,23 +49,6 @@ const minutesAndSeconds = (millis: number) => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
 }
 
-function CopyLink({ link }: { readonly link: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="self-start"
-      onClick={() => {
-        void navigator.clipboard.writeText(link).then(() => setCopied(true))
-      }}
-    >
-      {copied ? <CheckIcon data-icon="inline-start" /> : null}
-      {copied ? "Copied" : "Copy the link"}
-    </Button>
-  )
-}
-
 /** A pairing's code, and how long it works, each second, until it expires. */
 function ShownCode({ pairing, onNewCode }: { readonly pairing: Pairing; readonly onNewCode: () => void }) {
   const expiresAt = DateTime.toEpochMillis(pairing.expiresAt)
@@ -100,7 +84,7 @@ function ShownCode({ pairing, onNewCode }: { readonly pairing: Pairing; readonly
             </p>
             <div className="flex flex-col gap-2">
               <p className="text-sm text-muted-foreground">On a simulator, paste the link into Safari instead:</p>
-              <CopyLink link={pairing.link} />
+              <CopyButton text={pairing.link} label="Copy the link" className="self-start" />
             </div>
           </>
         )}

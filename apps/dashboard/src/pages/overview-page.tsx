@@ -52,12 +52,16 @@ const areaWords: Readonly<Record<Area, string>> = {
   errors: "Errors",
   logs: "Logs",
   releases: "Releases",
+  analytics: "Analytics",
 }
 
 // The list of releases, and of the sources that failed, load after start, with the releases'
 // pages, so the first load holds its budget.
 const releaseList = import("@/views/release-list")
 const ReleaseList = lazy(() => releaseList.then((module) => ({ default: module.ReleaseList })))
+// How the project's apps are used loads after start too, with the analytics pages' rules.
+const appsSummary = import("@/pages/overview-apps")
+const AppsSummary = lazy(() => appsSummary.then((module) => ({ default: module.AppsSummary })))
 const sourceProblems = import("@/views/source-problems")
 const SourceProblems = lazy(() => sourceProblems.then((module) => ({ default: module.SourceProblems })))
 // Changing production loads when opened, now and then.
@@ -353,6 +357,10 @@ export function OverviewPage({
           </Loaded>
         </Panel>
       </div>
+
+      <Suspense fallback={null}>
+        <AppsSummary project={project} environments={environments} />
+      </Suspense>
 
       <Panel
         icon={TagIcon}

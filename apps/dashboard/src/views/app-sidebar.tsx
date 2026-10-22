@@ -2,6 +2,7 @@ import type { ProjectKey } from "@cluenori/foundation"
 import {
   ActivityIcon,
   BugIcon,
+  ChartNoAxesColumnIcon,
   GitBranchIcon,
   LayoutGridIcon,
   LogOutIcon,
@@ -50,6 +51,13 @@ const underArea = (route: Route, area: Area) => {
       return false
     case "releases":
       return route.page === "release"
+    case "analytics":
+      return (
+        route.page === "appReleases" ||
+        route.page === "appRelease" ||
+        route.page === "features" ||
+        route.page === "person"
+      )
   }
 }
 
@@ -58,6 +66,7 @@ const areas: ReadonlyArray<{ readonly area: Area; readonly label: string; readon
   { area: "errors", label: "Errors", icon: BugIcon },
   { area: "logs", label: "Logs", icon: ScrollTextIcon },
   { area: "releases", label: "Releases", icon: TagIcon },
+  { area: "analytics", label: "Analytics", icon: ChartNoAxesColumnIcon },
 ]
 
 /**
