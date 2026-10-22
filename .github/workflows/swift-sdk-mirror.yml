@@ -1,0 +1,53 @@
+# Publishes sdks/swift to Cluenori/cluenori-swift, the repository Swift Package Manager reads: its
+# main on every push to main here that changes sdks/swift, and a version when a swift-v<version> tag
+# is pushed here (swift-v0.1.0 becomes 0.1.0 there). `git subtree split` gives the same commits for
+# the same history every time, so the mirror only moves forward and apps' pinned revisions stay
+# valid. Only this workflow writes there, with that repository's deploy key.
+name: Swift SDK mirror
+
+on:
+  push:
+    branches: [main]
+    paths: ["sdks/swift/**"]
+    tags: ["swift-v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: swift-sdk-mirror
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Publish sdks/swift
+        env:
+          DEPLOY_KEY: ${{ secrets.SWIFT_SDK_MIRROR_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          git clone --quiet "https://github.com/${GITHUB_REPOSITORY}.git" source
+          cd source
+          git checkout --quiet --detach "$GITHUB_SHA"
+          commit=$(git subtree split --prefix sdks/swift "$GITHUB_SHA")
+
+          install -d -m 700 ~/.ssh
+          (umask 077 && printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/mirror)
+          # GitHub's host key, as https://api.github.com/meta publishes it.
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/mirror -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          mirror=git@github.com:Cluenori/cluenori-swift.git
+
+          case "$GITHUB_REF" in
+            refs/tags/swift-v*)
+              version="${GITHUB_REF#refs/tags/swift-v}"
+              echo "Publishing $version as $commit"
+              git push "$mirror" "$commit:refs/tags/$version"
+              ;;
+            *)
+              echo "Publishing main as $commit"
+              git push "$mirror" "$commit:refs/heads/main"
+              ;;
+          esac
