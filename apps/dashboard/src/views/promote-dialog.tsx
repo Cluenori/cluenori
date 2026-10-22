@@ -8,17 +8,20 @@ import {
   PromotionUnavailable,
   ReleaseCommit,
 } from "@cluenori/releases"
-import { Cause, Option, Result, Schema } from "effect"
+import { Cause, DateTime, Option, Result, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { ArrowUpRightIcon } from "lucide-react"
+import { ArrowUpRightIcon, ChevronRightIcon } from "lucide-react"
 import type { ReactNode } from "react"
 import { useId, useState } from "react"
 
+import { moment } from "@/lib/format"
+import type { ThereNow } from "@/release-facts"
 import { Link } from "@/router"
 import { failureText } from "@/views/loaded"
 import { Segmented } from "@/views/segmented"
 import { Button } from "@/views/ui/button"
 import { Checkbox } from "@/views/ui/checkbox"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/views/ui/collapsible"
 import {
   Dialog,
   DialogClose,
@@ -163,7 +166,8 @@ function NotesSent({
   onOpenNotes,
 }: {
   readonly target: DeployTarget
-  readonly notes: ReadonlyArray<ReleaseNote>
+  /** The release's notes; absent while they aren't known yet. */
+  readonly notes: ReadonlyArray<ReleaseNote> | undefined
   readonly onOpenNotes: () => void
 }) {
   const review = target.appStore?.distribution === "appStore"
@@ -171,17 +175,21 @@ function NotesSent({
     <section aria-label={review ? "What's New" : "What to Test"} className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-sm">{review ? "What's New" : "What to Test"}, from the release&apos;s notes</span>
-        <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={onOpenNotes}>
-          {notes.length === 0 ? "Write the notes" : "Edit the notes"}
-        </Button>
+        {notes !== undefined && (
+          <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={onOpenNotes}>
+            {notes.length === 0 ? "Write the notes" : "Edit the notes"}
+          </Button>
+        )}
       </div>
-      {notes.length === 0 ? (
+      {notes === undefined && <p className="text-muted-foreground">Reading the release&apos;s notes…</p>}
+      {notes !== undefined && notes.length === 0 && (
         <p className={review ? "text-failure" : "text-muted-foreground"}>
           {review
             ? "No notes yet: App Store review needs What's New in each of the app's languages."
             : "No notes yet: TestFlight shows none."}
         </p>
-      ) : (
+      )}
+      {notes !== undefined && notes.length > 0 && (
         <ul className="flex max-h-40 flex-col gap-2 overflow-y-auto border bg-background px-3 py-2.5">
           {notes.map((note) => (
             <li key={note.locale} className="flex flex-col gap-0.5">
@@ -238,6 +246,39 @@ function TargetSteps({
   )
 }
 
+/**
+ * What a promotion replaces where it goes: the release there now and since when, or that nothing
+ * runs there yet; or that the release itself runs there, so it is deployed again.
+ */
+function Replaces({
+  release,
+  environment,
+  thereNow,
+}: {
+  readonly release: ReleaseVersion
+  readonly environment: EnvironmentKey
+  readonly thereNow: ThereNow
+}) {
+  switch (thereNow._tag) {
+    case "nothing":
+      return <p>Nothing runs in {environment} yet.</p>
+    case "release": {
+      const since = moment(DateTime.toEpochMillis(thereNow.since))
+      return thereNow.release === release ? (
+        <p className="text-foreground">
+          It runs in {environment} now, since <span className="font-mono whitespace-nowrap">{since}</span>: this deploys
+          it again.
+        </p>
+      ) : (
+        <p className="text-foreground">
+          {environment} runs <span className="font-mono whitespace-nowrap">{thereNow.release}</span> now, since{" "}
+          <span className="font-mono whitespace-nowrap">{since}</span>: this replaces it.
+        </p>
+      )
+    }
+  }
+}
+
 /** Where a workflow runs: Auto, your Mac, or the cloud, with what the choice means. */
 function RunnerField({ runner, onChange }: { readonly runner: Runner; readonly onChange: (runner: Runner) => void }) {
   return (
@@ -246,6 +287,32 @@ function RunnerField({ runner, onChange }: { readonly runner: Runner; readonly o
       <Segmented label="Where the workflow runs" options={runners} value={runner} onChange={onChange} />
       <p className="text-muted-foreground">{runnerWords[runner]}</p>
     </div>
+  )
+}
+
+/**
+ * What a promotion is asked with beyond the usual, folded away and closed at first: where the
+ * workflow runs, Auto unless chosen otherwise, with what each choice means. A choice other than Auto
+ * is said on the fold while it is closed.
+ */
+function Options({ runner, onRunner }: { readonly runner: Runner; readonly onRunner: (runner: Runner) => void }) {
+  const chosen = runners.find((each) => each.value === runner)?.label
+  return (
+    <Collapsible className="flex flex-col gap-3">
+      <CollapsibleTrigger
+        render={<Button type="button" variant="ghost" size="sm" className="-ml-2.5 w-fit px-2.5 text-sm" />}
+      >
+        <ChevronRightIcon
+          data-icon="inline-start"
+          className="transition-transform duration-150 ease-out group-data-[panel-open]/button:rotate-90 motion-reduce:transition-none"
+        />
+        Options
+        {runner !== "auto" && <span className="font-normal text-muted-foreground">The workflow runs on {chosen}</span>}
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <RunnerField runner={runner} onChange={onRunner} />
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -324,15 +391,16 @@ const reasonOf = (text: string) => {
 /**
  * Promoting a release to an environment, as a confirmation in a dialog: what happens there, step by
  * step (its workflow on GitHub, then App Store Connect: TestFlight, or App Store review with the
- * notes as What's New); where the workflow runs; for App Store review, when an approved version goes
- * live and whether over 7 days; the notes it sends; and an optional reason, checked as the API
- * checks it. Promoting calls `onPromote`; while it asks, the button says so, and why it didn't start
- * is said above the buttons, with where to fix it. The dialog closes when the page says so, such as
- * once the promotion started.
+ * notes as What's New); for App Store review, when an approved version goes live and whether over 7
+ * days; the notes it sends; an optional reason, checked as the API checks it; and, folded away,
+ * where the workflow runs. Above them, what runs there now, which it replaces. Promoting calls `onPromote`; while
+ * it asks, the button says so, and why it didn't start is said above the buttons, with where to fix
+ * it. The dialog closes when the page says so, such as once the promotion started.
  */
 export function PromoteDialog({
   release,
   target,
+  thereNow,
   repository,
   notes,
   owner,
@@ -345,10 +413,12 @@ export function PromoteDialog({
 }: {
   readonly release: ReleaseVersion
   readonly target: DeployTarget
+  /** What runs where it goes now, which it replaces; absent while that isn't known. */
+  readonly thereNow?: ThereNow | undefined
   /** The component's repository, where the workflow runs, as the release's answer names it; absent when it doesn't. */
   readonly repository: string | undefined
-  /** The release's notes, which an App Store Connect app's build is sent with. */
-  readonly notes: ReadonlyArray<ReleaseNote>
+  /** The release's notes, which an App Store Connect app's build is sent with; absent while they aren't known. */
+  readonly notes: ReadonlyArray<ReleaseNote> | undefined
   /** Whether who is signed in is an owner, who can fix GitHub's connection and App Store Connect's key. */
   readonly owner: boolean
   readonly open: boolean
@@ -376,7 +446,7 @@ export function PromoteDialog({
           <DialogTitle className="leading-snug">
             Promote <span className="font-mono">{release}</span> to {environment}?
           </DialogTitle>
-          <DialogDescription render={<div />} className="text-[15px]">
+          <DialogDescription render={<div />} className="flex flex-col gap-3 text-[15px]">
             <TargetSteps
               target={target}
               repository={repository}
@@ -386,6 +456,7 @@ export function PromoteDialog({
                 </>
               }
             />
+            {thereNow !== undefined && <Replaces release={release} environment={environment} thereNow={thereNow} />}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -404,7 +475,6 @@ export function PromoteDialog({
             })
           }}
         >
-          {workflow !== undefined && <RunnerField runner={runner} onChange={setRunner} />}
           {review && (
             <ReviewOptions
               id={id}
@@ -416,6 +486,7 @@ export function PromoteDialog({
           )}
           {appStore !== undefined && <NotesSent target={target} notes={notes} onOpenNotes={onOpenNotes} />}
           <ReasonField id={id} reason={reason} onChange={setReason} rule={rule} />
+          {workflow !== undefined && <Options runner={runner} onRunner={setRunner} />}
           {AsyncResult.isFailure(promoting) && !promoting.waiting && (
             <Problem
               cause={promoting.cause}
@@ -427,8 +498,8 @@ export function PromoteDialog({
           )}
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
-            <Button type="submit" disabled={promoting.waiting}>
-              {promoting.waiting ? "Promoting…" : "Promote"}
+            <Button type="submit" disabled={promoting.waiting} className="h-auto min-h-9 py-1.5 whitespace-normal">
+              {promoting.waiting ? `Promoting ${release} to ${environment}…` : `Promote ${release} to ${environment}`}
             </Button>
           </DialogFooter>
         </form>
@@ -447,15 +518,17 @@ export type PromoteLatestWith = PromoteWith & {
 }
 
 /**
- * Promoting a component's commit that has no release yet, as a dialog: the environment, among its
- * deploy targets with a workflow, which builds it; what happens there, step by step; where the
- * workflow runs; which commit, the newest on the repository's default branch unless one is named;
- * for App Store review, its options; and an optional reason. Cluenori numbers the commit as the
- * component's next release, then promotes it. Promoting calls `onPromote`; why it didn't start is
- * said above the buttons, with where to fix it, such as the component's version.
+ * Building a component's commit that has no release yet, and promoting it, as a dialog: the
+ * environment, among its deploy targets with a workflow, which builds it, `environment` at first;
+ * what happens there, step by step; which commit, the newest on the repository's default branch
+ * unless one is named; for App Store review, its options; an optional reason; and, folded away,
+ * where the workflow runs. Cluenori numbers the commit as the component's next release, then promotes it.
+ * Promoting calls `onPromote`; why it didn't start is said above the buttons, with where to fix it,
+ * such as the component's version.
  */
 export function PromoteLatestDialog({
   component,
+  environment: initial,
   targets,
   repository,
   nextRelease,
@@ -468,6 +541,8 @@ export function PromoteLatestDialog({
   onChangeLinks,
 }: {
   readonly component: string
+  /** The environment it is built for at first; the first target's without one. */
+  readonly environment?: EnvironmentKey
   /** The component's deploy targets that have a workflow, which builds the commit. */
   readonly targets: ReadonlyArray<DeployTarget>
   readonly repository: string | undefined
@@ -484,7 +559,9 @@ export function PromoteLatestDialog({
   readonly onChangeLinks?: () => void
 }) {
   const id = useId()
-  const [environment, setEnvironment] = useState(targets[0]?.environment)
+  const [environment, setEnvironment] = useState(
+    targets.find((each) => each.environment === initial)?.environment ?? targets[0]?.environment,
+  )
   const [commit, setCommit] = useState("")
   const [commitRule, setCommitRule] = useState<string | undefined>(undefined)
   const [reason, setReason] = useState("")
@@ -498,12 +575,12 @@ export function PromoteLatestDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="leading-snug">Promote {component}&apos;s latest commit?</DialogTitle>
+          <DialogTitle className="leading-snug">Build {component}&apos;s latest commit?</DialogTitle>
           <DialogDescription>
             Cluenori numbers it as {component}&apos;s next release
             {nextRelease === undefined ? "" : ", "}
             {nextRelease !== undefined && <span className="font-mono text-foreground">{nextRelease}</span>}, then
-            promotes it. A commit numbered before is that release again.
+            promotes it there. A commit numbered before is that release again.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -552,7 +629,6 @@ export function PromoteLatestDialog({
               <TargetSteps target={target} repository={repository} release="the new release" />
             </div>
           )}
-          <RunnerField runner={runner} onChange={setRunner} />
           <div className="flex flex-col gap-2">
             <label htmlFor={`${id}-commit`} className="text-sm">
               Commit
@@ -582,6 +658,7 @@ export function PromoteLatestDialog({
             />
           )}
           <ReasonField id={id} reason={reason} onChange={setReason} rule={rule} />
+          <Options runner={runner} onRunner={setRunner} />
           {AsyncResult.isFailure(promoting) && !promoting.waiting && (
             <Problem
               cause={promoting.cause}
@@ -594,7 +671,7 @@ export function PromoteLatestDialog({
           <DialogFooter>
             <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
             <Button type="submit" disabled={promoting.waiting || target === undefined}>
-              {promoting.waiting ? "Promoting…" : "Promote"}
+              {promoting.waiting ? "Building and promoting…" : `Build and promote to ${target?.environment ?? "it"}`}
             </Button>
           </DialogFooter>
         </form>

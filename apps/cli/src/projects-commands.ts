@@ -162,6 +162,12 @@ export const componentLink = Command.make(
         "An environment and the bundle ID of the App Store Connect app its builds go to through App Store review to the App Store, such as production=com.example.notes.",
       ),
     ),
+    shipsWith: Flag.String("ships-with").pipe(
+      Flag.optional,
+      Flag.withDescription(
+        "Another component of the project whose deploys deploy this one too, from the same commit with the same release, such as a background service the API's workflow builds and deploys; it then has no deploy targets of its own.",
+      ),
+    ),
     local,
   },
   (input) =>
@@ -173,6 +179,7 @@ export const componentLink = Command.make(
         deploy: input.deploy,
         testFlight: input.testFlight,
         appStore: input.appStore,
+        shipsWith: input.shipsWith,
       })
       const target = yield* apiTarget(input.local)
       const client = yield* apiClient(target)
@@ -180,18 +187,27 @@ export const componentLink = Command.make(
         Effect.catchTags({
           ...reachFailures(target),
           ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
-          ComponentNotFound: () => refuse(`${project} has no component ${component}.`),
+          ComponentNotFound: (error) =>
+            refuse(
+              error.component === component
+                ? `${project} has no component ${component}.`
+                : `${component} can't ship with ${error.component}: ${project} has no other component ${error.component}.`,
+            ),
         }),
       )
       const targets = linked.deployTargets ?? []
       const repository = linked.repository === undefined ? ", with no repository" : ` to ${linked.repository}`
       yield* Console.log(`Linked ${linked.name} (${linked.key})${repository}.\n`)
-      yield* Console.log(
+      const targetsText =
         targets.length === 0
           ? "It has no deploy targets, so its releases can't be promoted from Cluenori: add them with --deploy, --testflight and --app-store."
           : `Its deploy targets:\n${deployTargetLines(targets)
               .map((line) => `  ${line}`)
-              .join("\n")}`,
+              .join("\n")}`
+      yield* Console.log(
+        linked.shipsWith === undefined
+          ? targetsText
+          : `It ships with ${linked.shipsWith}: promoting ${linked.shipsWith} deploys it too.`,
       )
       yield* Console.log(
         "\nIts releases' commits and store builds appear within a few minutes, once the deployment is connected to GitHub (./cluenori github) and has App Store Connect's key (./cluenori appstore setup).",

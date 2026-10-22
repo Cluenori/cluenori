@@ -3,11 +3,13 @@ import CluenoriScreens
 import Foundation
 import SwiftUI
 
-/// A project's overview in one environment over the period: its open incidents, its load, its
-/// releases, its errors, and its latest warnings and errors, each leading to a screen with all of
-/// them, in the same environment.
+/// A project's overview: its open incidents, and its delivery, what release is in each of its
+/// components' environments and what's next, every environment at once; then, in the environment it
+/// shows over the period, its load, its errors, and its latest warnings and errors, each leading to
+/// a screen with all of them, in the same environment.
 struct ProjectScreen: View {
     let project: ProjectModel
+    let delivery: DeliveryModel
     let environments: EnvironmentChoice
     let name: String
     @Bindable var navigation: Navigation
@@ -16,28 +18,45 @@ struct ProjectScreen: View {
         // What the sections lead to: this project's screens in this environment.
         let shown = Telemetry.project(project.key, environment: project.environment)
         List {
-            PeriodSection(period: $navigation.period)
-            EnvironmentSection(choice: environments, shown: project.environment, navigation: navigation)
             IncidentsSection(incidents: project.incidents)
+            DeliverySection(delivery: delivery)
+            // What the sections below cover, every environment's delivery above aside.
+            Section {
+                EnvironmentRow(choice: environments, shown: project.environment, navigation: navigation)
+                PeriodPicker(period: $navigation.period)
+            } footer: {
+                if let environment = project.environment {
+                    Text(
+                        "Load, errors and logs below are from \(environment), over \(periodPhrase(navigation.period)).",
+                        bundle: #bundle,
+                        comment:
+                            "Below the environment and period a project's screen shows. The variables are an environment and a period."
+                    )
+                }
+            }
             LoadSection(telemetry: shown, load: project.load, operations: project.operations)
-            ReleasesSection(telemetry: shown, releases: project.releases, period: project.period)
             ErrorsSection(telemetry: shown, errors: project.errors, period: project.period)
             LogsSection(telemetry: shown, logs: project.logs, period: project.period)
         }
         .navigationTitle(name)
         .refreshable {
             async let project: Void = project.refresh()
+            async let delivery: Void = delivery.load()
             async let environments: Void = environments.refresh()
-            _ = await (project, environments)
+            _ = await (project, delivery, environments)
         }
         .task(id: navigation.period) {
             // A new period asks everything again; the same one, shown again, does too.
             if project.period == navigation.period {
-                await project.refresh()
+                async let project: Void = project.refresh()
+                async let delivery: Void = delivery.load()
+                _ = await (project, delivery)
             } else {
                 await project.choose(navigation.period)
             }
         }
+        // Runs again once a promotion is shown that hasn't ended; stops when the screen leaves.
+        .task(id: delivery.hasUnendedPromotions) { await delivery.followPromotions() }
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: project.load.problem, receivedAt: project.load.receivedAt)
         }
@@ -162,54 +181,6 @@ struct LoadStats: View {
             }
         }
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// The project's latest releases over the period, each with its verdict, leading to all of them;
-/// and which of their sources couldn't be read lately.
-struct ReleasesSection: View {
-    let telemetry: Telemetry
-    let releases: Answer<ReleaseList>
-    let period: PeriodKey
-
-    var body: some View {
-        Section {
-            if let list = releases.value {
-                if list.releases.isEmpty {
-                    Text(
-                        "No releases in \(periodPhrase(period)). A release shows once a service reports its version in `service.version`, `cluenori-release` reports a deploy, or App Store Connect has a build.",
-                        bundle: #bundle,
-                        comment:
-                            "A project had no releases. The variable is a period; service.version and cluenori-release are names, as is."
-                    )
-                    .foregroundStyle(.secondary)
-                }
-                ForEach(list.releases.prefix(3), id: \.self) { summary in
-                    ReleaseLink(project: telemetry.project, summary: summary)
-                }
-                ForEach(list.problems, id: \.self) { problem in
-                    Label {
-                        Text(
-                            "\(sourceName(problem.source)) couldn't be read for \(problem.component): commits or builds may be missing.",
-                            bundle: #bundle,
-                            comment:
-                                "A release source that failed. The variables are a service, such as GitHub, and a component."
-                        )
-                        .font(.subheadline)
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                    }
-                }
-            } else {
-                AnswerPlaceholder(problem: releases.problem)
-            }
-            NavigationLink(value: Route.releases(project: telemetry.project, environment: telemetry.environment)) {
-                Text("All releases", bundle: #bundle, comment: "Opens every release of a project.")
-            }
-        } header: {
-            Text("Releases", bundle: #bundle, comment: "Section of a project's releases.")
-        }
     }
 }
 

@@ -32,6 +32,7 @@ export const reportDeploy = Effect.fn("Releases.reportDeploy")(function* (
     release: report.release,
     commit: report.commit,
     deployedAt: now,
+    lastDeployedAt: now,
   })
   const linked = (yield* projects.components.pipe(Effect.orElseSucceed(() => []))).find(
     (each) => each.key === component,

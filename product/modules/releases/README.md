@@ -47,6 +47,7 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
   - **Slower and faster:** Today's rule, a p95 at least 1.5 times the other's, and 100 ms more.
   - **Fails more and less:** at least 5 failures, 2%, three times the other's rate.
   - **The verdict:** `worse` at once; otherwise `tooEarly` until it ran an hour and an operation compares; `unmeasured` without telemetry.
+  - **Delivery, what is in an environment now:** an App Store app's, the build out on the App Store (releasing or live); a TestFlight app's, the latest build processed; elsewhere, the release last deployed there or first run there, whichever is later, so a release deployed again, as in a rollback, is there again. **Its next step:** none while a promotion to it hasn't ended; to the first environment with a workflow, building the latest commit; to each after it, promoting the release of the one before, when that release first appeared after the one there.
   - **A known release:** one that ran, was deployed or uploaded, or whose commit was numbered; a numbered one opens, is promoted, and takes notes before it is deployed anywhere.
   - **Numbers:** a commit becomes `<component version>+<last build + 1>` the first time its CI asks, and that release for good; a version only goes up, and build numbers never go back.
   - **A release's commit:** the one it was numbered for; else its reported deploy's; else the tag named the version, or ending with it after a separator, such as `v<version>`; else a SHA inside the version.
@@ -63,7 +64,7 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
   - releases' commits (`releases_commits`) and lookups that found none, retried hourly (`releases_lookups`);
   - what changed between releases (`releases_changes`);
   - apps' builds, by environment (`releases_store_builds`);
-  - deploys reported (`releases_deploys`);
+  - deploys reported, when first and when last (`releases_deploys`);
   - each source's last read and problem (`releases_syncs`);
   - promotions, with who started them and why (`releases_promotions`);
   - components' versions (`releases_versions`) and each commit's number (`releases_numbers`);
@@ -83,7 +84,7 @@ const promotion = yield* releasesModule.actions.promote.run(member, {
 
 `src/index.ts`:
 - **`releasesModule`:**
-  - its queries: `list`, `release`, `versions`, `notesStyle`;
+  - its queries: `list`, `release`, `delivery`, `versions`, `notesStyle`;
   - its actions: `promote`, `promoteLatest`, `releaseApproved`, `setVersion`, `saveNotes`, `draftNotes`, `setNotesStyle`;
   - its ingest writes: `report`, `last`, `number`, `runner`;
   - and its background work.

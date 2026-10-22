@@ -2,9 +2,10 @@ import CluenoriClient
 import Foundation
 import Observation
 
-/// A project's overview in one environment over a period: its open incidents, its load, its
-/// releases, its errors, and its latest warnings and errors, each shown at once from the phone and
-/// asked again together. Its incidents are every environment's: the question takes none.
+/// A project's overview in one environment over a period: its open incidents, its load, its errors,
+/// and its latest warnings and errors, each shown at once from the phone and asked again together.
+/// Its incidents are every environment's: the question takes none. Its delivery, which is every
+/// environment's at once, is `DeploymentModels.delivery`'s.
 @Observable
 public final class ProjectModel {
     public let key: String
@@ -15,7 +16,6 @@ public final class ProjectModel {
     public let incidents: Answer<IncidentList>
     public let load: Answer<LoadSeries>
     public let operations: Answer<OperationTable>
-    public let releases: Answer<ReleaseList>
     public let errors: Answer<ErrorTable>
     public let logs: Answer<LogPage>
 
@@ -36,7 +36,6 @@ public final class ProjectModel {
             })
         load = Answer(context, Self.loadQuestion(api, telemetry, period))
         operations = Answer(context, Self.operationsQuestion(api, telemetry, period))
-        releases = Answer(context, ReleasesModel.question(api, telemetry, period))
         errors = Answer(context, Self.errorsQuestion(api, telemetry, period))
         logs = Answer(context, Self.logsQuestion(api, telemetry, period))
     }
@@ -46,10 +45,9 @@ public final class ProjectModel {
         async let incidents: Void = incidents.load()
         async let load: Void = load.load()
         async let operations: Void = operations.load()
-        async let releases: Void = releases.load()
         async let errors: Void = errors.load()
         async let logs: Void = logs.load()
-        _ = await (incidents, load, operations, releases, errors, logs)
+        _ = await (incidents, load, operations, errors, logs)
     }
 
     /// Looks over `period` instead, showing what the phone kept for it, then asking again.
@@ -58,7 +56,6 @@ public final class ProjectModel {
         self.period = period
         load.change(to: Self.loadQuestion(api, telemetry, period))
         operations.change(to: Self.operationsQuestion(api, telemetry, period))
-        releases.change(to: ReleasesModel.question(api, telemetry, period))
         errors.change(to: Self.errorsQuestion(api, telemetry, period))
         logs.change(to: Self.logsQuestion(api, telemetry, period))
         await refresh()

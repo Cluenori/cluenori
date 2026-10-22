@@ -131,6 +131,29 @@ describe("Projects", () => {
     }),
   )
 
+  it.effect("links a component that ships with another, and refuses one the project lacks or itself", () =>
+    inProject(
+      "ships-with",
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        yield* createWithApi
+        const worker = ComponentKey.make("notes-worker")
+        yield* projects.addComponent(owner, { key: worker, name: ComponentName.make("Notes worker") })
+        const linked = yield* projects.linkComponent(owner, worker, { shipsWith: notesApi.key })
+        const missing = yield* projects
+          .linkComponent(owner, worker, { shipsWith: ComponentKey.make("notes-web") })
+          .pipe(Effect.flip)
+        const itself = yield* projects.linkComponent(owner, worker, { shipsWith: worker }).pipe(Effect.flip)
+        const components = yield* projects.components
+
+        assert.strictEqual(linked.shipsWith, notesApi.key)
+        assert.deepInclude(missing, { _tag: "ComponentNotFound", component: ComponentKey.make("notes-web") })
+        assert.deepInclude(itself, { _tag: "ComponentNotFound", component: worker })
+        assert.strictEqual(components.find((component) => component.key === worker)?.shipsWith, notesApi.key)
+      }),
+    ),
+  )
+
   it.effect("calls prod, production and live production until the project chooses, with project.settings_changed", () =>
     inProject(
       "settings",
@@ -166,6 +189,7 @@ describe("Projects", () => {
           const sql = yield* SqlClient.SqlClient
           yield* sql`UPDATE projects_components SET app_store_bundle_id = 'com.example.notes', deploy_targets = NULL`
           yield* sql`ALTER TABLE projects_components DROP COLUMN deploy_targets`
+          yield* sql`ALTER TABLE projects_components DROP COLUMN ships_with`
           yield* sql`DELETE FROM projects_migrations WHERE migration_id >= 4`
         }),
       )

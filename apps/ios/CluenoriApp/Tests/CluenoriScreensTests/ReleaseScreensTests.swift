@@ -133,18 +133,23 @@ struct ReleasesModelTests {
         #expect(releases.list.problem == nil)
     }
 
-    @Test func `shows the releases the project's overview asked for, over the same period`() async throws {
-        let deployment = notesDeployment()
+    @Test func `lists one component's releases in every environment, apart from the project's`() async throws {
+        let deployment = FakeDeployment()
+        deployment.answer("GET /api/projects/notes/releases", 200, releasesAnswer)
         let pairing = PairingModel(
             store: MemoryStore(paired), details: details, transport: deployment.transport,
             cacheDirectory: try cacheDirectory())
         let models = try #require(pairing.models)
-        let project = models.project("notes", environment: nil, period: .day)
-        await project.refresh()
-        #expect(project.releases.value?.releases.count == 3)
+        let releases = models.releases("notes", component: "notes-api", period: .day)
 
-        let releases = models.releases("notes", environment: nil, period: .day)
-        #expect(releases.list.value?.releases.count == 3)
+        await releases.list.load()
+
+        #expect(releases.component == "notes-api" && releases.environment == nil)
+        let asked = try #require(deployment.queries("/api/projects/notes/releases").first)
+        #expect(asked["component"] == "notes-api")
+        #expect(asked["environment"] == nil)
+        // The project's releases are another question, kept apart.
+        #expect(models.releases("notes", environment: nil, period: .day).list.value == nil)
     }
 
     @Test func `keeps the releases it showed when the phone is offline, and says so`() async throws {

@@ -3,17 +3,15 @@ import CluenoriScreens
 import Foundation
 import SwiftUI
 
-/// The releases of a project that ran, were deployed, or were uploaded over the period, the latest
-/// first, each with its verdict against the release before it; the sources of commits and builds
-/// that couldn't be read lately; then its components' versions, which its builds are numbered in,
-/// and how its release notes read.
+/// The releases of a project in the environment it shows, or of one component in every environment,
+/// that ran, were deployed, or were uploaded over the period, the latest first, each with its verdict
+/// against the release before it; and the sources of commits and builds that couldn't be read lately.
 struct ReleasesScreen: View {
     let releases: ReleasesModel
     let environments: EnvironmentChoice
-    let versions: VersionsModel
+    /// What people call the component shown, for one component's releases.
+    var componentName: String? = nil
     @Bindable var navigation: Navigation
-    @State private var bumping: Bumping? = nil
-    @State private var setting: VersionLine? = nil
 
     // The API lists at most this many: a list this long may leave older ones out.
     private static let listedAtMost = 30
@@ -21,7 +19,10 @@ struct ReleasesScreen: View {
     var body: some View {
         List {
             PeriodSection(period: $navigation.period)
-            EnvironmentSection(choice: environments, shown: releases.environment, navigation: navigation)
+            // One component's releases are every environment's: each row says where it ran.
+            if releases.component == nil {
+                EnvironmentSection(choice: environments, shown: releases.environment, navigation: navigation)
+            }
             if let list = releases.list.value {
                 if !list.problems.isEmpty {
                     SourceProblemsSection(problems: list.problems, of: .releases)
@@ -39,7 +40,6 @@ struct ReleasesScreen: View {
                     }
                 }
                 if list.releases.isEmpty && list.problems.isEmpty {
-                    // In the list, not over it, so the versions below stay in reach.
                     Section {
                         NothingInPeriod(
                             title: Text(
@@ -75,55 +75,13 @@ struct ReleasesScreen: View {
                     AnswerPlaceholder(problem: releases.list.problem)
                 }
             }
-            VersionsSection(versions: versions, bumping: $bumping, setting: $setting)
-            Section {
-                NavigationLink(value: Route.notesStyle(project: releases.project)) {
-                    Label {
-                        Text("Notes Style", bundle: #bundle, comment: "Opens how a project's release notes read.")
-                    } icon: {
-                        Image(systemName: "text.quote")
-                    }
-                }
-            } footer: {
-                Text(
-                    "How drafts of release notes read, in the project's own words.",
-                    bundle: #bundle,
-                    comment: "Below the link to a project's notes style."
-                )
-            }
-        }
-        .versionChanges(versions, bumping: $bumping, setting: $setting)
-        .sheet(item: promotingLatest) { promote in
-            PromoteSheet(promote: promote, release: nil, versions: versions, cancel: versions.cancelPromotingLatest) {
-                promotion in
-                // Its release's screen shows the promotion, and follows it.
-                navigation.push(.release(promotion.releaseRef(in: releases.project)))
-            }
         }
         .navigationTitle(Text("Releases", bundle: #bundle, comment: "Title of every release of a project."))
-        .refreshable {
-            async let list: Void = releases.list.load()
-            async let lines: Void = versions.load()
-            _ = await (list, lines)
-        }
-        .task {
-            async let list: Void = releases.list.load()
-            async let lines: Void = versions.load()
-            _ = await (list, lines)
-        }
+        .navigationSubtitle(ifAny: componentName.map { Text(verbatim: $0) })
+        .refreshable { await releases.list.load() }
+        .task { await releases.list.load() }
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: releases.list.problem, receivedAt: releases.list.receivedAt)
-        }
-    }
-
-    // The sheet that promotes a component's newest commit, while open; dismissed, it is cancelled.
-    private var promotingLatest: Binding<PromoteModel?> {
-        Binding {
-            versions.promoteLatest
-        } set: { promote in
-            if promote == nil {
-                versions.cancelPromotingLatest()
-            }
         }
     }
 }
@@ -379,18 +337,56 @@ extension Verdict {
     }
 }
 
-/// One release compared with the one before it: its promotions and promoting it, what got slower or
-/// fails more, its new errors, the incidents while it ran, then what changed since the release before
-/// and its store build, then what got faster or fails less and what's new in it; each section only
-/// when it has something. Its operations, errors, and logs open narrowed to it. While a promotion
-/// hasn't ended, it asks again every 15 seconds.
+/// One release: what it is and where it runs now, with the one step that moves it on when its
+/// delivery says it is next somewhere, and deploying it anywhere else in a menu; then its promotions,
+/// how it compares with the one before it, what got slower or fails more, its new errors, the
+/// incidents while it ran, then what changed since the release before and its store build, then what
+/// got faster or fails less and what's new in it; each section only when it has something. Its
+/// operations, errors, and logs open narrowed to it. While a promotion hasn't ended, it asks again
+/// every 15 seconds.
 struct ReleaseScreen: View {
     let release: ReleaseModel
 
     var body: some View {
+        let places = release.places
         List {
             if let detail = release.detail.value {
                 let summary = detail.summary
+                Section {
+                    ReleaseHeadline(
+                        component: release.delivery.name(of: summary.component),
+                        release: summary.release,
+                        places: places
+                    )
+                    if let commit = summary.commit {
+                        CommitRow(
+                            name: commit.name,
+                            sha: commit.tag == nil ? nil : commit.shortSha,
+                            message: commit.message,
+                            author: commit.author,
+                            committedAt: commit.committedAt,
+                            url: commit.url.flatMap { URL(webPage: $0) }
+                        )
+                    }
+                    if let next = places?.next {
+                        NextStepRow(step: next) { release.startPromoting(to: next.environment) }
+                    }
+                    if let page = detail.gitHubRelease.flatMap({ URL(webPage: $0.url) }) {
+                        Link(destination: page) {
+                            Label {
+                                Text(
+                                    "Release on GitHub", bundle: #bundle,
+                                    comment: "Opens a release's page on its repository's Releases page.")
+                            } icon: {
+                                Image(systemName: "arrow.up.forward.app")
+                            }
+                        }
+                    }
+                }
+                if !detail.problems.isEmpty {
+                    SourceProblemsSection(problems: detail.problems, of: .release)
+                }
+                PromotionsSection(release: release)
                 Section {
                     ReleaseHeader(
                         release: summary.release,
@@ -410,32 +406,7 @@ struct ReleaseScreen: View {
                             storeStageWords($0.stage, appStoreState: $0.appStoreState, phased: $0.phasedRelease)
                         }
                     )
-                    if let commit = summary.commit {
-                        CommitRow(
-                            name: commit.name,
-                            sha: commit.tag == nil ? nil : commit.shortSha,
-                            message: commit.message,
-                            author: commit.author,
-                            committedAt: commit.committedAt,
-                            url: commit.url.flatMap { URL(webPage: $0) }
-                        )
-                    }
-                    if let page = detail.gitHubRelease.flatMap({ URL(webPage: $0.url) }) {
-                        Link(destination: page) {
-                            Label {
-                                Text(
-                                    "Release on GitHub", bundle: #bundle,
-                                    comment: "Opens a release's page on its repository's Releases page.")
-                            } icon: {
-                                Image(systemName: "arrow.up.forward.app")
-                            }
-                        }
-                    }
                 }
-                if !detail.problems.isEmpty {
-                    SourceProblemsSection(problems: detail.problems, of: .release)
-                }
-                PromotionsSection(release: release)
                 InThisReleaseSection(
                     release: summary.ref(in: release.release.project),
                     notes: release.release,
@@ -555,9 +526,30 @@ struct ReleaseScreen: View {
                 }
             }
         }
-        .navigationTitle(Text("Release", bundle: #bundle, comment: "Title of one release."))
+        .navigationTitle(Text(verbatim: release.release.version))
+        #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .toolbar {
+            if let others = places?.otherDeploys, !others.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    OtherDeploysMenu(deploys: others) { release.startPromoting(to: $0) }
+                }
+            }
+        }
         .refreshable { await release.refresh() }
         .task { await release.refresh() }
+        .sensoryFeedback(.impact(weight: .medium), trigger: release.lastStarted?.id)
+        .sensoryFeedback(trigger: release.promotions.map(PromotionEnd.init)) { before, after in
+            // A promotion that ended while the screen showed it: how.
+            let ended = after.filter { end in
+                end.hasEnded && before.contains { $0.id == end.id && !$0.hasEnded }
+            }
+            if ended.contains(where: { !$0.succeeded }) {
+                return .error
+            }
+            return ended.isEmpty ? nil : .success
+        }
         // Runs again once a promotion is shown that hasn't ended, as one just started; stops when the
         // screen leaves.
         .task(id: release.hasUnendedPromotions) { await release.followPromotions() }
@@ -590,8 +582,179 @@ struct ReleaseScreen: View {
     }
 }
 
-/// The release itself: its version, its verdict and why, the release before it, how much it ran and
-/// failed, and when it was deployed and where its build stands, each when known.
+/// What a release is and where it is now: its component, its version, large, and the environments
+/// it is in, with what it hasn't reached yet: `In dev since 1:57 PM · not in prod yet`.
+struct ReleaseHeadline: View {
+    /// The component's name.
+    let component: String
+    let release: String
+    /// Nil until its delivery arrives.
+    let places: ReleasePlaces?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: component)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Text(verbatim: release)
+                    .font(.title.monospaced().weight(.bold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.6)
+                    .textSelection(.enabled)
+            }
+            if let places {
+                Fact(symbol: "mappin.and.ellipse") {
+                    WhereText(places: places)
+                }
+                .font(.subheadline)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Where a release runs now, in a sentence: `In dev since 1:57 PM · not in prod yet`,
+/// `In dev and prod`, `Not in any environment now`.
+struct WhereText: View {
+    let places: ReleasePlaces
+
+    var body: some View {
+        let promoting = places.promoting.map(\.environment)
+        if let only = places.here.first, places.here.count == 1 {
+            let here = Text(
+                "In \(only.environment) since \(reachedText(only.since))",
+                bundle: #bundle,
+                comment: "Where a release runs now, and since when. The variables are an environment and a time or day."
+            )
+            .foregroundStyle(.primary)
+            rest(after: here, promoting: promoting)
+        } else if !places.here.isEmpty {
+            let here = Text(
+                "In \(places.here.map(\.environment).formatted(.list(type: .and)))",
+                bundle: #bundle,
+                comment: "The environments a release runs in now. The variable is a list of environments."
+            )
+            .foregroundStyle(.primary)
+            rest(after: here, promoting: promoting)
+        } else if !promoting.isEmpty {
+            Text(
+                "Promoting to \(promoting.formatted(.list(type: .and)))",
+                bundle: #bundle,
+                comment: "A release in no environment yet, being promoted. The variable is a list of environments."
+            )
+        } else if !places.notYet.isEmpty {
+            Text(
+                "Not in any environment yet",
+                bundle: #bundle,
+                comment: "A release that hasn't reached any environment of its component."
+            )
+        } else {
+            Text(
+                "Not in any environment now: newer releases replaced it",
+                bundle: #bundle,
+                comment: "An older release that no environment of its component runs any more."
+            )
+        }
+    }
+
+    // Where it is, then where it's going or hasn't reached.
+    @ViewBuilder private func rest(after here: Text, promoting: [String]) -> some View {
+        if !promoting.isEmpty {
+            Text(
+                "\(here) · promoting to \(promoting.formatted(.list(type: .and)))",
+                bundle: #bundle,
+                comment:
+                    "Where a release runs now, and where it is being promoted. The variables are where, and a list of environments."
+            )
+        } else if !places.notYet.isEmpty {
+            Text(
+                "\(here) · not in \(places.notYet.formatted(.list(type: .and))) yet",
+                bundle: #bundle,
+                comment:
+                    "Where a release runs now, and where it hasn't reached yet. The variables are where, and a list of environments."
+            )
+        } else {
+            here
+        }
+    }
+}
+
+/// Deploying a release outside the usual order, in a menu of its own: to each other environment with
+/// a deploy target, `Deploy to prod (roll back)` for an older release than the one there.
+struct OtherDeploysMenu: View {
+    let deploys: [ReleasePlaces.OtherDeploy]
+    let deploy: (String) -> Void
+
+    var body: some View {
+        Menu {
+            Section {
+                ForEach(deploys) { other in
+                    Button {
+                        deploy(other.environment)
+                    } label: {
+                        Label {
+                            if other.isRollback {
+                                Text(
+                                    "Deploy to \(other.environment) (roll back)",
+                                    bundle: #bundle,
+                                    comment:
+                                        "Deploys an older release than the one in an environment. The variable is the environment."
+                                )
+                            } else {
+                                Text(
+                                    "Deploy to \(other.environment)",
+                                    bundle: #bundle,
+                                    comment:
+                                        "Deploys a release to an environment outside the usual order. The variable is the environment."
+                                )
+                            }
+                            if let replacing = other.replacing {
+                                Text(
+                                    "Replaces \(replacing.summary.release)",
+                                    bundle: #bundle,
+                                    comment: "What deploying a release replaces. The variable is the release there now."
+                                )
+                            }
+                        } icon: {
+                            Image(systemName: other.isRollback ? "arrow.uturn.backward" : "arrow.up.right")
+                        }
+                    }
+                }
+            } header: {
+                Text(
+                    "Outside the usual order", bundle: #bundle,
+                    comment: "Heads the menu that deploys a release to another environment.")
+            }
+        } label: {
+            Label {
+                Text(
+                    "Deploy Elsewhere", bundle: #bundle,
+                    comment: "The menu that deploys a release to other environments.")
+            } icon: {
+                Image(systemName: "ellipsis")
+            }
+        }
+    }
+}
+
+/// A promotion as feedback tells its ending apart: ended or not, and succeeded or not.
+struct PromotionEnd: Equatable {
+    let id: String
+    let hasEnded: Bool
+    let succeeded: Bool
+
+    init(_ promotion: Promotion) {
+        id = promotion.id
+        hasEnded = promotion.hasEnded
+        succeeded = promotion.succeeded
+    }
+}
+
+/// How the release compares with the one before it: its verdict and why, the release before it, the
+/// environment it was measured in, how much it ran and failed, and when it was deployed and where its
+/// build stands, each when known.
 struct ReleaseHeader: View {
     let release: String
     let component: String
@@ -612,9 +775,6 @@ struct ReleaseHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(verbatim: release)
-                .font(.headline.monospaced())
-                .textSelection(.enabled)
             Label {
                 VStack(alignment: .leading, spacing: 2) {
                     VerdictText(verdict: verdict, slower: slower, failingMore: failingMore, newErrors: newErrors)
@@ -639,15 +799,13 @@ struct ReleaseHeader: View {
                         Text("None", bundle: #bundle, comment: "A release with no release before it.")
                     }
                 }
-                GridRow {
-                    Text("Component", bundle: #bundle, comment: "The component a release is of.")
-                        .foregroundStyle(.secondary)
-                    Text(verbatim: component)
-                }
                 if let environment {
                     GridRow {
-                        Text("Environment", bundle: #bundle, comment: "Where a release ran, such as production.")
-                            .foregroundStyle(.secondary)
+                        Text(
+                            "Measured in", bundle: #bundle,
+                            comment: "The environment a release's comparison with the one before is of."
+                        )
+                        .foregroundStyle(.secondary)
                         Text(verbatim: environment)
                     }
                 }

@@ -5,14 +5,22 @@ import SwiftUI
 
 /// The phone's pairing, one for the app: its window shows it, its delegate gives it push tokens and
 /// what alerts' actions ask, and the alarms' Acknowledge intent acts on it, also when the system
-/// wakes the app without a window.
-@MainActor let pairing = PairingModel(
-    store: KeychainStore(),
-    details: .thisPhone,
-    cacheDirectory: .cachesDirectory,
-    alertSystem: AlertsOnThisPhone(),
-    passkeyDeployment: passkeyDeployment
-)
+/// wakes the app without a window. A Debug build launched for the made-up deployment pairs with that
+/// instead (`DemoDeployment`).
+@MainActor let pairing: PairingModel = {
+    #if DEBUG
+        if let demo = DemoDeployment.pairing() {
+            return demo
+        }
+    #endif
+    return PairingModel(
+        store: KeychainStore(),
+        details: .thisPhone,
+        cacheDirectory: .cachesDirectory,
+        alertSystem: AlertsOnThisPhone(),
+        passkeyDeployment: passkeyDeployment
+    )
+}()
 
 /// The deployment this build's passkeys sign in to, from Info.plist; nil when it is built for none.
 private var passkeyDeployment: URL? {
@@ -45,6 +53,9 @@ struct CluenoriApp: App {
                 .onOpenURL { url in
                     Task { await pairing.open(url) }
                 }
+                #if DEBUG
+                    .task { await DemoDeployment.open(in: pairing) }
+                #endif
         }
     }
 }

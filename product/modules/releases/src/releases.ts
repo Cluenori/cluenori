@@ -76,7 +76,11 @@ const baselineOf = (releases: ReadonlyArray<KnownRelease>, release: KnownRelease
         release,
       )
 
-const summaryOf = Effect.fn("Releases.summaryOf")(function* (
+/**
+ * A release's summary among `releases`: compared with the release before it that ran, with its
+ * commit, store build and deploy. Reads its telemetry: two operation tables and an error table.
+ */
+export const summaryOf = Effect.fn("Releases.summaryOf")(function* (
   releases: ReadonlyArray<KnownRelease>,
   release: KnownRelease,
 ) {

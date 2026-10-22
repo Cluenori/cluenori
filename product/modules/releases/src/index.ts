@@ -39,6 +39,7 @@ export {
   ReleaseNotes,
   SaveNotes,
 } from "./note.ts"
+export { ComponentDelivery, CurrentRelease, Delivery, EnvironmentDelivery, NextStep } from "./delivery.ts"
 export { defaultNotesStyle } from "./notes.ts"
 export {
   BuildNumber,

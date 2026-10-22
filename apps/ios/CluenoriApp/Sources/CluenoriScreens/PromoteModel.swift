@@ -52,6 +52,20 @@ public final class PromoteModel: Identifiable {
         case latestCommit(project: String, component: String)
     }
 
+    /// The release in the environment now, which a promotion there replaces, and since when; and
+    /// whether the release promoted is older, so it rolls the environment back.
+    public struct Replacing: Equatable, Sendable {
+        public let release: String
+        public let since: Date
+        public let isRollback: Bool
+
+        public init(release: String, since: Date, isRollback: Bool = false) {
+            self.release = release
+            self.since = since
+            self.isRollback = isRollback
+        }
+    }
+
     public enum State: Equatable, Sendable {
         /// Waiting for the member to promote, or to cancel.
         case confirming
@@ -75,6 +89,8 @@ public final class PromoteModel: Identifiable {
     public var commit = ""
     /// The repository the workflow runs in, the component's; nil when the release doesn't say.
     public let repository: String?
+    /// What it replaces in the environment; nil when nothing is there, or the app doesn't know.
+    public let replacing: Replacing?
     /// Why, in the member's words: sent trimmed, and left out when empty.
     public var reason = ""
     /// Where the workflow runs: `auto`, the founder's Mac when it is online, else the cloud; sent
@@ -97,6 +113,7 @@ public final class PromoteModel: Identifiable {
         targets: [DeployTarget],
         target: DeployTarget,
         repository: String?,
+        replacing: Replacing? = nil,
         api: CluenoriAPI,
         keyRejected: @escaping () -> Void,
         started: @escaping (Promotion) -> Void
@@ -105,6 +122,7 @@ public final class PromoteModel: Identifiable {
         self.targets = targets
         self.target = target
         self.repository = repository
+        self.replacing = replacing
         self.api = api
         self.keyRejected = keyRejected
         self.started = started
@@ -118,6 +136,14 @@ public final class PromoteModel: Identifiable {
     public var releaseVersion: String? {
         guard case .release(let release) = subject else { return nil }
         return release.version
+    }
+
+    /// The component promoted, by key.
+    public var component: String {
+        switch subject {
+        case .release(let release): release.component
+        case .latestCommit(_, let component): component
+        }
     }
 
     /// The commit to promote, as the deployment takes it: 40 lower-case hex characters; nil for the

@@ -19,74 +19,87 @@ const promotedLatest = (component: string) =>
     .map((call) => call.body)
 
 describe("promote latest journey", () => {
-  it.effect("promotes a component's newest commit, numbered as its next release, and opens that release", () =>
+  it.effect("builds a component's newest commit for its first environment, numbered as its next release", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
       window.history.pushState(null, "", "/notes/releases?component=notes-api")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      yield* Effect.promise(() =>
-        screen
-          .getByRole("region", { name: "Where releases come from" })
-          .getByRole("button", { name: "Promote latest… of notes-api" })
-          .click(),
-      )
-      const dialog = screen.getByRole("dialog", { name: "Promote notes-api's latest commit?" })
-      // What it becomes, and where it goes: the first target unless another is chosen.
+      // Staging, the API's first environment, takes the latest commit next.
+      const api = screen.getByRole("region", { name: "notes-api" })
+      const staging = api.getByRole("listitem", { name: "staging" })
+      yield* Effect.promise(() => staging.getByRole("button", { name: "Build the latest commit for staging" }).click())
+      const dialog = screen.getByRole("dialog", { name: "Build notes-api's latest commit?" })
+      // What it becomes, and where it goes: the environment it was asked for.
       yield* Effect.promise(() => expect.element(dialog.getByText("1.4.0+58")).toBeVisible())
       const environment = dialog.getByRole("group", { name: "Environment" })
       yield* Effect.promise(() =>
-        expect.element(environment.getByRole("button", { name: "production" })).toHaveAttribute("aria-pressed", "true"),
+        expect.element(environment.getByRole("button", { name: "staging" })).toHaveAttribute("aria-pressed", "true"),
       )
-      yield* expectAccessible()
-      yield* Effect.promise(() => environment.getByRole("button", { name: "staging" }).click())
       yield* Effect.promise(() =>
         expect
           .element(dialog.getByRole("listitem"))
           .toMatchTextContent("Runs promote-to-staging.yml in notesapp/notes-api"),
       )
+      yield* expectAccessible()
+      yield* Effect.promise(() => dialog.getByRole("button", { name: "Options" }).click())
       yield* Effect.promise(() =>
         dialog.getByRole("group", { name: "Where the workflow runs" }).getByRole("button", { name: "Cloud" }).click(),
       )
 
       // A commit that isn't a full SHA is refused before anything is sent; empty, it is the newest.
+      const build = dialog.getByRole("button", { name: "Build and promote to staging" })
       yield* Effect.promise(() => dialog.getByLabelText("Commit").fill("5d2e8a7"))
-      yield* Effect.promise(() => dialog.getByRole("button", { name: "Promote", exact: true }).click())
+      yield* Effect.promise(() => build.click())
       yield* Effect.promise(() => expect.element(dialog.getByText(/^Expected a full commit SHA/)).toBeVisible())
       assert.deepStrictEqual(promotedLatest("notes-api"), [])
       yield* Effect.promise(() => dialog.getByLabelText("Commit").fill(""))
-      yield* Effect.promise(() => dialog.getByRole("button", { name: "Promote", exact: true }).click())
+      yield* Effect.promise(() => build.click())
 
-      // Its release's page, where the promotion shows.
+      // It closes, and staging shows the promotion going there, as Cluenori numbered it.
+      yield* Effect.promise(() => expect.element(dialog).not.toBeInTheDocument())
+      yield* Effect.promise(() => expect.element(staging.getByText("Starting")).toBeVisible())
+      yield* Effect.promise(() =>
+        expect.element(staging.getByRole("button", { name: /^Build the latest commit/ })).not.toBeInTheDocument(),
+      )
+      assert.deepStrictEqual(promotedLatest("notes-api"), ['{"environment":"staging","runner":"cloud"}'])
+      // The next build is the one after.
+      yield* Effect.promise(() => expect.element(api.getByText("1.4.0+59")).toBeVisible())
+      yield* expectAccessible()
+
+      // Its release's page, a click away, in the environment it goes to, has the promotion by you.
+      yield* Effect.promise(() => staging.getByRole("link", { name: "1.4.0+58" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "1.4.0+58" })).toBeVisible(),
       )
       assert.strictEqual(window.location.pathname, "/notes/releases/notes-api/1.4.0%2B58")
-      // In the environment it is going to, compared with the release there now.
       assert.strictEqual(new URLSearchParams(window.location.search).get("environment"), "staging")
       const row = screen.getByRole("region", { name: "Promotions" }).getByRole("listitem").first()
       yield* Effect.promise(() => expect.element(row.getByText("Starting")).toBeVisible())
-      yield* Effect.promise(() => expect.element(row.getByText("staging", { exact: true })).toBeVisible())
       yield* Effect.promise(() => expect.element(row.getByText(/by you/)).toBeVisible())
-      assert.deepStrictEqual(promotedLatest("notes-api"), ['{"environment":"staging","runner":"cloud"}'])
       yield* expectAccessible()
     }),
   )
 
-  it.effect("says a component's version isn't set, one click from the versions", () =>
+  it.effect("says a component's version isn't set, one click from setting it", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ linked: iosWithThreeApps }))
       window.history.pushState(null, "", "/notes/releases?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      yield* Effect.promise(() => screen.getByRole("button", { name: "Promote latest… of notes-ios" }).click())
-      const dialog = screen.getByRole("dialog", { name: "Promote notes-ios's latest commit?" })
+      yield* Effect.promise(() =>
+        screen
+          .getByRole("region", { name: "notes-ios" })
+          .getByRole("button", { name: "Build the latest commit for internal" })
+          .click(),
+      )
+      const dialog = screen.getByRole("dialog", { name: "Build notes-ios's latest commit?" })
       yield* Effect.promise(() =>
         expect
           .element(dialog.getByRole("group", { name: "Environment" }).getByRole("button", { name: "internal" }))
           .toHaveAttribute("aria-pressed", "true"),
       )
-      yield* Effect.promise(() => dialog.getByRole("button", { name: "Promote", exact: true }).click())
+      yield* Effect.promise(() => dialog.getByRole("button", { name: "Build and promote to internal" }).click())
       const refusal = dialog.getByRole("alert")
       yield* Effect.promise(() =>
         expect
@@ -96,18 +109,14 @@ describe("promote latest journey", () => {
       yield* expectAccessible()
       yield* Effect.promise(() => refusal.getByRole("button", { name: "Set the version" }).click())
       yield* Effect.promise(() => expect.element(dialog).not.toBeInTheDocument())
-      yield* Effect.promise(() => expect.poll(() => document.activeElement?.id).toBe("versions"))
       yield* Effect.promise(() =>
-        expect
-          .element(
-            screen.getByRole("region", { name: "Versions" }).getByText("Set a version to let CI number its builds."),
-          )
-          .toBeVisible(),
+        expect.element(screen.getByRole("dialog", { name: "notes-ios's version" })).toBeVisible(),
       )
+      yield* expectAccessible()
     }),
   )
 
-  it.effect("says the environment is being promoted to already, with its run", () =>
+  it.effect("shows a promotion running to an environment, and says so when it is promoted to again", () =>
     Effect.gen(function* () {
       const running = {
         id: PromotionId.make("019a1000-0000-7000-8000-000000000031"),
@@ -124,9 +133,24 @@ describe("promote latest journey", () => {
       window.history.pushState(null, "", "/notes/releases?component=notes-api")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      yield* Effect.promise(() => screen.getByRole("button", { name: "Promote latest… of notes-api" }).click())
-      const dialog = screen.getByRole("dialog", { name: "Promote notes-api's latest commit?" })
-      yield* Effect.promise(() => dialog.getByRole("button", { name: "Promote", exact: true }).click())
+      // Production shows it going there, with its run.
+      const api = screen.getByRole("region", { name: "notes-api" })
+      const production = api.getByRole("listitem", { name: "production" })
+      yield* Effect.promise(() => expect.element(production.getByText("Running")).toBeVisible())
+      yield* Effect.promise(() =>
+        expect
+          .element(production.getByRole("link", { name: "Run on GitHub of the promotion to production" }))
+          .toHaveAttribute("href", "https://github.com/notesapp/notes-api/actions/runs/9401"),
+      )
+      yield* expectAccessible()
+
+      // Building for production meanwhile is refused, with the run that holds it.
+      yield* Effect.promise(() => api.getByRole("button", { name: "Build the latest commit for staging" }).click())
+      const dialog = screen.getByRole("dialog", { name: "Build notes-api's latest commit?" })
+      yield* Effect.promise(() =>
+        dialog.getByRole("group", { name: "Environment" }).getByRole("button", { name: "production" }).click(),
+      )
+      yield* Effect.promise(() => dialog.getByRole("button", { name: "Build and promote to production" }).click())
       yield* Effect.promise(() =>
         expect.element(dialog.getByRole("alert")).toMatchTextContent("Already promoting 1.4.0+57 to production."),
       )
@@ -137,9 +161,7 @@ describe("promote latest journey", () => {
       )
       // Nothing was numbered: the next build is the same.
       yield* Effect.promise(() => dialog.getByRole("button", { name: "Cancel" }).click())
-      yield* Effect.promise(() =>
-        expect.element(screen.getByRole("region", { name: "Versions" }).getByText("1.4.0+58")).toBeVisible(),
-      )
+      yield* Effect.promise(() => expect.element(api.getByText("1.4.0+58")).toBeVisible())
       yield* expectAccessible()
     }),
   )

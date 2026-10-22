@@ -42,5 +42,10 @@ export const migrateProjects = Migrator.make({})({
           'appStore', json_object('bundleId', app_store_bundle_id, 'distribution', 'appStore')))
         WHERE app_store_bundle_id IS NOT NULL`
     }),
+    // The component a component ships with, null for one that ships on its own.
+    "0005_ships_with": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE projects_components ADD COLUMN ships_with TEXT`
+    }),
   }),
 })

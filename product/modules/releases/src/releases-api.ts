@@ -4,6 +4,7 @@ import { ProjectNotFound } from "@cluenori/projects"
 import { DateTime, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
+import { Delivery } from "./delivery.ts"
 import { DraftUnavailable, NotesDraft, NotesStyle, ReleaseNotes } from "./note.ts"
 import {
   AppStoreSubmission,
@@ -114,6 +115,16 @@ export class ReleasesGroup extends HttpApiGroup.make("releases")
     }).annotate(
       OpenApi.Description,
       "Releases a promotion that App Store review approved and that waits for a member, submitted to be released manually: App Store Connect makes it live, and the promotion ends once it is. 404 for no promotion of that ID waiting so.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("delivery", "/projects/:project/delivery", {
+      params: { project: ProjectKey },
+      success: Delivery,
+      error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
+    }).annotate(
+      OpenApi.Description,
+      "How each component's releases reach its environments: the environments of its deploy targets, in their order (for a component without any, those it ran in), each with the release there now and since when, a promotion to it that hasn't ended, and what can go there next: `promote` the release of the environment before it, newer than the one there, or, to the first, `buildLatest`, the default branch's newest commit. An App Store app's environment has the build out on the App Store; a TestFlight app's, the latest build processed; another, the release last deployed or first run there.",
     ),
   )
   .add(

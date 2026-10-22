@@ -408,9 +408,27 @@ export const releaseAtom = Atom.family((key: ReleaseScope) =>
 )
 
 /**
+ * How each of a project's components' releases reach its environments, whatever the period: in each,
+ * the release there now and since when, a promotion under way, and the one next step; with `asOf`,
+ * when it was asked, which "how long" is measured from.
+ */
+export const deliveryAtom = Atom.family((project: ProjectKey) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const asOf = yield* DateTime.now
+        const delivery = yield* client.releases.delivery({ params: { project } })
+        return { delivery, asOf }
+      }),
+    ),
+  ),
+)
+
+/**
  * Promotes a release to an environment by its component's deploy target there, for the member
  * signed in: its workflow on `runner`, then, for an app, App Store Connect, submitted to review as
- * `submission` says; and asks for the release again, whose promotions then have it. Each call that
+ * `submission` says; and asks for the release and the delivery again, whose promotions then have it. Each call that
  * succeeds starts a run. Fails with `PromotionRefused` until someone fixes what its reason says,
  * where its `fix` says; `PromotionInProgress` while the last promotion to the environment runs;
  * and `PromotionUnavailable` when GitHub didn't answer, so nothing started.
@@ -435,6 +453,7 @@ export const promoteAtom = CluenoriClient.runtime.fn(
         },
       })
       yield* Atom.refresh(releaseAtom(input.release))
+      yield* Atom.refresh(deliveryAtom(input.release.project))
       return promotion
     }),
 )
@@ -443,8 +462,8 @@ export const promoteAtom = CluenoriClient.runtime.fn(
  * Promotes a component's commit that has no release yet: `commit`, or the newest on its
  * repository's default branch. Cluenori numbers it as the component's next release, then promotes
  * that release as `promoteAtom` does, with the same failures, and `PromotionRefused` with the fix
- * `version` until the component's version is set. Asks for the versions again, whose next build
- * this takes.
+ * `version` until the component's version is set. Asks for the delivery again, whose version this
+ * numbers on and whose environment this promotes to.
  */
 export const promoteLatestAtom = CluenoriClient.runtime.fn(
   (input: {
@@ -460,15 +479,15 @@ export const promoteLatestAtom = CluenoriClient.runtime.fn(
       const client = yield* CluenoriClient
       const { project, component, ...payload } = input
       const promotion = yield* client.releases.promoteLatest({ params: { project, component }, payload })
-      yield* Atom.refresh(versionsAtom(project))
+      yield* Atom.refresh(deliveryAtom(project))
       return promotion
     }),
 )
 
 /**
  * Releases a promotion App Store review approved, which waits for a member: App Store Connect makes
- * it live, and the promotion ends once it is. Asks for the release again. Fails with
- * `PromotionNotFound` when it isn't waiting any more.
+ * it live, and the promotion ends once it is. Asks for the release and the delivery again. Fails
+ * with `PromotionNotFound` when it isn't waiting any more.
  */
 export const releaseApprovedAtom = CluenoriClient.runtime.fn(
   (input: { readonly release: ReleaseScope; readonly promotion: PromotionId }) =>
@@ -478,6 +497,7 @@ export const releaseApprovedAtom = CluenoriClient.runtime.fn(
         params: { project: input.release.project, promotion: input.promotion },
       })
       yield* Atom.refresh(releaseAtom(input.release))
+      yield* Atom.refresh(deliveryAtom(input.release.project))
       return promotion
     }),
 )
@@ -515,21 +535,10 @@ export const draftNotesAtom = CluenoriClient.runtime.fn(
     }),
 )
 
-/** Each component's version, which its next builds are numbered in; one never set isn't listed. */
-export const versionsAtom = Atom.family((project: ProjectKey) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.releases.versions({ params: { project } })
-      }),
-    ),
-  ),
-)
-
 /**
  * Sets a component's version, the same or higher, its builds continuing, or from `firstBuild`; asks
- * for the versions again. Fails with `VersionRefused`, saying why, for a lower version.
+ * for the delivery again, which says each component's version. Fails with `VersionRefused`, saying
+ * why, for a lower version.
  */
 export const setVersionAtom = CluenoriClient.runtime.fn(
   (input: {
@@ -547,7 +556,7 @@ export const setVersionAtom = CluenoriClient.runtime.fn(
           ...(input.firstBuild === undefined ? {} : { firstBuild: input.firstBuild }),
         },
       })
-      yield* Atom.refresh(versionsAtom(input.project))
+      yield* Atom.refresh(deliveryAtom(input.project))
       return set
     }),
 )
@@ -576,10 +585,10 @@ export const setNotesStyleAtom = CluenoriClient.runtime.fn(
 )
 
 /**
- * Replaces a component's links, its GitHub repository and its deploy targets, one left out unlinked,
- * and asks for the project again, whose components show them, and for the `release` a page shows,
- * whose deploy targets are its component's. Fails with
- * `ComponentNotFound` for a component the project no longer has.
+ * Replaces a component's links, its GitHub repository, its deploy targets and the component it ships
+ * with, one left out unlinked, and asks for the project and the delivery again, which show them, and
+ * for the `release` a page shows, whose deploy targets are its component's. Fails with
+ * `ComponentNotFound` for a component the project no longer has, or one it ships with that it lacks.
  */
 export const linkComponentAtom = CluenoriClient.runtime.fn(
   (input: {
@@ -595,6 +604,7 @@ export const linkComponentAtom = CluenoriClient.runtime.fn(
         payload: input.links,
       })
       yield* Atom.refresh(projectAtom(input.project))
+      yield* Atom.refresh(deliveryAtom(input.project))
       if (input.release !== undefined) {
         yield* Atom.refresh(releaseAtom(input.release))
       }

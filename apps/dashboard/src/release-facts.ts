@@ -2,11 +2,22 @@
 // the API's answers. Only those pages say these, so they load with them, not with the first load
 // (`src/project-facts.ts` has the rules every page says). Every rule is pure.
 
-import type { EnvironmentKey, MemberId } from "@cluenori/foundation"
+import type { ComponentKey, EnvironmentKey, MemberId, ReleaseVersion } from "@cluenori/foundation"
 import type { Member } from "@cluenori/members"
 import type { DeployTarget } from "@cluenori/projects"
-import type { ComponentVersion, Promotion, PromotionState } from "@cluenori/releases"
+import type {
+  ComponentDelivery,
+  ComponentVersion,
+  Delivery,
+  EnvironmentDelivery,
+  NextStep,
+  Promotion,
+  PromotionState,
+} from "@cluenori/releases"
 import { hasEnded } from "@cluenori/releases"
+import { DateTime } from "effect"
+
+import { clockTime, dayOf, moment } from "@/lib/format"
 
 // ---- Promotions ------------------------------------------------------------------------------------
 
@@ -35,6 +46,34 @@ export const promotionStates: Readonly<
   cancelled: { words: "Cancelled", tone: "cancelled" },
   rejected: { words: "Rejected in review", tone: "failed" },
   lost: { words: "Not followed — see GitHub", tone: "lost" },
+}
+
+/**
+ * How a promotion that didn't get its release where it went ended, as the end of "Promoting 1.0.0+1
+ * to prod …": "failed", "was cancelled", "was rejected in App Store review", or, when Cluenori
+ * stopped following it, "wasn't followed to its end". The others say how far it got.
+ */
+export const failedEndingOf = (state: PromotionState) => {
+  switch (state) {
+    case "failed":
+      return "failed"
+    case "cancelled":
+      return "was cancelled"
+    case "rejected":
+      return "was rejected in App Store review"
+    case "lost":
+      return "wasn't followed to its end"
+    case "starting":
+    case "queued":
+    case "waiting":
+    case "running":
+    case "processing":
+    case "inReview":
+    case "approved":
+    case "releasing":
+    case "succeeded":
+      return promotionStates[state].words.toLowerCase()
+  }
 }
 
 /** How often a release's page asks again while a promotion of it runs: Cluenori asks GitHub each minute. */
@@ -97,6 +136,28 @@ export const goesToReview = (target: DeployTarget) => target.appStore?.distribut
 export const draftEnvironmentOf = (targets: ReadonlyArray<DeployTarget>): EnvironmentKey | undefined =>
   (targets.find(goesToReview) ?? targets.find((target) => target.appStore !== undefined) ?? targets[0])?.environment
 
+/**
+ * The components `component` may ship with: the project's others, but none that ships with it,
+ * directly or through another, so no two ship with each other.
+ */
+export const shipsWithOptionsOf = (
+  components: ReadonlyArray<{ readonly key: ComponentKey; readonly shipsWith?: ComponentKey }>,
+  component: ComponentKey,
+): ReadonlyArray<ComponentKey> => {
+  const byKey = new Map(components.map((each) => [each.key, each] as const))
+  const shipsWithIt = (each: { readonly shipsWith?: ComponentKey }, seen: ReadonlySet<ComponentKey>): boolean => {
+    const parent = each.shipsWith
+    if (parent === undefined || seen.has(parent)) {
+      return false
+    }
+    const next = byKey.get(parent)
+    return parent === component || (next !== undefined && shipsWithIt(next, new Set([...seen, parent])))
+  }
+  return components
+    .filter((each) => each.key !== component && !shipsWithIt(each, new Set([each.key])))
+    .map((each) => each.key)
+}
+
 // ---- Versions --------------------------------------------------------------------------------------
 
 /** Which part of a version a bump raises. */
@@ -117,3 +178,149 @@ export const bumpedVersion = (version: string, part: VersionPart) => {
 
 /** The release a component's next build will be: `1.4.0+58` after build 57. */
 export const nextReleaseOf = (line: ComponentVersion) => `${line.version}+${line.lastBuild + 1}`
+
+// ---- Delivery -------------------------------------------------------------------------------------
+
+/** A component's delivery, with those of the components that ship with it, which have nothing to do. */
+export type DeliveryGroup = {
+  readonly delivery: ComponentDelivery
+  readonly shipping: ReadonlyArray<ComponentDelivery>
+}
+
+/**
+ * Each component's delivery as the Releases page groups it, in the project's order: one that ships
+ * with another inside the group of the component that has the deploys, following each `shipsWith`;
+ * one that ships with a component the answer lacks, or with one that ships with it, stands alone.
+ */
+export const deliveryGroupsOf = (components: ReadonlyArray<ComponentDelivery>): ReadonlyArray<DeliveryGroup> => {
+  const byKey = new Map(components.map((each) => [each.component, each] as const))
+  // The component whose deploys deploy `each`, up its `shipsWith`; none in a loop of them.
+  const upFrom = (each: ComponentDelivery, seen: ReadonlySet<ComponentKey>): ComponentKey | undefined => {
+    const parent = each.shipsWith === undefined ? undefined : byKey.get(each.shipsWith)
+    if (parent === undefined) {
+      return each.component
+    }
+    return seen.has(parent.component) ? undefined : upFrom(parent, new Set([...seen, parent.component]))
+  }
+  const rootOf = (each: ComponentDelivery) => upFrom(each, new Set([each.component])) ?? each.component
+  return components
+    .filter((each) => rootOf(each) === each.component)
+    .map((delivery) => ({
+      delivery,
+      shipping: components.filter(
+        (each) => each.component !== delivery.component && rootOf(each) === delivery.component,
+      ),
+    }))
+}
+
+/**
+ * What a next step does, in words, saying what goes where: "Build the latest commit for dev",
+ * "Promote 1.0.0+1 from dev to prod".
+ */
+export const nextStepWords = (step: NextStep, environment: EnvironmentKey) => {
+  switch (step._tag) {
+    case "buildLatest":
+      return `Build the latest commit for ${environment}`
+    case "promote":
+      return `Promote ${step.release} from ${step.from} to ${environment}`
+  }
+}
+
+/**
+ * What an environment says when nothing can go there next, beside the release there: that it has
+ * the release of the environment before it, or that the one before has none to promote yet.
+ * Nothing for the first, for one without a deploy target, or while a promotion to it runs.
+ */
+export const stageNoteOf = (stage: EnvironmentDelivery, before: EnvironmentDelivery | undefined) => {
+  if (before === undefined || stage.target === undefined || stage.promotion !== undefined || stage.next !== undefined) {
+    return undefined
+  }
+  if (before.current === undefined) {
+    return `Nothing in ${before.environment} to promote yet`
+  }
+  return before.current.summary.release === stage.current?.summary.release
+    ? `The same release as ${before.environment}`
+    : undefined
+}
+
+/** When something reached an environment: the time alone on the day the answer is of, else the day too. */
+export const sinceWords = (since: DateTime.Utc, asOf: DateTime.Utc) => {
+  const at = DateTime.toEpochMillis(since)
+  return dayOf(at) === dayOf(DateTime.toEpochMillis(asOf)) ? clockTime(at) : moment(at)
+}
+
+/**
+ * One part of where a release runs now: in an environment since when; nowhere; going to one by a
+ * promotion; not there yet, where the next step is it; another release there; or nothing there yet.
+ */
+export type WherePart =
+  | { readonly _tag: "runs"; readonly environment: EnvironmentKey; readonly since: DateTime.Utc }
+  | { readonly _tag: "nowhere" }
+  | { readonly _tag: "going"; readonly environment: EnvironmentKey; readonly state: PromotionState }
+  | { readonly _tag: "notYet"; readonly environment: EnvironmentKey }
+  | { readonly _tag: "other"; readonly environment: EnvironmentKey; readonly release: ReleaseVersion }
+  | { readonly _tag: "nothing"; readonly environment: EnvironmentKey }
+
+/**
+ * Where a release runs now, by its component's delivery: first each environment it runs in, or
+ * that it runs nowhere; then each other environment in order: a promotion of it going there, that
+ * it isn't there yet when that environment's next step is it, else the release there or that
+ * nothing is there yet. "In dev since 13:57 · not in prod yet".
+ */
+export const whereItRunsOf = (delivery: ComponentDelivery, release: ReleaseVersion): ReadonlyArray<WherePart> => {
+  const runs = delivery.environments.flatMap((stage): ReadonlyArray<WherePart> =>
+    stage.current !== undefined && stage.current.summary.release === release
+      ? [{ _tag: "runs", environment: stage.environment, since: stage.current.since }]
+      : [],
+  )
+  const elsewhere = delivery.environments.flatMap((stage): ReadonlyArray<WherePart> => {
+    const { environment } = stage
+    const here = stage.current?.summary.release
+    if (here === release) {
+      return []
+    }
+    if (stage.promotion !== undefined && stage.promotion.release === release) {
+      return [{ _tag: "going", environment, state: stage.promotion.state }]
+    }
+    if (stage.next?._tag === "promote" && stage.next.release === release) {
+      return [{ _tag: "notYet", environment }]
+    }
+    return [here === undefined ? { _tag: "nothing", environment } : { _tag: "other", environment, release: here }]
+  })
+  return [...(runs.length === 0 ? [{ _tag: "nowhere" as const }] : runs), ...elsewhere]
+}
+
+/**
+ * The environment whose next step promotes `release`, with the one it comes from: a release page's
+ * one primary action. None when no environment's next step is it.
+ */
+export const promotionNextOf = (delivery: ComponentDelivery, release: ReleaseVersion) => {
+  for (const stage of delivery.environments) {
+    if (stage.target !== undefined && stage.next?._tag === "promote" && stage.next.release === release) {
+      return { target: stage.target, from: stage.next.from }
+    }
+  }
+  return undefined
+}
+
+/** What runs in an environment now, as a promotion's confirmation says what it replaces. */
+export type ThereNow =
+  | { readonly _tag: "release"; readonly release: ReleaseVersion; readonly since: DateTime.Utc }
+  | { readonly _tag: "nothing" }
+
+/** What runs in `environment` of a component's delivery now; absent for an environment it doesn't list. */
+export const thereNowOf = (delivery: ComponentDelivery, environment: EnvironmentKey): ThereNow | undefined => {
+  const stage = delivery.environments.find((each) => each.environment === environment)
+  if (stage === undefined) {
+    return undefined
+  }
+  return stage.current === undefined
+    ? { _tag: "nothing" }
+    : { _tag: "release", release: stage.current.summary.release, since: stage.current.since }
+}
+
+/** Whether a promotion to any environment hasn't ended, so the delivery is asked for again until each has. */
+export const isDelivering = (delivery: Delivery) =>
+  delivery.components.some((component) =>
+    component.environments.some((stage) => stage.promotion !== undefined && !hasEnded(stage.promotion.state)),
+  )

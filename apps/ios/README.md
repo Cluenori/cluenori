@@ -2,19 +2,24 @@
 
 Cluenori on the founder's iPhone, installed from TestFlight: it pairs with a deployment by the QR
 code its web shows, and shows Today, what needs attention across the deployment's projects, and
-each project over a period: its incidents, load, operations with their percentiles, errors with
-their stacks, logs, and releases, each compared with the release before it, with its commit and
-the changes since that release from GitHub, and its build's stage in App Store Connect; from a
-release, its operations, errors, and logs, narrowed to it, over the release's own span. A release
-shows its promotions, each followed through its run on GitHub and its build in App Store Connect,
-TestFlight or App Store review, until it ends; it promotes the release by one of its component's
-deploy targets, choosing where the workflow runs and how an approved version goes live, and
-releases one review approved. Its notes, What's New or What to Test, are edited in each language
-and drafted with AI; a project's releases show its components' versions, bumped or set, promote a
-component's newest commit, which the deployment numbers as its next release, and lead to how its
-notes read. A project's
-screens show one environment at a time: its production environment, or the one chosen on the phone. Alerts reach it as pushes: a project that is down rings like an alarm
-clock, through silent mode, with an Acknowledge button (`concept/Modules.md`).
+each project: its incidents; its delivery, what release is in each of its components' environments
+and what's next; and, over a period, its load, operations with their percentiles, errors with
+their stacks, and logs. A component shows its environments in the order its releases go through
+them, each with the release there now and since when, a promotion under way, and its one next
+step: build the latest commit for the first, which the deployment numbers as the component's next
+release, or promote the release of the environment before; with its version, bumped or set, and
+the components that ship with it. A release says where it runs now and is compared with the
+release before it, with its commit and the changes since that release from GitHub, and its build's
+stage in App Store Connect; it shows its operations, errors, and logs, narrowed to it, over its own
+span; and its promotions, each followed through its run on GitHub and its build in App Store
+Connect, TestFlight or App Store review, until it ends. A promotion chooses where the workflow runs
+and how an approved version goes live; one review approved is released from its release; a
+release goes anywhere else, such as back to roll an environment back, from a menu of its own. Its
+notes, What's New or What to Test, are edited in each language and drafted with AI, in the
+project's notes style. A project's monitoring screens show one environment at a time: its
+production environment, or the one chosen on the phone. Alerts reach it as pushes: a project that
+is down rings like an alarm clock, through silent mode, with an Acknowledge button
+(`concept/Modules.md`).
 
 ## Use it
 
@@ -24,6 +29,13 @@ open apps/ios/Cluenori.xcodeproj      Xcode 27.2: run on a simulator or an iPhon
 bun run generate                      from the root: rewrites CluenoriAPI.swift when the API changes
 bun run testflight:ios                from the root: builds the Release app and uploads it to TestFlight
 ```
+
+To look at its screens without a deployment, launch a Debug build with `-CluenoriDemo YES`: it pairs
+with a deployment made up on the phone (`Cluenori/DemoDeployment.swift`, which Release builds
+don't have), and opens the link `-CluenoriDemoOpen` names; `-CluenoriDemoStep <environment>` opens a
+component's promote sheet, `-CluenoriDemoScroll <points>` scrolls the screen, and
+`-CluenoriDemoFailure YES` fails the API's last promotion to prod, for screenshots with
+`xcrun simctl io booted screenshot`.
 
 To run it on an iPhone, copy `Config/Local.example.xcconfig` to `Config/Local.xcconfig` with your
 App ID's bundle ID and your team, and your deployment's domain for signing in with a passkey. The scheme Cluenori builds the app for your deployment; Cluenori
@@ -78,25 +90,33 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   phone allows, registering its push token, acknowledging, and a test alarm. Every
   question goes through `Answer`: shown at once from the phone, asked again, and kept when the
   network drops, in the app's caches, a folder per pairing, gone when the phone unpairs.
-  Actions are not questions: promoting (`PromoteModel`, from `ReleaseModel`), releasing an
-  approved version, saving notes (`NotesModel`, one per release) or a notes style
-  (`NotesStyleModel`), and setting a version (`VersionsModel`) are each sent once, never kept to
-  send later; a write that answers with the whole of what a screen shows is shown at once
-  (`Answer.show`), and edits stay in their model while the app runs. A release asks again every 15
-  seconds while its screen shows a promotion that hasn't ended. Who "you" is comes from `/api/me`,
-  asked once a promotion names who started it, and kept for the pairing.
+  A project's delivery (`DeliveryModel`, one per project, which its components' and releases'
+  screens share) says what is in each environment and the one next step there, named in full
+  (`DeliveryStep`), and where a release is (`ReleasePlaces`); it doesn't decide what's next, the
+  deployment does. Actions are not questions: promoting (`PromoteModel`, from a delivery's next
+  step, or from `ReleaseModel` to an environment outside the usual order), releasing an approved
+  version, saving notes (`NotesModel`, one per release) or a notes style (`NotesStyleModel`), and
+  setting a version (`VersionsModel`) are each sent once, never kept to send later; a write that
+  answers with the whole of what a screen shows is shown at once (`Answer.show`), and edits stay in
+  their model while the app runs. A promotion started on the phone shows at once on its component
+  and its release. A release, and a project's delivery, ask again every 15 seconds while their
+  screen shows a promotion that hasn't ended; the delivery says the last one that failed, until
+  something reaches its environment. Who "you" is comes from `/api/me`, asked once a promotion names
+  who started it, and kept for the pairing.
 - **Links to screens:** `cluenori://projects/<key>`, and under it `/operations`, `/errors`,
-  `/errors/<id>`, `/logs`, `/releases`, `/notes-style`, and `/releases/<component>/<release>`,
-  under which `/operations`, `/errors`, `/errors/<id>`, and `/logs` are that release's alone, and
-  `/notes` its notes. Each takes
+  `/errors/<id>`, `/logs`, `/releases`, `/notes-style`, `/components/<component>` and its every
+  release, `/components/<component>/releases`, and `/releases/<component>/<release>`, under which
+  `/operations`, `/errors`, `/errors/<id>`, and `/logs` are that release's alone, and `/notes` its
+  notes; a release opens over its component. Each takes
   `?environment=<key>`: the environment a project's screen shows, or the one a release's component
   says it runs in. Alerts will open them. A screen narrowed to a release (`Telemetry` in its
   `Route`) says so at its top, with its environment and span and a button that shows every release
   in its place.
-- **Environments** (`EnvironmentChoice`, one per project): the project's production environments
-  and those its telemetry named in the last 30 days, from the deployment and kept on the phone, and
-  the one its screens show: chosen on the phone and remembered for the project, else the first
-  production one seen. A route that names no environment shows that one
+- **Environments** (`EnvironmentChoice`, one per project): those of its components' deploy targets,
+  in their order, then those its telemetry named in the last 30 days, production ones marked, from
+  the deployment and kept on the phone; and the one its monitoring screens show, in a menu that says
+  so (`Showing`): chosen on the phone and remembered for the project, else its first production
+  environment. A route that names no environment shows that one
   (`DeploymentModels.resolved`); choosing another shows the project's open screens in it. A
   deployment older than environments tells none apart: no choice, and no environment asked.
 - **The client** (`CluenoriApp/Sources/CluenoriClient`): `CluenoriAPI.swift`, generated from the

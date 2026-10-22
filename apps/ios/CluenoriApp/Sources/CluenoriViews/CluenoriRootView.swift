@@ -91,10 +91,12 @@ struct RouteScreen: View {
     // release, or a screen narrowed to one, looks over the release's own span.
     private static func looksOverPeriod(_ route: Route) -> Bool {
         switch route {
-        case .operations(.project), .errors(.project), .error(.project, _), .logs(.project), .releases: true
+        case .operations(.project), .errors(.project), .error(.project, _), .logs(.project), .releases,
+            .componentReleases:
+            true
         case .operation(let operation): operation.release == nil
-        case .project, .release, .operations(.release), .errors(.release), .error(.release, _), .logs(.release),
-            .notes, .notesStyle:
+        case .project, .component, .release, .operations(.release), .errors(.release), .error(.release, _),
+            .logs(.release), .notes, .notesStyle:
             false
         }
     }
@@ -112,6 +114,7 @@ private struct Screen: View {
         case .project(let key, let environment):
             ProjectScreen(
                 project: models.project(key, environment: environment, period: navigation.period),
+                delivery: models.delivery(key),
                 environments: environments,
                 name: models.name(of: key),
                 navigation: navigation
@@ -150,7 +153,20 @@ private struct Screen: View {
             ReleasesScreen(
                 releases: models.releases(project, environment: environment, period: navigation.period),
                 environments: environments,
+                navigation: navigation
+            )
+        case .component(let project, let component):
+            ComponentScreen(
+                delivery: models.delivery(project),
+                component: component,
                 versions: models.versions(project),
+                release: models.release
+            )
+        case .componentReleases(let project, let component):
+            ReleasesScreen(
+                releases: models.releases(project, component: component, period: navigation.period),
+                environments: environments,
+                componentName: models.delivery(project).name(of: component),
                 navigation: navigation
             )
         // A release is compared whole, whatever the period, in its own environment.

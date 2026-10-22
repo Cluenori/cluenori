@@ -21,14 +21,14 @@ describe("versions journey", () => {
       window.history.pushState(null, "", "/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      // The API's version, and the release its next build will be; the iPhone app has none yet.
-      const versions = screen.getByRole("region", { name: "Versions" })
-      const api = versions.getByRole("listitem").filter({ hasText: "notes-api" })
-      const ios = versions.getByRole("listitem").filter({ hasText: "notes-ios" })
+      // In each component's delivery, the API's version and the release its next build will be; the
+      // iPhone app has none yet.
+      const api = screen.getByRole("region", { name: "notes-api" })
+      const ios = screen.getByRole("region", { name: "notes-ios" })
       yield* Effect.promise(() => expect.element(api.getByText("1.4.0", { exact: true })).toBeVisible())
       yield* Effect.promise(() => expect.element(api.getByText("1.4.0+58")).toBeVisible())
       yield* Effect.promise(() =>
-        expect.element(ios.getByText("Set a version to let CI number its builds.")).toBeVisible(),
+        expect.element(ios.getByText("No version yet: CI can't number its builds.")).toBeVisible(),
       )
       yield* expectAccessible()
 
@@ -42,7 +42,7 @@ describe("versions journey", () => {
       yield* expectAccessible()
 
       // A first version for the iPhone app, its builds numbered on from those made before.
-      yield* Effect.promise(() => ios.getByRole("button", { name: "Set version… of notes-ios" }).click())
+      yield* Effect.promise(() => ios.getByRole("button", { name: "Set the version… of notes-ios" }).click())
       const dialog = screen.getByRole("dialog", { name: "notes-ios's version" })
       yield* Effect.promise(() => dialog.getByLabelText("Version").fill("1.9"))
       yield* Effect.promise(() => dialog.getByLabelText("First build number").fill("421"))
@@ -66,8 +66,8 @@ describe("versions journey", () => {
       window.history.pushState(null, "", "/notes/releases?component=notes-api")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      const versions = screen.getByRole("region", { name: "Versions" })
-      yield* Effect.promise(() => versions.getByRole("button", { name: "Set version… of notes-api" }).click())
+      const api = screen.getByRole("region", { name: "notes-api" })
+      yield* Effect.promise(() => api.getByRole("button", { name: "Set version… of notes-api" }).click())
       const dialog = screen.getByRole("dialog", { name: "notes-api's version" })
       yield* Effect.promise(() => expect.element(dialog.getByLabelText("Version")).toHaveValue("1.4.0"))
       yield* Effect.promise(() => dialog.getByLabelText("Version").fill("1.3.9"))

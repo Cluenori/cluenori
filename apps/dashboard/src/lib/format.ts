@@ -27,6 +27,11 @@ const dayAndClock = new Intl.DateTimeFormat(locale, {
   minute: "2-digit",
 })
 const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "long" })
+const unitOf = (unit: "minute" | "hour" | "day") =>
+  new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "long", maximumFractionDigits: 0 })
+const minutes = unitOf("minute")
+const hours = unitOf("hour")
+const days = unitOf("day")
 const regions = new Intl.DisplayNames([locale], { type: "region" })
 // Axes are narrow, so their times use a 24-hour clock in every locale: 06:00, 18:30.
 const axisClock = new Intl.DateTimeFormat(locale, { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
@@ -92,6 +97,20 @@ export const ago = (epochMillis: number, now: number) => {
     return relative.format(Math.round(elapsed / hour), "hour")
   }
   return relative.format(Math.round(elapsed / dayMillis), "day")
+}
+
+/**
+ * How long something has lasted, in whole units, rounded down: "1 minute" at least, "40 minutes",
+ * "2 hours", "3 days".
+ */
+export const lasting = (milliseconds: number) => {
+  if (milliseconds < hour) {
+    return minutes.format(Math.max(1, Math.floor(milliseconds / minute)))
+  }
+  if (milliseconds < dayMillis) {
+    return hours.format(Math.floor(milliseconds / hour))
+  }
+  return days.format(Math.floor(milliseconds / dayMillis))
 }
 
 /** "Poland" for `PL`: a country by its two letters, as Cloudflare places an address; the code if unknown. */

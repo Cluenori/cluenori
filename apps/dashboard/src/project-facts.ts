@@ -63,27 +63,50 @@ export const colorOf = (component: string, components: ReadonlyArray<string>) =>
 export type Environments = {
   /** The one every question asks about; absent where none is offered or named. */
   readonly shown?: EnvironmentKey
-  /** Those its telemetry named in the last 30 days, production first, with the one shown. */
+  /**
+   * Those its telemetry named in the last 30 days, production first, then those its deploy targets
+   * go to, with the one shown.
+   */
   readonly offered: ReadonlyArray<EnvironmentKey>
   /** The project's production environments, seen lately or not. */
   readonly production: ReadonlyArray<EnvironmentKey>
 }
 
 /**
- * Which environment a project's page shows: the one `chosen`, named by the address or picked
- * before; else production, the first of the project's production environments its telemetry named
- * lately; else the first it named. While the project isn't known yet, pass `{}`.
+ * Which environment a project's page shows, and those it offers: the environments its telemetry
+ * named lately, production first, then those its components' deploy targets go to, in their order.
+ * It shows the one `chosen`, named by the address or picked before; else production, the first of
+ * the project's production environments its telemetry named lately, else one a deploy target goes
+ * to; else the first offered. While the project isn't known yet, pass `{}`.
  */
 export const environmentsOf = (
-  project: { readonly settings?: ProjectSettings; readonly environments?: ReadonlyArray<EnvironmentKey> },
+  project: {
+    readonly settings?: ProjectSettings
+    readonly environments?: ReadonlyArray<EnvironmentKey>
+    readonly components?: ReadonlyArray<{
+      readonly deployTargets?: ReadonlyArray<{ readonly environment: EnvironmentKey }>
+    }>
+  },
   chosen: EnvironmentKey | undefined,
 ): Environments => {
-  const seen = project.settings === undefined ? [] : (project.environments ?? [])
+  // A deployment that doesn't say its settings doesn't say environments either.
+  const said = project.settings !== undefined
+  const seen = said ? (project.environments ?? []) : []
+  const targeted = said
+    ? (project.components ?? []).flatMap((component) =>
+        (component.deployTargets ?? []).map((target) => target.environment),
+      )
+    : []
+  const known = [...new Set([...seen, ...targeted])]
   const production = project.settings?.productionEnvironments ?? []
-  const shown = chosen ?? production.find((environment) => seen.includes(environment)) ?? seen[0]
+  const shown =
+    chosen ??
+    production.find((environment) => seen.includes(environment)) ??
+    production.find((environment) => known.includes(environment)) ??
+    known[0]
   return {
     ...(shown === undefined ? {} : { shown }),
-    offered: shown === undefined || seen.includes(shown) ? seen : [...seen, shown],
+    offered: shown === undefined || known.includes(shown) ? known : [...known, shown],
     production,
   }
 }
@@ -546,7 +569,10 @@ export const changesCountOf = (changes: ReleaseChanges) =>
   ].join(", ")
 
 /** A release's own page: by its component and version, and its environment when it has one. */
-export const releaseRouteOf = (project: ProjectKey, release: ReleaseSummary): Route => ({
+export const releaseRouteOf = (
+  project: ProjectKey,
+  release: Pick<ReleaseSummary, "component" | "release" | "environment">,
+): Route => ({
   page: "release",
   project,
   component: release.component,

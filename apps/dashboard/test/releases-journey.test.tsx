@@ -40,12 +40,13 @@ describe("releases journey", () => {
       yield* expectAccessible()
       yield* Effect.promise(() => latest.getByRole("link", { name: "Open" }).click())
 
-      // Every release of the period in production, the latest first: how it shipped, when it ran, how
-      // much, and against the one before; an app's build that names no environment among them.
+      // Below what runs where, every release of the period in production, the latest first: how it
+      // shipped, when it ran, how much, and against the one before; an app's build that names no
+      // environment among them.
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Releases" })).toBeVisible(),
       )
-      const list = screen.getByRole("region", { name: "Releases of every component" })
+      const list = screen.getByRole("region", { name: "Release history" })
       yield* Effect.promise(() => expect.element(list.getByRole("listitem")).toHaveLength(5))
       yield* Effect.promise(() => expect.element(list.getByText("Better")).toBeVisible())
       yield* Effect.promise(() => expect.element(list.getByText("Too early to tell").first()).toBeVisible())
@@ -66,25 +67,21 @@ describe("releases journey", () => {
       // One component's releases, by one click.
       yield* Effect.promise(() => screen.getByRole("button", { name: "notes-ios" }).click())
       yield* Effect.promise(() =>
-        expect
-          .element(screen.getByRole("region", { name: "Releases of notes-ios" }).getByRole("listitem"))
-          .toHaveLength(3),
+        expect.element(screen.getByRole("region", { name: "Release history" }).getByRole("listitem")).toHaveLength(3),
       )
       yield* Effect.promise(() => screen.getByRole("button", { name: "All" }).click())
 
       // Staging's releases, by one click: the one that ran there first.
       yield* Effect.promise(() => screen.getByRole("button", { name: "staging" }).click())
       yield* Effect.promise(() =>
-        expect
-          .element(screen.getByRole("region", { name: "Releases of every component" }).getByRole("listitem"))
-          .toHaveLength(1),
+        expect.element(screen.getByRole("region", { name: "Release history" }).getByRole("listitem")).toHaveLength(1),
       )
       yield* Effect.promise(() => screen.getByRole("button", { name: "production" }).click())
 
       // The release that got worse, in production, against the release before it.
       yield* Effect.promise(() =>
         screen
-          .getByRole("region", { name: "Releases of every component" })
+          .getByRole("region", { name: "Release history" })
           .getByRole("link", { name: `${worse} notes-api, production` })
           .click(),
       )
@@ -183,14 +180,17 @@ describe("releases journey", () => {
       window.history.pushState(null, "", "/notes/releases?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      // In the list: its stage in words, and no telemetry, never a zero.
-      const row = screen.getByRole("listitem").filter({ hasText: inReviewRelease })
+      // In the history: its stage in words, and no telemetry, never a zero.
+      const history = screen.getByRole("region", { name: "Release history" })
+      const row = history.getByRole("listitem").filter({ hasText: inReviewRelease })
       yield* Effect.promise(() => expect.element(row.getByText("In review")).toBeVisible())
       yield* Effect.promise(() => expect.element(row.getByText("No telemetry yet")).toBeVisible())
       yield* Effect.promise(() => expect.element(row.getByText(/runs|failed|%/)).not.toBeInTheDocument())
       yield* Effect.promise(() =>
         expect
-          .element(screen.getByRole("listitem").filter({ hasText: appRelease }).getByText("Phased release, day 3 of 7"))
+          .element(
+            history.getByRole("listitem").filter({ hasText: appRelease }).getByText("Phased release, day 3 of 7"),
+          )
           .toBeVisible(),
       )
       yield* expectAccessible()
@@ -333,10 +333,13 @@ describe("releases journey", () => {
       window.history.pushState(null, "", "/notes/releases?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      const sources = screen.getByRole("region", { name: "Where releases come from" })
-      yield* Effect.promise(() => expect.element(sources.getByText("Not linked")).toBeVisible())
-      yield* Effect.promise(() => expect.element(sources.getByText("com.notesapp.notes, App Store")).toBeVisible())
-      yield* Effect.promise(() => sources.getByRole("button", { name: "Change links of notes-ios" }).click())
+      // The iPhone app's block: no repository yet, and its builds going to the App Store.
+      const block = screen.getByRole("region", { name: "notes-ios" })
+      yield* Effect.promise(() =>
+        expect.element(block.getByRole("listitem", { name: "production" }).getByText("App Store")).toBeVisible(),
+      )
+      yield* Effect.promise(() => expect.element(block.getByText("notesapp/notes-ios")).not.toBeInTheDocument())
+      yield* Effect.promise(() => block.getByRole("button", { name: "Change links of notes-ios" }).click())
 
       // A repository that isn't one is refused with GitHub's rule, before anything is sent.
       const dialog = screen.getByRole("dialog", { name: "Where notes-ios's releases come from" })
@@ -366,7 +369,7 @@ describe("releases journey", () => {
       yield* Effect.promise(() => expect.element(dialog).not.toBeInTheDocument())
       yield* Effect.promise(() =>
         expect
-          .element(sources.getByRole("link", { name: "notesapp/notes-ios on GitHub" }))
+          .element(block.getByRole("link", { name: "notesapp/notes-ios on GitHub" }))
           .toHaveAttribute("href", "https://github.com/notesapp/notes-ios"),
       )
       const saved = apiCalls().filter((call) => call.method === "PUT")
@@ -464,7 +467,12 @@ describe("releases journey", () => {
 
       yield* Effect.promise(() => expect.element(screen.getByText("Better")).toBeVisible())
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
-      yield* Effect.promise(() => screen.getByRole("link", { name: `${worse} notes-api, production` }).click())
+      yield* Effect.promise(() =>
+        screen
+          .getByRole("region", { name: "Release history" })
+          .getByRole("link", { name: `${worse} notes-api, production` })
+          .click(),
+      )
       yield* Effect.promise(() => expect.element(screen.getByText("was 290 ms")).toBeVisible())
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
       yield* expectAccessible()

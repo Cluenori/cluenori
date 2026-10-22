@@ -20,6 +20,7 @@ export const ComponentLinked = Schema.TaggedStruct("component.linked", {
   repository: Schema.optionalKey(Repository),
   appStoreBundleId: Schema.optionalKey(BundleId),
   deployTargets: Schema.optionalKey(Schema.Array(DeployTarget)),
+  shipsWith: Schema.optionalKey(ComponentKey),
 })
 
 /** The project's settings changed: the environments it calls production. */

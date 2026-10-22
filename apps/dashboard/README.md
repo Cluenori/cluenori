@@ -33,19 +33,23 @@ Pages, each with a permanent URL (`src/router.tsx`):
                                                  any page of numbers narrowed to a component, an environment (production
                                                  when none is named) and a release; an operation, an error or a trace
                                                  opened from it keeps them
-/notes/releases?component=notes-api              the releases that ran, were deployed or uploaded, the latest first: how each
-                                                 shipped (commit, store stage, deploy), each against the release before it;
-                                                 sources that failed lately; each component's version and next build, bumped
-                                                 or set; where each component's releases come from and go (its deploy
-                                                 targets), and promoting its latest commit; how AI drafts of release
-                                                 notes read
+/notes/releases?component=notes-api              each component's delivery: its environments in the order releases go, each
+                                                 with the release there now and for how long, its commit, verdict and store
+                                                 stage, a promotion going there, and the one next step (building the latest
+                                                 commit, or promoting the release of the environment before); the components
+                                                 that ship with it inside it; its version and next build, bumped or set; its
+                                                 links. Then the history: the releases that ran, were deployed or uploaded,
+                                                 the latest first, each against the release before it; sources that failed
+                                                 lately; how AI drafts of release notes read
 /notes/releases/notes-api/2.4.0+312?environment=production
                                                  one release against the one before, one click from its performance, errors
-                                                 and logs: its commit, its App Store build, its promotions and promoting it to
-                                                 each deploy target, releasing one App Store review approved, its notes for
-                                                 its users (drafted with AI, edited, saved), the pull requests or commits since,
-                                                 what got slower or fails more, its new errors, the incidents while it ran,
-                                                 what got faster or fails less, new operations
+                                                 and logs: its commit, where it runs now ("In dev since 13:57 · not in prod
+                                                 yet"), its one next step when an environment's is it, promoting it to another
+                                                 environment, its App Store build, its promotions, releasing one App Store
+                                                 review approved, its notes for its users (drafted with AI, edited, saved),
+                                                 the pull requests or commits since, what got slower or fails more, its new
+                                                 errors, the incidents while it ran, what got faster or fails less, new
+                                                 operations
 /notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
 /phones                                          the paired phones, removing one, and adding one by its QR code
 /browsers                                        the browsers signed in with passkeys, signing one out, and adding a passkey
@@ -89,39 +93,56 @@ one of those keys has no pages.
   line links back to its release.
 - **Which environment a page shows** (`environmentsOf` in `src/project-facts.ts`,
   `src/hooks/use-environments.ts`): the one its address names, else the one picked last on the
-  project, else production, the first of the project's production environments seen lately. The
-  switch offers those seen in the last 30 days (`src/views/environment-switch.tsx`); one alone is
-  said as text; a deployment that doesn't say them gets no switch and no parameter. A page waits for
-  the project's answer only when nothing names its environment, so it asks its questions once.
+  project, else production, the first of the project's production environments seen lately, else
+  one a deploy target goes to. The switch, named "Environment", offers those seen in the last 30
+  days, then those the components' deploy targets go to (`src/views/environment-switch.tsx`); it
+  chooses what the page shows, never where a release goes. One alone is said as text; a deployment
+  that doesn't say them gets no switch and no parameter. A page waits for the project's answer only
+  when nothing names its environment, so it asks its questions once.
 - **Choosing production,** on the overview: the environments seen and any typed in, checked by the
   API's rule for a key (`src/views/production-dialog.tsx`).
+- **Delivery,** leading the Releases page (`src/views/delivery-list.tsx`, rules in
+  `src/release-facts.ts`): a block for each component, its environments as stages in the order
+  releases go, left to right, stacked on a phone, each with the release there now, for how long and
+  since when, its commit, verdict and store stage, a promotion going there with its run, the
+  last promotion there when it failed and nothing came since ("Promoting 1.0.0+1 to prod failed",
+  its run), and the
+  one next step as a button that says what goes where ("Build the latest commit for dev", white
+  "Promote 1.0.0+1 from dev to prod"); an App Store version review approved, released from its
+  stage. A component that ships with another sits inside that one's block, with what it runs and
+  nothing to do of its own (`deliveryGroupsOf`). The delivery is asked for again every 15 seconds
+  while a promotion runs. The history of releases below it is where to read, not act.
 - **Linking a component to its sources,** from the Releases page and a release's: its GitHub
-  repository and its deploy targets, one per environment, each a workflow file, an App Store
-  Connect app going to TestFlight or App Store review, or both (the project's environments
-  suggested), checked by the API's own schemas before they are sent, every link sent each time, as
-  the API replaces them all (`src/views/links-dialog.tsx`).
-- **Promoting a release,** from its page: a button for each deploy target, a confirmation that
-  says what happens step by step, where the workflow runs (Auto, your Mac, the cloud), for App Store
-  review when an approved version goes live and whether phased, the notes it sends, and an optional
-  reason (`src/views/promote-dialog.tsx`, loaded when asked for); the API's refusals said in it with
-  where they are fixed (its `fix`: the GitHub page, the notes, the links, an App Manager key). Its
-  promotions, the latest first, in words (`promotionStates` in `src/release-facts.ts`,
-  `src/views/promotion-list.tsx`), the one just started shown at once, one approved in review
-  released after asking (`src/views/release-now-dialog.tsx`), and asked for again every 15 seconds
-  while one hasn't ended.
+  repository; the component it ships with, if another's deploys deploy it, one click among the
+  others that don't ship with it; and, if not, its deploy targets, one per environment, each a
+  workflow file, an App Store Connect app going to TestFlight or App Store review, or both (the
+  project's environments suggested), checked by the API's own schemas before they are sent, every
+  link sent each time, the one it ships with kept, as the API replaces them all
+  (`src/views/links-dialog.tsx`).
+- **Promoting a release,** from its environment's next step on the Releases page, or from its
+  page: there, at most one primary action, when an environment's next step is it, and promoting it
+  to another environment, such as back to one that has moved on, as a menu that says what runs in
+  each. The confirmation says what happens step by step, what it replaces there, where the workflow
+  runs (Auto unless chosen, folded under Options, closed at first), for App Store review when an approved version goes live and
+  whether phased, the notes it sends, and an optional reason (`src/views/promote-dialog.tsx`, loaded
+  when asked for); the API's refusals said in it with where they are fixed (its `fix`: the GitHub
+  page, the notes, the links, an App Manager key). Its promotions, the latest first, in words
+  (`promotionStates` in `src/release-facts.ts`, `src/views/promotion-list.tsx`), the one just started
+  shown at once, one approved in review released after asking (`src/views/release-now-dialog.tsx`),
+  and asked for again every 15 seconds while one hasn't ended.
 - **A release's notes,** on its page when its component has an App Store Connect app or it has
   notes: a field per language, with how long it is of the 4000 characters a store takes, languages
   added by the API's rule; a draft with AI for where it goes, which fills the fields and never
   saves; and saving (`src/views/notes-editor.tsx`). The project's notes style, which drafts follow,
   is on the Releases page (`src/views/notes-style-editor.tsx`).
-- **Promoting a component's latest commit,** from the Releases page, for a component with a deploy
-  target that has a workflow: the same dialog's parts, with the environment chosen and an optional
+- **Building a component's latest commit,** the first environment's next step when its deploy
+  target has a workflow: the same dialog's parts, with that environment chosen and an optional
   commit (the newest on the default branch without one). Cluenori numbers it as the component's next
-  release and promotes it; that release's page opens, where the promotion shows. A component
-  without a version is pointed at the versions.
-- **Versions,** on the Releases page: each component's version and the release its next build will
-  be, bumped from a menu that shows what each bump becomes, or set with a first build number
-  (`src/views/version-list.tsx`).
+  release and promotes it; the environment then shows the promotion, its release one click from its
+  page. A component without a version is one click from setting it.
+- **Versions,** in each component's delivery: its version and the release its next build will be,
+  "1.0.0 · next 1.0.0+2", bumped from a menu that shows what each bump becomes, or set with a first
+  build number (`src/views/version-line.tsx`).
 - **Connecting GitHub,** for owners (`src/pages/github-page.tsx`, loaded when opened): the API's
   form for GitHub, posted there as it is, so GitHub creates Cluenori's own app; the app and the
   accounts it is installed on; disconnecting it. What GitHub sends the browser back with is in the

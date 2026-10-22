@@ -26,6 +26,9 @@ import {
 } from "@cluenori/projects"
 import type {
   ComparedOperation,
+  ComponentDelivery,
+  EnvironmentDelivery,
+  NextStep,
   PromotionState,
   ReleaseChanges,
   ReleaseNote,
@@ -37,6 +40,7 @@ import {
   ComponentVersion,
   ComponentVersions,
   defaultNotesStyle,
+  Delivery,
   DraftUnavailable,
   NoteLocale,
   NotesDraft,
@@ -95,6 +99,8 @@ export const notesToken = "notes-api-token"
 const notes = ProjectKey.make("notes")
 const api = ComponentKey.make("notes-api")
 const ios = ComponentKey.make("notes-ios")
+// A background service the API's workflow deploys too, in the world of the first numbered release.
+const worker = ComponentKey.make("notes-worker")
 const created = DateTime.makeUnsafe("2026-09-01T00:00:00Z")
 
 const projects = [
@@ -107,16 +113,17 @@ const staging = EnvironmentKey.make("staging")
 export const workflowFile = (name: string) => DeployTarget.fields.workflow.schema.make(name)
 export const repositoryOf = (name: string) => ComponentLinks.fields.repository.schema.make(name)
 
-// The API is linked to its repository, with a workflow that deploys to each environment; the iPhone
-// app, without its repository, to its App Store app, whose builds go to App Store review.
+// The API is linked to its repository, with a workflow that deploys to each environment, staging
+// first; the iPhone app, without its repository, to its App Store app, whose builds go to App Store
+// review.
 const linksAtStart: ReadonlyMap<string, ComponentLinks> = new Map([
   [
     api,
     {
       repository: repositoryOf("notesapp/notes-api"),
       deployTargets: [
-        { environment: production, workflow: workflowFile("promote-to-prod.yml") },
         { environment: staging, workflow: workflowFile("promote-to-staging.yml") },
+        { environment: production, workflow: workflowFile("promote-to-prod.yml") },
       ],
     },
   ],
@@ -181,9 +188,20 @@ export const mira = new Member({
   passkeys: 1,
 })
 
+// The project's components, by key: the API and the iPhone app, and the worker where it has links.
 const componentsWith = (links: ReadonlyMap<string, ComponentLinks>) => [
   new Component({ key: api, name: ComponentName.make("Notes API"), createdAt: created, ...links.get(api) }),
   new Component({ key: ios, name: ComponentName.make("Notes for iOS"), createdAt: created, ...links.get(ios) }),
+  ...(links.has(worker)
+    ? [
+        new Component({
+          key: worker,
+          name: ComponentName.make("Notes worker"),
+          createdAt: created,
+          ...links.get(worker),
+        }),
+      ]
+    : []),
 ]
 
 export const ongoing = ErrorGroupId.make("4f1c9a2e7b3d5068")
@@ -776,13 +794,15 @@ const activeIn = (entry: ReleaseSummary, from: number, to: number) => {
   return ran || within(entry.deployedAt) || within(entry.store?.uploadedAt)
 }
 
-const releases = ({ asked, period, now }: Question) => {
+const releases = ({ asked, period, now }: Question, world: World) => {
   const from = DateTime.toEpochMillis(period.from)
   const to = DateTime.toEpochMillis(period.to)
   return reply(ReleaseList, {
-    releases: releasesAt(now).filter(
-      (entry) => activeIn(entry, from, to) && (asked.component === undefined || entry.component === asked.component),
-    ),
+    releases: world
+      .releasesAt(now)
+      .filter(
+        (entry) => activeIn(entry, from, to) && (asked.component === undefined || entry.component === asked.component),
+      ),
     problems: problemsAt(now).filter((entry) => asked.component === undefined || entry.component === asked.component),
   })
 }
@@ -892,6 +912,43 @@ const changesOf = (now: number, summary: ReleaseSummary): ReleaseChanges | undef
       url: `${repository}/compare/7b2c4d1...e91f09c`,
     }
   }
+  if (summary.release === firstNumbered && summary.component === api) {
+    const commit = (id: string, message: string, author: string, ago: number, pullRequest: number) => ({
+      sha: sha(id),
+      message,
+      author,
+      committedAt: DateTime.makeUnsafe(now - ago),
+      url: `${repository}/commit/${id}`,
+      pullRequest,
+    })
+    return {
+      totalCommits: 2,
+      commits: [
+        commit(numberedSha, "Open shared notes offline (#218)", "theo", 2 * hour + 20 * minute, 218),
+        commit("d3a9f6c2e8b5a1d7f4c0e6b3a9d5f2c8e1b7a4d0", "Retry exports that time out (#217)", "mira", 6 * hour, 217),
+      ],
+      pullRequests: [
+        {
+          number: 218,
+          title: "Open shared notes offline",
+          author: "theo",
+          url: "https://github.com/notesapp/notes-api/pull/218",
+          labels: ["feature"],
+        },
+        {
+          number: 217,
+          title: "Retry exports that time out",
+          author: "mira",
+          url: "https://github.com/notesapp/notes-api/pull/217",
+          labels: ["bug", "exports"],
+        },
+      ],
+      filesChanged: 9,
+      additions: 214,
+      deletions: 61,
+      url: `${repository}/compare/e91f09c...b8e4f1a`,
+    }
+  }
   if (summary.release === betterRelease) {
     const reported = (id: string, message: string, author: string, ago: number) => ({
       sha: sha(id),
@@ -953,6 +1010,7 @@ const movedIn = (now: number, summary: ReleaseSummary) => {
 // component's deploy targets; or the API's 404 for one it doesn't know.
 const releaseDetail = (
   now: number,
+  world: World,
   component: string,
   version: string,
   environment: string | undefined,
@@ -964,9 +1022,11 @@ const releaseDetail = (
   // A release numbered for a commit nothing has seen yet is found in whichever environment is asked.
   const unseen = numbered.find((entry) => entry.component === component && entry.release === version)
   const summary =
-    releasesAt(now).find(
-      (entry) => entry.component === component && entry.release === version && entry.environment === environment,
-    ) ??
+    world
+      .releasesAt(now)
+      .find(
+        (entry) => entry.component === component && entry.release === version && entry.environment === environment,
+      ) ??
     (unseen === undefined
       ? undefined
       : { ...unseen, ...(environment === undefined ? {} : { environment: EnvironmentKey.make(environment) }) })
@@ -1086,35 +1146,429 @@ const incidents = Effect.gen(function* () {
   })
 })
 
+// ---- The day Notes numbers its first release --------------------------------------------------------
+
+// The API's deploys go to dev, then prod, both by `deploy.yml`, and deploy the worker too; CI
+// deployed the first release Cluenori numbered, 1.0.0+1, to dev two hours ago, while prod still
+// runs the API's latest dated release, which dev ran before. The iPhone app's builds go to internal
+// testers, beta testers, and the App Store: build 422 is with internal testers, 421 with beta
+// testers and in App Store review, and the App Store has 1.8.2, on day 3 of its phased release.
+export const firstNumbered = ReleaseVersion.make("1.0.0+1")
+export const internalBuild = ReleaseVersion.make("1.9.0+422")
+export const betaBuild = ReleaseVersion.make("1.9.0+421")
+const dev = EnvironmentKey.make("dev")
+const prod = EnvironmentKey.make("prod")
+const internal = EnvironmentKey.make("internal")
+const beta = EnvironmentKey.make("beta")
+const numberedSha = sha("b8e4f1a7c2d9e6b3a0f5c8d1e4b7a2f9c6d3e0b8")
+const iosRepository = "https://github.com/notesapp/notes-ios"
+
+const deployYml = workflowFile("deploy.yml")
+const iosTargets: ReadonlyArray<DeployTarget> = [
+  {
+    environment: internal,
+    workflow: workflowFile("ios.yml"),
+    appStore: { bundleId: BundleId.make("com.notesapp.notes.internal"), distribution: "testFlight" },
+  },
+  {
+    environment: beta,
+    workflow: workflowFile("ios.yml"),
+    appStore: { bundleId: BundleId.make("com.notesapp.notes.beta"), distribution: "testFlight" },
+  },
+  {
+    environment: production,
+    workflow: workflowFile("ios.yml"),
+    appStore: { bundleId: BundleId.make("com.notesapp.notes"), distribution: "appStore" },
+  },
+]
+
+/** The links the day Notes numbers its first release: the worker ships with the API. */
+export const numberedLinks: ReadonlyMap<string, ComponentLinks> = new Map([
+  [
+    api,
+    {
+      repository: repositoryOf("notesapp/notes-api"),
+      deployTargets: [
+        { environment: dev, workflow: deployYml },
+        { environment: prod, workflow: deployYml },
+      ],
+    },
+  ],
+  [worker, { repository: repositoryOf("notesapp/notes-api"), shipsWith: api }],
+  [ios, { repository: repositoryOf("notesapp/notes-ios"), deployTargets: iosTargets }],
+])
+
+const numberedCommit = (now: number) => ({
+  sha: numberedSha,
+  message: "Open shared notes offline (#218)",
+  author: "theo",
+  committedAt: DateTime.makeUnsafe(now - 2 * hour - 20 * minute),
+  url: `${repository}/commit/${numberedSha}`,
+})
+const worseCommit = (now: number) => ({
+  sha: worseSha,
+  message: "Share a note by link (#212)",
+  author: "mira",
+  committedAt: DateTime.makeUnsafe(now - 5 * hour - 40 * minute),
+  url: `${repository}/commit/${worseSha}`,
+})
+const iosCommit = (id: string, message: string, at: number) => ({
+  sha: sha(id),
+  message,
+  author: "jun",
+  committedAt: DateTime.makeUnsafe(at),
+  url: `${iosRepository}/commit/${id}`,
+})
+
+// Every release that day, the latest first: the API's and the worker's in dev and prod, and the
+// iPhone app's builds where their apps are.
+const numberedReleasesAt = (now: number): ReadonlyArray<ReleaseSummary> => {
+  const ofApi = (component: typeof api, count: number) => [
+    release(now, {
+      component,
+      environment: dev,
+      release: firstNumbered,
+      ran: [2 * hour, 0],
+      count: Math.round(count / 20),
+      errors: 0,
+      previous: worseRelease,
+      verdict: "tooEarly",
+      commit: numberedCommit(now),
+      deployedAt: DateTime.makeUnsafe(now - 2 * hour - 5 * minute),
+    }),
+    release(now, {
+      component,
+      environment: prod,
+      release: worseRelease,
+      ran: [3 * hour, minute],
+      count,
+      errors: component === api ? 51 : 0,
+      previous: betterRelease,
+      verdict: component === api ? "worse" : "same",
+      ...(component === api ? { worse: [1, 1, 1] as const } : {}),
+      commit: worseCommit(now),
+      deployedAt: DateTime.makeUnsafe(now - 3 * hour - 2 * minute),
+    }),
+    release(now, {
+      component,
+      environment: dev,
+      release: worseRelease,
+      ran: [5 * hour, 2 * hour + 5 * minute],
+      count: Math.round(count / 30),
+      errors: 0,
+      verdict: "first",
+      commit: worseCommit(now),
+      deployedAt: DateTime.makeUnsafe(now - 5 * hour - 3 * minute),
+    }),
+    release(now, {
+      component,
+      environment: prod,
+      release: betterRelease,
+      ran: [27 * hour, 3 * hour],
+      count: count * 6,
+      errors: component === api ? 96 : 0,
+      verdict: "first",
+      commit: { sha: betterSha, tag: "prod-2026.10.20-7b2c4d1" },
+      deployedAt: DateTime.makeUnsafe(now - 27 * hour - 4 * minute),
+    }),
+  ]
+  return [
+    release(now, {
+      component: ios,
+      environment: internal,
+      release: internalBuild,
+      verdict: "unmeasured",
+      commit: iosCommit(
+        "a7c3e9f1b5d2a8c4e0f6b2d8a4c1e7f3b9d5a2c6",
+        "Open shared notes offline (#92)",
+        now - 3 * hour - 30 * minute,
+      ),
+      store: {
+        version: "1.9.0",
+        buildNumber: "422",
+        uploadedAt: DateTime.makeUnsafe(now - 3 * hour),
+        stage: "testing",
+        internalTesting: "IN_BETA_TESTING",
+      },
+    }),
+    ...ofApi(api, 9_640),
+    ...ofApi(worker, 2_100),
+    release(now, {
+      component: ios,
+      environment: beta,
+      release: betaBuild,
+      ran: [25 * hour, 30 * minute],
+      count: 140,
+      errors: 0,
+      verdict: "first",
+      commit: iosCommit(
+        "c1e7a3f9d5b2c8e4a0f6d2b8c4a1e7f3d9b5c2a8",
+        "Release 1.9.0 (#90)",
+        now - 26 * hour - 40 * minute,
+      ),
+      store: {
+        version: "1.9.0",
+        buildNumber: "421",
+        uploadedAt: DateTime.makeUnsafe(now - 26 * hour),
+        stage: "inReview",
+        appStoreState: "IN_REVIEW",
+        internalTesting: "IN_BETA_TESTING",
+        externalTesting: "IN_BETA_TESTING",
+      },
+    }),
+    ...releasesAt(now).filter((entry) => entry.component === ios && entry.environment === production),
+  ]
+}
+
+// That day's promotions: the API's dated release to prod by Mira, ended; build 421 to the App
+// Store by Ada, in review; and build 422 to beta testers an hour ago, whose workflow failed.
+const numberedPromotionsAt = (now: number): ReadonlyArray<Promotion> => [
+  {
+    id: promotionId(33),
+    component: ios,
+    release: internalBuild,
+    environment: beta,
+    repository: repositoryOf("notesapp/notes-ios"),
+    workflow: workflowFile("ios.yml"),
+    runner: "auto",
+    appStore: { bundleId: BundleId.make("com.notesapp.notes.beta"), distribution: "testFlight" },
+    startedBy: ada.id,
+    startedAt: DateTime.makeUnsafe(now - hour),
+    state: "failed",
+    run: { id: 9_340, url: `${iosRepository}/actions/runs/9340` },
+    endedAt: DateTime.makeUnsafe(now - 50 * minute),
+  },
+  {
+    // Out of the range of those started here, which are numbered on from the count.
+    id: promotionId(32),
+    component: ios,
+    release: betaBuild,
+    environment: production,
+    repository: repositoryOf("notesapp/notes-ios"),
+    workflow: workflowFile("ios.yml"),
+    runner: "auto",
+    appStore: { bundleId: BundleId.make("com.notesapp.notes"), distribution: "appStore" },
+    submission: { releaseType: "afterApproval", phased: true },
+    startedBy: ada.id,
+    reason: PromotionReason.make("Offline notes for everyone"),
+    startedAt: DateTime.makeUnsafe(now - 20 * hour),
+    state: "inReview",
+    run: { id: 9_330, url: `${iosRepository}/actions/runs/9330` },
+  },
+  {
+    id: promotionId(31),
+    component: api,
+    release: worseRelease,
+    environment: prod,
+    repository: repositoryOf("notesapp/notes-api"),
+    workflow: deployYml,
+    runner: "auto",
+    startedBy: mira.id,
+    reason: PromotionReason.make("Share links for everyone"),
+    startedAt: DateTime.makeUnsafe(now - 3 * hour - 6 * minute),
+    state: "succeeded",
+    run: { id: 9_120, url: `${repository}/actions/runs/9120` },
+    endedAt: DateTime.makeUnsafe(now - 3 * hour - 2 * minute),
+  },
+]
+
+/**
+ * A state of Notes's releases: its components' links, the environments its telemetry named lately
+ * and those it calls production, its releases, the promotions there were, and its versions.
+ */
+export type World = {
+  readonly linked: ReadonlyMap<string, ComponentLinks>
+  readonly seen: ReadonlyArray<EnvironmentKey>
+  readonly production: ReadonlyArray<EnvironmentKey>
+  readonly releasesAt: (now: number) => ReadonlyArray<ReleaseSummary>
+  readonly promotionsAt: (now: number) => ReadonlyArray<Promotion>
+  readonly versions: ReadonlyArray<ComponentVersion>
+}
+
+/** Notes as it has run for weeks: production and staging, the API's dated releases, the app's builds. */
+export const weeksIn: World = {
+  linked: linksAtStart,
+  seen: [production, staging],
+  production: [production],
+  releasesAt,
+  promotionsAt,
+  versions: versionsAt,
+}
+
+/**
+ * Notes the day it numbers its first release: the API in dev and prod, the worker shipping with
+ * it, the iPhone app's three apps, and production called prod for the API and production for the
+ * app.
+ */
+export const firstNumberedDay: World = {
+  linked: numberedLinks,
+  seen: [prod, production, dev, beta],
+  production: [prod, production],
+  releasesAt: numberedReleasesAt,
+  promotionsAt: numberedPromotionsAt,
+  versions: [
+    { component: api, version: SemanticVersion.make("1.0.0"), lastBuild: 1, setAt: created },
+    { component: ios, version: SemanticVersion.make("1.9.0"), lastBuild: 422, setAt: created },
+  ],
+}
+
+// When a release reached an environment, as the API's delivery reads it: an App Store app's build
+// once released there, a TestFlight build once processed, when uploaded; elsewhere, when it was last
+// deployed there or first ran there, whichever is later.
+const reachedAt = (summary: ReleaseSummary, target: DeployTarget | undefined): number | undefined => {
+  const store = summary.store
+  if (target?.appStore !== undefined) {
+    if (store === undefined) {
+      return undefined
+    }
+    if (target.appStore.distribution === "appStore") {
+      const out = store.stage === "releasing" || store.stage === "live"
+      return out ? DateTime.toEpochMillis(store.phasedRelease?.startedAt ?? store.uploadedAt) : undefined
+    }
+    const testable = store.stage !== "processing" && store.stage !== "failed" && store.stage !== "expired"
+    return testable ? DateTime.toEpochMillis(store.uploadedAt) : undefined
+  }
+  const times = [summary.deployedAt, summary.firstSeen].flatMap((time) =>
+    time === undefined ? [] : [DateTime.toEpochMillis(time)],
+  )
+  return times.length === 0 ? undefined : Math.max(...times)
+}
+
+/**
+ * Each component's delivery, as the API works it out (`deliveryOf` in Releases): its deploy
+ * targets' environments, or those it ran in; in each, the release that reached it last, the
+ * promotion to it that hasn't ended, the latest promotion to it when that one failed and nothing
+ * reached it since it started, and the next step: to the first with a workflow, building the latest
+ * commit; to each after it, the release of the one before, when that appeared later.
+ */
+const deliveryOf = (
+  components: ReadonlyArray<Component>,
+  summaries: ReadonlyArray<ReleaseSummary>,
+  promotions: ReadonlyArray<Promotion>,
+  versions: ReadonlyArray<ComponentVersion>,
+): Delivery => {
+  // When a release first appeared anywhere, which orders a component's releases.
+  const appeared = (summary: ReleaseSummary | undefined) => {
+    if (summary === undefined) {
+      return Number.NEGATIVE_INFINITY
+    }
+    const times = summaries
+      .filter((each) => each.component === summary.component && each.release === summary.release)
+      .flatMap((each) =>
+        [each.firstSeen, each.deployedAt, each.store?.uploadedAt].flatMap((time) =>
+          time === undefined ? [] : [DateTime.toEpochMillis(time)],
+        ),
+      )
+    return Math.min(...times)
+  }
+  const deliveryOfOne = (component: Component): ComponentDelivery => {
+    const own = summaries.filter((summary) => summary.component === component.key)
+    const targets = component.deployTargets ?? []
+    const environments =
+      targets.length > 0
+        ? targets.map((target) => ({ environment: target.environment, target }))
+        : [...new Set(own.flatMap((summary) => (summary.environment === undefined ? [] : [summary.environment])))]
+            .toSorted()
+            .map((environment) => ({ environment, target: undefined }))
+    const stages = environments.map(({ environment, target }) => {
+      const current = own
+        .filter((summary) => summary.environment === environment)
+        .flatMap((summary) => {
+          const at = reachedAt(summary, target)
+          return at === undefined ? [] : [{ summary, at }]
+        })
+        .toSorted((a, b) => b.at - a.at)[0]
+      const toHere = promotions
+        .filter((each) => each.component === component.key && each.environment === environment)
+        .toSorted((a, b) => DateTime.toEpochMillis(b.startedAt) - DateTime.toEpochMillis(a.startedAt))
+      const promotion = toHere.find((each) => !hasEnded(each.state))
+      // The latest promotion here, when it ended without its release getting here and nothing came since.
+      const last = toHere[0]
+      const unsuccessful =
+        last !== undefined &&
+        (last.state === "failed" || last.state === "cancelled" || last.state === "rejected" || last.state === "lost")
+      const failedPromotion =
+        unsuccessful && (current === undefined || current.at < DateTime.toEpochMillis(last.startedAt))
+          ? last
+          : undefined
+      return { environment, target, current, promotion, failedPromotion }
+    })
+    const nextOf = (
+      stage: (typeof stages)[number],
+      before: (typeof stages)[number] | undefined,
+    ): NextStep | undefined => {
+      if (stage.target === undefined || stage.promotion !== undefined) {
+        return undefined
+      }
+      if (before === undefined) {
+        return stage.target.workflow === undefined ? undefined : { _tag: "buildLatest" }
+      }
+      const candidate = before.current?.summary
+      if (
+        candidate === undefined ||
+        candidate.release === stage.current?.summary.release ||
+        appeared(candidate) <= appeared(stage.current?.summary)
+      ) {
+        return undefined
+      }
+      return { _tag: "promote", release: candidate.release, from: before.environment }
+    }
+    const version = versions.find((each) => each.component === component.key)
+    return {
+      component: component.key,
+      ...(component.shipsWith === undefined ? {} : { shipsWith: component.shipsWith }),
+      ...(version === undefined ? {} : { version }),
+      environments: stages.map((stage, index): EnvironmentDelivery => {
+        const next = nextOf(stage, stages[index - 1])
+        return {
+          environment: stage.environment,
+          ...(stage.target === undefined ? {} : { target: stage.target }),
+          ...(stage.current === undefined
+            ? {}
+            : { current: { summary: stage.current.summary, since: DateTime.makeUnsafe(stage.current.at) } }),
+          ...(stage.promotion === undefined ? {} : { promotion: stage.promotion }),
+          ...(stage.failedPromotion === undefined ? {} : { failedPromotion: stage.failedPromotion }),
+          ...(next === undefined ? {} : { next }),
+        }
+      }),
+    }
+  }
+  return { components: components.map(deliveryOfOne) }
+}
+
 /**
  * The public API with Notes in it, signed in or not, as Ada, an owner, or as Mira, a member, `as`
  * says; `workspace` replaces the workspace's projects, such as none for a workspace that has just
- * been set up. Notes's telemetry named production and staging lately, or the environments `seen`
- * names; production is production until the dashboard changes it, as it changes components' links
- * and promotes releases. A promotion started here moves through the states `following` lists, one
- * each time its release is asked for after it started, as Cluenori follows its run on GitHub; it
- * stays starting without them. An `older` deployment says neither.
+ * been set up. Notes is as `world` has it, as it has run for weeks unless another is given; its
+ * telemetry named the world's environments lately, or those `seen` names; production is the
+ * world's until the dashboard changes it, as it changes components' links and promotes releases. A
+ * promotion started here moves through the states `following` lists, one each time its release is
+ * asked for after it started, as Cluenori follows its run on GitHub; it stays starting without
+ * them. An `older` deployment says neither environments nor settings.
  */
 export const notesApi = ({
   signedIn = true,
   as = ada,
   workspace = projects,
-  seen = [EnvironmentKey.make("production"), EnvironmentKey.make("staging")],
+  world = weeksIn,
+  seen = world.seen,
   older = false,
   following = [],
-  linked = linksAtStart,
+  linked = world.linked,
   seeded,
   drafts = true,
 }: {
   readonly signedIn?: boolean
   readonly as?: Member
   readonly workspace?: ReadonlyArray<Project>
+  /** The state of Notes's releases at the start: `weeksIn`, or `firstNumberedDay`. */
+  readonly world?: World
   readonly seen?: ReadonlyArray<EnvironmentKey>
   readonly older?: boolean
   readonly following?: ReadonlyArray<PromotionState>
   /** Each component's links at the start, such as `iosWithThreeApps`. */
   readonly linked?: ReadonlyMap<string, ComponentLinks>
-  /** The promotions there were, in place of the API's latest release's two. */
+  /** The promotions there were, in place of the world's. */
   readonly seeded?: (now: number) => ReadonlyArray<Promotion>
   /** Whether a draft of notes is written; without, the model doesn't answer. */
   readonly drafts?: boolean
@@ -1123,11 +1577,11 @@ export const notesApi = ({
   const links = new Map(linked)
   // Each release's notes, by component and version.
   const notesOf = new Map<string, ReadonlyArray<ReleaseNote>>()
-  let versions: ReadonlyArray<ComponentVersion> = versionsAt
+  let versions: ReadonlyArray<ComponentVersion> = world.versions
   // Releases numbered here, from commits that had none.
   let numbered: ReadonlyArray<ReleaseSummary> = []
   let style: string | undefined
-  let settings: ProjectSettings = { productionEnvironments: [EnvironmentKey.make("production")] }
+  let settings: ProjectSettings = { productionEnvironments: world.production }
   let promotions: ReadonlyArray<Promotion> | undefined
   // How many times each promotion started here was asked about since.
   const timesAsked = new Map<string, number>()
@@ -1202,6 +1656,13 @@ export const notesApi = ({
           return yield* reply(ComponentNotFound, new ComponentNotFound({ component: ComponentKey.make(id) }), 404)
         }
         const payload = yield* Schema.decodeEffect(LinksBody)(call.body ?? "").pipe(Effect.orDie)
+        const shipsWith = payload.shipsWith
+        if (
+          shipsWith !== undefined &&
+          (shipsWith === linkedComponent.key || !componentsWith(links).some((entry) => entry.key === shipsWith))
+        ) {
+          return yield* reply(ComponentNotFound, new ComponentNotFound({ component: shipsWith }), 404)
+        }
         links.set(linkedComponent.key, payload)
         return yield* reply(
           Component,
@@ -1214,7 +1675,7 @@ export const notesApi = ({
       if (call.method === "POST" && area === "components" && id !== undefined && more === "promotions") {
         // A commit that has no release: numbered as the component's next, then promoted.
         const now = yield* Clock.currentTimeMillis
-        promotions ??= seeded === undefined ? promotionsAt(now) : seeded(now)
+        promotions ??= (seeded ?? world.promotionsAt)(now)
         const payload = yield* Schema.decodeEffect(PromoteLatestBody)(call.body ?? "").pipe(Effect.orDie)
         const target = links.get(id)?.deployTargets?.find((each) => each.environment === payload.environment)
         const linkedRepository = links.get(id)?.repository
@@ -1302,6 +1763,14 @@ export const notesApi = ({
         }
         return yield* reply(ComponentVersions, { versions })
       }
+      if (call.method === "GET" && area === "delivery" && id === undefined) {
+        const now = yield* Clock.currentTimeMillis
+        promotions ??= (seeded ?? world.promotionsAt)(now)
+        return yield* reply(
+          Delivery,
+          deliveryOf(componentsWith(links), [...world.releasesAt(now), ...numbered], promotions, versions),
+        )
+      }
       if (area === "notes-style") {
         if (call.method === "PUT") {
           const payload = yield* Schema.decodeEffect(StyleBody)(call.body ?? "").pipe(Effect.orDie)
@@ -1312,7 +1781,7 @@ export const notesApi = ({
       }
       if (call.method === "POST" && area === "promotions" && id !== undefined && more === "release") {
         const now = yield* Clock.currentTimeMillis
-        promotions ??= seeded === undefined ? promotionsAt(now) : seeded(now)
+        promotions ??= (seeded ?? world.promotionsAt)(now)
         const approved = promotions.find((each) => each.id === id && each.state === "approved")
         if (approved === undefined) {
           return yield* reply(PromotionNotFound, new PromotionNotFound({ promotion: PromotionId.make(id) }), 404)
@@ -1329,7 +1798,7 @@ export const notesApi = ({
       }
       if (area === "releases" && id !== undefined && more !== undefined) {
         const now = yield* Clock.currentTimeMillis
-        promotions ??= seeded === undefined ? promotionsAt(now) : seeded(now)
+        promotions ??= (seeded ?? world.promotionsAt)(now)
         const noted = `${id} ${more}`
         if (call.method === "PUT" && call.path[5] === "notes") {
           const payload = yield* Schema.decodeEffect(NotesBody)(call.body ?? "").pipe(Effect.orDie)
@@ -1397,6 +1866,7 @@ export const notesApi = ({
         promotions = promotions.map((promotion) => followed(promotion, now))
         return yield* releaseDetail(
           now,
+          world,
           id,
           more,
           asked.environment,
@@ -1430,7 +1900,7 @@ export const notesApi = ({
         return yield* id === "counts" && more === undefined ? logCounts(question) : logs(question)
       }
       if (area === "releases" && id === undefined) {
-        return yield* releases(question)
+        return yield* releases(question, world)
       }
       return yield* noSuchCall(call.method, call.path)
     })

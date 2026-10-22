@@ -6,6 +6,7 @@ import type {
   ComparedOperation,
   Promotion,
   PromotionFix,
+  NextStep,
   ReleaseSummary,
   Runner,
   StoreBuild,
@@ -18,7 +19,7 @@ import { apiClient, reachFailures, refuse } from "./api-client.ts"
 import type { ApiTarget } from "./api-settings.ts"
 import { apiTarget } from "./api-settings.ts"
 import { deployTargetLines } from "./deploy-targets.ts"
-import { filters, headline, optionalKey, parsed, questionOf } from "./question.ts"
+import { filters, headline, local, optionalKey, parsed, questionOf } from "./question.ts"
 import { columns, count, milliseconds, share, utcMinute } from "./terminal-text.ts"
 
 const componentArgument = Argument.String("component").pipe(
@@ -217,6 +218,100 @@ export const releases = Command.make(
 ).pipe(
   Command.withDescription(
     "Each component's releases, from its telemetry, its deploys, and App Store Connect, each compared with the release before it.",
+  ),
+)
+
+// What can go to an environment next, in words, with the command that does it.
+const nextText = (project: ProjectKey, component: ComponentKey, environment: EnvironmentKey, next: NextStep) =>
+  next._tag === "promote"
+    ? {
+        words: `promote ${next.release} from ${next.from}`,
+        command: `./cluenori promote ${project} ${component} ${next.release} --to ${environment}`,
+      }
+    : {
+        words: "build the latest commit",
+        command: `./cluenori promote ${project} ${component} latest --to ${environment}`,
+      }
+
+// A promotion under way to an environment, else what can go there next.
+const stageNote = (promotion: Promotion | undefined, next: string | undefined) => {
+  if (promotion !== undefined) {
+    return `promoting ${promotion.release}: ${promotion.state}`
+  }
+  return next === undefined ? "" : `next: ${next}`
+}
+
+/** `cluenori delivery <project>`. */
+export const delivery = Command.make(
+  "delivery",
+  {
+    project: Argument.String("project").pipe(Argument.withDescription("The project's key.")),
+    local,
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const project = yield* parsed(ProjectKey, input.project, "a project key")
+      const target = yield* apiTarget(input.local)
+      const client = yield* apiClient(target)
+      const shown = yield* client.releases.delivery({ params: { project } }).pipe(
+        Effect.catchTags({
+          ...reachFailures(target),
+          ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
+        }),
+      )
+      if (shown.components.length === 0) {
+        return yield* Console.log(
+          `${project} has no components yet. Add one: ./cluenori component add ${project} <key> --name <name>`,
+        )
+      }
+      const commands: Array<string> = []
+      // A component that ships with another is shown under it.
+      const shipping = shown.components.filter((each) => each.shipsWith === undefined)
+      for (const each of shipping) {
+        const version =
+          each.version === undefined
+            ? "no version set"
+            : `version ${each.version.version}, next ${each.version.version}+${each.version.lastBuild + 1}`
+        yield* Console.log(`${each.component}  ${version}`)
+        if (each.environments.length === 0) {
+          yield* Console.log("  No environments yet: link its deploy targets with ./cluenori component link.")
+        }
+        yield* Console.log(
+          columns(
+            each.environments.map((stage) => {
+              const current = stage.current
+              const next =
+                stage.next === undefined ? undefined : nextText(project, each.component, stage.environment, stage.next)
+              if (next !== undefined) {
+                commands.push(next.command)
+              }
+              return [
+                `  ${stage.environment}`,
+                current?.summary.release ?? "nothing yet",
+                current === undefined ? "" : `since ${utcMinute(current.since)}`,
+                current === undefined ? "" : verdictText(current.summary),
+                stageNote(stage.promotion, next?.words),
+              ]
+            }),
+          ).join("\n"),
+        )
+        for (const part of shown.components.filter((other) => other.shipsWith === each.component)) {
+          const runs = part.environments
+            .flatMap((stage) =>
+              stage.current === undefined ? [] : [`${stage.environment} ${stage.current.summary.release}`],
+            )
+            .join(", ")
+          yield* Console.log(`  ships with it: ${part.component}${runs === "" ? "" : ` (${runs})`}`)
+        }
+        yield* Console.log("")
+      }
+      if (commands.length > 0) {
+        yield* Console.log(`Next steps:\n${commands.map((command) => `  ${command}`).join("\n")}`)
+      }
+    }),
+).pipe(
+  Command.withDescription(
+    "How each component's releases reach its environments: the release in each now, a promotion under way, and the next step, such as promoting dev's newer release to prod.",
   ),
 )
 

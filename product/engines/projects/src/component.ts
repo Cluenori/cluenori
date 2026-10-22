@@ -68,12 +68,17 @@ const DeployTargets = Schema.Array(DeployTarget).check(
 
 /**
  * Where a component's releases come from beside its telemetry, and where they go: its repository on
- * GitHub, whose commits they are, and its deploy target in each environment. Each absent until
- * linked.
+ * GitHub, whose commits they are, and its deploy target in each environment; or, for a part deployed
+ * with another component, by its deploy targets, that component. Each absent until linked.
  */
 export const ComponentLinks = Schema.Struct({
   repository: Schema.optionalKey(Repository),
   deployTargets: Schema.optionalKey(DeployTargets),
+  /**
+   * The component whose deploys deploy this one too, from the same commit with the same release,
+   * such as a background service built and deployed by the API's workflow; another of the project's.
+   */
+  shipsWith: Schema.optionalKey(ComponentKey),
 }).annotate({ identifier: "ComponentLinks" })
 export type ComponentLinks = typeof ComponentLinks.Type
 

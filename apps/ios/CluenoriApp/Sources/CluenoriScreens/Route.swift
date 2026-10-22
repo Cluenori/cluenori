@@ -105,6 +105,11 @@ public enum Route: Hashable, Sendable {
     case error(of: Telemetry, id: String)
     case logs(of: Telemetry)
     case releases(project: String, environment: String? = nil)
+    /// One component's delivery: its environments in the order its releases go through them, what's
+    /// in each, and the next step; its version, and what ships with it.
+    case component(project: String, component: String)
+    /// Every release of one component, in every environment, over the period.
+    case componentReleases(project: String, component: String)
     case release(ReleaseRef)
     /// A release's notes for its users, edited.
     case notes(ReleaseRef)
@@ -114,7 +119,9 @@ public enum Route: Hashable, Sendable {
     /// The project the screen is of.
     public var project: String {
         switch self {
-        case .project(let key, _), .releases(let key, _), .notesStyle(let key): key
+        case .project(let key, _), .releases(let key, _), .notesStyle(let key), .component(let key, _),
+            .componentReleases(let key, _):
+            key
         case .operations(let telemetry), .errors(let telemetry), .error(let telemetry, _), .logs(let telemetry):
             telemetry.project
         case .operation(let operation): operation.project
@@ -173,9 +180,12 @@ public enum Route: Hashable, Sendable {
         switch self {
         case .project: [self]
         case .releases(let key, let environment): [.project(key, environment: environment), self]
+        case .component(let key, _): [.project(key), self]
+        case .componentReleases(let key, let component):
+            [.project(key), .component(project: key, component: component), self]
         case .release(let release): Self.releaseChain(release)
         case .notes(let release): Self.releaseChain(release) + [self]
-        case .notesStyle(let key): [.project(key), .releases(project: key), self]
+        case .notesStyle(let key): [.project(key), self]
         case .operations(let telemetry), .errors(let telemetry), .logs(let telemetry):
             Self.chain(of: telemetry) + [self]
         case .operation(let operation):
@@ -184,8 +194,12 @@ public enum Route: Hashable, Sendable {
         }
     }
 
+    // A release comes from its component's screen, where its environments are.
     private static func releaseChain(_ release: ReleaseRef) -> [Route] {
-        [.project(release.project), .releases(project: release.project), .release(release)]
+        [
+            .project(release.project), .component(project: release.project, component: release.component),
+            .release(release),
+        ]
     }
 
     // The screens a list of `telemetry` comes from.
@@ -198,7 +212,8 @@ public enum Route: Hashable, Sendable {
 
     /// The screen a link names, `cluenori://projects/notes/errors/4f1c9a2e7b3d5068`; nil for any
     /// other link: `cluenori://projects/<key>`, and under it `/operations`, `/errors`,
-    /// `/errors/<id>`, `/logs`, `/releases`, `/notes-style`, and `/releases/<component>/<release>`,
+    /// `/errors/<id>`, `/logs`, `/releases`, `/notes-style`, `/components/<component>` and its
+    /// `/releases`, and `/releases/<component>/<release>`,
     /// under which `/operations`, `/errors`, `/errors/<id>`, and `/logs` are the release's alone, and
     /// `/notes` its notes. Each takes
     /// `?environment=<key>`: the environment a project's screen shows, or, for a release's, the one
@@ -210,6 +225,14 @@ public enum Route: Hashable, Sendable {
         let named = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .first { $0.name == "environment" }?.value
         let environment = named?.isEmpty == false ? named : nil
+        if parts.count >= 3, parts[1] == "components" {
+            switch parts.count {
+            case 3: self = .component(project: project, component: parts[2])
+            case 4 where parts[3] == "releases": self = .componentReleases(project: project, component: parts[2])
+            default: return nil
+            }
+            return
+        }
         if parts.count >= 4, parts[1] == "releases" {
             let release = ReleaseRef(project: project, component: parts[2], environment: environment, version: parts[3])
             guard let route = Self.route(Array(parts.dropFirst(4)), of: .release(release)) else { return nil }

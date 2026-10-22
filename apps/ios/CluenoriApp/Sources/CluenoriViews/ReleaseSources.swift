@@ -86,6 +86,23 @@ func sourceName(_ source: ReleaseSource) -> String {
     }
 }
 
+extension StoreStage {
+    /// The symbol of where an app's build stands: TestFlight's plane, review's magnifier, the App
+    /// Store's storefront.
+    var symbol: String {
+        switch self {
+        case .processing: "gearshape.2"
+        case .failed: "xmark.octagon"
+        case .testing, .expired: "airplane"
+        case .waitingForReview, .inReview: "magnifyingglass"
+        case .rejected: "xmark.seal"
+        case .pendingRelease: "clock"
+        case .releasing, .live: "storefront"
+        default: "app"
+        }
+    }
+}
+
 /// Where an app's build stands in App Store Connect, in words: `In TestFlight`, `In review`,
 /// `Phased release, day 3 of 7`, `On the App Store`.
 func storeStageWords(_ stage: StoreStage, appStoreState: String?, phased: PhasedRelease?) -> String {
@@ -190,8 +207,8 @@ struct CommitRow: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                if let message {
-                    Text(message)
+                if let subject = message.flatMap(firstLine) {
+                    Text(subject)
                         .font(.subheadline)
                         .lineLimit(2)
                 }
@@ -199,7 +216,8 @@ struct CommitRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
+            // The words take the row's width, so they wrap only when they must.
+            .frame(maxWidth: .infinity, alignment: .leading)
             if opens {
                 Image(systemName: "arrow.up.forward")
                     .font(.footnote.weight(.semibold))
@@ -411,7 +429,8 @@ struct PullRequestRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
-            Spacer(minLength: 8)
+            // The words take the row's width, so they wrap only when they must.
+            .frame(maxWidth: .infinity, alignment: .leading)
             if opens {
                 Image(systemName: "arrow.up.forward")
                     .font(.footnote.weight(.semibold))
@@ -457,7 +476,8 @@ struct ChangedCommitRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
-            Spacer(minLength: 8)
+            // The words take the row's width, so they wrap only when they must.
+            .frame(maxWidth: .infinity, alignment: .leading)
             if opens {
                 Image(systemName: "arrow.up.forward")
                     .font(.footnote.weight(.semibold))

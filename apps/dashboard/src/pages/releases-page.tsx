@@ -1,33 +1,45 @@
-import type { ComponentKey, ProjectKey } from "@cluenori/foundation"
-import type { Component } from "@cluenori/projects"
-import type { SemanticVersion } from "@cluenori/releases"
+import type { ComponentKey, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import type { DeployTarget } from "@cluenori/projects"
+import type { EnvironmentDelivery, NextStep, Promotion, SemanticVersion } from "@cluenori/releases"
 import { comparedFrom, defaultNotesStyle, failingMoreRule, judgedAfterMs, VersionRefused } from "@cluenori/releases"
 import { slowerRule } from "@cluenori/signals"
-import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
+import { useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Cause, DateTime, Exit, Option, Schema } from "effect"
 import { Atom, AsyncResult } from "effect/reactivity"
-import { ArrowUpRightIcon, CableIcon, HashIcon, PenLineIcon, TagIcon, TriangleAlertIcon } from "lucide-react"
-import { lazy, Suspense, useState } from "react"
+import { HistoryIcon, PenLineIcon, TriangleAlertIcon, WaypointsIcon } from "lucide-react"
+import { lazy, Suspense, useEffect, useState } from "react"
 
 import { duration, share } from "@/lib/format"
 import {
+  deliveryAtom,
   linkComponentAtom,
   meAtom,
   notesStyleAtom,
   operationsAtom,
   periodAtom,
   projectAtom,
+  promoteAtom,
   promoteLatestAtom,
+  releaseApprovedAtom,
+  releaseAtom,
   releasesAtom,
   setNotesStyleAtom,
   setVersionAtom,
-  versionsAtom,
 } from "@/project-data"
 import type { Environments } from "@/project-facts"
 import { colorOf, isShownIn, liveForMs, periodWords, releaseRouteOf } from "@/project-facts"
-import { distributionWords, nextReleaseOf } from "@/release-facts"
+import type { ThereNow } from "@/release-facts"
+import {
+  deliveryGroupsOf,
+  isDelivering,
+  nextReleaseOf,
+  promotionsAskedEveryMs,
+  shipsWithOptionsOf,
+  thereNowOf,
+} from "@/release-facts"
 import type { Filters } from "@/router"
 import { navigate } from "@/router"
+import { DeliveryList } from "@/views/delivery-list"
 import { FilterSwitches } from "@/views/filter-switches"
 import { LinksDialog } from "@/views/links-dialog"
 import { failureText, Loaded } from "@/views/loaded"
@@ -35,18 +47,16 @@ import { NotesStyleEditor } from "@/views/notes-style-editor"
 import { Panel } from "@/views/panel"
 import { ProjectHeader } from "@/views/project-header"
 import { ReleaseList } from "@/views/release-list"
+import { ReleaseNowDialog } from "@/views/release-now-dialog"
 import { SourceProblems } from "@/views/source-problems"
-import { Button } from "@/views/ui/button"
-import type { VersionToSet } from "@/views/version-list"
-import { SetVersionDialog, VersionList } from "@/views/version-list"
+import type { VersionToSet } from "@/views/version-line"
+import { SetVersionDialog } from "@/views/version-line"
 
-// Promoting a component's newest commit loads when it is asked for, now and then.
+// Promoting loads when it is asked for, now and then.
+const PromoteDialog = lazy(() => import("@/views/promote-dialog").then((module) => ({ default: module.PromoteDialog })))
 const PromoteLatestDialog = lazy(() =>
   import("@/views/promote-dialog").then((module) => ({ default: module.PromoteLatestDialog })),
 )
-
-// Where the versions are, which promoting a commit leads to when a component has none.
-const versionsId = "versions"
 
 const isVersionRefused = Schema.is(VersionRefused)
 
@@ -64,131 +74,74 @@ const releasesMeaning = [
   `Too early: nothing is worse yet, but it ran under ${duration(judgedAfterMs)}, or no operation ran ${comparedFrom} times in both.`,
 ].join(" ")
 
-/** One link of a component, as the list of sources shows it: what it is, and its value or that there is none. */
-function LinkValue({
-  label,
-  value,
-  href,
-}: {
-  readonly label: string
-  readonly value?: string
-  readonly href?: string
-}) {
-  return (
-    <span className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      {value === undefined && <span className="text-[15px] text-muted-foreground">Not linked</span>}
-      {value !== undefined && href === undefined && <span className="truncate font-mono text-[15px]">{value}</span>}
-      {value !== undefined && href !== undefined && (
-        <a
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          className="flex min-w-0 items-center gap-1 font-mono text-[15px] underline-offset-4 hover:underline"
-        >
-          <span className="truncate">{value}</span>
-          <span className="sr-only"> on GitHub</span>
-          <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        </a>
-      )}
-    </span>
-  )
+/** A release being promoted from an environment's next step: what, from where, to which target. */
+type Confirming = {
+  readonly component: ComponentKey
+  readonly release: ReleaseVersion
+  readonly from: EnvironmentKey
+  readonly target: DeployTarget
+  readonly thereNow: ThereNow | undefined
+  /** How many times one was confirmed: each confirmation starts fresh. */
+  readonly count: number
 }
 
 /**
- * A component's deploy targets, each its environment, its workflow, and the App Store Connect app
- * its builds go to and how far; or that it has none.
+ * Confirming a promotion from an environment's next step: the promote dialog, with the release's
+ * notes, which an App Store Connect app's build is sent with, once they are read.
  */
-function TargetsValue({ component }: { readonly component: Component }) {
-  const targets = component.deployTargets ?? []
-  return (
-    <span className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-sm text-muted-foreground">Deploy targets</span>
-      {targets.length === 0 ? (
-        <span className="text-[15px] text-muted-foreground">None</span>
-      ) : (
-        <ul className="flex min-w-0 flex-col gap-0.5">
-          {targets.map((target) => (
-            <li key={target.environment} className="text-[15px] wrap-anywhere">
-              {target.environment}{" "}
-              <span className="text-muted-foreground">
-                {[
-                  ...(target.workflow === undefined ? [] : [target.workflow]),
-                  ...(target.appStore === undefined
-                    ? []
-                    : [`${target.appStore.bundleId}, ${distributionWords[target.appStore.distribution]}`]),
-                ].join(" · ")}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </span>
-  )
-}
-
-/**
- * Each component's links, where its releases' commits come from and where they go, each one click
- * from changing.
- */
-function Sources({
-  components,
-  colorOf: colorOfComponent,
-  onChange,
-  onPromoteLatest,
+function PromoteFromStage({
+  project,
+  confirming,
+  repository,
+  owner,
+  onClose,
+  onChangeLinks,
 }: {
-  readonly components: ReadonlyArray<Component>
-  readonly colorOf: (component: string) => string
-  readonly onChange: (component: ComponentKey) => void
-  /** Promotes a component's newest commit, for one with a deploy target that builds it. */
-  readonly onPromoteLatest: (component: ComponentKey) => void
+  readonly project: ProjectKey
+  readonly confirming: Confirming
+  readonly repository: string | undefined
+  readonly owner: boolean
+  readonly onClose: () => void
+  readonly onChangeLinks: () => void
 }) {
-  if (components.length === 0) {
-    return <p className="px-5 py-6 text-sm text-muted-foreground">No components yet.</p>
-  }
+  const { component, release, from, target } = confirming
+  const scope = { project, component, release, environment: from }
+  // Not handled: the release's answer failing leaves its notes said as being read; promoting still
+  // works, and App Store review's refusal says when they're missing, one click from writing them.
+  const answer = useAtomValue(releaseAtom(scope))
+  const [promoting, promote] = useAtom(promoteAtom)
   return (
-    <ul className="divide-y">
-      {components.map((component) => (
-        <li
-          key={component.key}
-          className="grid items-center gap-x-6 gap-y-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,2fr)_auto]"
-        >
-          <span className="flex min-w-0 items-center gap-3 sm:col-span-2 lg:col-span-1">
-            <span className="size-2.5 shrink-0" style={{ backgroundColor: colorOfComponent(component.key) }} />
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-[15px]">{component.name}</span>
-              <span className="truncate font-mono text-sm text-muted-foreground">{component.key}</span>
-            </span>
-          </span>
-          <LinkValue
-            label="GitHub repository"
-            {...(component.repository === undefined
-              ? {}
-              : { value: component.repository, href: `https://github.com/${component.repository}` })}
-          />
-          <TargetsValue component={component} />
-          <span className="flex flex-wrap gap-2 justify-self-start sm:col-span-2 lg:col-span-1 lg:justify-self-end">
-            {(component.deployTargets ?? []).some((target) => target.workflow !== undefined) && (
-              <Button variant="outline" size="sm" onClick={() => onPromoteLatest(component.key)}>
-                Promote latest…<span className="sr-only"> of {component.key}</span>
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={() => onChange(component.key)}>
-              Change links<span className="sr-only"> of {component.key}</span>
-            </Button>
-          </span>
-        </li>
-      ))}
-    </ul>
+    <PromoteDialog
+      release={release}
+      target={target}
+      thereNow={confirming.thereNow}
+      repository={repository}
+      notes={AsyncResult.isSuccess(answer) ? answer.value.detail.notes : undefined}
+      owner={owner}
+      // Open until it is closed, or the promotion started.
+      open={!AsyncResult.isSuccess(promoting)}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose()
+        }
+      }}
+      promoting={promoting}
+      onPromote={(input) => promote({ release: scope, environment: target.environment, ...input })}
+      // The notes are written on the release's own page.
+      onOpenNotes={() => navigate({ page: "release", project, component, release, environment: from })}
+      onChangeLinks={onChangeLinks}
+    />
   )
 }
 
 /**
- * A project's releases, or one component's, of the environment shown, that ran, were deployed, or
- * were uploaded over the period, the latest first: how each shipped, when it ran, how much, and how it compares with the
- * release before it, each one click from its own page. Above them, any source that couldn't be read
- * lately, so missing commits and builds aren't read as none; below, where each component's releases
- * come from, each one click from changing.
+ * A project's releases, or one component's, led by how they reach each environment: for each
+ * component, what runs in each of its environments now and since when, a promotion under way, and
+ * the one next step, a click from its confirmation; the components that ship with it inside it; its
+ * version and its links. Above, any source that couldn't be read lately, so missing commits and
+ * builds aren't read as none; below, the history: the releases of the environment shown that ran,
+ * were deployed, or were uploaded over the period, the latest first, each against the release
+ * before it; then how AI drafts of release notes read.
  */
 export function ReleasesPage({
   project,
@@ -208,6 +161,8 @@ export function ReleasesPage({
   const scope = { project, ...(component === undefined ? {} : { component }) }
   const period = useAtomValue(periodAtom)
   const detail = useAtomValue(projectAtom(project))
+  const delivery = useAtomValue(deliveryAtom(project))
+  const askDeliveryAgain = useAtomRefresh(deliveryAtom(project))
   const releases = useAtomValue(releasesAtom(scope))
   // Whether telemetry arrives at all, releases or not: a service that sends no version has none.
   const operations = useAtomValue(operationsAtom(scope))
@@ -223,10 +178,23 @@ export function ReleasesPage({
     link(Atom.Reset)
     setEditing(key)
   }
-  const shownComponents = all.filter((entry) => component === undefined || entry.key === component)
+  const deliveryOf = (key: ComponentKey) =>
+    AsyncResult.isSuccess(delivery)
+      ? delivery.value.delivery.components.find((each) => each.component === key)
+      : undefined
+
+  // While a promotion to any environment runs, its state is asked for again: Cluenori asks GitHub
+  // each minute.
+  const following = AsyncResult.isSuccess(delivery) && isDelivering(delivery.value.delivery)
+  useEffect(() => {
+    if (!following) {
+      return
+    }
+    const timer = window.setInterval(askDeliveryAgain, promotionsAskedEveryMs)
+    return () => window.clearInterval(timer)
+  }, [following, askDeliveryAgain])
 
   // Versions: bumped from a menu, or set in a dialog; why either didn't happen is said where it was asked.
-  const versions = useAtomValue(versionsAtom(project))
   const setVersion = useAtomSet(setVersionAtom, { mode: "promiseExit" })
   const [bumping, setBumping] = useState<ComponentKey | undefined>(undefined)
   const [bumpProblem, setBumpProblem] = useState<{ readonly component: ComponentKey; readonly text: string }>()
@@ -244,6 +212,10 @@ export function ReleasesPage({
       }
     })
   }
+  const startSetting = (of: ComponentKey) => {
+    setSettingState({ saving: false })
+    setSetting(of)
+  }
   const saveVersion = (of: ComponentKey, set: VersionToSet) => {
     setSettingState({ saving: true })
     void setVersion({ project, component: of, ...set }).then((exit) => {
@@ -260,32 +232,61 @@ export function ReleasesPage({
   const me = useAtomValue(meAtom)
   const owner = AsyncResult.isSuccess(me) && me.value.role === "owner"
 
-  // Promoting a component's newest commit: on success, its release's page, where the promotion shows.
+  // The next steps: building a component's latest commit for its first environment, and promoting
+  // the release of the environment before to the next.
   const latest = useAtomValue(promoteLatestAtom)
   const resetLatest = useAtomSet(promoteLatestAtom)
   const promoteLatest = useAtomSet(promoteLatestAtom, { mode: "promiseExit" })
-  const [latestOf, setLatestOf] = useState<ComponentKey | undefined>(undefined)
-  const latestComponent = all.find((entry) => entry.key === latestOf)
-  const latestLine = AsyncResult.isSuccess(versions)
-    ? versions.value.versions.find((each) => each.component === latestOf)
-    : undefined
-  const startPromotingLatest = (of: ComponentKey) => {
-    // An answer to an earlier promotion isn't this one's.
-    resetLatest(Atom.Reset)
-    setLatestOf(of)
+  // The component and environment being built for, and how many times one was: each starts fresh.
+  const [latestOf, setLatestOf] = useState<{
+    readonly component: ComponentKey
+    readonly environment: EnvironmentKey
+    readonly count: number
+  }>()
+  const latestComponent = all.find((entry) => entry.key === latestOf?.component)
+  const latestLine = latestOf === undefined ? undefined : deliveryOf(latestOf.component)?.version
+  const resetPromoting = useAtomSet(promoteAtom)
+  const [confirming, setConfirming] = useState<Confirming | undefined>(undefined)
+  const takeNext = (of: ComponentKey, stage: EnvironmentDelivery, next: NextStep) => {
+    switch (next._tag) {
+      case "buildLatest":
+        // An answer to an earlier promotion isn't this one's.
+        resetLatest(Atom.Reset)
+        setLatestOf((last) => ({ component: of, environment: stage.environment, count: (last?.count ?? 0) + 1 }))
+        return
+      case "promote": {
+        const { target } = stage
+        const delivered = deliveryOf(of)
+        if (target === undefined) {
+          return
+        }
+        resetPromoting(Atom.Reset)
+        setConfirming((last) => ({
+          component: of,
+          release: next.release,
+          from: next.from,
+          target,
+          thereNow: delivered === undefined ? undefined : thereNowOf(delivered, stage.environment),
+          count: (last?.count ?? 0) + 1,
+        }))
+        return
+      }
+    }
   }
-  const openVersions = () => {
-    setLatestOf(undefined)
-    window.setTimeout(() => {
-      const panel = document.getElementById(versionsId)
-      panel?.scrollIntoView({ block: "start" })
-      panel?.focus({ preventScroll: true })
-    }, 0)
-  }
+  const confirmedComponent = all.find((entry) => entry.key === confirming?.component)
+
+  // Releasing an App Store version review approved, from the environment it goes to.
+  const [releasing, releaseNow] = useAtom(releaseApprovedAtom)
+  const [releasingOne, setReleasingOne] = useState<Promotion | undefined>(undefined)
 
   // The project's notes style: its own, or Cluenori's default.
   const notesStyle = useAtomValue(notesStyleAtom(project))
   const [stylePosting, saveStyle] = useAtom(setNotesStyleAtom)
+
+  const historyScope = [
+    shown === "every component" ? "Every component" : shown,
+    ...(environment === undefined ? [] : [`in ${environment}`]),
+  ].join(" ")
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
@@ -325,9 +326,45 @@ export function ReleasesPage({
       )}
 
       <Panel
-        icon={TagIcon}
-        title={`Releases of ${shown}`}
-        subtitle={`${periodWords[period]}, the latest first, each against the release before it`}
+        icon={WaypointsIcon}
+        title="Delivery"
+        subtitle="What runs in each environment now, in the order releases go, and the next step"
+      >
+        <Loaded result={AsyncResult.all({ delivery, detail })}>
+          {(answer) => (
+            <DeliveryList
+              groups={deliveryGroupsOf(answer.delivery.delivery.components).filter(
+                (group) =>
+                  component === undefined ||
+                  group.delivery.component === component ||
+                  group.shipping.some((each) => each.component === component),
+              )}
+              components={answer.detail.components}
+              colorOf={colorOfComponent}
+              production={environments.production}
+              asOf={answer.delivery.asOf}
+              linkOf={(release) => releaseRouteOf(project, release)}
+              bumping={bumping}
+              bumpProblem={bumpProblem}
+              actions={{
+                onNext: takeNext,
+                onReleaseNow: (promotion) => {
+                  releaseNow(Atom.Reset)
+                  setReleasingOne(promotion)
+                },
+                onChangeLinks: startEditing,
+                onBump: bump,
+                onSetVersion: startSetting,
+              }}
+            />
+          )}
+        </Loaded>
+      </Panel>
+
+      <Panel
+        icon={HistoryIcon}
+        title="Release history"
+        subtitle={`${historyScope}, ${periodWords[period].toLowerCase()}, the latest first, each against the release before it`}
       >
         <Loaded result={releases}>
           {(answer) => (
@@ -345,52 +382,6 @@ export function ReleasesPage({
           )}
         </Loaded>
       </Panel>
-
-      <Panel
-        icon={CableIcon}
-        title="Where releases come from"
-        subtitle="Each component's repository gives its releases their commits; its deploy targets say where they go"
-      >
-        <Loaded result={detail}>
-          {(answer) => (
-            <Sources
-              components={answer.components.filter((entry) => component === undefined || entry.key === component)}
-              colorOf={colorOfComponent}
-              onChange={startEditing}
-              onPromoteLatest={startPromotingLatest}
-            />
-          )}
-        </Loaded>
-      </Panel>
-
-      {/* Where promoting a commit leads when the component's version isn't set. */}
-      <div id={versionsId} tabIndex={-1} className="scroll-mt-4 outline-none">
-        <Panel
-          icon={HashIcon}
-          title="Versions"
-          subtitle="What each component's next builds are numbered in: CI asks Cluenori for a commit's release"
-        >
-          <Loaded result={versions}>
-            {(answer) => (
-              <VersionList
-                components={shownComponents.map((entry) => ({
-                  key: entry.key,
-                  name: entry.name,
-                  color: colorOfComponent(entry.key),
-                }))}
-                versions={answer.versions}
-                bumping={bumping}
-                problem={bumpProblem}
-                onBump={bump}
-                onSet={(of) => {
-                  setSettingState({ saving: false })
-                  setSetting(of)
-                }}
-              />
-            )}
-          </Loaded>
-        </Panel>
-      </div>
 
       <Panel
         icon={PenLineIcon}
@@ -413,36 +404,29 @@ export function ReleasesPage({
         </Loaded>
       </Panel>
 
-      {latestComponent !== undefined && (
+      {latestOf !== undefined && latestComponent !== undefined && (
         <Suspense fallback={null}>
           <PromoteLatestDialog
-            key={latestComponent.key}
+            key={latestOf.count}
             component={latestComponent.key}
+            environment={latestOf.environment}
             targets={(latestComponent.deployTargets ?? []).filter((target) => target.workflow !== undefined)}
             repository={latestComponent.repository}
             nextRelease={latestLine === undefined ? undefined : nextReleaseOf(latestLine)}
             owner={owner}
-            open
+            // Open until it is closed, or the promotion started: its environment then shows it.
+            open={!AsyncResult.isSuccess(latest)}
             onOpenChange={(open) => {
               if (!open) {
                 setLatestOf(undefined)
               }
             }}
             promoting={latest}
-            onPromote={(input) =>
-              void promoteLatest({ project, component: latestComponent.key, ...input }).then((exit) => {
-                if (Exit.isSuccess(exit)) {
-                  navigate({
-                    page: "release",
-                    project,
-                    component: exit.value.component,
-                    release: exit.value.release,
-                    environment: exit.value.environment,
-                  })
-                }
-              })
-            }
-            onOpenVersions={openVersions}
+            onPromote={(input) => void promoteLatest({ project, component: latestComponent.key, ...input })}
+            onOpenVersions={() => {
+              setLatestOf(undefined)
+              startSetting(latestComponent.key)
+            }}
             onChangeLinks={() => {
               setLatestOf(undefined)
               startEditing(latestComponent.key)
@@ -451,15 +435,53 @@ export function ReleasesPage({
         </Suspense>
       )}
 
+      {confirming !== undefined && (
+        <Suspense fallback={null}>
+          <PromoteFromStage
+            key={confirming.count}
+            project={project}
+            confirming={confirming}
+            repository={confirmedComponent?.repository}
+            owner={owner}
+            onClose={() => setConfirming(undefined)}
+            onChangeLinks={() => {
+              setConfirming(undefined)
+              startEditing(confirming.component)
+            }}
+          />
+        </Suspense>
+      )}
+
+      {releasingOne !== undefined && (
+        <ReleaseNowDialog
+          promotion={releasingOne}
+          // Open until it is closed, or it was released.
+          open={!AsyncResult.isSuccess(releasing)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setReleasingOne(undefined)
+            }
+          }}
+          releasing={releasing}
+          onRelease={() =>
+            releaseNow({
+              release: {
+                project,
+                component: releasingOne.component,
+                release: releasingOne.release,
+                environment: releasingOne.environment,
+              },
+              promotion: releasingOne.id,
+            })
+          }
+        />
+      )}
+
       {setting !== undefined && (
         <SetVersionDialog
           key={setting}
           component={setting}
-          current={
-            AsyncResult.isSuccess(versions)
-              ? versions.value.versions.find((each) => each.component === setting)
-              : undefined
-          }
+          current={deliveryOf(setting)?.version}
           open
           onOpenChange={(open) => {
             if (!open) {
@@ -476,6 +498,7 @@ export function ReleasesPage({
         <LinksDialog
           key={edited.key}
           component={edited}
+          shipsWithOptions={shipsWithOptionsOf(all, edited.key)}
           environments={[...new Set([...environments.production, ...environments.offered])]}
           // Open until it is closed, or its save succeeds.
           open={!AsyncResult.isSuccess(linking)}

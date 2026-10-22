@@ -33,8 +33,9 @@ isn't one of the project's components', whatever is wrong with it, fails with `I
 - **Data:** the project of its Durable Object and its settings, the environments it calls
   production (`projects_project`, one row), and its components
   with the SHA-256 digest of each ingest key and their links: a GitHub repository, where their
-  releases come from beside telemetry, and a deploy target for each environment, a workflow and
-  an App Store Connect app, where they go (`projects_components`). The key itself is kept
+  releases come from beside telemetry, a deploy target for each environment, a workflow and
+  an App Store Connect app, where they go, and the component each ships with, whose deploys deploy
+  it too (`projects_components`); it must be another of the project's. The key itself is kept
   nowhere. In the workspace's object, the index of its projects (`projects_index`): their keys,
   names, and when they were created. Each project's object is what it is; the index only lists it,
   so it emits no activity of its own.

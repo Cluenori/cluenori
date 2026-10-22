@@ -1,6 +1,8 @@
 import { defineModule, moduleAction, moduleIngest, moduleQuery } from "@cluenori/foundation"
 import { Effect, Layer, Schema } from "effect"
 
+import { deliveryOf } from "./delivery-query.ts"
+import { Delivery } from "./delivery.ts"
 import { publishGitHubReleases } from "./github-releases.ts"
 import { DraftNotes, DraftUnavailable, NotesDraft, NotesStyle, ReleaseNotes, SaveNotes } from "./note.ts"
 import { draftNotes, notesStyle, saveNotes, setNotesStyle } from "./notes.ts"
@@ -73,6 +75,12 @@ export const releasesModule = defineModule({
       error: Schema.Never,
       run: () => componentVersions,
     }),
+    /**
+     * Each component's environments in the order its releases go through them: the release in each
+     * now, a promotion under way, and what can go there next. Reads only: each current release's
+     * telemetry.
+     */
+    delivery: moduleQuery({ input: Schema.Struct({}), success: Delivery, error: Schema.Never, run: () => deliveryOf }),
     /** How the project's release notes read, for drafts to follow. Reads only. */
     notesStyle: moduleQuery({
       input: Schema.Struct({}),

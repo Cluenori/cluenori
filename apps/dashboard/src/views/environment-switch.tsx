@@ -8,10 +8,11 @@ import { navigate } from "@/router"
 import { Segmented } from "@/views/segmented"
 
 /**
- * Which environment a project's page shows, beside its component and period switches: one click
- * among those its telemetry named lately, production first, each production one saying so as you
- * point at it. One alone is said as text; none, on a deployment that doesn't say, shows nothing. A
- * pick goes into the address, and is remembered for the project's other pages.
+ * Which environment a project's page shows, beside its component and period switches, named so:
+ * one click among those its telemetry named lately, production first, and those its deploy targets
+ * go to, each production one saying so as you point at it. One alone is said as text; none, on a
+ * deployment that doesn't say, shows nothing. A pick goes into the address, and is remembered for
+ * the project's other pages. It chooses what the page shows, never where a release goes.
  */
 export function EnvironmentSwitch({
   project,
@@ -37,18 +38,24 @@ export function EnvironmentSwitch({
     )
   }
   return (
-    <Segmented
-      label="Environment"
-      options={offered.map((environment) => ({
-        value: environment,
-        label: environment,
-        ...(production.includes(environment) ? { description: "Production" } : {}),
-      }))}
-      value={shown}
-      onChange={(picked) => {
-        remember(picked)
-        navigate(routeOf(picked), { replace: true })
-      }}
-    />
+    <span className="flex max-w-full min-w-0 items-center gap-2.5 text-sm">
+      <span aria-hidden className="shrink-0 text-muted-foreground">
+        Environment
+      </span>
+      <Segmented
+        label="Environment"
+        options={offered.map((environment) => ({
+          value: environment,
+          label: environment,
+          ...(production.includes(environment) ? { description: "Production" } : {}),
+        }))}
+        value={shown}
+        onChange={(picked) => {
+          remember(picked)
+          navigate(routeOf(picked), { replace: true })
+        }}
+        className="min-w-0"
+      />
+    </span>
   )
 }

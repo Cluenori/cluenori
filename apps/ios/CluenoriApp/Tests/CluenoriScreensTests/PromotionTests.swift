@@ -64,6 +64,19 @@ let memberAnswer = #"""
     """#
 
 let feedReleasePath = "/api/projects/notes/releases/notes-api/2026.10.21-e91f09c"
+let deliveryPath = "GET /api/projects/notes/delivery"
+
+/// The notes project's delivery: notes-api's `targets`, in their order, with no release in any of them
+/// yet, so `feedRelease` can go to each, outside the usual order.
+func deliveryAnswer(_ targets: String = workflowTargets) throws -> String {
+    let decoded = try JSONDecoder().decode([DeployTarget].self, from: Data(targets.utf8))
+    let delivery = Delivery(components: [
+        ComponentDelivery(
+            component: "notes-api",
+            environments: decoded.map { EnvironmentDelivery(environment: $0.environment, target: $0) })
+    ])
+    return String(decoding: try JSONEncoder().encode(delivery), as: UTF8.self)
+}
 let promotePath = "POST /api/projects/notes/releases/notes-api/2026.10.21-e91f09c/promotions"
 
 /// Holds the requests it is asked to until the test lets them go.
@@ -95,6 +108,7 @@ func promotedRelease(
         "GET \(feedReleasePath)", 200,
         promotedReleaseAnswer(promotions, targets: targets, notes: notes, repository: repository))
     deployment.answer("GET /api/me", 200, memberAnswer)
+    deployment.answer(deliveryPath, 200, try deliveryAnswer(targets))
     let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
     let release = try #require(pairing.models).release(feedRelease)
     await release.refresh()
@@ -117,8 +131,7 @@ struct PromotionsTests {
         // A run never found has no page to open.
         #expect(promotions[2].runPage == nil)
         #expect(release.hasUnendedPromotions)
-        #expect(release.deployTargets.map(\.environment) == ["production", "staging"])
-        #expect(release.deployTargets[0].workflow == "promote-to-prod.yml")
+        #expect(release.places?.otherDeploys.map(\.environment) == ["production", "staging"])
         #expect(release.detail.value?.repository == "acme/notes")
     }
 
@@ -145,7 +158,7 @@ struct PromotionsTests {
         let (release, deployment) = try await promotedRelease("")
         deployment.answer(promotePath, 201, startedPromotion)
 
-        release.startPromoting(release.deployTargets[0])
+        release.startPromoting(to: "production")
         let promote = try #require(release.promote)
         #expect(promote.environment == "production")
         #expect(promote.target.workflow == "promote-to-prod.yml")
@@ -170,7 +183,7 @@ struct PromotionsTests {
         let (release, deployment) = try await promotedRelease(endedPromotions, repository: nil)
         deployment.answer(promotePath, 201, startedPromotion)
 
-        release.startPromoting(release.deployTargets[0])
+        release.startPromoting(to: "production")
         let promote = try #require(release.promote)
         // Earlier promotions name a repository, but the component's may have changed since.
         #expect(promote.repository == nil)
@@ -198,6 +211,7 @@ struct PromotionsTests {
     func `shows it's sending while it sends, sends once, and can't be cancelled then`() async throws {
         let deployment = FakeDeployment()
         deployment.answer("GET \(feedReleasePath)", 200, promotedReleaseAnswer(""))
+        deployment.answer(deliveryPath, 200, try deliveryAnswer())
         deployment.answer(promotePath, 201, startedPromotion)
         let gate = Gate()
         let pairing = PairingModel(
@@ -212,7 +226,7 @@ struct PromotionsTests {
         )
         let release = try #require(pairing.models).release(feedRelease)
         await release.refresh()
-        release.startPromoting(release.deployTargets[0])
+        release.startPromoting(to: "production")
         let promote = try #require(release.promote)
 
         let sending = Task { await promote.send() }
@@ -236,7 +250,7 @@ struct PromotionsTests {
         let reason = "Cluenori isn't installed on acme/notes. Install it on GitHub, then try again."
         deployment.answer(promotePath, 422, #"{"_tag":"PromotionRefused","reason":"\#(reason)","fix":"github"}"#)
 
-        release.startPromoting(release.deployTargets[1])
+        release.startPromoting(to: "staging")
         let promote = try #require(release.promote)
         await promote.send()
 
@@ -253,7 +267,7 @@ struct PromotionsTests {
         let (release, deployment) = try await promotedRelease("")
         deployment.answer(promotePath, 409, #"{"_tag":"PromotionInProgress","promotion":\#(runningPromotion)}"#)
 
-        release.startPromoting(release.deployTargets[0])
+        release.startPromoting(to: "production")
         let promote = try #require(release.promote)
         await promote.send()
 
@@ -271,7 +285,7 @@ struct PromotionsTests {
         let (release, deployment) = try await promotedRelease("")
         deployment.answer(
             promotePath, 503, #"{"_tag":"PromotionUnavailable","reason":"GitHub answered 502 three times."}"#)
-        release.startPromoting(release.deployTargets[0])
+        release.startPromoting(to: "production")
         let promote = try #require(release.promote)
 
         await promote.send()
@@ -289,7 +303,7 @@ struct PromotionsTests {
 
     @Test func `can't send a reason longer than 500 characters`() async throws {
         let (release, deployment) = try await promotedRelease("")
-        release.startPromoting(release.deployTargets[0])
+        release.startPromoting(to: "production")
         let promote = try #require(release.promote)
 
         promote.reason = String(repeating: "a", count: 500)
@@ -358,7 +372,7 @@ struct FollowingPromotionsTests {
     func `follows a promotion it just started, before the release lists it`() async throws {
         let (release, deployment) = try await promotedRelease("")
         deployment.answer(promotePath, 201, startedPromotion)
-        release.startPromoting(release.deployTargets[0])
+        release.startPromoting(to: "production")
         await release.promote?.send()
         #expect(release.hasUnendedPromotions)
 

@@ -2,11 +2,12 @@ import CluenoriClient
 import Foundation
 import Observation
 
-/// The environments a project's screens can show, and the one they show: the project's production
-/// environments and the environments its telemetry named in the last 30 days, asked of the
-/// deployment and kept on the phone; and the one chosen on this phone, remembered for the project,
-/// offline too. A deployment older than environments tells none apart: its project's screens show
-/// every environment, as they did.
+/// The environments a project's screens can show, and the one they show: those of its components'
+/// deploy targets, in the order their releases go through them, then those its telemetry named in
+/// the last 30 days, asked of the deployment and kept on the phone; and the one chosen on this
+/// phone, remembered for the project, offline too, else its first production environment. A
+/// deployment older than environments tells none apart: its project's screens show every
+/// environment, as they did.
 @Observable
 public final class EnvironmentChoice {
     public let project: String
@@ -30,30 +31,41 @@ public final class EnvironmentChoice {
         remembered = store.read(String.self, Self.key(project))?.value
     }
 
-    /// The environments to choose from: those seen in the last 30 days, the production ones first in
-    /// the project's order, then the rest by name. Empty for a deployment that doesn't tell them
-    /// apart, or until the deployment answers.
+    /// The environments to choose from: those of the components' deploy targets, each component's
+    /// in the order its releases go through them, the components in the project's order; then those
+    /// seen in the last 30 days that no deploy target names, the production ones first, then the
+    /// rest by name. Empty for a deployment that doesn't tell them apart, or until the deployment
+    /// answers.
     public var environments: [String] {
         guard let detail = detail.value, detail.settings != nil else { return [] }
-        return detail.environments ?? []
+        var environments: [String] = []
+        let targeted = detail.components.flatMap { ($0.deployTargets ?? []).map(\.environment) }
+        for environment in targeted + (detail.environments ?? []) where !environments.contains(environment) {
+            environments.append(environment)
+        }
+        return environments
     }
 
-    /// Which of `environments` the project calls production.
+    /// Which of `environments` the project calls production, in their order.
     public var production: [String] {
         let production = detail.value?.settings?.productionEnvironments ?? []
         return environments.filter(production.contains)
     }
 
-    /// The environment the project's screens show: the one chosen on this phone while it is seen,
-    /// else the first seen, which is the project's first production environment seen when there is
-    /// one. Nil, every environment, while none is known: from a deployment that doesn't tell them
-    /// apart, or before it answers.
+    /// Whether the project calls `environment` production.
+    public func isProduction(_ environment: String) -> Bool {
+        detail.value?.settings?.productionEnvironments.contains(environment) ?? false
+    }
+
+    /// The environment the project's screens show: the one chosen on this phone while it is one of
+    /// `environments`, else the first production one, else the first. Nil, every environment, while
+    /// none is known: from a deployment that doesn't tell them apart, or before it answers.
     public var chosen: String? {
         let environments = environments
         if let remembered, environments.contains(remembered) {
             return remembered
         }
-        return environments.first
+        return production.first ?? environments.first
     }
 
     /// Remembers `environment` for the project, on the phone too, for when the app opens again.

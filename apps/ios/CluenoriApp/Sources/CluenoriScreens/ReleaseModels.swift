@@ -2,31 +2,52 @@ import CluenoriClient
 import Foundation
 import Observation
 
-/// The releases of a project in one environment that ran, were deployed, or were uploaded over a
-/// period, the latest first, at most 30: each with its verdict against the release before it of the
-/// same component and environment, and its commit, store build, and deploy when known; and the
-/// sources that couldn't be read lately, so a missing commit or build isn't taken for none. Narrowed
-/// to an environment, a release that names none, as a build only App Store Connect knows, isn't
-/// listed: the deployment matches environments exactly.
+/// The releases of a project in one environment, or of one of its components in every
+/// environment, that ran, were deployed, or were uploaded over a period, the latest first, at most
+/// 30: each with its verdict against the release before it of the same component and environment,
+/// and its commit, store build, and deploy when known; and the sources that couldn't be read lately,
+/// so a missing commit or build isn't taken for none. Narrowed to an environment, a release that
+/// names none, as a build only App Store Connect knows, isn't listed: the deployment matches
+/// environments exactly.
 @Observable
 public final class ReleasesModel {
     public let project: String
-    /// The environment it shows; nil for every environment, from a deployment that doesn't tell them
-    /// apart.
+    /// The environment it shows; nil for every environment: a component's, or from a deployment
+    /// that doesn't tell them apart.
     public let environment: String?
+    /// The component whose releases it shows; nil for every component's.
+    public let component: String?
     public let period: PeriodKey
     public let list: Answer<ReleaseList>
 
-    init(project: String, environment: String?, period: PeriodKey, api: CluenoriAPI, context: AnswerContext) {
+    init(
+        project: String, environment: String?, component: String? = nil, period: PeriodKey, api: CluenoriAPI,
+        context: AnswerContext
+    ) {
         self.project = project
         self.environment = environment
+        self.component = component
         self.period = period
-        list = Answer(context, Self.question(api, .project(project, environment: environment), period))
+        if let component {
+            list = Answer(context, Self.question(api, project: project, component: component, period))
+        } else {
+            list = Answer(context, Self.question(api, .project(project, environment: environment), period))
+        }
     }
 
-    /// The question of the releases over `period`, which the project's overview asks too, so each
-    /// shows what the other kept.
-    static func question(_ api: CluenoriAPI, _ telemetry: Telemetry, _ period: PeriodKey)
+    // The question of one component's releases in every environment over `period`.
+    private static func question(_ api: CluenoriAPI, project: String, component: String, _ period: PeriodKey)
+        -> Answer<ReleaseList>.Question
+    {
+        .init(key: "projects/\(project)/components/\(component)/releases/\(period.rawValue)") {
+            () async throws(APIError) in
+            let (from, to) = period.endingNow
+            return try await api.releases(project: project, from: from, to: to, component: component)
+        }
+    }
+
+    // The question of a project's releases in an environment over `period`.
+    private static func question(_ api: CluenoriAPI, _ telemetry: Telemetry, _ period: PeriodKey)
         -> Answer<ReleaseList>.Question
     {
         .init(key: "\(telemetry.key)/releases/\(period.rawValue)") { () async throws(APIError) in
@@ -40,9 +61,10 @@ public final class ReleasesModel {
 /// One release compared with the one before it: the operations that got slower or fail more, the
 /// errors first seen in it, the incidents that opened while it ran, and what got better; its commit,
 /// what changed since the release before, and its store build, when known, and the sources that
-/// couldn't be read lately for its component; its promotions, followed while any hasn't ended,
-/// promoting it by a deploy target, and releasing one App Store review approved; and its notes for
-/// its users. It is the whole release, whatever the period. Fails with `missing` for a release the
+/// couldn't be read lately for its component; where it is now, from its component's delivery; its
+/// promotions, followed while any hasn't ended, promoting it to the environment its delivery says it
+/// goes to next or, outside that order, to another, and releasing one App Store review approved; and
+/// its notes for its users. It is the whole release, whatever the period. Fails with `missing` for a release the
 /// project doesn't know: none of its operations ran, no deploy or build of it was reported, or it
 /// was too long ago.
 @Observable
@@ -56,12 +78,16 @@ public final class ReleaseModel {
 
     public let release: ReleaseRef
     public let detail: Answer<ReleaseDetail>
+    /// Its project's delivery, which says where it is now and where it can go.
+    public let delivery: DeliveryModel
     /// Its notes for its users, as its notes screen edits them, and as the promote sheet opens them.
     public let notes: NotesModel
     /// Promoting the release to an environment, while its sheet is open; nil otherwise.
     public private(set) var promote: PromoteModel? = nil
     /// Releasing approved promotions from this phone, by promotion ID.
     public private(set) var releasingNow: [String: ReleaseNow] = [:]
+    /// The last promotion started from this release's sheet: what its screen gives feedback on.
+    public private(set) var lastStarted: Promotion? = nil
 
     // The promotions as this phone's last action on each answered them, and when: started, or
     // released. Each shows in place of the detail's until the release is asked again, and while the
@@ -71,11 +97,14 @@ public final class ReleaseModel {
     @ObservationIgnored private let member: Answer<Member>
     @ObservationIgnored private let keyRejected: () -> Void
 
-    /// `member` is the member the phone acts for, shared by every release.
-    init(release: ReleaseRef, api: CluenoriAPI, context: AnswerContext, member: Answer<Member>) {
+    /// `member` is the member the phone acts for, shared by every release; `delivery`, its project's.
+    init(
+        release: ReleaseRef, api: CluenoriAPI, context: AnswerContext, member: Answer<Member>, delivery: DeliveryModel
+    ) {
         self.release = release
         self.api = api
         self.member = member
+        self.delivery = delivery
         keyRejected = context.keyRejected
         detail = Answer(
             context,
@@ -114,13 +143,22 @@ public final class ReleaseModel {
         return span.bounds(now: .now)
     }
 
-    /// Asks for the detail again; and, while the app doesn't know which member the phone acts for
-    /// and a promotion says who started it, asks that too, once the deployment answers.
+    /// Asks for the detail and its project's delivery again; and, while the app doesn't know which
+    /// member the phone acts for and a promotion says who started it, asks that too, once the
+    /// deployment answers.
     public func refresh() async {
-        await detail.load()
+        async let detail: Void = detail.load()
+        async let delivery: Void = delivery.load()
+        _ = await (detail, delivery)
         if member.value == nil, promotions.contains(where: { $0.startedBy != nil }) {
             await member.load()
         }
+    }
+
+    /// Where the release is now, and where it can go, from its project's delivery; nil until the
+    /// delivery arrives, or when it doesn't list the release's component.
+    public var places: ReleasePlaces? {
+        delivery.places(of: release.version, component: release.component, summary: detail.value?.summary)
     }
 
     /// Its promotions, to every environment, the latest first: the detail's, each as this phone's
@@ -139,12 +177,6 @@ public final class ReleaseModel {
         return (unlisted + shown).sorted { ($0.startedAt, $0.id) > ($1.startedAt, $1.id) }
     }
 
-    /// Where it can be promoted, its component's deploy targets: an environment, and its workflow,
-    /// App Store Connect app, or both; none until the detail arrives.
-    public var deployTargets: [DeployTarget] {
-        detail.value?.deployTargets ?? []
-    }
-
     /// Whether a promotion it shows hasn't ended, so `followPromotions` asks again.
     public var hasUnendedPromotions: Bool {
         promotions.contains { !$0.hasEnded }
@@ -159,9 +191,11 @@ public final class ReleaseModel {
 
     /// Asks for the detail again every `interval` while a promotion it shows hasn't ended, so each
     /// shows where its run is; the deployment looks at GitHub each minute. Returns once every one
-    /// has ended, or when the task running it is cancelled, as when its screen leaves. Offline, it
-    /// keeps what it showed, as `load` does, and asks again.
+    /// has ended, then asks for the delivery again, which says where the release is now; or when the
+    /// task running it is cancelled, as when its screen leaves. Offline, it keeps what it showed, as
+    /// `load` does, and asks again.
     public func followPromotions(every interval: Duration = .seconds(15)) async {
+        guard hasUnendedPromotions else { return }
         while hasUnendedPromotions {
             do {
                 try await Task.sleep(for: interval)
@@ -170,25 +204,40 @@ public final class ReleaseModel {
             }
             await detail.load()
         }
+        await delivery.load()
     }
 
-    /// Opens the sheet that promotes the release by `target`, to its environment.
-    public func startPromoting(_ target: DeployTarget) {
+    /// Opens the sheet that promotes the release to `environment` by its component's deploy target
+    /// there: the environment its delivery says it goes to next, or one of `places`' other deploys,
+    /// replacing what's there. Nothing for another environment, or until the delivery arrives.
+    public func startPromoting(to environment: String) {
+        guard let places,
+            places.next?.environment == environment
+                || places.otherDeploys.contains(where: { $0.environment == environment }),
+            let stage = delivery.component(release.component)?.stages.first(where: { $0.environment == environment }),
+            let target = stage.target
+        else { return }
+        let isRollback = places.otherDeploys.first { $0.environment == environment }?.isRollback ?? false
         promote = PromoteModel(
             subject: .release(release),
             targets: [target],
             target: target,
             repository: detail.value?.repository,
+            replacing: stage.current.map {
+                PromoteModel.Replacing(release: $0.summary.release, since: $0.since, isRollback: isRollback)
+            },
             api: api,
             keyRejected: keyRejected
         ) { [weak self] promotion in
             self?.answered[promotion.id] = (promotion, .now)
             self?.promote = nil
+            self?.lastStarted = promotion
+            self?.delivery.show(started: promotion)
         }
     }
 
-    /// Shows `promotion` at once, started from elsewhere on this phone, such as from its commit
-    /// before the deployment knows the release.
+    /// Shows `promotion` at once, started from elsewhere on this phone, such as from its
+    /// component's next step before the deployment knows the release.
     func show(started promotion: Promotion) {
         answered[promotion.id] = (promotion, .now)
     }

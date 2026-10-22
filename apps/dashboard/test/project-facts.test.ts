@@ -326,6 +326,26 @@ describe("environmentsOf", () => {
     })
   })
 
+  it("offers the environments deploy targets go to after those seen, and shows production among them", () => {
+    const dev = EnvironmentKey.make("dev")
+    const prod = EnvironmentKey.make("prod")
+    const components = [
+      { deployTargets: [{ environment: dev }, { environment: prod }] },
+      {},
+      { deployTargets: [{ environment: staging }] },
+    ]
+    assert.deepStrictEqual(environmentsOf({ settings, environments: [staging], components }, undefined), {
+      shown: prod,
+      offered: [staging, dev, prod],
+      production: settings.productionEnvironments,
+    })
+    // Production seen lately is shown before production only a deploy target goes to.
+    assert.strictEqual(
+      environmentsOf({ settings, environments: [staging, production], components }, undefined).shown,
+      production,
+    )
+  })
+
   it("offers nothing, and shows only one named, on a deployment that says neither settings nor environments", () => {
     assert.deepStrictEqual(environmentsOf({}, undefined), { offered: [], production: [] })
     assert.deepStrictEqual(environmentsOf({}, staging), { shown: staging, offered: [staging], production: [] })

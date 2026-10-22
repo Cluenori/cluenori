@@ -11,7 +11,7 @@ import { load, operation, operations } from "./operations-commands.ts"
 import { phone, phones } from "./phones-commands.ts"
 import { component, project } from "./projects-commands.ts"
 import { push } from "./push-commands.ts"
-import { promote, release, releaseApproved, releases } from "./releases-commands.ts"
+import { delivery, promote, release, releaseApproved, releases } from "./releases-commands.ts"
 import { run } from "./run.ts"
 import { setup } from "./setup.ts"
 import { appStore, github } from "./sources-commands.ts"
@@ -47,6 +47,7 @@ export const cluenori = Command.make("cluenori").pipe(
     monitor,
     releases,
     release,
+    delivery,
     version,
     notes,
     notesStyle,

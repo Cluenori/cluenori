@@ -25,6 +25,7 @@ import {
   ArrowUpRightIcon,
   BellIcon,
   BugIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
   CircleCheckIcon,
   CircleXIcon,
@@ -41,13 +42,14 @@ import {
   ZapIcon,
 } from "lucide-react"
 import type { ReactNode } from "react"
-import { lazy, Suspense, useEffect, useState } from "react"
+import { Fragment, lazy, Suspense, useEffect, useState } from "react"
 
 import { useEnvironments } from "@/hooks/use-environments"
 import { liveColor } from "@/lib/colors"
 import { count, duration, moment, share } from "@/lib/format"
 import type { ReleaseScope } from "@/project-data"
 import {
+  deliveryAtom,
   draftNotesAtom,
   linkComponentAtom,
   meAtom,
@@ -72,7 +74,21 @@ import {
   storeStageOf,
   verdictOf,
 } from "@/project-facts"
-import { draftEnvironmentOf, isFollowing, promotionsAskedEveryMs, promotionsShown, starterOf } from "@/release-facts"
+import type { ThereNow, WherePart } from "@/release-facts"
+import {
+  draftEnvironmentOf,
+  isFollowing,
+  nextStepWords,
+  promotionNextOf,
+  promotionStates,
+  promotionsAskedEveryMs,
+  promotionsShown,
+  shipsWithOptionsOf,
+  sinceWords,
+  starterOf,
+  thereNowOf,
+  whereItRunsOf,
+} from "@/release-facts"
 import type { Route } from "@/router"
 import { Link } from "@/router"
 import type { Attention } from "@/views/attention-list"
@@ -93,6 +109,14 @@ import { verdictClass } from "@/views/release-list"
 import { ReleaseNowDialog } from "@/views/release-now-dialog"
 import { SourceProblems } from "@/views/source-problems"
 import { Button, buttonVariants } from "@/views/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/views/ui/dropdown-menu"
 
 // Promoting loads when it is asked for, now and then.
 const PromoteDialog = lazy(() => import("@/views/promote-dialog").then((module) => ({ default: module.PromoteDialog })))
@@ -419,60 +443,140 @@ function ChangesUnknown({
 }
 
 /**
- * A release's promotions, the latest first, under a button to promote it to each environment its
- * component has a deploy target for; one approved in App Store review one click from being
- * released. Without targets or promotions, a quiet line says how to add a target, one click from
- * the component's links when the page can change them.
+ * A release's promotions, the latest first; one approved in App Store review one click from being
+ * released. Promoting it is the page header's. Without promotions it says so; without deploy
+ * targets either, a quiet line says how to add one, one click from the component's links when the
+ * page can change them; nothing for a component that ships with another, as the header says so.
  */
 function PromotionsPanel({
-  targets,
+  hasTargets,
+  shipsWithAnother,
   promotions,
   asOf,
   starterOf: starterOfPromotion,
-  onPromote,
   onReleaseNow,
   onLink,
 }: {
-  readonly targets: ReadonlyArray<DeployTarget>
+  readonly hasTargets: boolean
+  /** Whether its component ships with another, whose deploys deploy it. */
+  readonly shipsWithAnother: boolean
   readonly promotions: ReadonlyArray<Promotion>
   readonly asOf: DateTime.Utc
   readonly starterOf: (promotion: Promotion) => string
-  readonly onPromote: (target: DeployTarget) => void
   readonly onReleaseNow: (promotion: Promotion) => void
   readonly onLink: (() => void) | undefined
 }) {
-  const addOne = (
-    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-      <span>Add a deploy target to promote releases from here.</span>
-      {onLink !== undefined && (
-        <Button variant="link" size="sm" className="h-auto px-0 text-sm" onClick={onLink}>
-          Change links
-        </Button>
-      )}
-    </span>
-  )
-  if (targets.length === 0 && promotions.length === 0) {
-    return <p className="px-1">{addOne}</p>
+  if (!hasTargets && promotions.length === 0) {
+    return shipsWithAnother ? null : (
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-sm text-muted-foreground">
+        <span>Add a deploy target to promote releases from here.</span>
+        {onLink !== undefined && (
+          <Button variant="link" size="sm" className="h-auto px-0 text-sm" onClick={onLink}>
+            Change links
+          </Button>
+        )}
+      </p>
+    )
   }
   return (
     <Panel icon={RocketIcon} title="Promotions" subtitle="Deploys started from Cluenori, the latest first">
-      {targets.length > 0 && (
-        <div className="flex flex-wrap gap-2 border-b px-5 py-3.5">
-          {targets.map((target) => (
-            <Button key={target.environment} variant="outline" onClick={() => onPromote(target)}>
-              <RocketIcon data-icon="inline-start" />
-              Promote to {target.environment}
-            </Button>
-          ))}
-        </div>
-      )}
       {promotions.length === 0 ? (
         <p className="px-5 py-5 text-sm text-muted-foreground">Not promoted from Cluenori yet.</p>
       ) : (
         <PromotionList promotions={promotions} now={asOf} starterOf={starterOfPromotion} onReleaseNow={onReleaseNow} />
       )}
-      {targets.length === 0 && <p className="border-t px-5 py-3">{addOne}</p>}
     </Panel>
+  )
+}
+
+/** Where a release runs now, in a sentence: "In dev since 13:57 · not in prod yet". */
+function WhereItRuns({ parts, asOf }: { readonly parts: ReadonlyArray<WherePart>; readonly asOf: DateTime.Utc }) {
+  const words = (part: WherePart, first: boolean) => {
+    switch (part._tag) {
+      case "runs":
+        return (
+          <>
+            {first ? "In" : "in"} {part.environment} since{" "}
+            <span className="font-mono">{sinceWords(part.since, asOf)}</span>
+          </>
+        )
+      case "nowhere":
+        return "Not in any environment now"
+      case "going":
+        return `going to ${part.environment}: ${promotionStates[part.state].words}`
+      case "notYet":
+        return `not in ${part.environment} yet`
+      case "other":
+        return (
+          <>
+            {part.environment} runs <span className="font-mono">{part.release}</span>
+          </>
+        )
+      case "nothing":
+        return `nothing in ${part.environment} yet`
+    }
+  }
+  return (
+    <p className="text-[15px] text-pretty">
+      {parts.map((part, index) => (
+        <Fragment key={index}>
+          {index > 0 && <span className="text-muted-foreground"> · </span>}
+          {words(part, index === 0)}
+        </Fragment>
+      ))}
+    </p>
+  )
+}
+
+/**
+ * Promoting a release to an environment it isn't the next step for, such as back to one that has
+ * moved on: a menu of its component's deploy targets, each saying what runs there now. Choosing one
+ * opens the confirmation, which says what it replaces.
+ */
+function PromoteElsewhere({
+  release,
+  targets,
+  thereNowOf: thereNowIn,
+  primary,
+  onPick,
+}: {
+  readonly release: ReleaseVersion
+  readonly targets: ReadonlyArray<DeployTarget>
+  readonly thereNowOf: (environment: EnvironmentKey) => ThereNow | undefined
+  /** Whether the page has a primary action, so this promotes to another environment. */
+  readonly primary: boolean
+  readonly onPick: (target: DeployTarget) => void
+}) {
+  const there = (environment: EnvironmentKey) => {
+    const now = thereNowIn(environment)
+    if (now === undefined) {
+      return undefined
+    }
+    if (now._tag === "nothing") {
+      return "nothing there yet"
+    }
+    return now.release === release ? "runs it now" : `runs ${now.release} now`
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="outline" />}>
+        {primary ? "Promote to another environment" : "Promote to an environment"}
+        <ChevronDownIcon data-icon="inline-end" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Promote {release} to</DropdownMenuLabel>
+          {targets.map((target) => (
+            <DropdownMenuItem key={target.environment} onClick={() => onPick(target)}>
+              {target.environment}{" "}
+              {there(target.environment) !== undefined && (
+                <span className="ml-auto truncate pl-3 text-muted-foreground">{there(target.environment)}</span>
+              )}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -547,6 +651,8 @@ export function ReleasePage({
   const key: ReleaseScope = { project, component, release, ...(environment === undefined ? {} : { environment }) }
   const projectDetail = useAtomValue(projectAtom(project))
   const answer = useAtomValue(releaseAtom(key))
+  const delivery = useAtomValue(deliveryAtom(project))
+  const askDeliveryAgain = useAtomRefresh(deliveryAtom(project))
   const setPeriod = useAtomSet(periodAtom)
   const [linking, link] = useAtom(linkComponentAtom)
   const [linkingOpen, setLinkingOpen] = useState(false)
@@ -555,10 +661,11 @@ export function ReleasePage({
   const myself = AsyncResult.isSuccess(me) ? me.value : undefined
   const owner = myself?.role === "owner"
   const [promoting, promote] = useAtom(promoteAtom)
-  // The target being confirmed, and how many times one was: each confirmation starts fresh.
-  const [confirming, setConfirming] = useState<{ readonly target: DeployTarget; readonly count: number } | undefined>(
-    undefined,
-  )
+  // The target being confirmed, what runs there now, and how many times one was: each confirmation
+  // starts fresh.
+  const [confirming, setConfirming] = useState<
+    { readonly target: DeployTarget; readonly thereNow: ThereNow | undefined; readonly count: number } | undefined
+  >(undefined)
   const [releasing, releaseNow] = useAtom(releaseApprovedAtom)
   const [releasingOne, setReleasingOne] = useState<Promotion | undefined>(undefined)
   const draftNotes = useAtomSet(draftNotesAtom, { mode: "promiseExit" })
@@ -588,10 +695,19 @@ export function ReleasePage({
     link(Atom.Reset)
     setLinkingOpen(true)
   }
+  // Where the release runs now, by its component's delivery, and its one next step, if any.
+  const delivered = AsyncResult.isSuccess(delivery)
+    ? delivery.value.delivery.components.find((each) => each.component === component)
+    : undefined
+  const next = delivered === undefined ? undefined : promotionNextOf(delivered, release)
   const startPromoting = (target: DeployTarget) => {
     // An answer to an earlier promotion isn't this one's.
     promote(Atom.Reset)
-    setConfirming((last) => ({ target, count: (last?.count ?? 0) + 1 }))
+    setConfirming((last) => ({
+      target,
+      thereNow: delivered === undefined ? undefined : thereNowOf(delivered, target.environment),
+      count: (last?.count ?? 0) + 1,
+    }))
   }
   const startReleasing = (promotion: Promotion) => {
     releaseNow(Atom.Reset)
@@ -627,23 +743,40 @@ export function ReleasePage({
     (promotion) => promotion.startedBy !== undefined && promotion.startedBy !== myself?.id,
   )
   const following = isFollowing(promotions)
+  // The component it ships with, whose deploys deploy it, and its release of the same version.
+  const shipsWith =
+    linked?.shipsWith === undefined
+      ? undefined
+      : {
+          component: linked.shipsWith,
+          route: {
+            page: "release" as const,
+            project,
+            component: linked.shipsWith,
+            release,
+            ...(environment === undefined ? {} : { environment }),
+          },
+        }
 
   // While a promotion runs, its state is asked for again: Cluenori asks GitHub each minute.
   useEffect(() => {
     if (!following) {
       return
     }
-    const timer = window.setInterval(askAgain, promotionsAskedEveryMs)
+    const timer = window.setInterval(() => {
+      askAgain()
+      askDeliveryAgain()
+    }, promotionsAskedEveryMs)
     return () => window.clearInterval(timer)
-  }, [following, askAgain])
+  }, [following, askAgain, askDeliveryAgain])
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 pb-2">
+      <header className="flex flex-wrap items-start gap-x-4 gap-y-3 pb-2">
         <Link
           to={back}
           aria-label="Back to all releases"
-          className={buttonVariants({ variant: "outline", size: "icon" })}
+          className={buttonVariants({ variant: "outline", size: "icon", className: "mt-0.5" })}
         >
           <ArrowLeftIcon />
         </Link>
@@ -672,6 +805,51 @@ export function ReleasePage({
               </a>
             )}
           </p>
+          {/* Where it runs now, and what can be done with it: its one next step, and promoting it elsewhere. */}
+          {!notFound && (
+            <div className="mt-3 flex flex-col gap-3">
+              {delivered !== undefined && AsyncResult.isSuccess(delivery) && (
+                <WhereItRuns parts={whereItRunsOf(delivered, release)} asOf={delivery.value.asOf} />
+              )}
+              {AsyncResult.isFailure(delivery) && (
+                <p className="text-sm text-muted-foreground">
+                  Where it runs now isn&apos;t known: {failureText(delivery.cause)}
+                </p>
+              )}
+              {shipsWith !== undefined && (
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+                  <span>Ships with {shipsWith.component}: its deploys deploy this release too.</span>
+                  <Link to={shipsWith.route} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                    Open {shipsWith.component} {release}
+                  </Link>
+                </p>
+              )}
+              {shown !== undefined && shown.detail.deployTargets.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {next !== undefined && (
+                    <Button
+                      className="h-auto min-h-9 py-1.5 text-left whitespace-normal"
+                      onClick={() => startPromoting(next.target)}
+                    >
+                      <RocketIcon data-icon="inline-start" />
+                      {nextStepWords({ _tag: "promote", release, from: next.from }, next.target.environment)}
+                    </Button>
+                  )}
+                  {shown.detail.deployTargets.some((target) => target.environment !== next?.target.environment) && (
+                    <PromoteElsewhere
+                      release={release}
+                      targets={shown.detail.deployTargets.filter(
+                        (target) => target.environment !== next?.target.environment,
+                      )}
+                      thereNowOf={(there) => (delivered === undefined ? undefined : thereNowOf(delivered, there))}
+                      primary={next !== undefined}
+                      onPick={startPromoting}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         {/* Each area of the project, filtered to this release, over the shortest period that covers it. */}
         {shown !== undefined && ran !== undefined && (
@@ -718,11 +896,11 @@ export function ReleasePage({
                   <WithMembers>
                     {(members) => (
                       <PromotionsPanel
-                        targets={detail.deployTargets}
+                        hasTargets={detail.deployTargets.length > 0}
+                        shipsWithAnother={shipsWith !== undefined}
                         promotions={promotions}
                         asOf={asOf}
                         starterOf={(promotion) => starterOf(promotion.startedBy, myself?.id, members)}
-                        onPromote={startPromoting}
                         onReleaseNow={startReleasing}
                         onLink={linked === undefined ? undefined : startLinking}
                       />
@@ -730,11 +908,11 @@ export function ReleasePage({
                   </WithMembers>
                 ) : (
                   <PromotionsPanel
-                    targets={detail.deployTargets}
+                    hasTargets={detail.deployTargets.length > 0}
+                    shipsWithAnother={shipsWith !== undefined}
                     promotions={promotions}
                     asOf={asOf}
                     starterOf={(promotion) => starterOf(promotion.startedBy, myself?.id, undefined)}
-                    onPromote={startPromoting}
                     onReleaseNow={startReleasing}
                     onLink={linked === undefined ? undefined : startLinking}
                   />
@@ -842,6 +1020,7 @@ export function ReleasePage({
             key={confirming.count}
             release={release}
             target={confirming.target}
+            thereNow={confirming.thereNow}
             repository={shown?.detail.repository}
             notes={shown?.detail.notes ?? []}
             owner={owner}
@@ -885,6 +1064,7 @@ export function ReleasePage({
       {linked !== undefined && linkingOpen && (
         <LinksDialog
           component={linked}
+          shipsWithOptions={shipsWithOptionsOf(all, linked.key)}
           environments={
             environments === undefined ? [] : [...new Set([...environments.production, ...environments.offered])]
           }

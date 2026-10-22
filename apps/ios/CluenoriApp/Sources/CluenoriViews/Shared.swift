@@ -296,10 +296,28 @@ struct NothingInRelease: View {
     }
 }
 
-/// Which environment a screen's numbers come from: a menu of those the project's telemetry named
-/// lately, its production ones first, when there are several; the one, as text, when there is only
-/// one; nothing for a deployment that doesn't tell environments apart.
+/// Which environment a screen's numbers come from, chosen in a menu that says so, `Showing  prod`:
+/// the project's environments, those of its deploy targets in their order first, its production ones
+/// marked; the one, as text, when there is only one; nothing for a deployment that doesn't tell
+/// environments apart. It chooses what the screens show, never where a release goes.
 struct EnvironmentSection: View {
+    let choice: EnvironmentChoice
+    /// The environment the screen shows; nil for every environment.
+    let shown: String?
+    let navigation: Navigation
+
+    var body: some View {
+        if shown != nil, !choice.environments.isEmpty {
+            Section {
+                EnvironmentRow(choice: choice, shown: shown, navigation: navigation)
+            }
+        }
+    }
+}
+
+/// The row of `EnvironmentSection`, for a section of its own or another's: nothing for a deployment
+/// that doesn't tell environments apart.
+struct EnvironmentRow: View {
     let choice: EnvironmentChoice
     /// The environment the screen shows; nil for every environment.
     let shown: String?
@@ -308,40 +326,55 @@ struct EnvironmentSection: View {
     var body: some View {
         let environments = choice.environments
         if let shown, !environments.isEmpty {
-            Section {
-                if environments == [shown] {
-                    LabeledContent {
-                        Text(verbatim: shown)
-                    } label: {
-                        Text("Environment", bundle: #bundle, comment: "Where a screen's numbers come from.")
-                    }
-                } else {
-                    Picker(selection: Binding(get: { shown }, set: { navigation.show($0, of: choice) })) {
-                        // A link may name an environment not seen lately: it is offered too, to show
-                        // which is chosen.
-                        let production = choice.production
-                        let others = (environments.contains(shown) ? environments : environments + [shown])
-                            .filter { !production.contains($0) }
-                        if production.isEmpty || others.isEmpty {
-                            ForEach(production + others, id: \.self) { Text(verbatim: $0).tag($0) }
-                        } else {
-                            Section {
-                                ForEach(production, id: \.self) { Text(verbatim: $0).tag($0) }
-                            } header: {
-                                Text("Production", bundle: #bundle, comment: "The project's production environments.")
-                            }
-                            Section {
-                                ForEach(others, id: \.self) { Text(verbatim: $0).tag($0) }
-                            } header: {
-                                Text("Others", bundle: #bundle, comment: "The project's other environments.")
-                            }
-                        }
-                    } label: {
-                        Text("Environment", bundle: #bundle, comment: "Where a screen's numbers come from.")
-                    }
-                    .pickerStyle(.menu)
+            if environments == [shown] {
+                LabeledContent {
+                    Text(verbatim: shown)
+                } label: {
+                    ShowingLabel()
                 }
+            } else {
+                Picker(selection: Binding(get: { shown }, set: { navigation.show($0, of: choice) })) {
+                    // A link may name an environment not offered: it is offered too, to show which
+                    // is chosen.
+                    ForEach(environments.contains(shown) ? environments : environments + [shown], id: \.self) {
+                        environment in
+                        EnvironmentOption(environment: environment, isProduction: choice.isProduction(environment))
+                            .tag(environment)
+                    }
+                } label: {
+                    ShowingLabel()
+                }
+                .pickerStyle(.menu)
             }
+        }
+    }
+}
+
+/// The label of the environment a screen shows: `Showing`, with an eye.
+private struct ShowingLabel: View {
+    var body: some View {
+        Label {
+            Text("Showing", bundle: #bundle, comment: "Label of the environment whose numbers a screen shows.")
+        } icon: {
+            Image(systemName: "eye")
+        }
+    }
+}
+
+/// An environment in the menu of those a screen can show: its name, and `Production` below it for
+/// one the project calls production.
+private struct EnvironmentOption: View {
+    let environment: String
+    let isProduction: Bool
+
+    var body: some View {
+        if isProduction {
+            VStack {
+                Text(verbatim: environment)
+                Text("Production", bundle: #bundle, comment: "Marks one of a project's production environments.")
+            }
+        } else {
+            Text(verbatim: environment)
         }
     }
 }
@@ -383,6 +416,17 @@ struct NothingShown: View {
             NothingInRelease(title: title, systemImage: systemImage)
         } else {
             NothingInPeriod(title: title, systemImage: systemImage, period: $period)
+        }
+    }
+}
+
+extension View {
+    /// Shows `text` below the navigation title, when there is one.
+    @ViewBuilder func navigationSubtitle(ifAny text: Text?) -> some View {
+        if let text {
+            navigationSubtitle(text)
+        } else {
+            self
         }
     }
 }

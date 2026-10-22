@@ -12,46 +12,6 @@ struct Bumping: Equatable {
     let next: String
 }
 
-/// Each of a project's components with its version and next release; tapped, a menu bumps its
-/// patch, minor or major, each behind a confirmation, since a version never goes lower, or sets it.
-/// The screen presents the confirmation and the sheet (`versionChanges`), outside the lazy list.
-struct VersionsSection: View {
-    let versions: VersionsModel
-    @Binding var bumping: Bumping?
-    @Binding var setting: VersionLine?
-
-    var body: some View {
-        Section {
-            if versions.list.value == nil {
-                AnswerPlaceholder(problem: versions.list.problem)
-            } else if versions.lines.isEmpty {
-                Text("No components yet.", bundle: #bundle, comment: "A project without components, in its versions.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(versions.lines) { line in
-                    VersionMenu(line: line, change: versions.changes[line.component]) {
-                        versions.startPromotingLatest(line.component)
-                    } bump: { bump, next in
-                        versions.dismissProblem(of: line.component)
-                        bumping = Bumping(line: line, bump: bump, next: next)
-                    } set: {
-                        versions.dismissProblem(of: line.component)
-                        setting = line
-                    }
-                }
-            }
-        } header: {
-            Text("Versions", bundle: #bundle, comment: "Section of a project's components' versions.")
-        } footer: {
-            Text(
-                "A commit built for the first time becomes the next release, for good. A version can't go lower.",
-                bundle: #bundle,
-                comment: "How Cluenori numbers releases, below the versions."
-            )
-        }
-    }
-}
-
 extension View {
     /// Presents a version bump's confirmation, and the sheet that sets a version, for `versions`.
     func versionChanges(_ versions: VersionsModel, bumping: Binding<Bumping?>, setting: Binding<VersionLine?>)
@@ -98,32 +58,18 @@ private struct VersionChanges: ViewModifier {
     }
 }
 
-/// One component's version line, leading to a menu that bumps or sets it: `notes-api`,
-/// `1.4.0 · next 1.4.0+58`; while it changes, and why its last change failed.
+/// A component's version, leading to a menu that bumps or sets it, each behind a confirmation, since
+/// a version never goes lower: `1.4.0`, `next build 1.4.0+58`; while it changes, and why its last
+/// change failed. The screen presents the confirmation and the sheet (`versionChanges`), outside
+/// the lazy list.
 struct VersionMenu: View {
     let line: VersionLine
     let change: VersionsModel.Change?
-    /// Opens the sheet that builds and promotes the component's newest commit.
-    let promoteLatest: () -> Void
     let bump: (VersionBump, String) -> Void
     let set: () -> Void
 
     var body: some View {
         Menu {
-            if line.canPromoteLatest {
-                Button(action: promoteLatest) {
-                    Label {
-                        Text(
-                            "Promote Latest…",
-                            bundle: #bundle,
-                            comment: "Opens the sheet that builds and promotes a component's newest commit."
-                        )
-                    } icon: {
-                        Image(systemName: "arrow.up.circle")
-                    }
-                }
-                Divider()
-            }
             if let version = line.version {
                 ForEach(VersionBump.allCases, id: \.self) { kind in
                     if let next = VersionsModel.next(after: version, kind) {
@@ -142,13 +88,14 @@ struct VersionMenu: View {
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: line.name)
-                        .foregroundStyle(.primary)
                     if let version = line.version, let next = line.nextRelease {
+                        Text(verbatim: version)
+                            .font(.body.monospaced())
+                            .foregroundStyle(.primary)
                         Text(
-                            "\(Text(verbatim: version).monospaced()) · next \(Text(verbatim: next).monospaced())",
+                            "next build \(Text(verbatim: next).monospaced())",
                             bundle: #bundle,
-                            comment: "A component's version and its next release. The variables are as is."
+                            comment: "The release a component's next new commit becomes. The variable is as is."
                         )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

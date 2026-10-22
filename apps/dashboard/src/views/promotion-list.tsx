@@ -10,7 +10,8 @@ import { Button } from "@/views/ui/button"
 
 // Each tone's color: mint while it moves, pulsing, and once it succeeded; yellow while it waits for
 // someone or isn't followed; red when it failed; gray when it was cancelled.
-const toneText: Readonly<Record<PromotionTone, string>> = {
+/** The color a promotion's state is said in, by its tone. */
+export const toneText: Readonly<Record<PromotionTone, string>> = {
   moving: "text-foreground",
   waiting: "text-yellow",
   succeeded: "text-mint",
@@ -18,13 +19,31 @@ const toneText: Readonly<Record<PromotionTone, string>> = {
   cancelled: "text-muted-foreground",
   lost: "text-yellow",
 }
-const toneMark: Readonly<Record<PromotionTone, string>> = {
+/** The mark beside a promotion's state, by its tone. */
+export const toneMark: Readonly<Record<PromotionTone, string>> = {
   moving: "bg-mint motion-safe:animate-pulse",
   waiting: "bg-yellow",
   succeeded: "bg-mint",
   failed: "bg-failure",
   cancelled: "bg-muted-foreground",
   lost: "bg-yellow",
+}
+
+/** Where a promotion stands, in words, in its tone's color, after a mark of it. */
+export function PromotionStateWords({
+  state,
+  className,
+}: {
+  readonly state: Promotion["state"]
+  readonly className?: string
+}) {
+  const { words, tone } = promotionStates[state]
+  return (
+    <span className={cn("flex min-w-0 items-center gap-2", toneText[tone], className)}>
+      <span aria-hidden className={cn("size-2 shrink-0", toneMark[tone])} />
+      {words}
+    </span>
+  )
 }
 
 // Wide, a promotion is a line of columns under their names; on a phone, its parts stack.
@@ -75,7 +94,6 @@ export function PromotionList({
       </div>
       <ul className="divide-y">
         {promotions.map((promotion) => {
-          const state = promotionStates[promotion.state]
           const started = DateTime.toEpochMillis(promotion.startedAt)
           return (
             <li key={promotion.id} className={cn(grid, "flex flex-col gap-1 px-5 py-3")}>
@@ -92,10 +110,7 @@ export function PromotionList({
                 )}
               </span>
               <span className="flex min-w-0 flex-col gap-0.5">
-                <span className={cn("flex min-w-0 items-center gap-2 text-[15px]", toneText[state.tone])}>
-                  <span aria-hidden className={cn("size-2 shrink-0", toneMark[state.tone])} />
-                  {state.words}
-                </span>
+                <PromotionStateWords state={promotion.state} className="text-[15px]" />
                 {promotion.state === "approved" && (
                   <span className="text-sm text-muted-foreground">Waits for you to release it</span>
                 )}

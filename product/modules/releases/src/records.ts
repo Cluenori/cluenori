@@ -18,7 +18,10 @@ export interface Deploy {
   readonly environment: EnvironmentKey | undefined
   readonly release: ReleaseVersion
   readonly commit: CommitSha
+  /** When it was first reported there. */
   readonly deployedAt: DateTime.Utc
+  /** When it was last reported there: later than `deployedAt` once deployed there again, as in a rollback. */
+  readonly lastDeployedAt: DateTime.Utc
 }
 
 /** An app's build, kept with its component, the environment whose app it is in, and the release it is. */
@@ -207,6 +210,13 @@ const migrate = Migrator.make({})({
         PRIMARY KEY (component, release)
       ) WITHOUT ROWID`
     }),
+    // When each deploy was last reported (Unix ms), besides its first: a release deployed again,
+    // as in a rollback, is the one there now.
+    "0006_deploys_again": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE releases_deploys ADD COLUMN last_deployed_at INTEGER NOT NULL DEFAULT 0`
+      yield* sql`UPDATE releases_deploys SET last_deployed_at = deployed_at`
+    }),
   }),
 })
 
@@ -285,9 +295,12 @@ export class ReleaseRecords extends Context.Service<
     /** The project's notes style, once set. */
     readonly notesStyle: Effect.Effect<Option.Option<string>>
     readonly saveNotesStyle: (style: string) => Effect.Effect<void>
-    /** Deploys reported, the latest first, of every component or one. */
+    /** Deploys reported, the last reported first, of every component or one. */
     readonly deploys: (component?: ComponentKey) => Effect.Effect<ReadonlyArray<Deploy>>
-    /** Records a deploy; one of the same release and environment reported again keeps the first time. */
+    /**
+     * Records a deploy; one of the same release and environment reported again keeps its first time,
+     * and takes `lastDeployedAt`.
+     */
     readonly saveDeploy: (deploy: Deploy) => Effect.Effect<void>
     /** Each source's last read of each component. */
     readonly syncs: Effect.Effect<ReadonlyArray<Sync>>
@@ -315,6 +328,8 @@ export class ReleaseRecords extends Context.Service<
       readonly component: ComponentKey
       readonly environment: EnvironmentKey
     }) => Effect.Effect<ReadonlyArray<Promotion>>
+    /** Each component's latest promotion to each environment, ended or not. */
+    readonly latestPromotions: Effect.Effect<ReadonlyArray<Promotion>>
     /** Records a promotion that just started, with the actor who started it. */
     readonly startPromotion: (promotion: Promotion, actor: Actor) => Effect.Effect<void>
     /** Records what changed about a promotion: its run, its state, and when it ended. */
@@ -368,12 +383,14 @@ export class ReleaseRecords extends Context.Service<
           release: ReleaseVersion,
           commit: CommitSha,
           deployedAt: Schema.Int,
+          lastDeployedAt: Schema.Int,
         }),
         execute: (asked) =>
-          sql`SELECT component, environment, release, commit_sha AS "commit", deployed_at AS "deployedAt"
+          sql`SELECT component, environment, release, commit_sha AS "commit", deployed_at AS "deployedAt",
+              last_deployed_at AS "lastDeployedAt"
             FROM releases_deploys
             ${asked.component === undefined ? sql`` : sql`WHERE component = ${asked.component}`}
-            ORDER BY deployed_at DESC`,
+            ORDER BY last_deployed_at DESC`,
       })
       const findSyncs = SqlSchema.findAll({
         Request: Schema.Void,
@@ -465,6 +482,14 @@ export class ReleaseRecords extends Context.Service<
             WHERE component = ${key.component} AND release = ${key.release}
             ORDER BY started_at DESC LIMIT ${promotionsListed}`,
       })
+      const findLatest = SqlSchema.findAll({
+        Request: Schema.Void,
+        Result: Schema.Struct({ promotion: PromotionJson }),
+        execute: () =>
+          sql`SELECT promotion_json AS "promotion" FROM releases_promotions AS promotion
+            WHERE started_at = (SELECT MAX(started_at) FROM releases_promotions AS other
+              WHERE other.component = promotion.component AND other.environment = promotion.environment)`,
+      })
       const findUnended = SqlSchema.findAll({
         Request: Schema.Struct({
           component: Schema.optionalKey(ComponentKey),
@@ -538,6 +563,7 @@ export class ReleaseRecords extends Context.Service<
                 release: row.release,
                 commit: row.commit,
                 deployedAt: DateTime.makeUnsafe(row.deployedAt),
+                lastDeployedAt: DateTime.makeUnsafe(row.lastDeployedAt),
               })),
             ),
           ),
@@ -548,8 +574,12 @@ export class ReleaseRecords extends Context.Service<
             release: deploy.release,
             commit_sha: deploy.commit,
             deployed_at: DateTime.toEpochMillis(deploy.deployedAt),
+            last_deployed_at: DateTime.toEpochMillis(deploy.lastDeployedAt),
           })}
-            ON CONFLICT (component, environment, release) DO NOTHING`.pipe(Effect.asVoid, Effect.orDie),
+            ON CONFLICT (component, environment, release) DO UPDATE SET last_deployed_at = excluded.last_deployed_at`.pipe(
+            Effect.asVoid,
+            Effect.orDie,
+          ),
         syncs: findSyncs(undefined).pipe(
           Effect.orDie,
           Effect.map((rows) =>
@@ -681,6 +711,10 @@ export class ReleaseRecords extends Context.Service<
             Effect.orDie,
             Effect.map((rows) => rows.map((row) => row.promotion)),
           ),
+        latestPromotions: findLatest(undefined).pipe(
+          Effect.orDie,
+          Effect.map((rows) => rows.map((row) => row.promotion)),
+        ),
         unendedPromotions: (where) =>
           findUnended(where ?? {}).pipe(
             Effect.orDie,

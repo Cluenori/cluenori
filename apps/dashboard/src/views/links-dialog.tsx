@@ -1,3 +1,4 @@
+import type { ComponentKey } from "@cluenori/foundation"
 import { EnvironmentKey } from "@cluenori/foundation"
 import type { AppStoreDistribution, Component } from "@cluenori/projects"
 import { BundleId, ComponentLinks, DeployTarget } from "@cluenori/projects"
@@ -77,6 +78,54 @@ function RepositoryField({
       <p id={`${id}-help`} className={rule === undefined ? "text-muted-foreground" : "text-failure"}>
         {rule ?? "Such as acme/notes-api; leave it empty to unlink it."}
       </p>
+    </div>
+  )
+}
+
+// The choice of no component to ship with: never a component's key, which starts with a letter.
+const none = "(none)"
+
+/**
+ * The component this one ships with, one click among the project's others, or none; with what that
+ * means: its deploys deploy this one, which has no deploy targets of its own.
+ */
+function ShipsWithField({
+  component,
+  value,
+  options,
+  onChange,
+  droppedTargets,
+}: {
+  readonly component: ComponentKey
+  readonly value: ComponentKey | undefined
+  /** The components it may ship with: the project's others, not those that ship with it. */
+  readonly options: ReadonlyArray<ComponentKey>
+  readonly onChange: (value: ComponentKey | undefined) => void
+  /** How many deploy targets it has now, which shipping with another removes. */
+  readonly droppedTargets: number
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span aria-hidden className="text-sm">
+        Ships with
+      </span>
+      <Segmented
+        label="Ships with"
+        options={[{ value: none, label: "None" }, ...options.map((option) => ({ value: option, label: option }))]}
+        value={value ?? none}
+        onChange={(picked) => onChange(options.find((option) => option === picked))}
+        className="self-start"
+      />
+      <p className="text-muted-foreground">
+        {value === undefined
+          ? `For a part another component's deploys deploy, such as a background service its workflow builds: ${component} then has nothing to promote of its own.`
+          : `${value}'s deploys deploy ${component} too, from the same commit with the same release, so it has no deploy targets of its own.`}
+      </p>
+      {value !== undefined && droppedTargets > 0 && (
+        <p className="text-yellow">
+          Saving removes its {droppedTargets === 1 ? "deploy target" : `${droppedTargets} deploy targets`}.
+        </p>
+      )}
     </div>
   )
 }
@@ -320,14 +369,16 @@ function DeployTargetRows({
 
 /**
  * Where a component's releases come from and where they go, as a form in a dialog: its GitHub
- * repository, whose commits they are; and its deploy target in each environment, a workflow, an App
- * Store Connect app, or both. Each is checked as the API checks it; an empty one unlinks it, and a
- * workflow needs the repository. Saving calls `onSave` with every link, as the API replaces them all;
- * while it saves the button says so, and a failure is said under the fields. The dialog closes when
- * the page says so, such as once the save succeeded.
+ * repository, whose commits they are; the component it ships with, if another's deploys deploy it;
+ * and, if not, its deploy target in each environment, a workflow, an App Store Connect app, or both.
+ * Each is checked as the API checks it; an empty one unlinks it, and a workflow needs the
+ * repository. Saving calls `onSave` with every link, the one it ships with kept, as the API replaces
+ * them all; while it saves the button says so, and a failure is said under the fields. The dialog
+ * closes when the page says so, such as once the save succeeded.
  */
 export function LinksDialog({
   component,
+  shipsWithOptions,
   environments,
   open,
   onOpenChange,
@@ -335,6 +386,8 @@ export function LinksDialog({
   onSave,
 }: {
   readonly component: Component
+  /** The components it may ship with: the project's others, not those that ship with it. */
+  readonly shipsWithOptions: ReadonlyArray<ComponentKey>
   /** The environments a deploy target's field suggests: the project's, production first. */
   readonly environments: ReadonlyArray<EnvironmentKey>
   readonly open: boolean
@@ -344,6 +397,7 @@ export function LinksDialog({
   readonly onSave: (links: ComponentLinks) => void
 }) {
   const [repository, setRepository] = useState(component.repository ?? "")
+  const [shipsWith, setShipsWith] = useState<ComponentKey | undefined>(component.shipsWith)
   const [rows, setRows] = useState<ReadonlyArray<TargetRow>>(() =>
     (component.deployTargets ?? []).map((target, index) => ({
       id: index,
@@ -357,7 +411,8 @@ export function LinksDialog({
   const [checked, setChecked] = useState(false)
   const typedRepository = typedOf(repository, decodeRepository)
   const repositoryRule = checked && typedRepository._tag === "invalid" ? typedRepository.rule : undefined
-  const checkedRows = checkedRowsOf(rows, typedRepository._tag === "valid")
+  // A component that ships with another has no deploy targets of its own: its rows aren't sent.
+  const checkedRows = shipsWith === undefined ? checkedRowsOf(rows, typedRepository._tag === "valid") : []
   const targets = checkedRows.flatMap((row) => (row._tag === "valid" ? [row.target] : []))
   const rowsValid = checkedRows.every((row) => row._tag !== "invalid")
   // What the list breaks as a whole, such as having more targets than a component may.
@@ -371,7 +426,8 @@ export function LinksDialog({
           <DialogTitle>Where {component.key}&apos;s releases come from</DialogTitle>
           <DialogDescription>
             Its GitHub repository gives each release its commit and what changed since the one before; its deploy
-            targets say where a release goes in each environment, and how.
+            targets say where a release goes in each environment, and how, unless another component&apos;s deploys
+            deploy it.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -385,17 +441,33 @@ export function LinksDialog({
             onSave({
               ...(typedRepository._tag === "valid" ? { repository: typedRepository.value } : {}),
               ...(decodedTargets.success.length > 0 ? { deployTargets: decodedTargets.success } : {}),
+              ...(shipsWith === undefined ? {} : { shipsWith }),
             })
           }}
         >
           <RepositoryField value={repository} onChange={setRepository} rule={repositoryRule} />
-          <DeployTargetRows
-            rows={rows}
-            checkedRows={checkedRows}
-            onChange={setRows}
-            environments={environments}
-            checked={checked}
-          />
+          {(shipsWithOptions.length > 0 || shipsWith !== undefined) && (
+            <ShipsWithField
+              component={component.key}
+              value={shipsWith}
+              options={
+                shipsWith === undefined || shipsWithOptions.includes(shipsWith)
+                  ? shipsWithOptions
+                  : [...shipsWithOptions, shipsWith]
+              }
+              onChange={setShipsWith}
+              droppedTargets={(component.deployTargets ?? []).length}
+            />
+          )}
+          {shipsWith === undefined && (
+            <DeployTargetRows
+              rows={rows}
+              checkedRows={checkedRows}
+              onChange={setRows}
+              environments={environments}
+              checked={checked}
+            />
+          )}
           {listRule !== undefined && (
             <p role="alert" className="text-failure">
               {listRule}

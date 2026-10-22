@@ -34,6 +34,7 @@ const ComponentRow = Schema.Struct({
   createdAt: Instant,
   repository: Schema.NullOr(Repository),
   deployTargets: Schema.NullOr(Schema.fromJsonString(Schema.Array(DeployTarget))),
+  shipsWith: Schema.NullOr(ComponentKey),
 })
 
 const componentOf = (row: typeof ComponentRow.Type) =>
@@ -43,6 +44,7 @@ const componentOf = (row: typeof ComponentRow.Type) =>
     createdAt: row.createdAt,
     ...(row.repository === null ? {} : { repository: row.repository }),
     ...(row.deployTargets === null ? {} : { deployTargets: row.deployTargets }),
+    ...(row.shipsWith === null ? {} : { shipsWith: row.shipsWith }),
   })
 
 /**
@@ -73,8 +75,9 @@ export class Projects extends Context.Service<
      */
     readonly authenticate: (key: Redacted.Redacted<IngestKey>) => Effect.Effect<ComponentKey, IngestKeyRejected>
     /**
-     * Replaces a component's links, its repository and deploy targets, with `component.linked`; one
-     * left out is unlinked. Fails with `ComponentNotFound` for a component the project lacks.
+     * Replaces a component's links, its repository, deploy targets and the component it ships with,
+     * with `component.linked`; one left out is unlinked. Fails with `ComponentNotFound` for a
+     * component the project lacks, or one it ships with that the project lacks or that is itself.
      */
     readonly linkComponent: (
       actor: Actor,
@@ -117,7 +120,8 @@ export class Projects extends Context.Service<
           Request: Schema.Void,
           Result: ComponentRow,
           execute: () =>
-            sql`SELECT key, name, created_at AS "createdAt", repository, deploy_targets AS "deployTargets"
+            sql`SELECT key, name, created_at AS "createdAt", repository, deploy_targets AS "deployTargets",
+                ships_with AS "shipsWith"
               FROM projects_components ORDER BY key`,
         })
 
@@ -225,10 +229,16 @@ export class Projects extends Context.Service<
           if (current === undefined) {
             return yield* new ComponentNotFound({ component: key })
           }
+          // Not handled: a component that ships with itself, refused as if the project lacked it;
+          // its own error would take a change to every caller's errors.
+          const shipsWith = links.shipsWith
+          if (shipsWith !== undefined && (shipsWith === key || !all.some((component) => component.key === shipsWith))) {
+            return yield* new ComponentNotFound({ component: shipsWith })
+          }
           const targets =
             links.deployTargets === undefined ? null : yield* encodeTargets(links.deployTargets).pipe(Effect.orDie)
           yield* sql`UPDATE projects_components SET repository = ${links.repository ?? null},
-            deploy_targets = ${targets} WHERE key = ${key}`.pipe(Effect.orDie)
+            deploy_targets = ${targets}, ships_with = ${links.shipsWith ?? null} WHERE key = ${key}`.pipe(Effect.orDie)
           return new Component({ key, name: current.name, createdAt: current.createdAt, ...links })
         })
 
@@ -247,6 +257,7 @@ export class Projects extends Context.Service<
                   component: linked.key,
                   ...(linked.repository === undefined ? {} : { repository: linked.repository }),
                   ...(linked.deployTargets === undefined ? {} : { deployTargets: linked.deployTargets }),
+                  ...(linked.shipsWith === undefined ? {} : { shipsWith: linked.shipsWith }),
                 }),
                 component: linked.key,
               },

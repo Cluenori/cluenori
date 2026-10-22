@@ -46,6 +46,14 @@ const promoted = () =>
     .filter((call) => call.method === "POST" && call.path.at(-1) === "promotions")
     .map((call) => [call.path.slice(3).join("/"), call.body])
 
+// Promotes a release to an environment from its page, where that isn't its next step: the explicit
+// choice in the header, which opens the confirmation.
+const promoteTo = (screen: { readonly getByRole: typeof page.getByRole }, environment: string) =>
+  Effect.gen(function* () {
+    yield* Effect.promise(() => screen.getByRole("button", { name: "Promote to an environment" }).click())
+    yield* Effect.promise(() => page.getByRole("menuitem", { name: new RegExp(`^${environment}\\b`) }).click())
+  })
+
 // A promotion to staging that hasn't ended, as the API names it when it refuses another.
 const runningToStaging = {
   id: PromotionId.make("019a1000-0000-7000-8000-000000000009"),
@@ -116,9 +124,20 @@ describe("promotions journey", () => {
       vi.advanceTimersByTime(30_000)
       assert.strictEqual(releaseAsked(), before)
 
-      // Promoting says what it starts, with what, where, and where it runs: by default, the Mac when
-      // it's online.
-      yield* Effect.promise(() => promotions.getByRole("button", { name: "Promote to production" }).click())
+      // It runs in staging and production, so neither's next step is it: promoting it there again is
+      // an explicit choice, each saying what runs there now.
+      yield* Effect.promise(() => expect.element(screen.getByText(/^In staging since/)).toBeVisible())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("button", { name: /^Promote .* from / })).not.toBeInTheDocument(),
+      )
+      yield* Effect.promise(() => screen.getByRole("button", { name: "Promote to an environment" }).click())
+      yield* Effect.promise(() =>
+        expect.element(page.getByRole("menuitem", { name: "production runs it now" })).toBeVisible(),
+      )
+
+      // Promoting says what it starts, with what, where, what it replaces, and where it runs: by
+      // default, the Mac when it's online.
+      yield* Effect.promise(() => page.getByRole("menuitem", { name: "production runs it now" }).click())
       const dialog = screen.getByRole("dialog", { name: `Promote ${worse} to production?` })
       yield* Effect.promise(() =>
         expect
@@ -127,7 +146,16 @@ describe("promotions journey", () => {
             `Runs promote-to-prod.yml in notesapp/notes-api on GitHub, with release ${worse} and environment production.`,
           ),
       )
+      yield* Effect.promise(() =>
+        expect
+          .element(dialog.getByText(/^It runs in production now, since .*: this deploys it again\.$/))
+          .toBeVisible(),
+      )
+      // Where the workflow runs is an option, folded away: Auto unless chosen.
       const runner = dialog.getByRole("group", { name: "Where the workflow runs" })
+      yield* Effect.promise(() => expect.element(runner).not.toBeInTheDocument())
+      yield* expectAccessible()
+      yield* Effect.promise(() => dialog.getByRole("button", { name: "Options" }).click())
       yield* Effect.promise(() =>
         expect.element(runner.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true"),
       )
@@ -136,8 +164,15 @@ describe("promotions journey", () => {
       )
       yield* expectAccessible()
       yield* Effect.promise(() => runner.getByRole("button", { name: "Your Mac" }).click())
+      // Folded again, it says the choice.
+      yield* Effect.promise(() => dialog.getByRole("button", { name: /^Options/ }).click())
+      yield* Effect.promise(() =>
+        expect
+          .element(dialog.getByRole("button", { name: "Options The workflow runs on Your Mac" }))
+          .toHaveAttribute("aria-expanded", "false"),
+      )
       yield* Effect.promise(() => dialog.getByLabelText("Reason").fill("  Retry exports for everyone  "))
-      yield* Effect.promise(() => dialog.getByRole("button", { name: "Promote" }).click())
+      yield* Effect.promise(() => dialog.getByRole("button", { name: `Promote ${worse} to production` }).click())
 
       // It closes; the promotion shows at once, the latest, by you, with its reason.
       yield* Effect.promise(() => expect.element(dialog).not.toBeInTheDocument())
@@ -177,9 +212,9 @@ describe("promotions journey", () => {
       window.history.pushState(null, "", worsePage)
       const screen = yield* Effect.promise(() => render(<App />))
 
-      yield* Effect.promise(() => screen.getByRole("button", { name: "Promote to staging" }).click())
+      yield* promoteTo(screen, "staging")
       const dialog = screen.getByRole("dialog", { name: `Promote ${worse} to staging?` })
-      const promote = dialog.getByRole("button", { name: "Promote" })
+      const promote = dialog.getByRole("button", { name: `Promote ${worse} to staging` })
 
       // Refused: the API's reason, and for an owner, the page where it is fixed.
       yield* Effect.promise(() => promote.click())
@@ -223,9 +258,9 @@ describe("promotions journey", () => {
       // A member is told what the refusal says, without the owners' page.
       answerApi(refusingApi(notesApi({ as: mira })))
       const asMember = yield* Effect.promise(() => render(<App />))
-      yield* Effect.promise(() => asMember.getByRole("button", { name: "Promote to production" }).click())
+      yield* promoteTo(asMember, "production")
       const memberDialog = asMember.getByRole("dialog", { name: `Promote ${worse} to production?` })
-      yield* Effect.promise(() => memberDialog.getByRole("button", { name: "Promote" }).click())
+      yield* Effect.promise(() => memberDialog.getByRole("button", { name: `Promote ${worse} to production` }).click())
       yield* Effect.promise(() =>
         expect.element(memberDialog.getByRole("alert")).toMatchTextContent(/on the GitHub page\.$/),
       )
@@ -244,14 +279,19 @@ describe("promotions journey", () => {
       window.history.pushState(null, "", appPage)
       const screen = yield* Effect.promise(() => render(<App />))
 
-      // A button for each of its targets.
+      // No environment's next step is it, so each of its targets is a choice, saying what runs there.
       const promotions = screen.getByRole("region", { name: "Promotions" })
-      for (const environment of ["internal", "beta", "production"]) {
+      yield* Effect.promise(() => screen.getByRole("button", { name: "Promote to an environment" }).click())
+      for (const [environment, there] of [
+        ["internal", "nothing there yet"],
+        ["beta", "nothing there yet"],
+        ["production", "runs it now"],
+      ] as const) {
         yield* Effect.promise(() =>
-          expect.element(promotions.getByRole("button", { name: `Promote to ${environment}` })).toBeVisible(),
+          expect.element(page.getByRole("menuitem", { name: `${environment} ${there}` })).toBeVisible(),
         )
       }
-      yield* Effect.promise(() => promotions.getByRole("button", { name: "Promote to production" }).click())
+      yield* Effect.promise(() => page.getByRole("menuitem", { name: "production runs it now" }).click())
 
       // What happens, step by step: the workflow, then App Store review with the notes as What's New.
       const dialog = screen.getByRole("dialog", { name: `Promote ${appRelease} to production?` })
@@ -277,7 +317,9 @@ describe("promotions journey", () => {
       yield* expectAccessible()
 
       // Without notes, review is refused: one click to write them.
-      yield* Effect.promise(() => dialog.getByRole("button", { name: "Promote", exact: true }).click())
+      yield* Effect.promise(() =>
+        dialog.getByRole("button", { name: `Promote ${appRelease} to production`, exact: true }).click(),
+      )
       const refusal = dialog.getByRole("alert")
       yield* Effect.promise(() =>
         expect.element(refusal).toMatchTextContent(`${appRelease} has no notes: write its What's New in en-US`),
@@ -292,9 +334,10 @@ describe("promotions journey", () => {
       yield* Effect.promise(() => expect.element(editor.getByText("Saved.")).toBeVisible())
 
       // On: built in the cloud, released by hand once approved, to everyone at once.
-      yield* Effect.promise(() => promotions.getByRole("button", { name: "Promote to production" }).click())
+      yield* promoteTo(screen, "production")
       const again = screen.getByRole("dialog", { name: `Promote ${appRelease} to production?` })
       yield* Effect.promise(() => expect.element(again.getByText("Share a note with anyone by a link.")).toBeVisible())
+      yield* Effect.promise(() => again.getByRole("button", { name: "Options" }).click())
       yield* Effect.promise(() =>
         again.getByRole("group", { name: "Where the workflow runs" }).getByRole("button", { name: "Cloud" }).click(),
       )
@@ -305,7 +348,9 @@ describe("promotions journey", () => {
           .click(),
       )
       yield* Effect.promise(() => again.getByRole("checkbox", { name: "Phased over 7 days" }).click())
-      yield* Effect.promise(() => again.getByRole("button", { name: "Promote", exact: true }).click())
+      yield* Effect.promise(() =>
+        again.getByRole("button", { name: `Promote ${appRelease} to production`, exact: true }).click(),
+      )
       yield* Effect.promise(() => expect.element(again).not.toBeInTheDocument())
       const rows = promotions.getByRole("listitem")
       yield* Effect.promise(() => expect.element(rows.first().getByText("Starting")).toBeVisible())
@@ -449,31 +494,36 @@ describe("promotions journey", () => {
         )
 
         // The release can be promoted to each now.
-        const promotions = screen.getByRole("region", { name: "Promotions" })
+        yield* Effect.promise(() => expect.element(screen.getByText("Not promoted from Cluenori yet.")).toBeVisible())
+        yield* Effect.promise(() => screen.getByRole("button", { name: "Promote to an environment" }).click())
         for (const environment of ["internal", "beta", "production"]) {
           yield* Effect.promise(() =>
-            expect.element(promotions.getByRole("button", { name: `Promote to ${environment}` })).toBeVisible(),
+            expect.element(page.getByRole("menuitem", { name: new RegExp(`^${environment} `) })).toBeVisible(),
           )
         }
-        yield* Effect.promise(() => expect.element(screen.getByText("Not promoted from Cluenori yet.")).toBeVisible())
       }),
   )
 
-  it.effect("keeps a component's deploy targets when its repository changes, and lists them", () =>
+  it.effect("keeps a component's deploy targets when its repository changes, and shows how each goes", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ linked: iosWithThreeApps }))
       window.history.pushState(null, "", "/notes/releases?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      const sources = screen.getByRole("region", { name: "Where releases come from" })
+      // Each environment of its delivery says how a release gets there.
+      const block = screen.getByRole("region", { name: "notes-ios" })
       yield* Effect.promise(() =>
-        expect.element(sources.getByText("ios.yml · com.notesapp.notes.beta, TestFlight")).toBeVisible(),
+        expect
+          .element(block.getByRole("listitem", { name: "beta" }).getByText("ios.yml, then TestFlight"))
+          .toBeVisible(),
       )
       yield* Effect.promise(() =>
-        expect.element(sources.getByText("ios.yml · com.notesapp.notes, App Store")).toBeVisible(),
+        expect
+          .element(block.getByRole("listitem", { name: "production" }).getByText("ios.yml, then App Store"))
+          .toBeVisible(),
       )
       yield* expectAccessible()
-      yield* Effect.promise(() => sources.getByRole("button", { name: "Change links of notes-ios" }).click())
+      yield* Effect.promise(() => block.getByRole("button", { name: "Change links of notes-ios" }).click())
       const dialog = screen.getByRole("dialog", { name: "Where notes-ios's releases come from" })
       yield* Effect.promise(() =>
         expect
@@ -504,7 +554,7 @@ describe("promotions journey", () => {
 
       yield* Effect.promise(() => expect.element(screen.getByText("by mira@notesapp.dev")).toBeVisible())
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
-      yield* Effect.promise(() => screen.getByRole("button", { name: "Promote to production" }).click())
+      yield* promoteTo(screen, "production")
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("dialog", { name: `Promote ${worse} to production?` })).toBeVisible(),
       )
@@ -520,7 +570,7 @@ describe("promotions journey", () => {
         expect.element(app.getByRole("region", { name: "Release notes" }).getByLabelText("en-US")).toBeVisible(),
       )
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
-      yield* Effect.promise(() => app.getByRole("button", { name: "Promote to production" }).click())
+      yield* promoteTo(app, "production")
       yield* Effect.promise(() =>
         expect.element(app.getByRole("checkbox", { name: "Phased over 7 days" })).toBeVisible(),
       )
@@ -528,11 +578,11 @@ describe("promotions journey", () => {
       yield* expectAccessible()
       yield* Effect.promise(() => app.unmount())
 
-      // The releases: versions, the notes style, and each component's targets.
+      // The releases: each component's delivery and version, the history, and the notes style.
       window.history.pushState(null, "", "/notes/releases")
       const releases = yield* Effect.promise(() => render(<App />))
       yield* Effect.promise(() =>
-        expect.element(releases.getByRole("region", { name: "Versions" }).getByText("1.4.0+58")).toBeVisible(),
+        expect.element(releases.getByRole("region", { name: "notes-api" }).getByText("1.4.0+58")).toBeVisible(),
       )
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
       yield* expectAccessible()

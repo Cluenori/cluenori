@@ -240,7 +240,10 @@ public struct CluenoriAPI: Sendable {
     /// commits its releases are; and `deployTargets`, where its releases go in each environment:
     /// the GitHub Actions workflow that builds and deploys a release there, started with the inputs
     /// `release`, `environment`, `commit` and `runner`, and, for an app, the App Store Connect app
-    /// its builds go to, for TestFlight only or through to the App Store. One left out is unlinked.
+    /// its builds go to, for TestFlight only or through to the App Store; and `shipsWith`, another
+    /// of the project's components whose deploys deploy this one too, from the same commit with the
+    /// same release, for a part such as a background service. One left out is unlinked. 404 for a
+    /// component the project lacks, or one it ships with that the project lacks or that is itself.
     /// Returns the component.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, `.componentNotFound`, or as any call can.
@@ -752,6 +755,21 @@ public struct CluenoriAPI: Sendable {
         return try Self.decoded(Promotion.self, from: answer)
     }
 
+    /// How each component's releases reach its environments: the environments of its deploy
+    /// targets, in their order (for a component without any, those it ran in), each with the
+    /// release there now and since when, a promotion to it that hasn't ended, and what can go there
+    /// next: `promote` the release of the environment before it, newer than the one there, or, to
+    /// the first, `buildLatest`, the default branch's newest commit. An App Store app's environment
+    /// has the build out on the App Store; a TestFlight app's, the latest build processed; another,
+    /// the release last deployed or first run there.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func delivery(project: String) async throws(APIError) -> Delivery {
+        let answer = try await self.send("GET", "/api/projects/\(Self.escaped(Self.text(project)))/delivery")
+        return try Self.decoded(Delivery.self, from: answer)
+    }
+
     /// Each component's version, `MAJOR.MINOR.PATCH`, which its next builds are numbered in, and
     /// the last build number given: a commit built for the first time becomes `<version>+<last +
     /// 1>`, for good. A component whose version was never set isn't listed; its CI can't number
@@ -960,6 +978,11 @@ public struct ArchiveUnavailable: Codable, Hashable, Sendable {
     }
 }
 
+public struct BuildLatestNext: Codable, Hashable, Sendable {
+    public init() {
+    }
+}
+
 public struct ChangedCommit: Codable, Hashable, Sendable {
     public let sha: String
     public let message: String
@@ -1019,6 +1042,7 @@ public struct Component: Codable, Hashable, Sendable {
     public let createdAt: Date
     public let repository: String?
     public let deployTargets: [DeployTarget]?
+    public let shipsWith: String?
 
     public init(
         key: String,
@@ -1026,12 +1050,33 @@ public struct Component: Codable, Hashable, Sendable {
         createdAt: Date,
         repository: String? = nil,
         deployTargets: [DeployTarget]? = nil,
+        shipsWith: String? = nil,
     ) {
         self.key = key
         self.name = name
         self.createdAt = createdAt
         self.repository = repository
         self.deployTargets = deployTargets
+        self.shipsWith = shipsWith
+    }
+}
+
+public struct ComponentDelivery: Codable, Hashable, Sendable {
+    public let component: String
+    public let shipsWith: String?
+    public let version: ComponentVersion?
+    public let environments: [EnvironmentDelivery]
+
+    public init(
+        component: String,
+        shipsWith: String? = nil,
+        version: ComponentVersion? = nil,
+        environments: [EnvironmentDelivery],
+    ) {
+        self.component = component
+        self.shipsWith = shipsWith
+        self.version = version
+        self.environments = environments
     }
 }
 
@@ -1046,10 +1091,16 @@ public struct ComponentExists: Codable, Hashable, Sendable {
 public struct ComponentLinks: Codable, Hashable, Sendable {
     public let repository: String?
     public let deployTargets: [DeployTarget]?
+    public let shipsWith: String?
 
-    public init(repository: String? = nil, deployTargets: [DeployTarget]? = nil) {
+    public init(
+        repository: String? = nil,
+        deployTargets: [DeployTarget]? = nil,
+        shipsWith: String? = nil,
+    ) {
         self.repository = repository
         self.deployTargets = deployTargets
+        self.shipsWith = shipsWith
     }
 }
 
@@ -1101,6 +1152,24 @@ public struct CreateProject: Codable, Hashable, Sendable {
     }
 }
 
+public struct CurrentRelease: Codable, Hashable, Sendable {
+    public let summary: ReleaseSummary
+    public let since: Date
+
+    public init(summary: ReleaseSummary, since: Date) {
+        self.summary = summary
+        self.since = since
+    }
+}
+
+public struct Delivery: Codable, Hashable, Sendable {
+    public let components: [ComponentDelivery]
+
+    public init(components: [ComponentDelivery]) {
+        self.components = components
+    }
+}
+
 public struct DeployTarget: Codable, Hashable, Sendable {
     public let environment: String
     public let workflow: String?
@@ -1140,6 +1209,31 @@ public struct DraftUnavailable: Codable, Hashable, Sendable {
 
     public init(reason: String) {
         self.reason = reason
+    }
+}
+
+public struct EnvironmentDelivery: Codable, Hashable, Sendable {
+    public let environment: String
+    public let target: DeployTarget?
+    public let current: CurrentRelease?
+    public let promotion: Promotion?
+    public let failedPromotion: Promotion?
+    public let next: NextStep?
+
+    public init(
+        environment: String,
+        target: DeployTarget? = nil,
+        current: CurrentRelease? = nil,
+        promotion: Promotion? = nil,
+        failedPromotion: Promotion? = nil,
+        next: NextStep? = nil,
+    ) {
+        self.environment = environment
+        self.target = target
+        self.current = current
+        self.promotion = promotion
+        self.failedPromotion = failedPromotion
+        self.next = next
     }
 }
 
@@ -1904,6 +1998,43 @@ public struct MonitorState: Codable, Hashable, Sendable {
     }
 }
 
+/// One of several kinds, told apart by `_tag`. A kind this client doesn't know, from a newer API,
+/// is `unknown`, with its name.
+public enum NextStep: Codable, Hashable, Sendable {
+    case promote(PromoteNext)
+    case buildLatest(BuildLatestNext)
+    case unknown(String)
+
+    private enum Kind: String, CodingKey {
+        case kind = "_tag"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let kind = try decoder.container(keyedBy: Kind.self).decode(String.self, forKey: .kind)
+        switch kind {
+        case "promote": self = .promote(try PromoteNext(from: decoder))
+        case "buildLatest": self = .buildLatest(try BuildLatestNext(from: decoder))
+        default: self = .unknown(kind)
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .promote(let value):
+            try value.encode(to: encoder)
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode("promote", forKey: .kind)
+        case .buildLatest(let value):
+            try value.encode(to: encoder)
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode("buildLatest", forKey: .kind)
+        case .unknown(let kind):
+            var container = encoder.container(keyedBy: Kind.self)
+            try container.encode(kind, forKey: .kind)
+        }
+    }
+}
+
 public struct NoPushToken: Codable, Hashable, Sendable {
     public let phone: String
 
@@ -2392,6 +2523,16 @@ public struct PromoteLatestTo: Codable, Hashable, Sendable {
         self.reason = reason
         self.runner = runner
         self.submission = submission
+    }
+}
+
+public struct PromoteNext: Codable, Hashable, Sendable {
+    public let release: String
+    public let from: String
+
+    public init(release: String, from: String) {
+        self.release = release
+        self.from = from
     }
 }
 

@@ -1129,7 +1129,7 @@
             }
           }
         },
-        "description": "Replaces a component's links: `repository`, its GitHub repository as owner/name, whose commits its releases are; and `deployTargets`, where its releases go in each environment: the GitHub Actions workflow that builds and deploys a release there, started with the inputs `release`, `environment`, `commit` and `runner`, and, for an app, the App Store Connect app its builds go to, for TestFlight only or through to the App Store. One left out is unlinked. Returns the component.",
+        "description": "Replaces a component's links: `repository`, its GitHub repository as owner/name, whose commits its releases are; and `deployTargets`, where its releases go in each environment: the GitHub Actions workflow that builds and deploys a release there, started with the inputs `release`, `environment`, `commit` and `runner`, and, for an app, the App Store Connect app its builds go to, for TestFlight only or through to the App Store; and `shipsWith`, another of the project's components whose deploys deploy this one too, from the same commit with the same release, for a part such as a background service. One left out is unlinked. 404 for a component the project lacks, or one it ships with that the project lacks or that is itself. Returns the component.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3563,6 +3563,66 @@
         "description": "Releases a promotion that App Store review approved and that waits for a member, submitted to be released manually: App Store Connect makes it live, and the promotion ends once it is. 404 for no promotion of that ID waiting so."
       }
     },
+    "/api/projects/{project}/delivery": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "operationId": "releases.delivery",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delivery",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Delivery"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "How each component's releases reach its environments: the environments of its deploy targets, in their order (for a component without any, those it ran in), each with the release there now and since when, a promotion to it that hasn't ended, and what can go there next: `promote` the release of the environment before it, newer than the one there, or, to the first, `buildLatest`, the default branch's newest commit. An App Store app's environment has the build out on the App Store; a TestFlight app's, the latest build processed; another, the release last deployed or first run there."
+      }
+    },
     "/api/projects/{project}/versions": {
       "get": {
         "tags": [
@@ -4299,75 +4359,123 @@
         ],
         "additionalProperties": false
       },
-      "PromotionUnavailable": {
+      "Delivery": {
         "type": "object",
         "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": [
-              "PromotionUnavailable"
-            ]
-          },
-          "reason": {
-            "type": "string"
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComponentDelivery"
+            }
           }
         },
         "required": [
-          "_tag",
-          "reason"
+          "components"
         ],
         "additionalProperties": false
       },
-      "PromotionRefused": {
+      "ComponentDelivery": {
         "type": "object",
         "properties": {
-          "_tag": {
+          "component": {
             "type": "string",
-            "enum": [
-              "PromotionRefused"
-            ]
+            "maxLength": 40
           },
-          "reason": {
-            "type": "string"
+          "shipsWith": {
+            "type": "string",
+            "maxLength": 40
           },
-          "fix": {
-            "$ref": "#/components/schemas/PromotionFix"
+          "version": {
+            "$ref": "#/components/schemas/ComponentVersion"
+          },
+          "environments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentDelivery"
+            }
           }
         },
         "required": [
-          "_tag",
-          "reason",
-          "fix"
+          "component",
+          "environments"
         ],
         "additionalProperties": false
       },
-      "PromotionFix": {
-        "type": "string",
-        "enum": [
-          "github",
-          "links",
-          "repository",
-          "notes",
-          "appStore",
-          "version"
-        ]
-      },
-      "PromotionNotFound": {
+      "EnvironmentDelivery": {
         "type": "object",
         "properties": {
-          "_tag": {
+          "environment": {
             "type": "string",
-            "enum": [
-              "PromotionNotFound"
-            ]
+            "maxLength": 40
+          },
+          "target": {
+            "$ref": "#/components/schemas/DeployTarget"
+          },
+          "current": {
+            "$ref": "#/components/schemas/CurrentRelease"
           },
           "promotion": {
-            "type": "string"
+            "$ref": "#/components/schemas/Promotion"
+          },
+          "failedPromotion": {
+            "$ref": "#/components/schemas/Promotion"
+          },
+          "next": {
+            "$ref": "#/components/schemas/NextStep"
+          }
+        },
+        "required": [
+          "environment"
+        ],
+        "additionalProperties": false
+      },
+      "NextStep": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PromoteNext"
+          },
+          {
+            "$ref": "#/components/schemas/BuildLatestNext"
+          }
+        ]
+      },
+      "BuildLatestNext": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "buildLatest"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
+        ],
+        "additionalProperties": false
+      },
+      "PromoteNext": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "promote"
+            ]
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "from": {
+            "type": "string",
+            "maxLength": 40
           }
         },
         "required": [
           "_tag",
-          "promotion"
+          "release",
+          "from"
         ],
         "additionalProperties": false
       },
@@ -4535,6 +4643,308 @@
       "WorkflowFile": {
         "type": "string",
         "maxLength": 100
+      },
+      "CurrentRelease": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/ReleaseSummary"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "summary",
+          "since"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseSummary": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "previous": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          },
+          "slower": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "failingMore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "newErrors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "commit": {
+            "$ref": "#/components/schemas/ReleaseCommit"
+          },
+          "store": {
+            "$ref": "#/components/schemas/StoreBuild"
+          },
+          "deployedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "component",
+          "release",
+          "verdict",
+          "slower",
+          "failingMore",
+          "newErrors"
+        ],
+        "additionalProperties": false
+      },
+      "StoreBuild": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "buildNumber": {
+            "type": "string"
+          },
+          "uploadedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/StoreStage"
+          },
+          "appStoreState": {
+            "type": "string"
+          },
+          "internalTesting": {
+            "type": "string"
+          },
+          "externalTesting": {
+            "type": "string"
+          },
+          "phasedRelease": {
+            "$ref": "#/components/schemas/PhasedRelease"
+          },
+          "earliestReleaseAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "version",
+          "buildNumber",
+          "uploadedAt",
+          "stage"
+        ],
+        "additionalProperties": false
+      },
+      "PhasedRelease": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "day": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "StoreStage": {
+        "type": "string",
+        "enum": [
+          "processing",
+          "failed",
+          "testing",
+          "waitingForReview",
+          "inReview",
+          "rejected",
+          "pendingRelease",
+          "releasing",
+          "live",
+          "replaced",
+          "expired",
+          "other"
+        ]
+      },
+      "ReleaseCommit": {
+        "type": "object",
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "committedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha"
+        ],
+        "additionalProperties": false
+      },
+      "Verdict": {
+        "type": "string",
+        "enum": [
+          "worse",
+          "better",
+          "same",
+          "tooEarly",
+          "first",
+          "unmeasured"
+        ]
+      },
+      "DeployTarget": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowFile"
+          },
+          "appStore": {
+            "$ref": "#/components/schemas/AppStoreTarget"
+          }
+        },
+        "required": [
+          "environment"
+        ],
+        "additionalProperties": false
+      },
+      "PromotionUnavailable": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PromotionUnavailable"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "PromotionRefused": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PromotionRefused"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "fix": {
+            "$ref": "#/components/schemas/PromotionFix"
+          }
+        },
+        "required": [
+          "_tag",
+          "reason",
+          "fix"
+        ],
+        "additionalProperties": false
+      },
+      "PromotionFix": {
+        "type": "string",
+        "enum": [
+          "github",
+          "links",
+          "repository",
+          "notes",
+          "appStore",
+          "version"
+        ]
+      },
+      "PromotionNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PromotionNotFound"
+            ]
+          },
+          "promotion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_tag",
+          "promotion"
+        ],
+        "additionalProperties": false
       },
       "PromotionInProgress": {
         "type": "object",
@@ -4868,25 +5278,6 @@
         "required": [
           "url",
           "publishedAt"
-        ],
-        "additionalProperties": false
-      },
-      "DeployTarget": {
-        "type": "object",
-        "properties": {
-          "environment": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "workflow": {
-            "$ref": "#/components/schemas/WorkflowFile"
-          },
-          "appStore": {
-            "$ref": "#/components/schemas/AppStoreTarget"
-          }
-        },
-        "required": [
-          "environment"
         ],
         "additionalProperties": false
       },
@@ -5327,200 +5718,6 @@
           "previousP95Ms"
         ],
         "additionalProperties": false
-      },
-      "ReleaseSummary": {
-        "type": "object",
-        "properties": {
-          "component": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "environment": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "release": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "firstSeen": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lastSeen": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "count": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "errors": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "previous": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "verdict": {
-            "$ref": "#/components/schemas/Verdict"
-          },
-          "slower": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "failingMore": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "newErrors": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "commit": {
-            "$ref": "#/components/schemas/ReleaseCommit"
-          },
-          "store": {
-            "$ref": "#/components/schemas/StoreBuild"
-          },
-          "deployedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "component",
-          "release",
-          "verdict",
-          "slower",
-          "failingMore",
-          "newErrors"
-        ],
-        "additionalProperties": false
-      },
-      "StoreBuild": {
-        "type": "object",
-        "properties": {
-          "version": {
-            "type": "string"
-          },
-          "buildNumber": {
-            "type": "string"
-          },
-          "uploadedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "stage": {
-            "$ref": "#/components/schemas/StoreStage"
-          },
-          "appStoreState": {
-            "type": "string"
-          },
-          "internalTesting": {
-            "type": "string"
-          },
-          "externalTesting": {
-            "type": "string"
-          },
-          "phasedRelease": {
-            "$ref": "#/components/schemas/PhasedRelease"
-          },
-          "earliestReleaseAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "version",
-          "buildNumber",
-          "uploadedAt",
-          "stage"
-        ],
-        "additionalProperties": false
-      },
-      "PhasedRelease": {
-        "type": "object",
-        "properties": {
-          "state": {
-            "type": "string"
-          },
-          "startedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "day": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "state"
-        ],
-        "additionalProperties": false
-      },
-      "StoreStage": {
-        "type": "string",
-        "enum": [
-          "processing",
-          "failed",
-          "testing",
-          "waitingForReview",
-          "inReview",
-          "rejected",
-          "pendingRelease",
-          "releasing",
-          "live",
-          "replaced",
-          "expired",
-          "other"
-        ]
-      },
-      "ReleaseCommit": {
-        "type": "object",
-        "properties": {
-          "sha": {
-            "type": "string"
-          },
-          "tag": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "author": {
-            "type": "string"
-          },
-          "committedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "url": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "sha"
-        ],
-        "additionalProperties": false
-      },
-      "Verdict": {
-        "type": "string",
-        "enum": [
-          "worse",
-          "better",
-          "same",
-          "tooEarly",
-          "first",
-          "unmeasured"
-        ]
       },
       "ReleaseList": {
         "type": "object",
@@ -7258,6 +7455,10 @@
               "$ref": "#/components/schemas/DeployTarget"
             },
             "maxItems": 20
+          },
+          "shipsWith": {
+            "type": "string",
+            "maxLength": 40
           }
         },
         "required": [
@@ -7279,6 +7480,10 @@
               "$ref": "#/components/schemas/DeployTarget"
             },
             "maxItems": 20
+          },
+          "shipsWith": {
+            "type": "string",
+            "maxLength": 40
           }
         },
         "additionalProperties": false

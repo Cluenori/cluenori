@@ -16,6 +16,8 @@ export interface LinkOptions {
   readonly deploy: ReadonlyArray<string>
   readonly testFlight: ReadonlyArray<string>
   readonly appStore: ReadonlyArray<string>
+  /** The component it is deployed with, by that one's deploy targets. */
+  readonly shipsWith?: Option.Option<string>
 }
 
 // The flag a value came with, and an example of one, for a refusal.
@@ -98,6 +100,10 @@ export const componentLinksOf = Effect.fn("componentLinksOf")(function* (options
   const links = {
     ...Option.match(repository, { onNone: () => ({}), onSome: (value) => ({ repository: value }) }),
     ...(deployTargets.length === 0 ? {} : { deployTargets }),
+    ...Option.match(options.shipsWith ?? Option.none(), {
+      onNone: () => ({}),
+      onSome: (shipsWith) => ({ shipsWith }),
+    }),
   }
   // The Schema is the authority on what links may be saved, such as at most 20 deploy targets.
   return yield* Schema.decodeEffect(ComponentLinks)(links).pipe(

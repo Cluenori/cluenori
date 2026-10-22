@@ -160,106 +160,89 @@ export function SetVersionDialog({
   )
 }
 
-/** One component as the versions list shows it: its name, key and color. */
-export type VersionedComponent = { readonly key: ComponentKey; readonly name: string; readonly color: string }
-
 /**
- * Each component's version and the release its next build will be, with a menu to bump its patch,
- * minor or major, each showing what it becomes, and setting it by hand. A component without a
- * version says that CI can't number its builds until it has one.
+ * A component's version and the release its next build will be, "1.4.0 · next 1.4.0+58", with a
+ * menu to bump its patch, minor or major, each showing what it becomes, and setting it by hand. A
+ * component without a version says CI can't number its builds until it has one. Why the last bump
+ * didn't happen is said under it.
  */
-export function VersionList({
-  components,
-  versions,
+export function VersionLine({
+  component,
+  line,
   bumping,
   problem,
   onBump,
   onSet,
 }: {
-  readonly components: ReadonlyArray<VersionedComponent>
-  readonly versions: ReadonlyArray<ComponentVersion>
-  /** The component a bump is being saved for. */
-  readonly bumping: ComponentKey | undefined
-  /** Why the last bump of a component didn't happen, in words. */
-  readonly problem: { readonly component: ComponentKey; readonly text: string } | undefined
-  readonly onBump: (component: ComponentKey, version: SemanticVersion) => void
-  readonly onSet: (component: ComponentKey) => void
+  readonly component: ComponentKey
+  /** The component's version line; absent before its version was set. */
+  readonly line: ComponentVersion | undefined
+  /** Whether a bump of it is being saved. */
+  readonly bumping: boolean
+  /** Why the last bump of it didn't happen, in words. */
+  readonly problem: string | undefined
+  readonly onBump: (version: SemanticVersion) => void
+  readonly onSet: () => void
 }) {
-  if (components.length === 0) {
-    return <p className="px-5 py-6 text-sm text-muted-foreground">No components yet.</p>
-  }
   return (
-    <ul className="divide-y">
-      {components.map((component) => {
-        const line = versions.find((each) => each.component === component.key)
-        return (
-          <li
-            key={component.key}
-            className="grid items-center gap-x-6 gap-y-3 px-5 py-4 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_auto]"
-          >
-            <span className="flex min-w-0 items-center gap-3">
-              <span className="size-2.5 shrink-0" style={{ backgroundColor: component.color }} />
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate text-[15px]">{component.name}</span>
-                <span className="truncate font-mono text-sm text-muted-foreground">{component.key}</span>
-              </span>
+    <span className="flex min-w-0 flex-col gap-1.5">
+      <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+        {line === undefined ? (
+          <span className="text-sm text-muted-foreground">No version yet: CI can&apos;t number its builds.</span>
+        ) : (
+          <span className="flex min-w-0 items-baseline gap-2 text-sm">
+            <span className="text-muted-foreground">Version</span>
+            <span className="font-mono text-[15px]">{line.version}</span>
+            <span aria-hidden className="text-muted-foreground">
+              ·
             </span>
-            {line === undefined ? (
-              <span className="text-sm text-muted-foreground">Set a version to let CI number its builds.</span>
-            ) : (
-              <span className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-0.5">
-                <span className="font-mono text-lg">{line.version}</span>
-                <span className="text-sm text-muted-foreground">
-                  Next build <span className="font-mono text-foreground">{nextReleaseOf(line)}</span>
-                </span>
-              </span>
-            )}
-            <span className="flex flex-wrap gap-2">
-              {line !== undefined && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={<Button variant="outline" size="sm" disabled={bumping === component.key} />}
-                  >
-                    {bumping === component.key ? "Bumping…" : "Bump"}
-                    <span className="sr-only"> {component.key}</span>
-                    <ChevronDownIcon data-icon="inline-end" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel>From {line.version}; it can&apos;t go back down</DropdownMenuLabel>
-                      {parts.map((each) => {
-                        const next = bumpedVersion(line.version, each.part)
-                        return (
-                          <DropdownMenuItem
-                            key={each.part}
-                            onClick={() => {
-                              const decoded = decodeVersion(next)
-                              if (Result.isSuccess(decoded)) {
-                                onBump(component.key, decoded.success)
-                              }
-                            }}
-                          >
-                            {each.label}
-                            <span className="ml-auto font-mono text-muted-foreground">{next}</span>
-                          </DropdownMenuItem>
-                        )
-                      })}
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-              <Button variant="outline" size="sm" onClick={() => onSet(component.key)}>
-                Set version…<span className="sr-only"> of {component.key}</span>
-              </Button>
-            </span>
-            {problem?.component === component.key && (
-              <p role="alert" className="text-sm text-failure sm:col-span-3">
-                {problem.text}
-              </p>
-            )}
-          </li>
-        )
-      })}
-    </ul>
+            <span className="text-muted-foreground">next</span>
+            <span className="font-mono text-[15px]">{nextReleaseOf(line)}</span>
+          </span>
+        )}
+        <span className="flex gap-2">
+          {line !== undefined && (
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={bumping} />}>
+                {bumping ? "Bumping…" : "Bump"}
+                <span className="sr-only"> {component}</span>
+                <ChevronDownIcon data-icon="inline-end" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>From {line.version}; it can&apos;t go back down</DropdownMenuLabel>
+                  {parts.map((each) => {
+                    const next = bumpedVersion(line.version, each.part)
+                    return (
+                      <DropdownMenuItem
+                        key={each.part}
+                        onClick={() => {
+                          const decoded = decodeVersion(next)
+                          if (Result.isSuccess(decoded)) {
+                            onBump(decoded.success)
+                          }
+                        }}
+                      >
+                        {each.label}
+                        <span className="ml-auto font-mono text-muted-foreground">{next}</span>
+                      </DropdownMenuItem>
+                    )
+                  })}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <Button variant="outline" size="sm" onClick={onSet}>
+            {line === undefined ? "Set the version…" : "Set version…"}
+            <span className="sr-only"> of {component}</span>
+          </Button>
+        </span>
+      </span>
+      {problem !== undefined && (
+        <p role="alert" className="text-sm text-failure">
+          {problem}
+        </p>
+      )}
+    </span>
   )
 }

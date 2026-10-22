@@ -85,9 +85,10 @@ describe("environments journey", () => {
     }),
   )
 
-  it.effect("says the one environment seen as text, not a switch, and asks there", () =>
+  it.effect("says the one environment as text, not a switch, and asks there", () =>
     Effect.gen(function* () {
-      answerApi(notesApi({ seen: [EnvironmentKey.make("production")] }))
+      // Production is the one its telemetry named, and no deploy target goes elsewhere.
+      answerApi(notesApi({ seen: [EnvironmentKey.make("production")], linked: new Map() }))
       window.history.pushState(null, "", "/notes/logs")
       const screen = yield* Effect.promise(() => render(<App />))
 

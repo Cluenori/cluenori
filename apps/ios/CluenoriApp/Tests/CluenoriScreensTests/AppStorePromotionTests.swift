@@ -55,11 +55,10 @@ struct AppStorePromotionTests {
             promotions.joined(separator: ","), targets: appTargets,
             notes: #"{"locale":"en-US","text":"Faster feed."},{"locale":"de-DE","text":"Schnellerer Feed."}"#)
 
-        #expect(release.deployTargets.map(\.environment) == ["internal", "production", "beta"])
-        #expect(
-            release.deployTargets[1].appStore == AppStoreTarget(bundleId: "com.notesapp.notes", distribution: .appStore)
-        )
-        #expect(release.deployTargets[2].workflow == nil)
+        let targets = try #require(release.detail.value?.deployTargets)
+        #expect(targets.map(\.environment) == ["internal", "production", "beta"])
+        #expect(targets[1].appStore == AppStoreTarget(bundleId: "com.notesapp.notes", distribution: .appStore))
+        #expect(targets[2].workflow == nil)
         #expect(release.notes.savedNotes.map(\.locale) == ["en-US", "de-DE"])
         #expect(release.promotions.map(\.state) == [.approved, .inReview, .processing, .rejected])
         // Approved waits for a member, so it hasn't ended; rejected has.
@@ -74,7 +73,7 @@ struct AppStorePromotionTests {
         let (release, deployment) = try await promotedRelease("", targets: appTargets)
         deployment.answer(promotePath, 201, storePromotion("starting", id: "019a0f90-0000-7000-8000-000000000004"))
 
-        release.startPromoting(release.deployTargets[1])
+        release.startPromoting(to: "production")
         let promote = try #require(release.promote)
         #expect(promote.goesToReview)
         // The defaults: Auto, as soon as approved, phased.
@@ -97,10 +96,10 @@ struct AppStorePromotionTests {
         let (release, deployment) = try await promotedRelease("", targets: appTargets)
         deployment.answer(promotePath, 201, storePromotion("starting", id: "019a0f90-0000-7000-8000-000000000005"))
 
-        release.startPromoting(release.deployTargets[0])
+        release.startPromoting(to: "internal")
         #expect(release.promote?.goesToReview == false)
         await release.promote?.send()
-        release.startPromoting(release.deployTargets[2])
+        release.startPromoting(to: "beta")
         await release.promote?.send()
 
         let bodies = try deployment.bodies(promotePath).map {
@@ -118,7 +117,7 @@ struct AppStorePromotionTests {
         let reason = "Write the release's notes in en-US and de-DE before it goes to App Store review."
         deployment.answer(promotePath, 422, #"{"_tag":"PromotionRefused","reason":"\#(reason)","fix":"notes"}"#)
 
-        release.startPromoting(release.deployTargets[1])
+        release.startPromoting(to: "production")
         await release.promote?.send()
 
         #expect(release.promote?.state == .failed(.refused(reason: reason, fix: .notes)))

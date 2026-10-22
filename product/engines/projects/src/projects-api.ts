@@ -83,6 +83,6 @@ export class ProjectsGroup extends HttpApiGroup.make("projects")
       error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ComponentNotFound.pipe(HttpApiSchema.status(404))],
     }).annotate(
       OpenApi.Description,
-      "Replaces a component's links: `repository`, its GitHub repository as owner/name, whose commits its releases are; and `deployTargets`, where its releases go in each environment: the GitHub Actions workflow that builds and deploys a release there, started with the inputs `release`, `environment`, `commit` and `runner`, and, for an app, the App Store Connect app its builds go to, for TestFlight only or through to the App Store. One left out is unlinked. Returns the component.",
+      "Replaces a component's links: `repository`, its GitHub repository as owner/name, whose commits its releases are; and `deployTargets`, where its releases go in each environment: the GitHub Actions workflow that builds and deploys a release there, started with the inputs `release`, `environment`, `commit` and `runner`, and, for an app, the App Store Connect app its builds go to, for TestFlight only or through to the App Store; and `shipsWith`, another of the project's components whose deploys deploy this one too, from the same commit with the same release, for a part such as a background service. One left out is unlinked. 404 for a component the project lacks, or one it ships with that the project lacks or that is itself. Returns the component.",
     ),
   ) {}

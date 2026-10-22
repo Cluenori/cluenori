@@ -16,8 +16,10 @@ public final class DeploymentModels {
     // screen until known, and kept on the phone, since a pairing acts for one member.
     private let member: Answer<Member>
     private var kept: [String: AnyObject] = [:]
-    // Each project's environment choice, kept apart from the screens' models: one per project.
+    // Each project's environment choice and delivery, kept apart from the screens' models: one per
+    // project, which its screens share.
     private var choices: [String: EnvironmentChoice] = [:]
+    private var deliveries: [String: DeliveryModel] = [:]
 
     // The models of the screens recently opened, at most this many; past it, they are made anew.
     private static let keptAtMost = 64
@@ -48,6 +50,27 @@ public final class DeploymentModels {
         let choice = EnvironmentChoice(project: project, api: api, context: context)
         choices[project] = choice
         return choice
+    }
+
+    /// How a project's components' releases reach their environments, and their next steps; one per
+    /// project, kept while the app runs, which its components' and releases' screens share.
+    public func delivery(_ project: String) -> DeliveryModel {
+        if let delivery = deliveries[project] {
+            return delivery
+        }
+        let delivery = DeliveryModel(
+            project: project,
+            detail: environments(project).detail,
+            api: api,
+            context: context,
+            // A promotion started by a next step shows on its release's screen at once, before the
+            // deployment knows the release.
+            startedElsewhere: { [weak self] promotion in
+                self?.release(promotion.releaseRef(in: project)).show(started: promotion)
+            }
+        )
+        deliveries[project] = delivery
+        return delivery
     }
 
     /// The screen `route` names, in the environment chosen for its project when it names none: what
@@ -115,15 +138,18 @@ public final class DeploymentModels {
         }
     }
 
-    /// A project's components' versions, which its builds are numbered in, and promoting their newest
-    /// commits.
+    /// Every release of one of a project's components, in every environment, over `period`.
+    public func releases(_ project: String, component: String, period: PeriodKey) -> ReleasesModel {
+        model("component releases \(project) \(component) \(period)") {
+            ReleasesModel(
+                project: project, environment: nil, component: component, period: period, api: api, context: context)
+        }
+    }
+
+    /// A project's components' versions, which its builds are numbered in.
     public func versions(_ project: String) -> VersionsModel {
         model("versions \(project)") {
-            // A commit's promotion shows on its release's screen at once, before the deployment knows it.
-            VersionsModel(project: project, projectDetail: environments(project).detail, api: api, context: context) {
-                [weak self] promotion in
-                self?.release(promotion.releaseRef(in: project)).show(started: promotion)
-            }
+            VersionsModel(project: project, projectDetail: environments(project).detail, api: api, context: context)
         }
     }
 
@@ -134,7 +160,10 @@ public final class DeploymentModels {
 
     /// One release, whatever the period: its comparison is of the whole release.
     public func release(_ release: ReleaseRef) -> ReleaseModel {
-        model("release \(release)") { ReleaseModel(release: release, api: api, context: context, member: member) }
+        model("release \(release)") {
+            ReleaseModel(
+                release: release, api: api, context: context, member: member, delivery: delivery(release.project))
+        }
     }
 
     // The release `telemetry` is narrowed to, whose span its screens look over.

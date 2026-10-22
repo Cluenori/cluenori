@@ -45,6 +45,11 @@ struct RouteTests {
         ("cluenori://projects/notes/operations", .operations(of: .project("notes"))),
         ("cluenori://projects/notes/releases", .releases(project: "notes")),
         ("cluenori://projects/notes/notes-style", .notesStyle(project: "notes")),
+        ("cluenori://projects/notes/components/notes-api", .component(project: "notes", component: "notes-api")),
+        (
+            "cluenori://projects/notes/components/notes-api/releases",
+            .componentReleases(project: "notes", component: "notes-api")
+        ),
     ])
     func `reads the screen a link names`(_ text: String, _ route: Route) throws {
         #expect(Route(try #require(URL(string: text))) == route)
@@ -80,19 +85,27 @@ struct RouteTests {
 
         let release = ReleaseRef(project: "notes", component: "notes-api", environment: nil, version: "1.8.0")
         navigation.open(.release(release))
-        #expect(navigation.projectsPath == [.project("notes"), .releases(project: "notes"), .release(release)])
+        // A release comes from its component's screen, where its environments are.
+        let api = Route.component(project: "notes", component: "notes-api")
+        #expect(navigation.projectsPath == [.project("notes"), api, .release(release)])
 
         navigation.open(.notes(release))
         #expect(navigation.projectsPath.suffix(2) == [.release(release), .notes(release)])
         navigation.open(.notesStyle(project: "notes"))
+        #expect(navigation.projectsPath == [.project("notes"), .notesStyle(project: "notes")])
+        navigation.open(.componentReleases(project: "notes", component: "notes-api"))
         #expect(
-            navigation.projectsPath == [.project("notes"), .releases(project: "notes"), .notesStyle(project: "notes")])
+            navigation.projectsPath == [
+                .project("notes"), api, .componentReleases(project: "notes", component: "notes-api"),
+            ])
     }
 
     @Test(arguments: [
         "cluenori://projects/notes/releases/notes-api",
         "cluenori://projects/notes/releases/notes-api/1.8.0/extra",
         "cluenori://projects/notes/deploys",
+        "cluenori://projects/notes/components",
+        "cluenori://projects/notes/components/notes-api/errors",
     ])
     func `reads no screen from a link that names none`(_ text: String) throws {
         #expect(Route(try #require(URL(string: text))) == nil)
@@ -130,7 +143,7 @@ struct RouteTests {
         navigation.open(.error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068"))
         #expect(
             navigation.projectsPath == [
-                .project("notes"), .releases(project: "notes"), .release(feedRelease),
+                .project("notes"), .component(project: "notes", component: "notes-api"), .release(feedRelease),
                 .errors(of: .release(feedRelease)), .error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068"),
             ])
 
@@ -140,7 +153,7 @@ struct RouteTests {
         navigation.open(.operation(operation))
         #expect(
             navigation.projectsPath == [
-                .project("notes"), .releases(project: "notes"), .release(feedRelease),
+                .project("notes"), .component(project: "notes", component: "notes-api"), .release(feedRelease),
                 .operations(of: .release(feedRelease)), .operation(operation),
             ])
     }
@@ -153,7 +166,8 @@ struct RouteTests {
 
         #expect(
             navigation.projectsPath == [
-                .project("notes"), .releases(project: "notes"), .release(feedRelease), .logs(of: .project("notes")),
+                .project("notes"), .component(project: "notes", component: "notes-api"), .release(feedRelease),
+                .logs(of: .project("notes")),
             ])
 
         navigation.todayPath = [.error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068")]
@@ -203,12 +217,12 @@ struct ProjectModelTests {
         #expect(project.load.value?.points.count == 1)
         #expect(project.errors.value?.groups.isEmpty == true)
         #expect(project.logs.value?.lines.count == 100)
-        #expect(project.releases.value?.releases.first?.verdict == .worse)
-        #expect(Set(deployment.requests).count == 6)
+        // Its delivery is every environment's and every period's: the delivery model asks it.
+        #expect(Set(deployment.requests).count == 5)
 
         await project.choose(.week)
         #expect(project.period == .week)
-        #expect(deployment.requests.count == 12)
+        #expect(deployment.requests.count == 10)
         // The same model comes back for the same project, so going back shows it as it was.
         #expect(models.project("notes", environment: nil, period: .week) === project)
     }
