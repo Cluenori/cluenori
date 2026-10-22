@@ -1,7 +1,18 @@
 /**
- * A read-only client of the App Store Connect API for following releases: an app by its bundle ID,
- * its builds, and its App Store versions, with a token signed with ES256 through Web Crypto.
+ * A client of the App Store Connect API for following and publishing an app's releases: an app by
+ * its bundle ID, its builds, and its App Store versions; preparing a version, submitting it for
+ * review, and releasing it; and its builds' TestFlight notes. Tokens are signed with ES256 through
+ * Web Crypto.
  */
-export type { AppStoreConnectCredentials } from "./app-store-connect.ts"
-export { AppStoreConnect, AppStoreConnectRefused, AppStoreConnectUnavailable } from "./app-store-connect.ts"
-export type { App, AppStoreVersion, Build } from "./resources.ts"
+export type { AppStoreConnectCredentials } from "./apple-api.ts"
+export { AppStoreConnect } from "./app-store-connect.ts"
+export { AppStoreConnectRefused, AppStoreConnectUnavailable } from "./errors.ts"
+export type {
+  App,
+  AppStoreVersion,
+  Build,
+  LocalizedText,
+  PreparedVersion,
+  ReviewSubmission,
+  VersionToSubmit,
+} from "./resources.ts"

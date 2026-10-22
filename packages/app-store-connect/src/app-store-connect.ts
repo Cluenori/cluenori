@@ -1,72 +1,41 @@
 import type { Es256Signing } from "@bagatka/es256-jwt"
-import { signEs256 } from "@bagatka/es256-jwt"
-import type { Redacted } from "effect"
-import { Array as Arr, Clock, Context, DateTime, Duration, Effect, Layer, Option, Order, Ref, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import { Array as Arr, Context, DateTime, Effect, Layer, Order } from "effect"
+import type { Option } from "effect"
+import type { HttpClient } from "effect/http"
 
-import type { App, AppStoreVersion, Build } from "./resources.ts"
+import type { AppStoreConnectCredentials } from "./apple-api.ts"
+import { appleApi, decoded, pageSize } from "./apple-api.ts"
+import type { AppStoreConnectRefused, AppStoreConnectUnavailable } from "./errors.ts"
+import { publishing } from "./publishing.ts"
+import type {
+  App,
+  AppStoreVersion,
+  Build,
+  LocalizedText,
+  PreparedVersion,
+  ReviewSubmission,
+  VersionToSubmit,
+} from "./resources.ts"
 import {
+  AppInfosDocument,
   AppStoreVersionsDocument,
   AppsDocument,
   BuildsDocument,
+  appLocalesOf,
   appOf,
   appStoreVersionsOf,
   buildsOf,
 } from "./resources.ts"
 
-/**
- * An App Store Connect API key, from Users and Access, Integrations: its `.p8` file's text, or the
- * base64 inside it alone; its 10-character key ID; and the issuer ID of its team, a UUID.
- */
-export interface AppStoreConnectCredentials {
-  readonly key: Redacted.Redacted
-  readonly keyId: string
-  readonly issuerId: string
-}
-
-/**
- * App Store Connect refused the request: 401 or 403, for a key that is wrong or revoked, or whose
- * role can't read this; or 0, with nothing sent, for a key that can't sign. `reason` is Apple's
- * error code and detail. Sending again won't help until the key changes.
- */
-export class AppStoreConnectRefused extends Schema.TaggedError<AppStoreConnectRefused>()("AppStoreConnectRefused", {
-  status: Schema.Int,
-  reason: Schema.String,
-}) {}
-
-/**
- * App Store Connect didn't answer now: nothing within 15 seconds, too many requests (429, the
- * key's hourly limit), or a server error. Asking again later may work.
- */
-export class AppStoreConnectUnavailable extends Schema.TaggedError<AppStoreConnectUnavailable>()(
-  "AppStoreConnectUnavailable",
-  { reason: Schema.String },
-) {}
-
-const api = "https://api.appstoreconnect.apple.com"
-
-// Apple takes a token for at most 20 minutes; one is kept for 15, so none is sent about to expire.
-const tokenLasts = Duration.toSeconds(Duration.minutes(20))
-const tokenKept = Duration.toMillis(Duration.minutes(15))
-
-const answerWithin = Duration.seconds(15)
-
-// Apple pages at most 200 resources. App Store versions come in no documented order, so all of an
-// app's are read; 10 pages hold 2,000, more than an app releasing every week makes in 30 years.
-const pageSize = 200
-const mostPages = 10
-
-const ErrorText = Schema.fromJsonString(
-  Schema.Struct({ errors: Schema.NonEmptyArray(Schema.Struct({ code: Schema.String, detail: Schema.String })) }),
-)
-
-const AppsText = Schema.fromJsonString(AppsDocument)
-const BuildsText = Schema.fromJsonString(BuildsDocument)
-const AppStoreVersionsText = Schema.fromJsonString(AppStoreVersionsDocument)
-
 const latestCreatedFirst = Order.flip(Order.mapInput(DateTime.Order, (version: AppStoreVersion) => version.createdAt))
 
-/** Reads an app's builds and App Store versions from the App Store Connect API, with an API key. */
+type Failure = AppStoreConnectRefused | AppStoreConnectUnavailable
+
+/**
+ * An app's builds, App Store versions, and review submissions in App Store Connect, through its API
+ * with one key. Reading takes a key with the Developer role; writing, `prepareVersion` to
+ * `setWhatToTest`, takes App Manager (or Admin). The writes are for the app's iOS platform.
+ */
 export class AppStoreConnect extends Context.Service<
   AppStoreConnect,
   {
@@ -74,197 +43,182 @@ export class AppStoreConnect extends Context.Service<
      * The app with this bundle ID among those the key's team has; none when it has none. One
      * request.
      */
-    readonly app: (
-      bundleId: string,
-    ) => Effect.Effect<Option.Option<App>, AppStoreConnectRefused | AppStoreConnectUnavailable>
+    readonly app: (bundleId: string) => Effect.Effect<Option.Option<App>, Failure>
     /**
      * The app's builds, the latest uploaded first, at most `limit` (1 to 200), each with its
      * marketing version and TestFlight states. One request.
      */
-    readonly builds: (
+    readonly builds: (appId: string, limit: number) => Effect.Effect<ReadonlyArray<Build>, Failure>
+    /**
+     * The app's iOS build with this marketing version and build number; none until App Store
+     * Connect has it. Its `processingState` is `PROCESSING` until Apple has processed it, and
+     * `VALID` once a version can ship it: for waiting until an uploaded build can be attached. One
+     * request.
+     */
+    readonly build: (
       appId: string,
-      limit: number,
-    ) => Effect.Effect<ReadonlyArray<Build>, AppStoreConnectRefused | AppStoreConnectUnavailable>
+      version: string,
+      buildNumber: string,
+    ) => Effect.Effect<Option.Option<Build>, Failure>
     /**
      * The app's App Store versions, the latest created first, at most `limit` (1 to 200), each
      * with the build it ships and its phased release. Apple lists them in no documented order, so
      * every version is read and sorted: one request per 200 versions the app has.
      */
-    readonly appStoreVersions: (
-      appId: string,
-      limit: number,
-    ) => Effect.Effect<ReadonlyArray<AppStoreVersion>, AppStoreConnectRefused | AppStoreConnectUnavailable>
+    readonly appStoreVersions: (appId: string, limit: number) => Effect.Effect<ReadonlyArray<AppStoreVersion>, Failure>
+    /**
+     * The locales the app's App Store information is in, such as `["en-US", "de-DE"]`: its
+     * primary locale first, then the others in code-point order. While a version is being
+     * prepared, the locales it will be released in. Apple takes a version for review only when it
+     * is localized in exactly these, so they are the locales to write its What's New in. One
+     * request.
+     */
+    readonly appLocales: (appId: string) => Effect.Effect<ReadonlyArray<string>, Failure>
+    /**
+     * Makes the app's editable iOS App Store version ready to submit for review, and says which
+     * it is. The editable version is the one being prepared, or one rejected or removed from
+     * review (`PREPARE_FOR_SUBMISSION`, `READY_FOR_REVIEW`, `INVALID_BINARY`, `REJECTED`,
+     * `METADATA_REJECTED`, `DEVELOPER_REJECTED`); Apple allows one, and one is made when the app
+     * has none. Then, in order: its version string and release type become the request's; the
+     * build is attached; its phased release is made or cancelled; and its What's New is written in
+     * each locale, a locale it lacks being added with What's New alone (Apple then takes it for
+     * review only once the app's information and the version's description are in that locale
+     * too).
+     *
+     * Each step reads first and writes only what differs, so calling again after a refusal or an
+     * outage part-way finishes what was left and repeats nothing. An app's first version, when it
+     * has no other, has neither What's New nor a phased release on the App Store: both are left
+     * out, and the version goes to everyone once released.
+     *
+     * Refused (409) with Apple's detail for what it won't take, such as a build still processing
+     * or of another version, a What's New over 4,000 characters, or a new version while another is
+     * in review. Two requests, and one more for each change and each locale written.
+     */
+    readonly prepareVersion: (appId: string, request: VersionToSubmit) => Effect.Effect<PreparedVersion, Failure>
+    /**
+     * Submits the version to App Review, in the app's iOS review submission that holds it, else in
+     * its draft submission or a new one, with the version added. A version already submitted
+     * (`WAITING_FOR_REVIEW` or `IN_REVIEW`) is left as it is, and one App Review rejected is
+     * resubmitted in its submission (`UNRESOLVED_ISSUES`), so calling again after a refusal or an
+     * outage submits the same submission once. Refused (409) with Apple's detail when it won't take
+     * the submission, such as for a version missing what review needs. Two requests, one more per
+     * open submission the app has, and up to three to submit.
+     */
+    readonly submitForReview: (appId: string, versionId: string) => Effect.Effect<ReviewSubmission, Failure>
+    /**
+     * Releases a version pending developer release (`PENDING_DEVELOPER_RELEASE`): to everyone, or
+     * starting its phased release. Apple can't take a release back. A version already released, or
+     * being processed for release, is left as it is, so calling again is safe. Refused (409) for a
+     * version in another state. Two requests.
+     */
+    readonly releaseVersion: (versionId: string) => Effect.Effect<void, Failure>
+    /**
+     * Pauses or resumes the version's phased release, or completes it, releasing the version to
+     * every user at once (Apple's `PAUSED`, `ACTIVE`, `COMPLETE`). Already so, nothing is sent.
+     * Refused (409) for a version without a phased release, and by Apple for a change its state
+     * doesn't allow, such as resuming one that hasn't started. One or two requests.
+     */
+    readonly setPhasedRelease: (
+      versionId: string,
+      state: "pause" | "resume" | "complete",
+    ) => Effect.Effect<void, Failure>
+    /**
+     * Writes TestFlight's What to Test for the build in each locale: changed where it differs,
+     * made where the build has none; other locales are left as they are. Calling again is safe.
+     * Refused (409) with Apple's detail for a text it won't take. One request, and one more for
+     * each locale written.
+     */
+    readonly setWhatToTest: (buildId: string, notes: ReadonlyArray<LocalizedText>) => Effect.Effect<void, Failure>
   }
 >()("@bagatka/app-store-connect/app-store-connect/AppStoreConnect") {
   /**
-   * App Store Connect with `credentials`, signing with `signing`, on the `HttpClient` the host
-   * provides. It signs a token and reuses it for 15 minutes; a token Apple refuses (401) is
-   * renewed once, and the request sent once more. Every request has 15 seconds to be answered.
-   * An answer in a shape this client doesn't know, or an HTTP status other than 200, 401, 403,
-   * 429 and 5xx, is a defect.
+   * A client with `credentials`, signing with `signing`, on the `HttpClient` the host provides,
+   * with a token of its own: for a product that holds several, such as one with a Developer key
+   * for reading and one with an App Manager key for writing. It signs a token and reuses it for 15
+   * minutes; a token Apple refuses (401) is renewed once, and the request sent once more. Every
+   * request has 15 seconds to be answered. An answer in a shape this client doesn't know, or an
+   * HTTP status other than 200, 201, 204, 401, 403, 409, 429 and 5xx, is a defect.
    */
-  static readonly layer = (credentials: AppStoreConnectCredentials, signing: Es256Signing) =>
-    Layer.effect(
-      AppStoreConnect,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
-        const signed = yield* Ref.make(Option.none<{ readonly token: string; readonly at: number }>())
+  static readonly make = (
+    credentials: AppStoreConnectCredentials,
+    signing: Es256Signing,
+  ): Effect.Effect<AppStoreConnect["Service"], never, HttpClient.HttpClient> =>
+    Effect.gen(function* () {
+      const api = yield* appleApi(credentials, signing)
 
-        const token = Effect.fn("AppStoreConnect.token")(function* (renew: boolean) {
-          const now = yield* Clock.currentTimeMillis
-          const kept = yield* Ref.get(signed)
-          if (!renew && Option.isSome(kept) && now - kept.value.at < tokenKept) {
-            return kept.value.token
-          }
-          const issuedAt = Math.floor(now / 1000)
-          const fresh = yield* signEs256(
-            signing,
-            credentials.key,
-            { kid: credentials.keyId, typ: "JWT" },
-            { iss: credentials.issuerId, iat: issuedAt, exp: issuedAt + tokenLasts, aud: "appstoreconnect-v1" },
-          ).pipe(Effect.mapError(() => new AppStoreConnectRefused({ status: 0, reason: "InvalidSigningKey" })))
-          yield* Ref.set(signed, Option.some({ token: fresh, at: now }))
-          return fresh
+      const app = Effect.fn("AppStoreConnect.app")(function* (bundleId: string) {
+        const text = yield* api.get("/v1/apps", { "filter[bundleId]": bundleId, limit: pageSize })
+        const document = yield* decoded(AppsDocument, text, "apps")
+        return appOf(document, bundleId)
+      })
+
+      const builds = Effect.fn("AppStoreConnect.builds")(function* (appId: string, limit: number) {
+        yield* checkLimit(limit)
+        const text = yield* api.get("/v1/builds", {
+          "filter[app]": appId,
+          sort: "-uploadedDate",
+          include: "preReleaseVersion,buildBetaDetail",
+          limit,
         })
+        const document = yield* decoded(BuildsDocument, text, "builds")
+        return yield* buildsOf(document)
+      })
 
-        // One request with a token, and Apple's whole answer to it.
-        const ask = Effect.fn("AppStoreConnect.ask")(function* (
-          request: HttpClientRequest.HttpClientRequest,
-          renew: boolean,
-        ) {
-          const bearer = yield* token(renew)
-          const authorized = HttpClientRequest.bearerToken(request, bearer)
-          return yield* client.execute(authorized).pipe(
-            Effect.flatMap((response) => Effect.map(response.text, (text) => ({ status: response.status, text }))),
-            Effect.timeout(answerWithin),
-            Effect.catchTags({
-              TimeoutError: () =>
-                Effect.fail(
-                  new AppStoreConnectUnavailable({ reason: "App Store Connect didn't answer in 15 seconds" }),
-                ),
-              HttpClientError: () =>
-                Effect.fail(new AppStoreConnectUnavailable({ reason: "App Store Connect couldn't be reached" })),
-            }),
-          )
+      const build = Effect.fn("AppStoreConnect.build")(function* (appId: string, version: string, buildNumber: string) {
+        const text = yield* api.get("/v1/builds", {
+          "filter[app]": appId,
+          "filter[preReleaseVersion.version]": version,
+          "filter[version]": buildNumber,
+          "filter[preReleaseVersion.platform]": "IOS",
+          include: "preReleaseVersion,buildBetaDetail",
+          limit: pageSize,
         })
+        const document = yield* decoded(BuildsDocument, text, "builds")
+        const found = yield* buildsOf(document)
+        // Apple's filters aren't documented as exact: only a build with exactly this version and
+        // number is the one.
+        return Arr.findFirst(found, (each) => each.version === version && each.buildNumber === buildNumber)
+      })
 
-        // The text of Apple's answer to `request`; a token it refuses is renewed once.
-        const read = Effect.fn("AppStoreConnect.read")(function* (request: HttpClientRequest.HttpClientRequest) {
-          const first = yield* ask(request, false)
-          if (first.status !== 401) {
-            return yield* textOf(first)
-          }
-          const renewed = yield* ask(request, true)
-          return yield* textOf(renewed)
+      const appStoreVersions = Effect.fn("AppStoreConnect.appStoreVersions")(function* (appId: string, limit: number) {
+        yield* checkLimit(limit)
+        const texts = yield* api.pages(
+          `/v1/apps/${encodeURIComponent(appId)}/appStoreVersions`,
+          { include: "build,appStoreVersionPhasedRelease", limit: pageSize },
+          "App Store versions",
+        )
+        const pages = yield* Effect.forEach(texts, (text) =>
+          decoded(AppStoreVersionsDocument, text, "App Store versions").pipe(Effect.flatMap(appStoreVersionsOf)),
+        )
+        return Arr.take(Arr.sort(Arr.flatten(pages), latestCreatedFirst), limit)
+      })
+
+      const appLocales = Effect.fn("AppStoreConnect.appLocales")(function* (appId: string) {
+        // Apple has about 40 App Store locales, so an app info's localizations fit in the 50 it
+        // includes at most.
+        const text = yield* api.get(`/v1/apps/${encodeURIComponent(appId)}/appInfos`, {
+          include: "app,appInfoLocalizations",
+          "limit[appInfoLocalizations]": 50,
         })
+        const document = yield* decoded(AppInfosDocument, text, "app infos")
+        return yield* appLocalesOf(document, appId)
+      })
 
-        const app = Effect.fn("AppStoreConnect.app")(function* (bundleId: string) {
-          const request = HttpClientRequest.get(`${api}/v1/apps`, {
-            urlParams: { "filter[bundleId]": bundleId, limit: pageSize },
-            acceptJson: true,
-          })
-          const text = yield* read(request)
-          const document = yield* Schema.decodeEffect(AppsText)(text).pipe(
-            Effect.catchTag("SchemaError", unknownShape("apps")),
-          )
-          return appOf(document, bundleId)
-        })
+      const writes = publishing(api)
 
-        const builds = Effect.fn("AppStoreConnect.builds")(function* (appId: string, limit: number) {
-          yield* checkLimit(limit)
-          const request = HttpClientRequest.get(`${api}/v1/builds`, {
-            urlParams: {
-              "filter[app]": appId,
-              sort: "-uploadedDate",
-              include: "preReleaseVersion,buildBetaDetail",
-              limit,
-            },
-            acceptJson: true,
-          })
-          const text = yield* read(request)
-          const document = yield* Schema.decodeEffect(BuildsText)(text).pipe(
-            Effect.catchTag("SchemaError", unknownShape("builds")),
-          )
-          return yield* buildsOf(document)
-        })
+      return AppStoreConnect.of({ app, builds, build, appStoreVersions, appLocales, ...writes })
+    })
 
-        // Every App Store version on the page `request` asks for and on the pages after it.
-        const versionsFrom: (
-          request: HttpClientRequest.HttpClientRequest,
-          pagesBefore: number,
-        ) => Effect.Effect<ReadonlyArray<AppStoreVersion>, AppStoreConnectRefused | AppStoreConnectUnavailable> =
-          Effect.fn("AppStoreConnect.versionsFrom")(function* (
-            request: HttpClientRequest.HttpClientRequest,
-            pagesBefore: number,
-          ) {
-            // Not handled: an app with more than 2,000 App Store versions; it dies here. Reading it
-            // would take more pages, each a subrequest of the Worker's.
-            if (pagesBefore === mostPages) {
-              return yield* Effect.die(`An app has more than ${mostPages * pageSize} App Store versions`)
-            }
-            const text = yield* read(request)
-            const document = yield* Schema.decodeEffect(AppStoreVersionsText)(text).pipe(
-              Effect.catchTag("SchemaError", unknownShape("App Store versions")),
-            )
-            const versions = yield* appStoreVersionsOf(document)
-            const next = document.links.next
-            if (next === undefined) {
-              return versions
-            }
-            // The token goes only to Apple's API, whatever a link says.
-            if (!next.startsWith(`${api}/`)) {
-              return yield* Effect.die(`App Store Connect's next page is outside its API: ${next}`)
-            }
-            const nextRequest = HttpClientRequest.get(next, { acceptJson: true })
-            const rest = yield* versionsFrom(nextRequest, pagesBefore + 1)
-            return [...versions, ...rest]
-          })
-
-        const appStoreVersions = Effect.fn("AppStoreConnect.appStoreVersions")(function* (
-          appId: string,
-          limit: number,
-        ) {
-          yield* checkLimit(limit)
-          const request = HttpClientRequest.get(`${api}/v1/apps/${encodeURIComponent(appId)}/appStoreVersions`, {
-            urlParams: { include: "build,appStoreVersionPhasedRelease", limit: pageSize },
-            acceptJson: true,
-          })
-          const all = yield* versionsFrom(request, 0)
-          return Arr.take(Arr.sort(all, latestCreatedFirst), limit)
-        })
-
-        return AppStoreConnect.of({ app, builds, appStoreVersions })
-      }),
-    )
+  /** App Store Connect with `credentials`, as `make` builds it, for one key known when the host starts. */
+  static readonly layer = (
+    credentials: AppStoreConnectCredentials,
+    signing: Es256Signing,
+  ): Layer.Layer<AppStoreConnect, never, HttpClient.HttpClient> =>
+    Layer.effect(AppStoreConnect, AppStoreConnect.make(credentials, signing))
 }
-
-// Apple's answer, if it is a document to read; refusals and outages become the errors callers act on.
-const textOf = Effect.fnUntraced(function* (answer: { readonly status: number; readonly text: string }) {
-  if (answer.status === 200) {
-    return answer.text
-  }
-  const reason = yield* Schema.decodeEffect(ErrorText)(answer.text).pipe(
-    Effect.map((body) => `${body.errors[0].code}: ${body.errors[0].detail}`),
-    Effect.orElseSucceed(() => `HTTP ${answer.status}`),
-  )
-  if (answer.status === 401 || answer.status === 403) {
-    return yield* new AppStoreConnectRefused({ status: answer.status, reason })
-  }
-  if (answer.status === 429 || answer.status >= 500) {
-    return yield* new AppStoreConnectUnavailable({ reason })
-  }
-  // Not handled: other statuses, such as 404 for an app the team no longer has, or 400 for a
-  // request Apple won't take; they die with Apple's reason. Telling a removed app apart would take
-  // an error of its own in the contract.
-  return yield* Effect.die(`App Store Connect answered HTTP ${answer.status}: ${reason}`)
-})
 
 // A limit the contract doesn't allow is the caller's bug.
 const checkLimit = (limit: number) => {
   const allowed = Number.isInteger(limit) && limit >= 1 && limit <= pageSize
   return allowed ? Effect.void : Effect.die(`A limit is 1 to ${pageSize} items, not ${limit}`)
 }
-
-// An answer this client can't read is a defect: Apple changed, or this client is wrong.
-const unknownShape = (what: string) => (error: Schema.SchemaError) =>
-  Effect.die(`App Store Connect's answer of ${what} isn't in the shape this client reads: ${error.message}`)

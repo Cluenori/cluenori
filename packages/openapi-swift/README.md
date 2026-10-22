@@ -42,6 +42,9 @@ do {
 - **Named schemas only.** Every object, enum, and union is a schema of its own, which becomes a
   Swift type of that name; an inline one is refused, since its Swift name would be made up. A named
   primitive, such as a branded string, is that primitive.
+- **A copy is the same type.** A schema named `<Name>_<n>` that is the same as `<Name>`, as a
+  document names a second copy of one an operation annotates, such as with its status, is read as
+  `<Name>`, with no type of its own.
 - **What it reads:** objects, string enums, unions of objects told apart by the one constant
   property they share (such as `_tag`), arrays, dictionaries, free-form JSON (`JSONValue`), dates
   (`format: date-time`, ISO 8601 both ways), path and query parameters, JSON bodies, and errors:

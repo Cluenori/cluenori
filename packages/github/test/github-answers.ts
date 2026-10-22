@@ -162,3 +162,116 @@ export const errorJson = (message: string, status: number) => ({
   documentation_url: "https://docs.github.com/rest",
   status: String(status),
 })
+
+/** `GET /repos/{owner}/{repo}`: the repository, with fewer of its fields. */
+export const repositoryJson = {
+  id: 1296269,
+  node_id: "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+  name: "Hello-World",
+  full_name: "octocat/Hello-World",
+  owner: account("octocat", 1),
+  private: false,
+  html_url: page,
+  url: repo,
+  default_branch: "main",
+}
+
+/** A workflow run, as GitHub answers one and lists them: `conclusion` is null until it completes. */
+export const workflowRunJson = (run: {
+  readonly id: number
+  readonly status: string
+  readonly conclusion: string | null
+  readonly createdAt: string
+  readonly updatedAt?: string
+  readonly event?: string
+  readonly title?: string
+}) => ({
+  id: run.id,
+  name: "Promote to production",
+  node_id: "MDEyOldvcmtmbG93IFJ1bjI2OTI4OQ==",
+  check_suite_id: 42,
+  head_branch: "main",
+  head_sha: shas.released,
+  path: ".github/workflows/promote-to-prod.yml@main",
+  run_number: 562,
+  event: run.event ?? "workflow_dispatch",
+  display_title: run.title ?? "Promote to production",
+  status: run.status,
+  conclusion: run.conclusion,
+  workflow_id: 159038,
+  url: `${repo}/actions/runs/${run.id}`,
+  html_url: `${page}/actions/runs/${run.id}`,
+  pull_requests: [],
+  created_at: run.createdAt,
+  updated_at: run.updatedAt ?? run.createdAt,
+  actor: account("octocat", 1),
+  triggering_actor: account("octocat", 1),
+  run_attempt: 1,
+  run_started_at: run.createdAt,
+  jobs_url: `${repo}/actions/runs/${run.id}/jobs`,
+  logs_url: `${repo}/actions/runs/${run.id}/logs`,
+  workflow_url: `${repo}/actions/workflows/159038`,
+})
+
+/** `GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs`: one page. */
+export const workflowRunsJson = (runs: ReadonlyArray<ReturnType<typeof workflowRunJson>>) => ({
+  total_count: runs.length,
+  workflow_runs: runs,
+})
+
+/** A GitHub App's installation on an account, with fewer of its fields. */
+export const installationJson = (installation: {
+  readonly id: number
+  readonly login: string
+  readonly type: "User" | "Organization"
+  readonly selection: "all" | "selected"
+}) => ({
+  id: installation.id,
+  account: { ...account(installation.login, 2), type: installation.type },
+  repository_selection: installation.selection,
+  access_tokens_url: `https://api.github.com/app/installations/${installation.id}/access_tokens`,
+  repositories_url: "https://api.github.com/installation/repositories",
+  html_url:
+    installation.type === "Organization"
+      ? `https://github.com/organizations/${installation.login}/settings/installations/${installation.id}`
+      : `https://github.com/settings/installations/${installation.id}`,
+  app_id: 123456,
+  app_slug: "cluenori-test",
+  target_id: 2,
+  target_type: installation.type,
+  permissions: { actions: "write", contents: "read", metadata: "read" },
+  events: [],
+  created_at: "2026-10-01T09:00:00Z",
+  updated_at: "2026-10-01T09:00:00Z",
+  single_file_name: null,
+  suspended_at: null,
+  suspended_by: null,
+})
+
+/** `POST /app/installations/{installation_id}/access_tokens`: a token, of the tests' own. */
+export const installationTokenJson = (token: string, expiresAt: string) => ({
+  token,
+  expires_at: expiresAt,
+  permissions: { actions: "write", contents: "read", metadata: "read" },
+  repository_selection: "all",
+})
+
+/** `POST /app-manifests/{code}/conversions`: the app created, its secrets the tests' own. */
+export const manifestConversionJson = (secrets: { readonly pem: string; readonly webhookSecret: string | null }) => ({
+  id: 123456,
+  slug: "cluenori-test",
+  node_id: "MDxOkludGVncmF0aW9uMQ==",
+  owner: account("octocat", 1),
+  name: "Cluenori Test",
+  description: "",
+  external_url: "https://example.com",
+  html_url: "https://github.com/apps/cluenori-test",
+  created_at: "2026-10-22T10:00:00Z",
+  updated_at: "2026-10-22T10:00:00Z",
+  permissions: { actions: "write", contents: "read", metadata: "read" },
+  events: [],
+  client_id: "Iv23liTestClientNotReal",
+  client_secret: "test-client-secret-not-a-real-one",
+  webhook_secret: secrets.webhookSecret,
+  pem: secrets.pem,
+})

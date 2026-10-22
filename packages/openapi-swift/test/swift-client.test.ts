@@ -161,6 +161,27 @@ describe("swiftClient", () => {
     }),
   )
 
+  it.effect("writes a schema's copy, named <name>_1, as the one type it is the same as", () =>
+    Effect.gen(function* () {
+      const swift = yield* written({
+        ...notes,
+        paths: {
+          ...notes.paths,
+          "/api/notes/{note}/pin": {
+            post: {
+              operationId: "notes.pinNote",
+              parameters: [{ name: "note", in: "path", required: true, schema: ref("NoteId") }],
+              responses: { "201": { description: "Note", content: { "application/json": { schema: ref("Note_1") } } } },
+            },
+          },
+        },
+        components: { schemas: { ...notes.components.schemas, Note_1: notes.components.schemas.Note } },
+      })
+      assert.include(swift, "    public func pinNote(note: String) async throws(APIError) -> Note {")
+      assert.notInclude(swift, "Note_1")
+    }),
+  )
+
   it.effect("refuses what has no name to become a Swift type, saying where", () =>
     Effect.gen(function* () {
       const inlineObject = yield* refusal(

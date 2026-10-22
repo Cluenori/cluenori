@@ -105,6 +105,38 @@ const componentPrefix = `${schemasPath}/`
 const methods = { get: "GET", put: "PUT", post: "POST", patch: "PATCH", delete: "DELETE" } as const
 const isMethod = (key: string): key is keyof typeof methods => Object.hasOwn(methods, key)
 
+// Whether two JSON values are alike, whatever the order of their keys.
+const sameJson = (a: unknown, b: unknown): boolean => {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => sameJson(item, b[index]))
+    )
+  }
+  if (isRecord(a) && isRecord(b)) {
+    const keys = Object.keys(a)
+    return (
+      keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && sameJson(a[key], b[key]))
+    )
+  }
+  return a === b
+}
+
+// Schemas named `<name>_<n>` that are the same as `<name>`, each to that name. A document may name a
+// second copy of one schema so when an operation annotates it, such as with its status; it is still
+// one type.
+const copiesOf = (schemas: JsonRecord) =>
+  new Map(
+    Object.keys(schemas).flatMap((name) => {
+      const original = /^(.+)_\d+$/.exec(name)?.[1]
+      return original !== undefined && Object.hasOwn(schemas, original) && sameJson(schemas[original], schemas[name])
+        ? [[name, original] as const]
+        : []
+    }),
+  )
+
 // The one value of a single-valued string enum, the way a constant property is written.
 const constantOf = (schema: unknown) =>
   isRecord(schema) && schema["type"] === "string" && isStrings(schema["enum"]) && schema["enum"].length === 1
@@ -120,6 +152,7 @@ export const readDocument = Effect.fn("readDocument")(function* (document: unkno
   const components = isRecord(document["components"]) ? document["components"] : {}
   const schemas = isRecord(components["schemas"]) ? components["schemas"] : {}
   const paths = isRecord(document["paths"]) ? document["paths"] : {}
+  const copies = copiesOf(schemas)
 
   for (const name of Object.keys(schemas)) {
     if (!isIdentifier(name) || swiftName(name) !== name) {
@@ -134,7 +167,8 @@ export const readDocument = Effect.fn("readDocument")(function* (document: unkno
       }
       const ref = schema["$ref"]
       if (typeof ref === "string") {
-        const name = ref.startsWith(componentPrefix) ? ref.slice(componentPrefix.length) : undefined
+        const referenced = ref.startsWith(componentPrefix) ? ref.slice(componentPrefix.length) : undefined
+        const name = referenced === undefined ? undefined : (copies.get(referenced) ?? referenced)
         if (name === undefined || !Object.hasOwn(schemas, name)) {
           return yield* refused(path, `a reference to ${ref}, which isn't one of the document's schemas`)
         }
@@ -187,7 +221,7 @@ export const readDocument = Effect.fn("readDocument")(function* (document: unkno
   const declarations: Array<Declaration> = []
   for (const [name, schema] of Object.entries(schemas)) {
     const path = at(schemasPath, name)
-    if (!isRecord(schema) || isPrimitive(schema)) {
+    if (!isRecord(schema) || isPrimitive(schema) || copies.has(name)) {
       continue
     }
     if (schema["type"] === "string" && isStrings(schema["enum"])) {
@@ -218,7 +252,7 @@ export const readDocument = Effect.fn("readDocument")(function* (document: unkno
   for (const [name, schema] of Object.entries(schemas)) {
     const path = at(schemasPath, name)
     const members = isRecord(schema) ? (schema["anyOf"] ?? schema["oneOf"]) : undefined
-    if (!Array.isArray(members)) {
+    if (!Array.isArray(members) || copies.has(name)) {
       continue
     }
     const types: Array<Extract<Declaration, { readonly _tag: "Struct" }>> = []

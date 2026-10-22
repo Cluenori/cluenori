@@ -1,46 +1,20 @@
-import type { Es256Signing } from "@bagatka/es256-jwt"
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted, Result, Schema } from "effect"
-import { Base64, Base64Url } from "effect/encoding"
+import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Option, Result, Schema } from "effect"
+import { Base64Url } from "effect/encoding"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 
 import type { AppStoreConnectRefused, AppStoreConnectUnavailable } from "../src/index.ts"
 import { AppStoreConnect } from "../src/index.ts"
+import { credentials, newKey, subtle } from "./signing-key.ts"
 
-// The runtime's Web Crypto and `Response`, which tests outside a runtime with their types can't
+// The runtime's `Response` and `TextDecoder`, which tests outside a runtime with their types can't
 // name: the parts these tests use.
-declare const crypto: {
-  readonly subtle: Es256Signing & {
-    generateKey(
-      algorithm: { readonly name: "ECDSA"; readonly namedCurve: "P-256" },
-      extractable: true,
-      keyUsages: Array<"sign" | "verify">,
-    ): Promise<{ readonly privateKey: unknown; readonly publicKey: unknown }>
-    exportKey(format: "pkcs8", key: unknown): Promise<ArrayBuffer>
-    verify(
-      algorithm: { readonly name: "ECDSA"; readonly hash: "SHA-256" },
-      key: unknown,
-      signature: Uint8Array,
-      data: Uint8Array,
-    ): Promise<boolean>
-  }
-}
 declare const TextDecoder: new () => { readonly decode: (input: Uint8Array) => string }
 declare const Response: new (
   body: string | null,
   init: { readonly status: number; readonly headers?: Readonly<Record<string, string>> },
 ) => object
-
-// A key of the tests' own, as App Store Connect's `.p8` file holds one.
-const newKey = Effect.gen(function* () {
-  const pair = yield* Effect.promise(() =>
-    crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]),
-  )
-  const der = new Uint8Array(yield* Effect.promise(() => crypto.subtle.exportKey("pkcs8", pair.privateKey)))
-  const pem = `-----BEGIN PRIVATE KEY-----\n${Base64.encode(der)}\n-----END PRIVATE KEY-----\n`
-  return { pem, publicKey: pair.publicKey }
-})
 
 const bytesOf = (base64Url: string | undefined) =>
   Result.getOrElse(Base64Url.decode(base64Url ?? ""), () => new Uint8Array(0))
@@ -90,19 +64,12 @@ const fakeAppStoreConnect = (answers: Array<Answer>) => {
   return { asked, waiting, layer: Layer.succeed(HttpClient.HttpClient, client) }
 }
 
-const credentials = (pem: string) => ({
-  key: Redacted.make(pem),
-  keyId: "2X9R4HXF34",
-  issuerId: "57246542-96fe-1a63-e053-0824d011072a",
-})
-
 // Runs `program` with App Store Connect on `pem`, through `fake`.
 const withAppStoreConnect = <A, E>(
   pem: string,
   fake: ReturnType<typeof fakeAppStoreConnect>,
   program: Effect.Effect<A, E, AppStoreConnect>,
-) =>
-  program.pipe(Effect.provide(AppStoreConnect.layer(credentials(pem), crypto.subtle).pipe(Layer.provide(fake.layer))))
+) => program.pipe(Effect.provide(AppStoreConnect.layer(credentials(pem), subtle).pipe(Layer.provide(fake.layer))))
 
 const findApp = (bundleId: string) =>
   Effect.gen(function* () {
@@ -354,7 +321,7 @@ describe("AppStoreConnect", () => {
       )
       assert.strictEqual(Number(claimed?.[2]) - Number(claimed?.[1]), 20 * 60)
       const verified = yield* Effect.promise(() =>
-        crypto.subtle.verify(
+        subtle.verify(
           { name: "ECDSA", hash: "SHA-256" },
           key.publicKey,
           bytesOf(signature),

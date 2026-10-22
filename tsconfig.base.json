@@ -42,6 +42,8 @@
         // Several Effect modules we rely on are marked unstable. Each one is allowed here by name
         // and pinned to one exact version in the catalog, so using a new one is a visible decision.
         "allowedUnstableApis": [
+          // Provider-neutral language models, which @bagatka/cloudflare-workers-ai provides on Workers AI.
+          "effect/ai",
           "effect/cli",
           "effect/http",
           "effect/http-api",
