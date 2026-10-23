@@ -409,6 +409,16 @@ Each project gets public pages on its own domain or a subdomain, with its brand:
 
 The data inventory lists what each component collects, from its SDK settings. Cluenori uses it to draft the privacy policy, the App Store privacy details and the Google Play Data safety answers. I check them and submit them myself.
 
+## Proposed: knowing each feature in the field
+
+Proposed on 2026-10-23, not yet decided. Each item extends a page above rather than adding a module.
+
+- **Field health per feature.** The SDK wraps each `feature()` in a MetricKit signpost named by its key, so iOS reports CPU time, memory, disk writes and hitch rate per feature, every day, from real devices. A screen declares its budgets: first frame, tap to next frame, requests, bytes and memory. The SDK measures them in a sample of sessions. Both appear on the feature page's Engineering row, by release and device class.
+- **A rollout that stops itself.** During an App Store phased release, Cluenori compares each feature's crashes, hangs, hitches, energy and working number with the release before. A regression beyond its noise pauses the rollout and alerts the feature's owner. Resuming is my action.
+- **Intents and outcomes.** `intent('export.share')` opens what a person set out to do; it ends as done, abandoned at a step, or failed with an error code, across screens and launches. The feature page shows unfinished intents, and frustration counted without recording the screen: repeated taps, taps on what isn't tappable, back-and-forth between two screens, long hesitation. Searches that find nothing count as demand.
+- **Events as a contract.** Events and funnels are declared in the feature catalog, and Swift, Kotlin and TypeScript types are generated from it. An unknown event doesn't compile, and ingestion refuses one.
+- **Replay by real views.** For an app whose views draw only plain data, the SDK keeps the last minute of each screen's state in memory. A crash or a feedback report carries it, and so does a support session the person agrees to. Fields marked personal are never kept, and other people's records are kept by ID only. The replay renders the app's own views at that release, step by step, so a developer or an agent sees exactly what the person saw, and can turn it into a failing test.
+
 ## SDK and integrations
 
 The SDK has a few calls, and ready views for the client kit (Foundation). Integrations add money, code, store and deploy data without more code.
