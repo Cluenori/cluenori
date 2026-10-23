@@ -1,6 +1,6 @@
 import type { ProjectKey } from "@cluenori/foundation"
 import { canSee } from "@cluenori/members"
-import type { TodayItem } from "@cluenori/today"
+import type { ProjectPulse, TodayItem } from "@cluenori/today"
 import { sortToday } from "@cluenori/today"
 import { DateTime, Effect, Exit } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
@@ -16,8 +16,8 @@ import { WorkspaceObjects } from "./workspace-objects.ts"
 const askedAtOnce = 8
 
 /**
- * Serves Today: the object of every project the member sees asked for its items, and what they say
- * in Today's order.
+ * Serves Today: the object of every project the member sees asked for its items and its pulse, and
+ * what they say in Today's order, the pulses in the projects' order.
  */
 export const TodayHandlers = HttpApiBuilder.group(CluenoriApi, "today", (handlers) =>
   handlers.handle("today", () =>
@@ -33,17 +33,19 @@ export const TodayHandlers = HttpApiBuilder.group(CluenoriApi, "today", (handler
         { concurrency: askedAtOnce },
       )
       const items: Array<TodayItem> = []
+      const pulses: Array<ProjectPulse> = []
       const unanswered: Array<ProjectKey> = []
       for (const [index, answer] of answers.entries()) {
         const project = projects[index]
         if (Exit.isSuccess(answer)) {
-          items.push(...answer.value)
+          items.push(...answer.value.items)
+          pulses.push(answer.value.pulse)
         } else if (project !== undefined) {
           yield* Effect.logWarning("A project didn't answer Today", answer.cause)
           unanswered.push(project.key)
         }
       }
-      return { items: sortToday(items), projects, unanswered, at: yield* DateTime.now }
+      return { items: sortToday(items), projects, unanswered, pulses, at: yield* DateTime.now }
     }),
   ),
 )

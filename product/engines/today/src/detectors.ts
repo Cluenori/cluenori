@@ -68,12 +68,15 @@ const rankOf = (item: TodayItem) => {
       return item.ongoing ? 1 : 3
     case "slower":
       return 4
-    case "silent":
+    case "promotion":
       return 5
+    case "silent":
+      return 6
   }
 }
 
-// Within a kind, the more urgent first: the latest incident or error, the most slowed operation.
+// Within a kind, the more urgent first: the latest incident or error, the most slowed operation, the
+// promotion that ended latest or, while it hasn't, started latest.
 const weightOf = (item: TodayItem) => {
   switch (item._tag) {
     case "incident":
@@ -82,6 +85,8 @@ const weightOf = (item: TodayItem) => {
       return -DateTime.toEpochMillis(item.error.lastSeen)
     case "slower":
       return -item.p95Ms / item.usualP95Ms
+    case "promotion":
+      return -DateTime.toEpochMillis(item.endedAt ?? item.startedAt)
     case "silent":
       return 0
   }

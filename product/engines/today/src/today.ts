@@ -1,17 +1,27 @@
-import { Period } from "@cluenori/foundation"
+import type { EnvironmentKey } from "@cluenori/foundation"
+import { calendarDayOfNumber, dayNumberOf, dayStartMillis, Period } from "@cluenori/foundation"
 import { Incidents } from "@cluenori/incidents"
 import type { ProjectNotFound } from "@cluenori/projects"
 import { isProduction, Projects } from "@cluenori/projects"
-import type { ErrorTable, OperationTable } from "@cluenori/signals"
-import { Signals } from "@cluenori/signals"
+import type { AppUsage, ErrorTable, OperationQuery, OperationTable } from "@cluenori/signals"
+import { AppSignals, Signals, stepMillis } from "@cluenori/signals"
 import { Context, DateTime, Effect, Layer } from "effect"
 
 import { itemsOf } from "./detectors.ts"
+import type { ProjectPulse } from "./project-pulse.ts"
+import { pulseOf } from "./project-pulse.ts"
 import type { TodayItem } from "./today-item.ts"
 
+const hourMillis = stepMillis["1h"]
+
+// The stored day `day` of one environment's usage, where it is counted: a day before its apps sent
+// anything isn't listed, as it is unknown, not zero.
+const countedOn = (day: number) => (usage: AppUsage) =>
+  usage.days.filter((counted) => counted.day === calendarDayOfNumber(day))
+
 /**
- * What needs attention in one project now. Runs inside the Durable Object that holds the project's
- * database, beside the engines it reads.
+ * What needs attention in one project now, and how it is going. Runs inside the Durable Object that
+ * holds the project's database, beside the engines it reads.
  */
 export class Today extends Context.Service<
   Today,
@@ -21,18 +31,40 @@ export class Today extends Context.Service<
      * its open incidents, its errors new or happening now, its operations slower than over the 7
      * days before, and the project itself when it has components but sent nothing in the last day.
      * Reads only: the incidents, the errors of the last day in each production environment, and the
-     * operations of the last day and of the 7 days before.
+     * operations of the last day and of the 7 days before. Modules' items come from their own
+     * detectors, which the host composes beside these.
      */
     readonly items: Effect.Effect<ReadonlyArray<TodayItem>, ProjectNotFound>
+    /**
+     * The project's pulse at the clock's time, in the environments it calls production: its load by
+     * the hour over the current hour so far and the 23 before it, summed over each production
+     * environment its telemetry named then, or over all of it when it named none; and its apps'
+     * people on the latest whole UTC day and the same day a week before, summed over its production
+     * environments. Reads only: the environments the hour counts named, one load series per
+     * production environment among them, and two one-day usage questions per production
+     * environment.
+     */
+    readonly pulse: Effect.Effect<ProjectPulse, ProjectNotFound>
   }
 >()("@cluenori/today/today") {
-  /** Builds the engine on the object's Incidents, Signals, and Projects. */
+  /** Builds the engine on the object's Incidents, Signals, AppSignals, and Projects. */
   static readonly layer = Layer.effect(
     Today,
     Effect.gen(function* () {
       const incidents = yield* Incidents
       const signals = yield* Signals
+      const apps = yield* AppSignals
       const projects = yield* Projects
+
+      // One environment's apps' usage on one stored day.
+      const usageOn = (day: number) => (environment: EnvironmentKey) =>
+        apps.usage({
+          period: new Period({
+            from: DateTime.makeUnsafe(dayStartMillis(day)),
+            to: DateTime.makeUnsafe(dayStartMillis(day + 1)),
+          }),
+          environment,
+        })
 
       const items = Effect.gen(function* () {
         const project = yield* projects.project
@@ -85,7 +117,43 @@ export class Today extends Context.Service<
         })
       }).pipe(Effect.withSpan("Today.items"))
 
-      return Today.of({ items })
+      const pulse = Effect.gen(function* () {
+        const project = yield* projects.project
+        const settings = yield* projects.settings
+        const now = yield* DateTime.now
+        const nowMillis = DateTime.toEpochMillis(now)
+        // The current hour so far and the 23 before it: every point a whole hour but the last.
+        const hoursFrom = Math.floor(nowMillis / hourMillis) * hourMillis - 23 * hourMillis
+        const lastHours = new Period({ from: DateTime.makeUnsafe(hoursFrom), to: now })
+        const named = yield* signals.environments(lastHours)
+        // Telemetry without an environment is production by rule; when the telemetry named none, all
+        // of it is asked once. Not handled: telemetry with and without an environment in the same
+        // hours, whose part without one is left out; counting it takes load that filters by "no
+        // environment".
+        const asked: ReadonlyArray<OperationQuery> =
+          named.length === 0
+            ? [{ period: lastHours }]
+            : named
+                .filter((environment) => isProduction(settings, environment))
+                .map((environment) => ({ period: lastHours, environment }))
+        const load = yield* Effect.forEach(asked, (query) => signals.loadOverTime(query, "1h"))
+        // The latest whole UTC day, and the same day a week before, each in every production
+        // environment. Apps' signals always name their environment, so none is left out. Not
+        // handled: a person active in two production environments that day counts in each; counting
+        // them once takes usage across several environments.
+        const latestDay = dayNumberOf(nowMillis) - 1
+        const weekBeforeDay = latestDay - 7
+        const latest = yield* Effect.forEach(settings.productionEnvironments, usageOn(latestDay))
+        const weekBefore = yield* Effect.forEach(settings.productionEnvironments, usageOn(weekBeforeDay))
+        return pulseOf({
+          project: project.key,
+          load,
+          latest: latest.flatMap(countedOn(latestDay)),
+          weekBefore: weekBefore.flatMap(countedOn(weekBeforeDay)),
+        })
+      }).pipe(Effect.withSpan("Today.pulse"))
+
+      return Today.of({ items, pulse })
     }),
   )
 }

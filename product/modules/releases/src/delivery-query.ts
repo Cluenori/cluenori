@@ -38,8 +38,15 @@ const unsuccessful = (state: Promotion["state"]) =>
 interface Stage {
   readonly environment: EnvironmentKey
   readonly target: DeployTarget | undefined
+  /** The release that reached it last, and when. */
   readonly current: { readonly release: KnownRelease; readonly at: DateTime.Utc } | undefined
+  /** The promotion to it that hasn't ended. */
   readonly promotion: Promotion | undefined
+  /**
+   * The latest promotion to it, when it ended without its release getting there and nothing reached
+   * it since it started.
+   */
+  readonly failedPromotion: Promotion | undefined
 }
 
 // What can go to `stage` next: nothing without a target or while a promotion to it hasn't ended; to
@@ -77,6 +84,59 @@ const currentIn = (releases: ReadonlyArray<KnownRelease>, target: DeployTarget |
     .toSorted((a, b) => DateTime.toEpochMillis(b.at) - DateTime.toEpochMillis(a.at))[0]
 
 /**
+ * Each of the project's components, in the project's order, with its environments as delivery
+ * reads them: those of its deploy targets, in their order, else those it ran or was deployed in, by
+ * name; each with the release that reached it last, the promotion to it that hasn't ended, and the
+ * latest that ended without its release getting there while nothing reached it since; and every
+ * release the module knows. Reads only the project's database: the module's records and the
+ * releases Signals counted.
+ */
+export const stagesOf = Effect.gen(function* () {
+  const projects = yield* Projects
+  const records = yield* ReleaseRecords
+  const components = yield* projects.components.pipe(Effect.catchTag("ProjectNotFound", () => Effect.succeed([])))
+  const releases = yield* knownReleases
+  const unended = yield* records.unendedPromotions()
+  const latest = yield* records.latestPromotions
+  const staged = components.map((component) => {
+    const own = releases.filter((release) => release.component === component.key)
+    const targets = component.deployTargets ?? []
+    const environments =
+      targets.length > 0
+        ? targets.map((target) => ({ environment: target.environment, target }))
+        : [...new Set(own.flatMap((release) => (release.environment === undefined ? [] : [release.environment])))]
+            .toSorted()
+            .map((environment) => ({ environment, target: undefined }))
+    const stages = environments.map(({ environment, target }): Stage => {
+      const current = currentIn(
+        own.filter((release) => release.environment === environment),
+        target,
+      )
+      const last = latest.find(
+        (promotion) => promotion.component === component.key && promotion.environment === environment,
+      )
+      const failedPromotion =
+        last !== undefined &&
+        unsuccessful(last.state) &&
+        (current === undefined || DateTime.toEpochMillis(current.at) < DateTime.toEpochMillis(last.startedAt))
+          ? last
+          : undefined
+      return {
+        environment,
+        target,
+        current,
+        promotion: unended.find(
+          (promotion) => promotion.component === component.key && promotion.environment === environment,
+        ),
+        failedPromotion,
+      }
+    })
+    return { component, stages }
+  })
+  return { components: staged, releases }
+}).pipe(Effect.withSpan("Releases.stages"))
+
+/**
  * Each component's delivery: for each of its environments, the release that reached it last (an App
  * Store app's, the build out on the App Store; a TestFlight app's, the latest build processed;
  * elsewhere, the release last deployed or first run there), the promotion to it that hasn't ended,
@@ -85,12 +145,8 @@ const currentIn = (releases: ReadonlyArray<KnownRelease>, target: DeployTarget |
  * release there. Reads each current release's telemetry, as `releases` does a release's.
  */
 export const deliveryOf = Effect.gen(function* () {
-  const projects = yield* Projects
   const records = yield* ReleaseRecords
-  const components = yield* projects.components.pipe(Effect.catchTag("ProjectNotFound", () => Effect.succeed([])))
-  const releases = yield* knownReleases
-  const unended = yield* records.unendedPromotions()
-  const latest = yield* records.latestPromotions
+  const { components, releases } = yield* stagesOf
   const versions = yield* records.versionLines
   // When each release first appeared anywhere, which orders a component's releases.
   const firstAppeared = new Map<string, number>()
@@ -102,26 +158,7 @@ export const deliveryOf = Effect.gen(function* () {
     release === undefined ? -Infinity : (firstAppeared.get(`${release.component}\u0000${release.release}`) ?? -Infinity)
 
   const delivered: Array<ComponentDelivery> = []
-  for (const component of components) {
-    const own = releases.filter((release) => release.component === component.key)
-    const targets = component.deployTargets ?? []
-    const environments =
-      targets.length > 0
-        ? targets.map((target) => ({ environment: target.environment, target }))
-        : [...new Set(own.flatMap((release) => (release.environment === undefined ? [] : [release.environment])))]
-            .toSorted()
-            .map((environment) => ({ environment, target: undefined }))
-    const stages: Array<Stage> = environments.map(({ environment, target }) => ({
-      environment,
-      target,
-      current: currentIn(
-        own.filter((release) => release.environment === environment),
-        target,
-      ),
-      promotion: unended.find(
-        (promotion) => promotion.component === component.key && promotion.environment === environment,
-      ),
-    }))
+  for (const { component, stages } of components) {
     const environmentDeliveries: Array<EnvironmentDelivery> = []
     for (const [index, stage] of stages.entries()) {
       const next = nextStepOf(stage, stages[index - 1], appeared)
@@ -129,22 +166,12 @@ export const deliveryOf = Effect.gen(function* () {
         stage.current === undefined
           ? undefined
           : { summary: (yield* summaryOf(releases, stage.current.release)).summary, since: stage.current.at }
-      const last = latest.find(
-        (promotion) => promotion.component === component.key && promotion.environment === stage.environment,
-      )
-      const failedPromotion =
-        last !== undefined &&
-        unsuccessful(last.state) &&
-        (stage.current === undefined ||
-          DateTime.toEpochMillis(stage.current.at) < DateTime.toEpochMillis(last.startedAt))
-          ? last
-          : undefined
       environmentDeliveries.push({
         environment: stage.environment,
         ...(stage.target === undefined ? {} : { target: stage.target }),
         ...(current === undefined ? {} : { current }),
         ...(stage.promotion === undefined ? {} : { promotion: stage.promotion }),
-        ...(failedPromotion === undefined ? {} : { failedPromotion }),
+        ...(stage.failedPromotion === undefined ? {} : { failedPromotion: stage.failedPromotion }),
         ...(next === undefined ? {} : { next }),
       })
     }

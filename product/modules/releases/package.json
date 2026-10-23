@@ -18,6 +18,7 @@
     "@cluenori/manifest": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/signals": "workspace:*",
+    "@cluenori/today": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

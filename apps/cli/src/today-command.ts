@@ -1,4 +1,4 @@
-import type { TodayItem } from "@cluenori/today"
+import type { ProjectPulse, PromotionItem, TodayItem } from "@cluenori/today"
 import { Console, Effect } from "effect"
 import { Command } from "effect/cli"
 
@@ -15,6 +15,43 @@ const errorKind = (item: { readonly isNew: boolean; readonly ongoing: boolean })
   return item.ongoing ? "Error, now" : "New error"
 }
 
+// What a promotion needs, in a sentence.
+const promotionText = (item: PromotionItem) => {
+  const what = `${item.release} of ${item.component}`
+  const at = utcMinute(item.endedAt ?? item.startedAt)
+  switch (item.state) {
+    case "approved":
+      return `${what}, approved in App Store review, to release in ${item.environment}`
+    case "waiting":
+      return `${what}, waiting on GitHub for someone to approve ${item.environment}`
+    case "failed":
+      return `${what}, failed to reach ${item.environment} at ${at}`
+    case "rejected":
+      return `${what}, rejected in App Store review for ${item.environment} at ${at}`
+    case "lost":
+      return `${what}, lost on its way to ${item.environment} at ${at}; GitHub or App Store Connect has the rest`
+  }
+}
+
+// `1 person`, `310 people`.
+const people = (value: number) => (value === 1 ? "1 person" : `${count(value)} people`)
+
+// How a project is going: its load over the last 24 hours, and its apps' people when it has any.
+const pulseText = (pulse: ProjectPulse) => {
+  const ran = pulse.load.reduce((total, hour) => total + hour.count, 0)
+  const failed = pulse.load.reduce((total, hour) => total + hour.errors, 0)
+  const load =
+    pulse.load.length === 0
+      ? "nothing reported in the last 24 hours"
+      : `${count(ran)} operations in the last 24 hours, ${count(failed)} failed`
+  if (pulse.people === undefined) {
+    return load
+  }
+  const { latest, weekBefore } = pulse.people
+  const before = weekBefore === undefined ? "" : `, ${count(weekBefore.people)} a week before`
+  return `${load}; ${people(latest.people)} on ${latest.day}${before}`
+}
+
 // What an item is, and its evidence, in two columns.
 const describe = (item: TodayItem): readonly [string, string] => {
   switch (item._tag) {
@@ -29,6 +66,11 @@ const describe = (item: TodayItem): readonly [string, string] => {
       return [
         "Slower",
         `${item.operation}: p95 ${milliseconds(item.p95Ms)} over the last day, usually ${milliseconds(item.usualP95Ms)}`,
+      ]
+    case "promotion":
+      return [
+        item.state === "approved" || item.state === "waiting" ? "Release waits" : "Release failed",
+        promotionText(item),
       ]
     case "silent":
       return [
@@ -60,6 +102,17 @@ export const today = Command.make("today", { local }, (input) =>
     for (const [kind, evidence, project] of rows) {
       yield* Console.log(`${kind.padEnd(kindWidth)}  ${project.padEnd(projectWidth)}  ${evidence}`)
     }
+    // Each project's pulse, from a deployment that sends them.
+    const pulses = (list.pulses ?? []).map(
+      (pulse) => [names.get(pulse.project) ?? pulse.project, pulseText(pulse)] as const,
+    )
+    if (pulses.length > 0) {
+      const nameWidth = Math.max(0, ...pulses.map(([name]) => name.length))
+      yield* Console.log("\nHow each project is going, in production:")
+      for (const [name, text] of pulses) {
+        yield* Console.log(`${name.padEnd(nameWidth)}  ${text}`)
+      }
+    }
     if (list.unanswered.length > 0) {
       yield* Console.log(
         `\nThese projects didn't answer, so what they would show is missing: ${list.unanswered.join(", ")}.`,
@@ -67,5 +120,7 @@ export const today = Command.make("today", { local }, (input) =>
     }
   }),
 ).pipe(
-  Command.withDescription("What needs you now across every project: incidents, errors, slower operations, silence."),
+  Command.withDescription(
+    "What needs you now across every project: incidents, errors, slower operations, releases waiting or failed, silence; and how each project is going.",
+  ),
 )

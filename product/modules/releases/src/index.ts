@@ -2,9 +2,9 @@
  * Releases: each component's versions, as its telemetry, its CI's deploy reports, and App Store
  * Connect know them, each compared with the one before it, with its commit and what changed in its
  * repository since; promoting one to an environment, by starting its deploy workflow on GitHub;
- * and each app's version policy, which releases must update and which are offered one.
- * Reads Signals' counts and errors by release and the project's incidents; keeps commits, changes,
- * store builds, deploys and promotions of its own.
+ * and each app's version policy, which releases must update and which are offered one; and its
+ * Today detector, the promotions that need a member. Reads Signals' counts and errors by release and
+ * the project's incidents; keeps commits, changes, store builds, deploys and promotions of its own.
  */
 export {
   ChangedCommit,
@@ -41,6 +41,7 @@ export {
   SaveNotes,
 } from "./note.ts"
 export { ComponentDelivery, CurrentRelease, Delivery, EnvironmentDelivery, NextStep } from "./delivery.ts"
+export { promotionItems } from "./promotion-items.ts"
 export { defaultNotesStyle } from "./notes.ts"
 export {
   BuildNumber,

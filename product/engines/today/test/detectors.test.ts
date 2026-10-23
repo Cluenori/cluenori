@@ -1,4 +1,12 @@
-import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ProjectKey } from "@cluenori/foundation"
+import {
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  Period,
+  ProjectKey,
+  ReleaseVersion,
+  Uuidv7,
+} from "@cluenori/foundation"
 import type { IncidentList } from "@cluenori/incidents"
 import { Incident, IncidentId } from "@cluenori/incidents"
 import type { ErrorGroup, OperationRow, OperationTable } from "@cluenori/signals"
@@ -75,10 +83,37 @@ const quiet: ProjectState = {
   now,
 }
 
+// A promotion of notes-ios to production, needing a member as `state` says.
+const promotion = (
+  id: string,
+  state: "approved" | "waiting" | "failed" | "rejected" | "lost",
+  startedAt: number,
+  endedAt?: number,
+): TodayItem => ({
+  _tag: "promotion",
+  project: notes,
+  component: ComponentKey.make("notes-ios"),
+  environment: EnvironmentKey.make("production"),
+  release: ReleaseVersion.make("2.5.0+31"),
+  promotion: Uuidv7.make(`019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f6${id}`),
+  state,
+  startedAt: at(startedAt),
+  ...(endedAt === undefined ? {} : { endedAt: at(endedAt) }),
+})
+
 const tags = (items: ReadonlyArray<TodayItem>) =>
-  items.map((item) =>
-    item._tag === "incident" ? `incident ${item.incident.id.slice(-1)}` : `${item._tag} ${item.project}`,
-  )
+  items.map((item) => {
+    switch (item._tag) {
+      case "incident":
+        return `incident ${item.incident.id.slice(-1)}`
+      case "promotion":
+        return `promotion ${item.state}`
+      case "error":
+      case "slower":
+      case "silent":
+        return `${item._tag} ${item.project}`
+    }
+  })
 
 describe("itemsOf", () => {
   it("has nothing for a project going as usual", () => {
@@ -139,10 +174,13 @@ describe("itemsOf", () => {
 })
 
 describe("sortToday", () => {
-  it("puts incidents not acknowledged and errors happening now before the rest, the latest first", () => {
+  it("puts incidents not acknowledged and errors happening now first, promotions before silence, the latest first", () => {
     const atlas = ProjectKey.make("atlas")
     const items = sortToday([
       { _tag: "silent", project: atlas },
+      promotion("1", "approved", now - 3 * hour),
+      promotion("2", "waiting", now - hour),
+      promotion("3", "failed", now - 2 * hour, now - 30 * minute),
       ...itemsOf({
         ...quiet,
         incidents: {
@@ -169,6 +207,10 @@ describe("sortToday", () => {
       "incident a",
       "error notes",
       "slower notes",
+      // After slower operations, the promotion that ended or started latest first.
+      "promotion failed",
+      "promotion waiting",
+      "promotion approved",
       "silent atlas",
     ])
   })

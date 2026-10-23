@@ -14,7 +14,7 @@ const quiet = ProjectKey.make("today-quiet")
 
 // Real time: the Worker counts operations by the time they started, against its own clock.
 layer(CluenoriClient.layer, { excludeTestServices: true })("today", (it) => {
-  it.effect("puts a failing operation's incident first, and names a project that sends nothing", () =>
+  it.effect("puts a failing operation's incident first, names a project that sends nothing, and has pulses", () =>
     Effect.gen(function* () {
       const client = yield* CluenoriClient
       const http = yield* HttpClient.HttpClient
@@ -65,6 +65,20 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("today", (it) => {
         [failing, quiet],
       )
       assert.deepStrictEqual(today.unanswered, [])
+
+      // Each project's pulse, in the projects' order: the failing one's 10 operations, all failed, in
+      // the hour they ran; the quiet one's nothing, and neither has apps' people.
+      const pulseOf = (project: ProjectKey) => today.pulses?.find((pulse) => pulse.project === project)
+      assert.deepStrictEqual(
+        today.pulses?.map((pulse) => pulse.project),
+        today.projects.map((project) => project.key),
+      )
+      assert.deepStrictEqual(
+        pulseOf(failing)?.load.map((hour) => [DateTime.toEpochMillis(hour.start), hour.count, hour.errors]),
+        [[Math.floor((now - 1_000) / 3_600_000) * 3_600_000, 10, 10]],
+      )
+      assert.isUndefined(pulseOf(failing)?.people)
+      assert.deepStrictEqual(pulseOf(quiet), { project: quiet, load: [] })
     }),
   )
 })

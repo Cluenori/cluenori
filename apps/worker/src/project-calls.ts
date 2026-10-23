@@ -60,7 +60,7 @@ import {
   TraceExport,
   TraceView,
 } from "@cluenori/signals"
-import { TodayItem } from "@cluenori/today"
+import { ProjectToday } from "@cluenori/today"
 import { Schema } from "effect"
 
 import type { ObjectCall, PlainSchema } from "./object-calls.ts"
@@ -237,7 +237,7 @@ export const projectCalls = {
     Schema.Void,
     Schema.Union([ProjectNotFound, MonitorNotFound]),
   ),
-  today: projectCall("today", Schema.Void, Schema.Array(TodayItem), ProjectNotFound),
+  today: projectCall("today", Schema.Void, ProjectToday, ProjectNotFound),
 }
 
 /**

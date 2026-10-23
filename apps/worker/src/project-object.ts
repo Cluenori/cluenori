@@ -13,7 +13,7 @@ import { gitHubAsApp } from "@cluenori/github-app"
 import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
 import type { ReleaseRecords, ReleaseSources } from "@cluenori/releases"
-import { releasesLayer, releasesModule, versionPolicyFor } from "@cluenori/releases"
+import { promotionItems, releasesLayer, releasesModule, versionPolicyFor } from "@cluenori/releases"
 import { AppSignals, SdkKeyRejected, Signals } from "@cluenori/signals"
 import { Today } from "@cluenori/today"
 import { webCryptoLayer } from "@cluenori/web-crypto"
@@ -380,12 +380,17 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       }),
     new ProjectNotFound({ project }),
   ),
+  // Today's items and the project's pulse. Modules' Today detectors are composed here, each on its
+  // own line beside the engines' items, until the module contract has its `today` part.
   today: served(
     projectCalls.today,
     () =>
       Effect.gen(function* () {
         const today = yield* Today
-        return yield* today.items
+        const items = yield* today.items
+        const promotions = yield* promotionItems
+        const pulse = yield* today.pulse
+        return { items: [...items, ...promotions], pulse }
       }),
     new ProjectNotFound({ project }),
   ),

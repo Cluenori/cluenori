@@ -3107,7 +3107,7 @@
             }
           }
         },
-        "description": "What needs attention now across every project, the most urgent first: open incidents not acknowledged, errors happening now (seen in the last 15 minutes), acknowledged incidents, new errors (first seen in the last day), operations whose p95 over the last day is at least 1.5 times and 100 ms more than over the 7 days before, and projects with components that sent nothing in the last day. Each item has its evidence and its project; `projects` names every project asked; a project that didn't answer is in `unanswered`, its items missing."
+        "description": "What needs attention now across every project, the most urgent first: open incidents not acknowledged, errors happening now (seen in the last 15 minutes), acknowledged incidents, new errors (first seen in the last day), operations whose p95 over the last day is at least 1.5 times and 100 ms more than over the 7 days before, promotions that need a member (approved in App Store review and waiting to be released, waiting for someone to approve their environment on GitHub, or ended without their release getting there, as failed, rejected in App Store review, or lost, until a release reaches that environment), and projects with components that sent nothing in the last day; all in the environments each project calls production. Each item has its evidence and its project; `projects` names every project asked; `pulses` says how each project that answered is going, in its production environments: its load by the hour over the current hour and the 23 before it (an hour not listed had nothing reported), and its apps' people on the latest whole UTC day and the same day a week before (absent until its apps sent anything). A project that didn't answer is in `unanswered`, its items and pulse missing."
       }
     },
     "/api/github": {
@@ -8137,6 +8137,12 @@
               "maxLength": 40
             }
           },
+          "pulses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectPulse"
+            }
+          },
           "at": {
             "type": "string",
             "format": "date-time"
@@ -8147,6 +8153,69 @@
           "projects",
           "unanswered",
           "at"
+        ],
+        "additionalProperties": false
+      },
+      "ProjectPulse": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "load": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PulseHour"
+            }
+          },
+          "people": {
+            "$ref": "#/components/schemas/PulsePeople"
+          }
+        },
+        "required": [
+          "project",
+          "load"
+        ],
+        "additionalProperties": false
+      },
+      "PulsePeople": {
+        "type": "object",
+        "properties": {
+          "latest": {
+            "$ref": "#/components/schemas/UsageDay"
+          },
+          "weekBefore": {
+            "$ref": "#/components/schemas/UsageDay"
+          }
+        },
+        "required": [
+          "latest"
+        ],
+        "additionalProperties": false
+      },
+      "PulseHour": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "start",
+          "count",
+          "errors"
         ],
         "additionalProperties": false
       },
@@ -8187,6 +8256,9 @@
             "$ref": "#/components/schemas/SlowerItem"
           },
           {
+            "$ref": "#/components/schemas/PromotionItem"
+          },
+          {
             "$ref": "#/components/schemas/SilentItem"
           }
         ]
@@ -8214,6 +8286,68 @@
           "project"
         ],
         "additionalProperties": false
+      },
+      "PromotionItem": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "promotion"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "promotion": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PromotionItemState"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "_tag",
+          "project",
+          "component",
+          "environment",
+          "release",
+          "promotion",
+          "state",
+          "startedAt"
+        ],
+        "additionalProperties": false
+      },
+      "PromotionItemState": {
+        "type": "string",
+        "enum": [
+          "approved",
+          "waiting",
+          "failed",
+          "rejected",
+          "lost"
+        ]
       },
       "SlowerItem": {
         "type": "object",
