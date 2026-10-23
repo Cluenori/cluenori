@@ -236,7 +236,7 @@ function SheetSample({ side, label }: { readonly side: "right" | "bottom" | "lef
           ))}
         </dl>
         <SheetFooter>
-          <Link to={{ page: "overview", project: sampleProject }} className={buttonVariants()}>
+          <Link to={{ page: "project", project: sampleProject }} className={buttonVariants()}>
             Open in Performance
           </Link>
           <SheetClose render={<Button variant="outline" />}>Close</SheetClose>

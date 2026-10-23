@@ -18,7 +18,7 @@ describe("versions journey", () => {
   it.effect("bumps a component's version from a menu, and sets a first version with its first build", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // In each component's delivery, the API's version and the release its next build will be; the
@@ -63,7 +63,7 @@ describe("versions journey", () => {
   it.effect("says why a lower version isn't set", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/releases?component=notes-api")
+      window.history.pushState(null, "", "/projects/notes/releases?component=notes-api")
       const screen = yield* Effect.promise(() => render(<App />))
 
       const api = screen.getByRole("region", { name: "notes-api" })

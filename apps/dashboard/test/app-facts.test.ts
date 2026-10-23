@@ -4,15 +4,7 @@ import type { AppUsage } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
-import {
-  appColorOf,
-  appEnvironmentsOf,
-  cohortRowsOf,
-  healthRowsOf,
-  healthWordsOf,
-  personDaysOf,
-  usageColumnsOf,
-} from "@/app-facts"
+import { appColorOf, cohortRowsOf, healthRowsOf, healthWordsOf, personDaysOf, usageColumnsOf } from "@/app-facts"
 
 const day = 86_400_000
 const at = (millis: number) => DateTime.makeUnsafe(millis)
@@ -22,8 +14,6 @@ const dayOf = (number: number) => CalendarDay.make(DateTime.formatIso(at(number 
 const ios = ComponentKey.make("notes-ios")
 const api = ComponentKey.make("notes-api")
 const production = EnvironmentKey.make("production")
-const beta = EnvironmentKey.make("beta")
-const prod = EnvironmentKey.make("prod")
 
 // The last 5 days, of which the apps sent on the last 3: day 3's people were none.
 const usage: AppUsage = {
@@ -101,16 +91,6 @@ describe("app facts", () => {
     assert.notInclude(labels, "Warm launch p95")
     assert.notInclude(labels, "Crashes per 1,000 sessions")
     assert.strictEqual(rows.find((row) => row.label === "Cold launch p95")?.moved, "worse")
-  })
-
-  it("shows the environment chosen when the apps sent from it, else their production one", () => {
-    assert.strictEqual(appEnvironmentsOf([beta, production], [production], beta).shown, beta)
-    assert.strictEqual(appEnvironmentsOf([beta, production], [production], prod).shown, production)
-    assert.deepStrictEqual(appEnvironmentsOf([beta, production, beta], [production], undefined).offered, [
-      production,
-      beta,
-    ])
-    assert.deepStrictEqual(appEnvironmentsOf([], [production], prod), { offered: [], production: [production] })
   })
 
   it("draws every component's apps in one app's color when only one sent", () => {

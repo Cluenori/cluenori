@@ -26,19 +26,17 @@ const releasesAsked = (area: string) =>
     .map((call) => call.query.get("release"))
 
 describe("releases journey", () => {
-  it.effect("leads from the overview's latest releases to the one that got worse, and what did", () =>
+  it.effect("leads from the project's Releases door to the release that got worse, and what did", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes")
+      window.history.pushState(null, "", "/projects/notes")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      // The overview names the latest releases, each with its verdict in words.
-      const latest = screen.getByRole("region", { name: "Releases" })
-      yield* Effect.promise(() =>
-        expect.element(latest.getByText("Worse: 1 slower, 1 fails more, 1 new error")).toBeVisible(),
-      )
+      // The project's door to Releases says what runs in production.
+      const door = screen.getByRole("navigation", { name: "Notes's areas" }).getByRole("link", { name: /^Releases/ })
+      yield* Effect.promise(() => expect.element(door).toMatchTextContent(/notes-api \S+ in production/))
       yield* expectAccessible()
-      yield* Effect.promise(() => latest.getByRole("link", { name: "Open" }).click())
+      yield* Effect.promise(() => door.click())
 
       // Below what runs where, every release of the period in production, the latest first: how it
       // shipped, when it ran, how much, and against the one before; an app's build that names no
@@ -124,7 +122,7 @@ describe("releases journey", () => {
   it.effect("shows what changed since the release before: GitHub's pull requests, or a deploy's commits", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", `/notes/releases/notes-api/${worse}?environment=production`)
+      window.history.pushState(null, "", `/projects/notes/releases/notes-api/${worse}?environment=production`)
       const screen = yield* Effect.promise(() => render(<App />))
 
       // Its commit, by its short SHA, opens on GitHub; its message beside it.
@@ -177,7 +175,7 @@ describe("releases journey", () => {
   it.effect("shows an iPhone build only App Store Connect knows: where it stands, and no numbers", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/releases?component=notes-ios")
+      window.history.pushState(null, "", "/projects/notes/releases?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // In the history: its stage in words, and no telemetry, never a zero.
@@ -230,7 +228,7 @@ describe("releases journey", () => {
   it.effect("says which source failed lately, so commits missing from releases aren't read as none", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       const failed = screen.getByRole("region", { name: "Sources that failed" })
@@ -239,23 +237,13 @@ describe("releases journey", () => {
       )
       yield* Effect.promise(() => expect.element(failed.getByText("notes-api", { exact: true })).toBeVisible())
       yield* expectAccessible()
-
-      // The overview's releases say it too.
-      open("/notes")
-      yield* Effect.promise(() =>
-        expect
-          .element(
-            screen.getByRole("region", { name: "Releases" }).getByText(/^GitHub refused: Cluenori isn.t connected/),
-          )
-          .toBeVisible(),
-      )
     }),
   )
 
   it.effect("opens Performance, Errors and Logs filtered to a release, over a period that covers it", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", `/notes/releases/notes-api/${worse}?environment=production`)
+      window.history.pushState(null, "", `/projects/notes/releases/notes-api/${worse}?environment=production`)
       const screen = yield* Effect.promise(() => render(<App />))
 
       // Its errors, one click from its page: the release a chip beside the switches.
@@ -291,7 +279,7 @@ describe("releases journey", () => {
       yield* Effect.promise(() => expect.poll(() => releasesAsked("errors").at(-1)).toBeNull())
 
       // Its logs: a line opens in place, with a link back to the release it was written in.
-      open(`/notes/releases/notes-api/${worse}?environment=production`)
+      open(`/projects/notes/releases/notes-api/${worse}?environment=production`)
       yield* Effect.promise(() => screen.getByRole("link", { name: "Logs of this release" }).click())
       yield* Effect.promise(() => expect.element(screen.getByRole("heading", { level: 1, name: "Logs" })).toBeVisible())
       yield* Effect.promise(() => screen.getByRole("button", { name: /Retrying the export/ }).click())
@@ -300,7 +288,7 @@ describe("releases journey", () => {
       yield* Effect.promise(() => expect.element(screen.getByRole("heading", { level: 1, name: worse })).toBeVisible())
 
       // The release before ran 24 hours, until 3 hours ago: its performance is over the last 7 days.
-      open(`/notes/releases/notes-api/${better}?environment=production`)
+      open(`/projects/notes/releases/notes-api/${better}?environment=production`)
       yield* Effect.promise(() => screen.getByRole("link", { name: "Performance of this release" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Performance" })).toBeVisible(),
@@ -330,7 +318,7 @@ describe("releases journey", () => {
         }
         return notes(call)
       })
-      window.history.pushState(null, "", "/notes/releases?component=notes-ios")
+      window.history.pushState(null, "", "/projects/notes/releases?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // The iPhone app's block: no repository yet, and its builds going to the App Store.
@@ -395,7 +383,7 @@ describe("releases journey", () => {
       window.history.pushState(
         null,
         "",
-        `/notes/releases/notes-ios/${encodeURIComponent(appRelease)}?environment=production`,
+        `/projects/notes/releases/notes-ios/${encodeURIComponent(appRelease)}?environment=production`,
       )
       const screen = yield* Effect.promise(() => render(<App />))
 
@@ -425,7 +413,7 @@ describe("releases journey", () => {
           ? reply(ReleaseList, { releases: [], problems: [] })
           : notes(call),
       )
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() =>
@@ -446,7 +434,7 @@ describe("releases journey", () => {
   it.effect("says a release it never counted isn't there, with a way back", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/releases/notes-api/0.9.0")
+      window.history.pushState(null, "", "/projects/notes/releases/notes-api/0.9.0")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("There is no such release")).toBeVisible())
@@ -462,7 +450,7 @@ describe("releases journey", () => {
     Effect.gen(function* () {
       answerApi(notesApi())
       yield* Effect.promise(() => page.viewport(390, 844))
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("Better")).toBeVisible())
@@ -476,7 +464,7 @@ describe("releases journey", () => {
       yield* Effect.promise(() => expect.element(screen.getByText("was 290 ms")).toBeVisible())
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
       yield* expectAccessible()
-      open(`/notes/releases/notes-ios/${encodeURIComponent(inReviewRelease)}`)
+      open(`/projects/notes/releases/notes-ios/${encodeURIComponent(inReviewRelease)}`)
       yield* Effect.promise(() => expect.element(screen.getByText("Build 420 of version 1.9.0")).toBeVisible())
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
       yield* expectAccessible()

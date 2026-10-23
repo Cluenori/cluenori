@@ -12,7 +12,7 @@ import {
   rateRule,
   sessionsCompared,
 } from "@cluenori/analytics"
-import type { CalendarDay, ComponentKey, EnvironmentKey } from "@cluenori/foundation"
+import type { CalendarDay, ComponentKey } from "@cluenori/foundation"
 import { calendarDayOfNumber, dayNumberOf } from "@cluenori/foundation"
 import type {
   AppHealth,
@@ -30,7 +30,7 @@ import { componentColor } from "@/lib/colors"
 import { bytes, calendarDayText, count, duration, lasting, ratio } from "@/lib/format"
 import type { AppPeriodKey } from "@/project-data"
 import { appPeriods } from "@/project-data"
-import type { Environments, VerdictTone } from "@/project-facts"
+import type { VerdictTone } from "@/project-facts"
 
 // ---- Period ----------------------------------------------------------------------------------------
 
@@ -48,27 +48,8 @@ export const latestSentOf = (list: { readonly releases: ReadonlyArray<{ readonly
 }
 
 // ---- Environments ----------------------------------------------------------------------------------
-
-/**
- * Which environment the analytics pages show, and those they offer: the environments the apps sent
- * from in the period, the project's production ones first, which may not be its services'. It shows
- * the one chosen, named by the address or picked on the project's pages, when the apps sent from
- * it; else the first they sent from, production first. None when they sent from none: the questions
- * then ask about every environment.
- */
-export const appEnvironmentsOf = (
-  sentFrom: ReadonlyArray<EnvironmentKey>,
-  production: ReadonlyArray<EnvironmentKey>,
-  chosen: EnvironmentKey | undefined,
-): Environments => {
-  const seen = [...new Set(sentFrom)]
-  const offered = [
-    ...seen.filter((environment) => production.includes(environment)),
-    ...seen.filter((environment) => !production.includes(environment)),
-  ]
-  const shown = chosen !== undefined && offered.includes(chosen) ? chosen : offered[0]
-  return { ...(shown === undefined ? {} : { shown }), offered, production }
-}
+// Which environment the analytics pages show is `appEnvironmentsOf` in `src/project-facts.ts`, which
+// a project's page reads too.
 
 /**
  * The color an analytics chart is in: the component's it shows, or, showing every one, the one

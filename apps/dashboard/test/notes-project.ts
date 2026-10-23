@@ -2,6 +2,7 @@ import {
   ComponentKey,
   EnvelopeName,
   EnvironmentKey,
+  Instant,
   MemberId,
   NotAllowed,
   Period,
@@ -9,7 +10,7 @@ import {
   ReleaseVersion,
   TraceId,
 } from "@cluenori/foundation"
-import { Incident, IncidentId, IncidentList } from "@cluenori/incidents"
+import { Incident, IncidentId, IncidentList, Monitor, MonitorId, MonitorList, MonitorUrl } from "@cluenori/incidents"
 import { Email, Member, MemberList } from "@cluenori/members"
 import {
   BundleId,
@@ -64,10 +65,11 @@ import {
   compareVersions,
   hasEnded,
 } from "@cluenori/releases"
-import type { OperationRow, ErrorGroup, LogLine, SeriesStep } from "@cluenori/signals"
+import type { OperationRow, LogLine, SeriesStep } from "@cluenori/signals"
 import {
   OperationTable,
   ErrorDetail,
+  ErrorGroup,
   ErrorGroupId,
   ErrorGroupNotFound,
   ErrorTable,
@@ -77,13 +79,18 @@ import {
   LoadSeries,
   SeriesStep as SeriesStepSchema,
   SpanId,
+  errorStatusOf,
+  operationKeyOf,
+  slowerOperations,
   stepMillis,
   TraceView,
 } from "@cluenori/signals"
 import { Unauthorized } from "@cluenori/worker"
 import { Clock, DateTime, Effect, Schema } from "effect"
 
-import type { AnswerApi } from "./fake-api.ts"
+import type { TodayList } from "@/project-data"
+
+import type { AnswerApi, ApiCall } from "./fake-api.ts"
 import { reply } from "./fake-api.ts"
 import { withApps } from "./notes-apps.ts"
 
@@ -1121,31 +1128,165 @@ const SettingsBody = Schema.fromJsonString(ProjectSettings)
 const noSuchCall = (method: string, path: ReadonlyArray<string>) =>
   Effect.die(`The fake API has no ${method} /api/${path.join("/")}.`)
 
-// The export has failed since 40 minutes ago, which the detectors saw: one open incident.
+// The API's health endpoint, which a monitor checks every minute; its last check passed.
+const healthMonitor = new Monitor({
+  id: MonitorId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a70"),
+  component: api,
+  url: MonitorUrl.make("https://api.notes.example/health"),
+  addedAt: created,
+})
+
+// The export has failed since 40 minutes ago, which the detectors saw: one open incident. Two days
+// ago the health endpoint was down for 14 minutes.
+const incidentsAt = (now: number): IncidentList => ({
+  open: [
+    new Incident({
+      id: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64"),
+      component: api,
+      environment: EnvironmentKey.make("production"),
+      subject: "POST /api/export",
+      title: "POST /api/export: 20% failed, usually 0.1%",
+      evidence: {
+        _tag: "failing",
+        operation: EnvelopeName.make("POST /api/export"),
+        failed: 10,
+        count: 50,
+        usualRate: 0.001,
+      },
+      openedAt: DateTime.makeUnsafe(now - 40 * minute),
+    }),
+  ],
+  resolved: [
+    new Incident({
+      id: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a65"),
+      component: api,
+      environment: EnvironmentKey.make("production"),
+      subject: healthMonitor.url,
+      title: `${healthMonitor.url}: down`,
+      evidence: { _tag: "down", monitor: healthMonitor.id, url: healthMonitor.url, failures: 2, problem: "HTTP 503" },
+      openedAt: DateTime.makeUnsafe(now - 2 * day),
+      resolvedAt: DateTime.makeUnsafe(now - 2 * day + 14 * minute),
+    }),
+  ],
+  checkedAt: DateTime.makeUnsafe(now),
+})
+
 const incidents = Effect.gen(function* () {
+  return yield* reply(IncidentList, incidentsAt(yield* Clock.currentTimeMillis))
+})
+
+const monitors = Effect.gen(function* () {
   const now = yield* Clock.currentTimeMillis
-  return yield* reply(IncidentList, {
-    open: [
-      new Incident({
-        id: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64"),
-        component: api,
-        environment: EnvironmentKey.make("production"),
-        subject: "POST /api/export",
-        title: "POST /api/export: 20% failed, usually 0.1%",
-        evidence: {
-          _tag: "failing",
-          operation: EnvelopeName.make("POST /api/export"),
-          failed: 10,
-          count: 50,
-          usualRate: 0.001,
-        },
-        openedAt: DateTime.makeUnsafe(now - 40 * minute),
-      }),
-    ],
-    resolved: [],
-    checkedAt: DateTime.makeUnsafe(now),
+  return yield* reply(MonitorList, {
+    monitors: [{ monitor: healthMonitor, lastCheck: { at: DateTime.makeUnsafe(now - minute) } }],
   })
 })
+
+// Today's answer, as the API encodes it. Its schema is the Today engine's, which the dashboard
+// reaches only through the API's definition, so this one is made of the same parts, and the compiler
+// checks it says the same as the API's (`sameAsTheApi`).
+const TodayAnswer = Schema.Struct({
+  items: Schema.Array(
+    Schema.Union([
+      Schema.TaggedStruct("incident", { project: ProjectKey, incident: Incident }),
+      Schema.TaggedStruct("error", {
+        project: ProjectKey,
+        error: ErrorGroup,
+        isNew: Schema.Boolean,
+        ongoing: Schema.Boolean,
+      }),
+      Schema.TaggedStruct("slower", {
+        project: ProjectKey,
+        component: ComponentKey,
+        environment: Schema.optionalKey(EnvironmentKey),
+        operation: EnvelopeName,
+        p95Ms: Schema.Finite,
+        usualP95Ms: Schema.Finite,
+      }),
+      Schema.TaggedStruct("silent", { project: ProjectKey, lastDataAt: Schema.optionalKey(Instant) }),
+    ]),
+  ),
+  projects: Schema.Array(Project),
+  unanswered: Schema.Array(ProjectKey),
+  at: Instant,
+})
+const sameAsTheApi = (answer: TodayList): typeof TodayAnswer.Type => answer
+const sameAsThisOne = (answer: typeof TodayAnswer.Type): TodayList => answer
+
+// Today's order: incidents not acknowledged, errors happening now, then new ones, then slower.
+const todayRank = (item: TodayList["items"][number]) =>
+  ({ incident: 0, error: item._tag === "error" && item.ongoing ? 1 : 2, slower: 3, silent: 4 })[item._tag]
+
+/**
+ * What needs attention now across `workspace`, as Today works it out at `now` in the environments
+ * each project calls production: Notes's open incident, its errors happening now or new, and its
+ * operations slower than over the 7 days before. Landing, without components, has nothing to say.
+ */
+const todayAt = (now: number, workspace: ReadonlyArray<Project>): TodayList => {
+  const lastDay = new Period({ from: DateTime.makeUnsafe(now - day), to: DateTime.makeUnsafe(now) })
+  const slower = slowerOperations({
+    lastDay: { rows: lastDayRows, count: 0, errors: 0 },
+    usual: { rows: usualRows, count: 0, errors: 0 },
+  })
+  const notesItems: TodayList["items"] = [
+    ...incidentsAt(now).open.map((incident) => ({ _tag: "incident" as const, project: notes, incident })),
+    ...groupsOf(lastDay).flatMap((group) => {
+      const status = errorStatusOf(group, now)
+      return status.isNew || status.ongoing
+        ? [{ _tag: "error" as const, project: notes, error: { ...group, lastEnvironment: production }, ...status }]
+        : []
+    }),
+    ...lastDayRows.flatMap((each) => {
+      const found = slower.get(operationKeyOf(each))
+      return found === undefined
+        ? []
+        : [
+            {
+              _tag: "slower" as const,
+              project: notes,
+              component: each.component,
+              environment: production,
+              operation: each.operation,
+              ...found,
+            },
+          ]
+    }),
+  ]
+  return sameAsThisOne({
+    items: workspace.some((project) => project.key === notes)
+      ? notesItems.toSorted((left, right) => todayRank(left) - todayRank(right))
+      : [],
+    projects: workspace,
+    unanswered: [],
+    at: DateTime.makeUnsafe(now),
+  })
+}
+
+/** Today's answer, encoded as the API sends it. */
+const today = (workspace: ReadonlyArray<Project>) =>
+  Effect.gen(function* () {
+    return yield* reply(TodayAnswer, sameAsTheApi(todayAt(yield* Clock.currentTimeMillis, workspace)))
+  })
+
+// What a project with nothing yet, Landing, answers: no load, no incidents, nothing delivered.
+const nothingYet = (call: ApiCall) =>
+  Effect.gen(function* () {
+    const area = call.path[2]
+    if (call.method === "GET" && area === "load") {
+      const step = yield* Schema.decodeUnknownEffect(SeriesStepSchema)(call.query.get("step")).pipe(Effect.orDie)
+      return yield* reply(LoadSeries, { step, points: [] })
+    }
+    if (call.method === "GET" && area === "incidents") {
+      return yield* reply(IncidentList, { open: [], resolved: [] })
+    }
+    if (call.method === "GET" && area === "monitors") {
+      return yield* reply(MonitorList, { monitors: [] })
+    }
+    if (call.method === "GET" && area === "delivery") {
+      return yield* reply(Delivery, { components: [] })
+    }
+    return yield* noSuchCall(call.method, call.path)
+  })
 
 // ---- The day Notes numbers its first release --------------------------------------------------------
 
@@ -1627,6 +1768,9 @@ export const notesApi = ({
           ? yield* reply(MemberList, { members: [ada, mira] })
           : yield* reply(NotAllowed, new NotAllowed(), 403)
       }
+      if (call.method === "GET" && first === "today" && project === undefined) {
+        return yield* today(workspace)
+      }
       if (first !== "projects") {
         return yield* noSuchCall(call.method, call.path)
       }
@@ -1646,7 +1790,7 @@ export const notesApi = ({
         })
       }
       if (!isNotes) {
-        return yield* Effect.die(`The fake API answers only Notes's signals, not ${project}'s.`)
+        return yield* nothingYet(call)
       }
       if (call.method === "PUT" && area === "settings") {
         settings = yield* Schema.decodeEffect(SettingsBody)(call.body ?? "").pipe(Effect.orDie)
@@ -1673,6 +1817,9 @@ export const notesApi = ({
       }
       if (area === "incidents") {
         return yield* incidents
+      }
+      if (call.method === "GET" && area === "monitors") {
+        return yield* monitors
       }
       if (call.method === "POST" && area === "components" && id !== undefined && more === "promotions") {
         // A commit that has no release: numbered as the component's next, then promoted.

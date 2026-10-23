@@ -1,18 +1,26 @@
-// What the pages say about a project, worked out once from the API's answers: when a chart's columns
-// are, what got slower, when failures jumped, which errors are new, and what needs attention. Pages
-// show these; they don't work them out again. Every rule is pure: "now" is the time an answer
-// covers up to, never the clock, so a page renders the same for the same answers.
+// What the pages say about the projects, worked out once from the API's answers: what needs the
+// founder now, how each project is, its people against last week, when a chart's columns are, what
+// got slower, and which errors are new. Pages show these; they don't work them out again. Every rule
+// is pure: "now" is the time an answer covers up to, never the clock, so a page renders the same for
+// the same answers.
 
-import type { EnvironmentKey, Period, ProjectKey } from "@cluenori/foundation"
-import type { Incident, IncidentList } from "@cluenori/incidents"
+import type { CalendarDay, EnvironmentKey, Period, ProjectKey } from "@cluenori/foundation"
+import { calendarDayOfNumber, dayNumberOf } from "@cluenori/foundation"
+import type { Incident } from "@cluenori/incidents"
 import type { ProjectSettings } from "@cluenori/projects"
-import type { ReleaseChanges, ReleaseCommit, ReleaseSource, ReleaseSummary, StoreBuild } from "@cluenori/releases"
 import type {
+  Delivery,
+  ReleaseChanges,
+  ReleaseCommit,
+  ReleaseSource,
+  ReleaseSummary,
+  StoreBuild,
+} from "@cluenori/releases"
+import type {
+  AppUsage,
   Compared,
   OperationRow,
   OperationTable,
-  ErrorGroupId,
-  ErrorTable,
   KeptTraces,
   LogCounts,
   LogException,
@@ -24,16 +32,14 @@ import type {
   TraceSpan,
   TraceView,
 } from "@cluenori/signals"
-import { errorRule, errorStatusOf, operationKeyOf, slowerOperations, slowerRule, stepMillis } from "@cluenori/signals"
+import { errorRule, operationKeyOf, slowerOperations, slowerRule, stepMillis } from "@cluenori/signals"
 import { DateTime } from "effect"
 
 import { componentColor } from "@/lib/colors"
-import { ago, axisTime, count, dayOf, duration, viewerTimeZone } from "@/lib/format"
-import type { PeriodKey } from "@/project-data"
+import { ago, axisTime, count, dayOf, duration, share, viewerTimeZone } from "@/lib/format"
+import type { PeriodKey, TodayItem, TodayList } from "@/project-data"
 import { periodMillis, periods } from "@/project-data"
 import type { Route } from "@/router"
-import type { Attention } from "@/views/attention-list"
-import { titleParts } from "@/views/error-group"
 
 export const sumOf = (values: ReadonlyArray<number>) => values.reduce((sum, value) => sum + value, 0)
 
@@ -120,6 +126,27 @@ export const isShownIn = (environments: Environments, environment: EnvironmentKe
   environments.shown === undefined ||
   environment === environments.shown ||
   (environment === undefined && environments.production.includes(environments.shown))
+
+/**
+ * Which environment the analytics pages show, and those they offer: the environments the apps sent
+ * from in the period, the project's production ones first, which may not be its services'. It shows
+ * the one chosen, named by the address or picked on the project's pages, when the apps sent from
+ * it; else the first they sent from, production first. None when they sent from none: the questions
+ * then ask about every environment.
+ */
+export const appEnvironmentsOf = (
+  sentFrom: ReadonlyArray<EnvironmentKey>,
+  production: ReadonlyArray<EnvironmentKey>,
+  chosen: EnvironmentKey | undefined,
+): Environments => {
+  const seen = [...new Set(sentFrom)]
+  const offered = [
+    ...seen.filter((environment) => production.includes(environment)),
+    ...seen.filter((environment) => !production.includes(environment)),
+  ]
+  const shown = chosen !== undefined && offered.includes(chosen) ? chosen : offered[0]
+  return { ...(shown === undefined ? {} : { shown }), offered, production }
+}
 
 // ---- Charts over time ------------------------------------------------------------------------------
 
@@ -321,117 +348,296 @@ export const operationSpanOf = (view: TraceView, span: SpanId | undefined): Trac
   return current ?? view.spans[0]
 }
 
-// ---- Needs attention -------------------------------------------------------------------------------
+// ---- Needs you -------------------------------------------------------------------------------------
 
 // "1 occurrence", "36 occurrences".
 const occurrencesText = (occurrences: number) =>
   `${count(occurrences)} ${occurrences === 1 ? "occurrence" : "occurrences"}`
 
-// The most slower, against its usual, first.
-const byHowMuchSlower = (left: Slower, right: Slower) => right.p95Ms / right.usualP95Ms - left.p95Ms / left.usualP95Ms
-
 /**
- * Where an incident's evidence is, as a link: its operation's page, or, for a monitor, its
- * component's performance, in the incident's environment.
+ * Where an incident's evidence is, as a link: its operation's page, in the incident's environment;
+ * for a monitor, the project's incidents and monitors, with its last check.
  */
-export const incidentActionOf = (project: ProjectKey, incident: Incident) => {
-  const filters = {
-    component: incident.component,
-    ...(incident.environment === undefined ? {} : { environment: incident.environment }),
-  }
-  return incident.evidence._tag === "down"
-    ? { label: "Open the performance", to: { page: "performance" as const, project, ...filters } }
+export const incidentActionOf = (project: ProjectKey, incident: Incident) =>
+  incident.evidence._tag === "down"
+    ? { label: "Open the monitors", to: { page: "incidents" as const, project } }
     : {
-        label: "Open the operation",
-        to: { page: "operation" as const, project, ...filters, operation: incident.evidence.operation },
-      }
-}
-
-/**
- * What needs attention in the project now, the worst first: its open incidents, which the server's
- * detectors keep, an acknowledged one in yellow; errors happening now; new errors; then operations
- * that got slower, all of the environment shown. An error both new and happening now is one item.
- * Each item is one click from its detail. "Now" is the time an answer covers up to: when the detectors last looked, and the end
- * of the errors' period.
- */
-export const attentionOf = (facts: {
-  readonly project: ProjectKey
-  /** The environment the page shows: its incidents only, as the errors and operations are its. */
-  readonly environments: Environments
-  readonly incidents: IncidentList
-  readonly errors: ErrorTable
-  readonly compared: Compared
-}): ReadonlyArray<Attention> => {
-  const { project } = facts
-  const now = endOf(facts.errors)
-  const looked = facts.incidents.checkedAt === undefined ? undefined : DateTime.toEpochMillis(facts.incidents.checkedAt)
-  const slowerByKey = slowerOperations(facts.compared)
-  const slower = facts.compared.lastDay.rows
-    .flatMap((row) => {
-      const found = slowerByKey.get(operationKeyOf(row))
-      return found === undefined ? [] : [{ row, ...found }]
-    })
-    .toSorted(byHowMuchSlower)
-  const inShown = facts.environments.shown === undefined ? {} : { environment: facts.environments.shown }
-  const errorRoute = (error: ErrorGroupId) => ({ page: "error" as const, project, ...inShown, error })
-  // Nothing of the period is kept when it has no end, so there are no errors to judge.
-  const groups =
-    now === undefined
-      ? []
-      : facts.errors.groups.map((group) => ({
-          group,
-          ...errorStatusOf(group, now),
-          firstSeen: ago(DateTime.toEpochMillis(group.firstSeen), now),
-          lastSeen: ago(DateTime.toEpochMillis(group.lastSeen), now),
-        }))
-  const open = facts.incidents.open.filter((incident) => isShownIn(facts.environments, incident.environment))
-  return [
-    ...open.map((incident) => {
-      const opened = DateTime.toEpochMillis(incident.openedAt)
-      return {
-        key: `incident ${incident.id}`,
-        tone: incident.acknowledgedAt === undefined ? ("failure" as const) : ("warning" as const),
-        title: incident.title,
-        detail: `Opened ${ago(opened, looked ?? opened)}${incident.acknowledgedAt === undefined ? "" : ", acknowledged"}`,
-        action: incidentActionOf(project, incident),
-      }
-    }),
-    ...groups
-      .filter((entry) => entry.ongoing)
-      .map(({ group, lastSeen, isNew }) => ({
-        key: `ongoing ${group.id}`,
-        tone: "failure" as const,
-        title: `${titleParts(group).type} is ${isNew ? "new, and " : ""}happening right now`,
-        detail: `${occurrencesText(group.occurrences)} in the period, last ${lastSeen}`,
-        action: { label: "Open the error", to: errorRoute(group.id) },
-      })),
-    ...groups
-      .filter((entry) => entry.isNew && !entry.ongoing)
-      .map(({ group, firstSeen }) => ({
-        key: `new ${group.id}`,
-        tone: "warning" as const,
-        title: `${titleParts(group).type} is new`,
-        detail: `First seen ${firstSeen}, ${occurrencesText(group.occurrences)} since`,
-        action: { label: "Open the error", to: errorRoute(group.id) },
-      })),
-    ...slower.map((entry) => ({
-      key: `slower ${operationKeyOf(entry.row)}`,
-      tone: "warning" as const,
-      title: `${entry.row.operation} got slower`,
-      detail: `p95 ${duration(entry.p95Ms)} over the last day, usually ${duration(entry.usualP95Ms)}`,
-      action: {
         label: "Open the operation",
         to: {
           page: "operation" as const,
           project,
-          component: entry.row.component,
-          ...inShown,
-          operation: entry.row.operation,
+          component: incident.component,
+          ...(incident.environment === undefined ? {} : { environment: incident.environment }),
+          operation: incident.evidence.operation,
         },
-      },
-    })),
-  ]
+      }
+
+/** What found an incident, in a word: "Down", "Failing", "Stopped". */
+export const detectorWords: Readonly<Record<Incident["evidence"]["_tag"], string>> = {
+  down: "Down",
+  failing: "Failing",
+  stopped: "Stopped",
 }
+
+/**
+ * What an incident's detector saw, in a line: "2 checks failed in a row, the last: HTTP 503",
+ * "18% of 412 failed in the last 15 minutes, usually 0.1%", "Last ran 2 hours ago, usually every
+ * 5 min". `now` is what "ago" is measured from.
+ */
+export const evidenceWords = (evidence: Incident["evidence"], now: number) => {
+  switch (evidence._tag) {
+    case "down":
+      return `${count(evidence.failures)} checks failed in a row, the last: ${evidence.problem}`
+    case "failing":
+      return `${share(evidence.failed, evidence.count)} of ${count(evidence.count)} failed in the last 15 minutes, usually ${share(evidence.usualRate, 1)}`
+    case "stopped":
+      return `Last ran ${ago(DateTime.toEpochMillis(evidence.lastRanAt), now)}, usually every ${duration(evidence.usualGapMs)}`
+  }
+}
+
+/** What a row of Needs you counts as on its project's line. */
+export type NeedsYouGroup = "incident" | "error" | "slower" | "silent" | "release"
+
+/**
+ * One thing that needs the founder now, as Now and a project's page show it: what kind of thing, of
+ * which project, what it is, a line of evidence, when, and the page that shows it.
+ */
+export type NeedsYou = {
+  readonly key: string
+  readonly group: NeedsYouGroup
+  /** The kind of thing, in a word or two: "Down", "New error", "Slower", "Release". */
+  readonly kind: string
+  /** Red for what fails now, yellow for what to look at, purple for a release waiting for a member. */
+  readonly tone: "failure" | "warning" | "release"
+  readonly project: ProjectKey
+  readonly title: string
+  readonly detail: string
+  /** When it started or was last seen, as a person says it: "12 minutes ago"; absent when unknown. */
+  readonly when?: string
+  readonly to: Route
+}
+
+// One of Today's items as a row; its times are measured from when Today looked.
+const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
+  switch (item._tag) {
+    case "incident": {
+      const { incident } = item
+      const acknowledged = incident.acknowledgedAt !== undefined
+      return {
+        key: `incident ${incident.id}`,
+        group: "incident",
+        kind: detectorWords[incident.evidence._tag],
+        tone: acknowledged ? "warning" : "failure",
+        project: item.project,
+        title: incident.subject,
+        detail: `${evidenceWords(incident.evidence, now)}${acknowledged ? "; acknowledged" : ""}`,
+        when: ago(DateTime.toEpochMillis(incident.openedAt), now),
+        to: incidentActionOf(item.project, incident).to,
+      }
+    }
+    case "error": {
+      const { error } = item
+      const firstSeen = ago(DateTime.toEpochMillis(error.firstSeen), now)
+      return {
+        key: `error ${item.project} ${error.id}`,
+        group: "error",
+        kind: item.ongoing ? "Happening now" : "New error",
+        tone: item.ongoing ? "failure" : "warning",
+        project: item.project,
+        title: error.title,
+        detail: `${occurrencesText(error.occurrences)} in the last day, ${error.lastComponent}${item.isNew && item.ongoing ? `; new, first seen ${firstSeen}` : ""}`,
+        when: item.ongoing ? ago(DateTime.toEpochMillis(error.lastSeen), now) : firstSeen,
+        to: {
+          page: "error",
+          project: item.project,
+          ...(error.lastEnvironment === undefined ? {} : { environment: error.lastEnvironment }),
+          error: error.id,
+        },
+      }
+    }
+    case "slower":
+      return {
+        key: `slower ${item.project} ${item.component} ${item.environment ?? ""} ${item.operation}`,
+        group: "slower",
+        kind: "Slower",
+        tone: "warning",
+        project: item.project,
+        title: item.operation,
+        detail: `p95 ${duration(item.p95Ms)} over the last day, usually ${duration(item.usualP95Ms)}; ${item.component}`,
+        to: {
+          page: "operation",
+          project: item.project,
+          component: item.component,
+          ...(item.environment === undefined ? {} : { environment: item.environment }),
+          operation: item.operation,
+        },
+      }
+    case "silent": {
+      const last = item.lastDataAt === undefined ? undefined : ago(DateTime.toEpochMillis(item.lastDataAt), now)
+      return {
+        key: `silent ${item.project}`,
+        group: "silent",
+        kind: "Silent",
+        tone: "warning",
+        project: item.project,
+        title: "Nothing sent in the last day",
+        detail: last === undefined ? "Nothing in the 7 days before it either" : `The last data came ${last}`,
+        ...(last === undefined ? {} : { when: last }),
+        to: { page: "tech", project: item.project },
+      }
+    }
+  }
+}
+
+/**
+ * The releases in a project's delivery that wait for a member: one App Store review approved, which
+ * a member releases, and one whose workflow waits on GitHub for someone to approve its environment.
+ * `asOf` is when the delivery was asked.
+ */
+export const waitingReleasesOf = (
+  project: ProjectKey,
+  delivery: Delivery,
+  asOf: DateTime.Utc,
+): ReadonlyArray<NeedsYou> =>
+  delivery.components.flatMap((component) =>
+    component.environments.flatMap(({ promotion }): ReadonlyArray<NeedsYou> => {
+      if (promotion === undefined || (promotion.state !== "approved" && promotion.state !== "waiting")) {
+        return []
+      }
+      const approved = promotion.state === "approved"
+      return [
+        {
+          key: `promotion ${promotion.id}`,
+          group: "release",
+          kind: "Release",
+          tone: "release",
+          project,
+          title: approved
+            ? `${promotion.release} passed App Store review`
+            : `${promotion.release} waits for approval on GitHub`,
+          detail: approved
+            ? `${promotion.component} to ${promotion.environment}: release it when you're ready`
+            : `${promotion.component} to ${promotion.environment}: approve the environment on GitHub`,
+          when: ago(DateTime.toEpochMillis(promotion.startedAt), DateTime.toEpochMillis(asOf)),
+          to: releaseRouteOf(project, promotion),
+        },
+      ]
+    }),
+  )
+
+/**
+ * What needs the founder now, the most urgent first: Today's items in Today's order, of the
+ * environments each project calls production, then the releases `waiting` for a member.
+ */
+export const needsYouOf = (today: TodayList, waiting: ReadonlyArray<NeedsYou>): ReadonlyArray<NeedsYou> => {
+  const now = DateTime.toEpochMillis(today.at)
+  return [...today.items.map((item) => todayRowOf(item, now)), ...waiting]
+}
+
+const groupWords: Readonly<Record<NeedsYouGroup, (value: number) => string>> = {
+  incident: (value) => counted(value, "incident", "incidents"),
+  error: (value) => counted(value, "error", "errors"),
+  slower: (value) => counted(value, "slower operation", "slower operations"),
+  release: (value) => `${counted(value, "release", "releases")} waiting`,
+  silent: () => "nothing sent in a day",
+}
+
+/**
+ * What a few rows of Needs you count, in a line: "1 incident · 2 errors · 1 release waiting";
+ * undefined for none.
+ */
+export const needsYouCountsOf = (items: ReadonlyArray<NeedsYou>) => {
+  const counts = (["incident", "error", "slower", "release", "silent"] as const).flatMap((group) => {
+    const found = items.filter((item) => item.group === group).length
+    return found === 0 ? [] : [groupWords[group](found)]
+  })
+  return counts.length === 0 ? undefined : counts.join(" · ")
+}
+
+/** How a project is, on Now: its dot's color, and what needs the founder there, in a line. */
+export type ProjectState = { readonly tone: NeedsYou["tone"] | "fine" | "unknown"; readonly line: string }
+
+/**
+ * How a project is from what needs the founder there, the most urgent first: its color, and what
+ * it counts. A project Today couldn't ask is unknown, never fine.
+ */
+export const projectStateOf = (items: ReadonlyArray<NeedsYou>, answered: boolean): ProjectState => {
+  const first = items[0]
+  if (!answered) {
+    return { tone: "unknown", line: "Didn't answer, so what needs you there is unknown" }
+  }
+  return first === undefined
+    ? { tone: "fine", line: "Nothing needs you" }
+    : { tone: first.tone, line: needsYouCountsOf(items) ?? "" }
+}
+
+/**
+ * Each component's release in the last environment its releases reach, usually production, in a
+ * line: "notes-api 2.4.0+312 in production · notes-ios 1.8.2+412 in production"; undefined when
+ * none has reached one. Components that ship with another are said by it.
+ */
+export const releasedLineOf = (delivery: Delivery) => {
+  const released = delivery.components.flatMap((component) => {
+    const reached = component.environments.findLast((environment) => environment.current !== undefined)
+    return component.shipsWith !== undefined || reached?.current === undefined
+      ? []
+      : [`${component.component} ${reached.current.summary.release} in ${reached.environment}`]
+  })
+  return released.length === 0 ? undefined : released.join(" · ")
+}
+
+// ---- People ----------------------------------------------------------------------------------------
+
+/** People counted on one UTC day and on the same day a week before; either absent when not counted. */
+export type PeopleCount = { readonly value?: number; readonly weekBefore?: number }
+
+/**
+ * The project's apps' daily and monthly people on the latest whole UTC day, each beside the same day
+ * a week before; and the daily people of each of the 14 whole days up to it, oldest first, unknown
+ * on a day not counted.
+ */
+export type People = {
+  readonly day: CalendarDay
+  readonly daily: PeopleCount
+  readonly monthly: PeopleCount
+  readonly days: ReadonlyArray<{ readonly day: CalendarDay; readonly people?: number }>
+}
+
+const peopleCountOf = (value: number | undefined, weekBefore: number | undefined): PeopleCount => ({
+  ...(value === undefined ? {} : { value }),
+  ...(weekBefore === undefined ? {} : { weekBefore }),
+})
+
+/**
+ * Daily and monthly people, from usage by UTC day: on the latest whole UTC day before `asOf`, and
+ * the same day a week before. A day the answer doesn't list wasn't counted, so it is unknown, never
+ * none; so is a month that reaches before the apps first sent.
+ */
+export const peopleOf = (usage: AppUsage, asOf: DateTime.Utc): People => {
+  const today = dayNumberOf(DateTime.toEpochMillis(asOf))
+  const byDay = new Map(usage.days.map((entry) => [entry.day, entry] as const))
+  const latest = byDay.get(calendarDayOfNumber(today - 1))
+  const before = byDay.get(calendarDayOfNumber(today - 8))
+  return {
+    day: calendarDayOfNumber(today - 1),
+    daily: peopleCountOf(latest?.people, before?.people),
+    monthly: peopleCountOf(latest?.monthPeople, before?.monthPeople),
+    days: Array.from({ length: 14 }, (_, index) => {
+      const day = calendarDayOfNumber(today - 14 + index)
+      const counted = byDay.get(day)
+      return counted === undefined ? { day } : { day, people: counted.people }
+    }),
+  }
+}
+
+/**
+ * How much a count moved since the week before, as a share of it: 0.06 for 6% more. Undefined when
+ * either is unknown, or the week before had none, which nothing compares to.
+ */
+export const changeOf = (people: PeopleCount) =>
+  people.value === undefined || people.weekBefore === undefined || people.weekBefore === 0
+    ? undefined
+    : people.value / people.weekBefore - 1
 
 // ---- Releases --------------------------------------------------------------------------------------
 

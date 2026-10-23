@@ -29,6 +29,7 @@ import type {
   VersionPolicyTo,
 } from "@cluenori/releases"
 import type { AppUserId, ErrorGroupId, IndexedLevel, LogCountsBy, SeriesStep } from "@cluenori/signals"
+import type { CluenoriApi } from "@cluenori/worker"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime, Duration, Effect, Option, Redacted } from "effect"
 import { Atom, AsyncResult } from "effect/reactivity"
@@ -133,6 +134,28 @@ export const meAtom = kept(
     Effect.gen(function* () {
       const client = yield* CluenoriClient
       return yield* client.members.me()
+    }),
+  ),
+)
+
+/**
+ * Today's answer, as the public API defines it: what needs attention now across every project the
+ * member sees, the most urgent first, in the environments each calls production, and the projects
+ * that didn't answer. The dashboard knows Today only through the API's definition.
+ */
+export type TodayList = (typeof CluenoriApi)["groups"]["today"]["endpoints"]["today"]["~Success"]["Type"]
+export type TodayItem = TodayList["items"][number]
+
+/**
+ * What needs attention now across every project the member sees (Today): open incidents, errors
+ * new or happening now, slower operations, and projects that sent nothing in a day. One question,
+ * which the API asks each project.
+ */
+export const todayAtom = kept(
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.today.today()
     }),
   ),
 )
@@ -262,6 +285,37 @@ export const loadAtom = Atom.family((scope: Scope) =>
           params: { project: scope.project },
           query: { ...period, ...filtersOf(scope), step: stepOf[key] },
         })
+      }),
+    ),
+  ),
+)
+
+/**
+ * The load over the last 24 hours, by the hour, whatever the period: a project's day at a glance,
+ * on Now and on its own page.
+ */
+export const dayLoadAtom = Atom.family((scope: Scope) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastOf(day)
+        return yield* client.signals.load({
+          params: { project: scope.project },
+          query: { ...period, ...filtersOf(scope), step: "1h" },
+        })
+      }),
+    ),
+  ),
+)
+
+/** The project's monitors, oldest first, each with its last check: what the Down detector watches. */
+export const monitorsAtom = Atom.family((project: ProjectKey) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.incidents.monitors({ params: { project } })
       }),
     ),
   ),
@@ -423,6 +477,17 @@ export const deliveryAtom = Atom.family((project: ProjectKey) =>
         return { delivery, asOf }
       }),
     ),
+  ),
+)
+
+/**
+ * Each project's delivery, for every project the member sees, as `deliveryAtom` asks it: what waits
+ * for a member across projects, on Now. One question a project, each kept with the project's own;
+ * one that fails is that project's alone.
+ */
+export const deliveriesAtom = Atom.make((get) =>
+  AsyncResult.map(get(projectsAtom), ({ projects }) =>
+    projects.map((project) => ({ project: project.key, delivery: get(deliveryAtom(project.key)) })),
   ),
 )
 
@@ -682,6 +747,27 @@ export const usageAtom = Atom.family((scope: AppScope) =>
             ...appScopeOf(scope),
             ...(scope.release === undefined ? {} : { release: scope.release }),
           },
+        })
+        return { usage, period }
+      }),
+    ),
+  ),
+)
+
+/**
+ * How the project's apps were used by UTC day over the last 15 days, whatever the analytics period:
+ * enough for the latest whole day and the same day a week before, on Now and the project's page.
+ * With the period asked about.
+ */
+export const recentUsageAtom = Atom.family((scope: AppScope) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastOf(15 * day)
+        const usage = yield* client.analytics.usage({
+          params: { project: scope.project },
+          query: { ...period, ...appScopeOf(scope) },
         })
         return { usage, period }
       }),

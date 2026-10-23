@@ -55,7 +55,7 @@ function SignOut({ signIn }: { readonly signIn: SignIn }) {
               end(signIn.id)
               if (signIn.current) {
                 // Signed out here: the start shows the sign-in.
-                navigate({ page: "start" }, { replace: true })
+                navigate({ page: "now" }, { replace: true })
                 window.location.reload()
               }
             }}

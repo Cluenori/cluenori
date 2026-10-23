@@ -1,20 +1,38 @@
-import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ProjectKey, TraceId } from "@cluenori/foundation"
-import { Incident, IncidentId } from "@cluenori/incidents"
-import type { OperationRow, ErrorGroup, LoadSeries } from "@cluenori/signals"
+import {
+  calendarDayOf,
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  Period,
+  ProjectKey,
+  ReleaseVersion,
+  TraceId,
+} from "@cluenori/foundation"
+import { Incident, IncidentId, MonitorId, MonitorUrl } from "@cluenori/incidents"
+import { Project, ProjectName } from "@cluenori/projects"
+import type { Delivery, Promotion, PromotionState } from "@cluenori/releases"
+import { PromotionId } from "@cluenori/releases"
+import type { AppUsage, ErrorGroup, LoadSeries } from "@cluenori/signals"
 import { ErrorGroupId, SpanId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
-import { axisTime, dayOf } from "@/lib/format"
+import { axisTime, dayOf, duration, share } from "@/lib/format"
+import type { TodayList } from "@/project-data"
 import {
-  attentionOf,
+  appEnvironmentsOf,
+  changeOf,
   columnTimesOf,
   environmentsOf,
   exceptionsOf,
   isShownIn,
   logColumnsOf,
   loadColumnsOf,
+  needsYouOf,
   operationSpanOf,
+  peopleOf,
+  projectStateOf,
+  waitingReleasesOf,
 } from "@/project-facts"
 
 const minute = 60_000
@@ -23,6 +41,7 @@ const now = Date.UTC(2026, 9, 20, 9, 40)
 const at = (epochMillis: number) => DateTime.makeUnsafe(epochMillis)
 const project = ProjectKey.make("notes")
 const api = ComponentKey.make("notes-api")
+const ios = ComponentKey.make("notes-ios")
 const production = EnvironmentKey.make("production")
 const staging = EnvironmentKey.make("staging")
 const euProduction = EnvironmentKey.make("prod-eu")
@@ -168,20 +187,6 @@ describe("columnTimesOf", () => {
   })
 })
 
-const operation = (name: string, p95Ms: number): OperationRow => ({
-  component: api,
-  operation: EnvelopeName.make(name),
-  count: 1_000,
-  errors: 0,
-  averageMs: p95Ms / 2,
-  p50Ms: p95Ms / 3,
-  p80Ms: p95Ms / 2,
-  p95Ms,
-  p99Ms: p95Ms * 2,
-})
-
-const table = (rows: ReadonlyArray<OperationRow>) => ({ rows, count: 1_000, errors: 0 })
-
 // An incident of an operation failing, in `environment`, or in none.
 const incident = (id: string, environment: EnvironmentKey | undefined) =>
   new Incident({
@@ -203,100 +208,243 @@ const incident = (id: string, environment: EnvironmentKey | undefined) =>
 // A page of a deployment that names no environments.
 const everyEnvironment = { offered: [], production: [] }
 
-describe("attentionOf", () => {
-  const items = attentionOf({
+// What Today answered at `now`: Notes's open incident, an error happening now, a new one, a slower
+// operation, and Landing, silent.
+const landing = ProjectKey.make("landing")
+const today = (items: TodayList["items"], unanswered: ReadonlyArray<ProjectKey> = []): TodayList => ({
+  items,
+  projects: [
+    new Project({ key: project, name: ProjectName.make("Notes"), createdAt: at(0) }),
+    new Project({ key: landing, name: ProjectName.make("Landing"), createdAt: at(0) }),
+  ],
+  unanswered,
+  at: at(now),
+})
+const answered = today([
+  { _tag: "incident", project, incident: incident("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64", production) },
+  {
+    _tag: "error",
     project,
-    environments: everyEnvironment,
-    errors: {
-      covered: new Period({ from: at(now - 24 * hour), to: at(now) }),
-      groups: [
-        group({ id: ErrorGroupId.make("1111111111111111"), firstSeen: at(now - 2 * hour), lastSeen: at(now - hour) }),
-        group({ id: ErrorGroupId.make("2222222222222222"), lastSeen: at(now - 2 * minute) }),
-      ],
-      occurrences: 84,
-    },
-    incidents: {
-      open: [
-        new Incident({
-          id: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64"),
-          component: api,
-          subject: "POST /api/export",
-          title: "POST /api/export: 20% failed, usually 0.1%",
-          evidence: {
-            _tag: "failing",
-            operation: EnvelopeName.make("POST /api/export"),
-            failed: 10,
-            count: 50,
-            usualRate: 0.001,
-          },
-          openedAt: at(now - 12 * minute),
-        }),
-      ],
-      resolved: [],
-      checkedAt: at(now),
-    },
-    compared: {
-      lastDay: table([operation("GET /api/feed", 620), operation("POST /api/export", 4_200)]),
-      usual: table([operation("GET /api/feed", 300), operation("POST /api/export", 4_000)]),
-    },
-  })
+    error: group({
+      id: ErrorGroupId.make("2222222222222222"),
+      lastSeen: at(now - 2 * minute),
+      lastEnvironment: production,
+    }),
+    isNew: false,
+    ongoing: true,
+  },
+  {
+    _tag: "error",
+    project,
+    error: group({ id: ErrorGroupId.make("1111111111111111"), firstSeen: at(now - 2 * hour) }),
+    isNew: true,
+    ongoing: false,
+  },
+  {
+    _tag: "slower",
+    project,
+    component: api,
+    environment: production,
+    operation: EnvelopeName.make("GET /api/feed"),
+    p95Ms: 620,
+    usualP95Ms: 300,
+  },
+  { _tag: "silent", project: landing, lastDataAt: at(now - 3 * 24 * hour) },
+])
 
-  it("puts open incidents and what is failing now before what is new or slower", () => {
+// A promotion of notes-ios's 2.5.0+318 to production, in `state`.
+const promotion = (id: string, state: PromotionState): Promotion => ({
+  id: PromotionId.make(id),
+  component: ios,
+  release: ReleaseVersion.make("2.5.0+318"),
+  environment: production,
+  startedAt: at(now - 26 * hour),
+  state,
+})
+const delivery = (...promotions: ReadonlyArray<Promotion>): Delivery => ({
+  components: [
+    {
+      component: ios,
+      environments: promotions.map((each) => ({ environment: production, promotion: each })),
+    },
+  ],
+})
+
+describe("needsYouOf", () => {
+  const waiting = waitingReleasesOf(
+    project,
+    delivery(promotion("019a1000-0000-7000-8000-000000000023", "approved")),
+    at(now),
+  )
+  const items = needsYouOf(answered, waiting)
+
+  it("keeps Today's order, then the releases waiting for a member", () => {
     assert.deepStrictEqual(
-      items.map((item) => item.key),
+      items.map((item) => [item.kind, item.project]),
       [
-        "incident 0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64",
-        "ongoing 2222222222222222",
-        "new 1111111111111111",
-        `slower notes-api\u0000\u0000GET /api/feed`,
+        ["Failing", project],
+        ["Happening now", project],
+        ["New error", project],
+        ["Slower", project],
+        ["Silent", landing],
+        ["Release", project],
       ],
     )
-    assert.deepStrictEqual(items[0]?.action?.to, {
+  })
+
+  it("says each in words, with when, and opens the page that shows it", () => {
+    const [failing, ongoing, fresh, slower, silent, release] = items
+    assert.strictEqual(failing?.title, "POST /api/export")
+    assert.strictEqual(
+      failing?.detail,
+      `${share(10, 50)} of 50 failed in the last 15 minutes, usually ${share(0.001, 1)}`,
+    )
+    assert.deepStrictEqual(failing?.to, {
       page: "operation",
       project,
       component: api,
+      environment: production,
       operation: EnvelopeName.make("POST /api/export"),
     })
-  })
-
-  it("leaves an operation that is slow by nature, but as usual, alone", () => {
-    assert.isFalse(items.some((item) => item.key.includes("POST /api/export")))
-  })
-
-  it("keeps the incidents of the environment shown, and those of none in production", () => {
-    const open = [
-      incident("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a61", production),
-      incident("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a62", staging),
-      incident("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a63", undefined),
-    ]
-    const titlesIn = (shown: EnvironmentKey) =>
-      attentionOf({
-        project,
-        environments: { shown, offered: [production, staging], production: [production] },
-        errors: { groups: [], occurrences: 0 },
-        incidents: { open, resolved: [] },
-        compared: { lastDay: table([]), usual: table([]) },
-      }).map((item) => item.title)
-    assert.deepStrictEqual(titlesIn(production), ["Failing in production", "Failing in no environment"])
-    assert.deepStrictEqual(titlesIn(staging), ["Failing in staging"])
-  })
-
-  it("names an error that is new and happening now once", () => {
-    const both = attentionOf({
+    assert.deepStrictEqual(ongoing?.to, {
+      page: "error",
       project,
-      environments: everyEnvironment,
-      errors: {
-        covered: new Period({ from: at(now - 24 * hour), to: at(now) }),
-        groups: [group({ firstSeen: at(now - 2 * hour), lastSeen: at(now - minute) })],
-        occurrences: 42,
-      },
-      incidents: { open: [], resolved: [] },
-      compared: { lastDay: table([]), usual: table([]) },
+      environment: production,
+      error: ErrorGroupId.make("2222222222222222"),
     })
-    assert.deepStrictEqual(
-      both.map((item) => item.title),
-      ["NpgsqlException is new, and happening right now"],
+    assert.strictEqual(ongoing?.tone, "failure")
+    assert.strictEqual(fresh?.tone, "warning")
+    assert.strictEqual(slower?.detail, `p95 ${duration(620)} over the last day, usually ${duration(300)}; notes-api`)
+    assert.isUndefined(slower?.when)
+    assert.deepStrictEqual(silent?.to, { page: "tech", project: landing })
+    assert.strictEqual(release?.title, "2.5.0+318 passed App Store review")
+    assert.deepStrictEqual(release?.to, {
+      page: "release",
+      project,
+      component: ios,
+      release: ReleaseVersion.make("2.5.0+318"),
+      environment: production,
+    })
+  })
+
+  it("opens a monitor's incident on the project's incidents, where its checks are", () => {
+    const down = needsYouOf(
+      today([
+        {
+          _tag: "incident",
+          project,
+          incident: new Incident({
+            id: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a70"),
+            component: api,
+            subject: "https://notes.example/health",
+            title: "https://notes.example/health: down",
+            evidence: {
+              _tag: "down",
+              monitor: MonitorId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a71"),
+              url: MonitorUrl.make("https://notes.example/health"),
+              failures: 3,
+              problem: "HTTP 503",
+            },
+            openedAt: at(now - 4 * minute),
+          }),
+        },
+      ]),
+      [],
     )
+    assert.deepStrictEqual(
+      down.map((item) => [item.kind, item.detail, item.to]),
+      [["Down", "3 checks failed in a row, the last: HTTP 503", { page: "incidents", project }]],
+    )
+  })
+})
+
+describe("waitingReleasesOf", () => {
+  it("keeps a release approved in review, and one waiting on GitHub, and nothing else", () => {
+    const states: ReadonlyArray<PromotionState> = ["running", "approved", "waiting", "inReview", "succeeded"]
+    const found = waitingReleasesOf(
+      project,
+      delivery(...states.map((state, index) => promotion(`019a1000-0000-7000-8000-00000000003${index}`, state))),
+      at(now),
+    )
+    assert.deepStrictEqual(
+      found.map((item) => item.title),
+      ["2.5.0+318 passed App Store review", "2.5.0+318 waits for approval on GitHub"],
+    )
+  })
+})
+
+describe("projectStateOf", () => {
+  const items = needsYouOf(answered, [])
+
+  it("colors a project as what needs the founder most there, and counts it all", () => {
+    const notes = items.filter((item) => item.project === project)
+    assert.deepStrictEqual(projectStateOf(notes, true), {
+      tone: "failure",
+      line: "1 incident · 2 errors · 1 slower operation",
+    })
+    assert.deepStrictEqual(projectStateOf([], true), { tone: "fine", line: "Nothing needs you" })
+  })
+
+  it("says a project that didn't answer is unknown, never fine", () => {
+    assert.strictEqual(projectStateOf([], false).tone, "unknown")
+  })
+})
+
+// The usage of the 15 days up to today, `now`'s, each day with as many people as `peopleOn` says.
+const usage = (peopleOn: (daysAgo: number) => number | undefined): AppUsage => {
+  const todayNumber = Math.floor(now / (24 * hour))
+  const days = Array.from({ length: 15 }, (_, index) => 14 - index).flatMap((daysAgo) => {
+    const people = peopleOn(daysAgo)
+    return people === undefined
+      ? []
+      : [
+          {
+            day: calendarDayOf(at((todayNumber - daysAgo) * 24 * hour)),
+            people,
+            installations: people,
+            monthPeople: people * 10,
+            sessions: people,
+            foregroundMs: 0,
+          },
+        ]
+  })
+  return { days, people: 0, installations: 0, sessions: 0, releases: [] }
+}
+
+describe("peopleOf", () => {
+  it("compares the latest whole UTC day with the same day a week before", () => {
+    const people = peopleOf(
+      usage((daysAgo) => (daysAgo === 1 ? 53 : 50)),
+      at(now),
+    )
+    assert.deepStrictEqual(people.daily, { value: 53, weekBefore: 50 })
+    assert.deepStrictEqual(people.monthly, { value: 530, weekBefore: 500 })
+    assert.closeTo(changeOf(people.daily) ?? 0, 0.06, 1e-9)
+  })
+
+  it("leaves a day the apps didn't send on unknown, and a week before without people uncompared", () => {
+    const people = peopleOf(
+      usage((daysAgo) => (daysAgo >= 8 ? undefined : 40)),
+      at(now),
+    )
+    assert.deepStrictEqual(people.daily, { value: 40 })
+    assert.isUndefined(changeOf(people.daily))
+    assert.isUndefined(changeOf({ value: 4, weekBefore: 0 }))
+  })
+})
+
+describe("appEnvironmentsOf", () => {
+  const beta = EnvironmentKey.make("beta")
+  const prod = EnvironmentKey.make("prod")
+
+  it("shows the environment chosen when the apps sent from it, else their production one", () => {
+    assert.strictEqual(appEnvironmentsOf([beta, production], [production], beta).shown, beta)
+    assert.strictEqual(appEnvironmentsOf([beta, production], [production], prod).shown, production)
+    assert.deepStrictEqual(appEnvironmentsOf([beta, production, beta], [production], undefined).offered, [
+      production,
+      beta,
+    ])
+    assert.deepStrictEqual(appEnvironmentsOf([], [production], prod), { offered: [], production: [production] })
   })
 })
 

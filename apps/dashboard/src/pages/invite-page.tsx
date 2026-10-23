@@ -35,7 +35,7 @@ function Join({ code }: { readonly code: InviteCode }) {
   // Joined and signed in: on to the projects, without the invitation in the history.
   useEffect(() => {
     if (AsyncResult.isSuccess(joined)) {
-      navigate({ page: "start" }, { replace: true })
+      navigate({ page: "now" }, { replace: true })
     }
   }, [joined])
 

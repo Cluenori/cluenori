@@ -98,7 +98,7 @@ describe("GitHub journey", () => {
     Effect.gen(function* () {
       answerApi(gitHubApi())
       const github = catchPostsToGitHub()
-      window.history.pushState(null, "", "/notes")
+      window.history.pushState(null, "", "/projects/notes")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // An owner finds it in the sidebar.
@@ -235,7 +235,7 @@ describe("GitHub journey", () => {
     Effect.gen(function* () {
       const notes = notesApi({ as: mira })
       answerApi((call) => (call.path[0] === "github" ? reply(NotAllowed, new NotAllowed(), 403) : notes(call)))
-      window.history.pushState(null, "", "/notes")
+      window.history.pushState(null, "", "/projects/notes")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() =>

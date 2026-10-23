@@ -66,7 +66,7 @@ export function SearchDialog({
           <CommandEmpty>Nothing matches.</CommandEmpty>
           <CommandGroup heading="Projects">
             {projects.map((entry) => (
-              <CommandItem key={entry.key} onSelect={() => go({ page: "overview", project: entry.key })}>
+              <CommandItem key={entry.key} onSelect={() => go({ page: "project", project: entry.key })}>
                 <FolderIcon />
                 {entry.name}
               </CommandItem>

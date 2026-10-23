@@ -1,16 +1,14 @@
 import type { ProjectKey } from "@cluenori/foundation"
 import {
-  ActivityIcon,
-  BugIcon,
+  BellDotIcon,
   ChartNoAxesColumnIcon,
   GitBranchIcon,
-  LayoutGridIcon,
   LogOutIcon,
   MonitorIcon,
   MoonIcon,
   PaletteIcon,
-  ScrollTextIcon,
   SearchIcon,
+  ServerIcon,
   SmartphoneIcon,
   SunIcon,
   TagIcon,
@@ -20,8 +18,8 @@ import { useState } from "react"
 
 import type { Theme } from "@/lib/theme"
 import { applyTheme, storedTheme } from "@/lib/theme"
-import type { Area, Route } from "@/router"
-import { Link } from "@/router"
+import type { Door, Route } from "@/router"
+import { doorOf, Link } from "@/router"
 import { Kbd } from "@/views/ui/kbd"
 import {
   Sidebar,
@@ -40,38 +38,17 @@ import {
   SidebarRail,
 } from "@/views/ui/sidebar"
 
-// Pages that open from an area's page, so the area stays marked on them.
-const underArea = (route: Route, area: Area) => {
-  switch (area) {
-    case "performance":
-      return route.page === "operations" || route.page === "operation" || route.page === "trace"
-    case "errors":
-      return route.page === "error"
-    case "logs":
-      return false
-    case "releases":
-      return route.page === "release"
-    case "analytics":
-      return (
-        route.page === "appReleases" ||
-        route.page === "appRelease" ||
-        route.page === "features" ||
-        route.page === "person"
-      )
-  }
-}
-
-const areas: ReadonlyArray<{ readonly area: Area; readonly label: string; readonly icon: typeof BugIcon }> = [
-  { area: "performance", label: "Performance", icon: ActivityIcon },
-  { area: "errors", label: "Errors", icon: BugIcon },
-  { area: "logs", label: "Logs", icon: ScrollTextIcon },
-  { area: "releases", label: "Releases", icon: TagIcon },
-  { area: "analytics", label: "Analytics", icon: ChartNoAxesColumnIcon },
+// A project's doors, in the order its page shows them.
+const doors: ReadonlyArray<{ readonly door: Door; readonly label: string; readonly icon: typeof TagIcon }> = [
+  { door: "product", label: "Product", icon: ChartNoAxesColumnIcon },
+  { door: "tech", label: "Tech", icon: ServerIcon },
+  { door: "releases", label: "Releases", icon: TagIcon },
 ]
 
 /**
- * The sidebar: every project, one click away, with the open project's pages under it, search, and
- * the viewer's settings. A component and an environment chosen on one page stay chosen on the others.
+ * The sidebar: Now, then every project, one click away, with the open project's three doors under
+ * it, marked while a page behind one is open; search; and the viewer's settings. An environment
+ * chosen on one page stays chosen on the others, and a component on Product's and Releases'.
  */
 export function AppSidebar({
   route,
@@ -94,7 +71,18 @@ export function AppSidebar({
   const component = "component" in route ? route.component : undefined
   const environment = "environment" in route ? route.environment : undefined
   const inEnvironment = environment === undefined ? {} : { environment }
-  const onOverview = route.page === "overview" || route.page === "start"
+  const filters = { ...(component === undefined ? {} : { component }), ...inEnvironment }
+  const opened = doorOf(route)
+  const doorRoute = (door: Door, project: ProjectKey): Route => {
+    switch (door) {
+      case "product":
+        return { page: "analytics", project, ...filters }
+      case "tech":
+        return { page: "tech", project, ...inEnvironment }
+      case "releases":
+        return { page: "releases", project, ...filters }
+    }
+  }
 
   return (
     <Sidebar collapsible="icon">
@@ -117,6 +105,23 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={route.page === "now"}
+                  tooltip="Now"
+                  render={<Link to={{ page: "now" }} />}
+                  className="h-9"
+                >
+                  <BellDotIcon />
+                  <span>Now</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
           <SidebarGroupLabel>Projects</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -124,9 +129,9 @@ export function AppSidebar({
                 return (
                   <SidebarMenuItem key={project.key}>
                     <SidebarMenuButton
-                      isActive={current === project.key && onOverview}
+                      isActive={current === project.key && route.page === "project"}
                       tooltip={project.name}
-                      render={<Link to={{ page: "overview", project: project.key }} />}
+                      render={<Link to={{ page: "project", project: project.key }} />}
                       className="h-9"
                     >
                       {/* The project's initial, so a collapsed sidebar still tells projects apart. */}
@@ -140,29 +145,11 @@ export function AppSidebar({
                     </SidebarMenuButton>
                     {current === project.key && (
                       <SidebarMenuSub>
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton
-                            isActive={onOverview}
-                            render={<Link to={{ page: "overview", project: project.key, ...inEnvironment }} />}
-                          >
-                            <LayoutGridIcon />
-                            <span>Overview</span>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                        {areas.map((entry) => (
-                          <SidebarMenuSubItem key={entry.area}>
+                        {doors.map((entry) => (
+                          <SidebarMenuSubItem key={entry.door}>
                             <SidebarMenuSubButton
-                              isActive={route.page === entry.area || underArea(route, entry.area)}
-                              render={
-                                <Link
-                                  to={{
-                                    page: entry.area,
-                                    project: project.key,
-                                    ...(component === undefined ? {} : { component }),
-                                    ...inEnvironment,
-                                  }}
-                                />
-                              }
+                              isActive={opened === entry.door}
+                              render={<Link to={doorRoute(entry.door, project.key)} />}
                             >
                               <entry.icon />
                               <span>{entry.label}</span>

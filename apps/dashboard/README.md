@@ -1,9 +1,11 @@
 # @cluenori/dashboard
 
-The web app over the public API: each project opens on an overview of what needs attention and a
-summary of each area, and each area (performance, errors, logs, releases, analytics) has a page of its
-own, for the whole project or one component. The Worker serves it, and a browser signs in with a passkey, or with the
-deployment's API token, an owner's way in. Owners invite members to some projects there.
+The web app over the public API, a tree of levels, the same as the iPhone app's: Now, what needs the
+founder across every project and how each is; a project, its people, its last day and what needs the
+founder there, with three doors, Product, Tech and Releases; and each door's pages below it. Each
+level shows a summary to act on or understand, and one level deeper shows more. The Worker serves it,
+and a browser signs in with a passkey, or with the deployment's API token, an owner's way in. Owners
+invite members to some projects there.
 
 ## Use it
 
@@ -17,53 +19,75 @@ bun run test apps/dashboard              from the root: rules and journeys, in P
 
 `bun install` installs the Chromium the tests run in (`bun run browsers` here), once per machine.
 
-Pages, each with a permanent URL (`src/router.tsx`):
+Pages, a level each, each with a permanent URL (`src/router.tsx`), indented under the level they
+open from. Above every page but Now, its trail: each level above it, one click away.
 
 ```
-/                                                the first project, or how to create one; signed out, the sign-in
-/notes                                           the overview: needs attention, a summary per area, each component,
-                                                 and the environments the project calls production
-/notes/performance?component=notes-api           the load and failures over time, the operations that got slower or take the most time
-/notes/operations?component=notes-api            every operation, searchable and sortable by any percentile
-/notes/operations/GET%20/api/feed?component=…    one operation, its name as path segments: its load and p95 over time, its slowest and failed traces
-/notes/errors                                    errors over time by component, and every error group
-/notes/errors/<id>                               one error: its exception chain, every frame, its operation, its log record
-/notes/logs                                      warnings and errors over time, and every line, searchable
-/notes/errors?component=notes-api&environment=staging&release=2.4.0%2B312
-                                                 any page of numbers narrowed to a component, an environment (production
-                                                 when none is named) and a release; an operation, an error or a trace
-                                                 opened from it keeps them
-/notes/releases?component=notes-api              each component's delivery: its environments in the order releases go, each
-                                                 with the release there now and for how long, its commit, verdict and store
-                                                 stage, a promotion going there, and the one next step (building the latest
-                                                 commit, or promoting the release of the environment before); the components
-                                                 that ship with it inside it; its version and next build, bumped or set; its
-                                                 links. Then the history: the releases that ran, were deployed or uploaded,
-                                                 the latest first, each against the release before it; sources that failed
+/                                                Now: what needs the founder across every project, the most urgent
+                                                 first (incidents, errors happening now or new, operations slower
+                                                 than their own usual, projects that sent nothing, releases waiting
+                                                 for a member), each one click from what it is about; then each
+                                                 project, its state, its last 24 hours, and its daily people against
+                                                 last week. Without projects, how to create one; signed out, the sign-in
+  /projects/notes                                a project: its apps' daily and monthly people against last week, its
+                                                 load over the last 24 hours with what failed, what needs the founder
+                                                 there, and its doors, a line each: Product, Tech, Releases
+    /projects/notes/analytics?component=notes-ios
+                                                 Product, for now how the apps are used: DAU, WAU, MAU and sessions by
+                                                 UTC day, the releases in use, weekly retention cohorts, the latest
+                                                 releases' app health against the release before each, the features
+                                                 most used, finding a person by the app's user ID; and each component's
+                                                 SDK keys (issued, copied, revoked after asking) and version policy
+                                                 (set, changed, cleared after asking). With no app sending, what to do
+                                                 first
+      /projects/notes/analytics/releases         every release that sent in the period, by its app health and verdict
+      /projects/notes/analytics/releases/notes-ios/0.3.0+20?environment=production
+                                                 one release's app health, each measure beside the release before it's,
+                                                 the people on it by day, and its features with the memory each took
+      /projects/notes/analytics/features         every feature key, searchable, sorted by people, events, screens or memory
+      /projects/notes/analytics/people?user=user-1842
+                                                 one person, by the app's own user ID: their installations, days
+                                                 active, and what they did, newest first
+    /projects/notes/tech?environment=staging     Tech: the operations slower than usual and those taking the most
+                                                 time, the errors happening now, new, and most frequent, warnings and
+                                                 errors over time, and the incidents, the top few of each with a way
+                                                 to all of them; each component's numbers; the environments the
+                                                 project calls production, changed here
+      /projects/notes/performance                the load and failures over time, the operations that got slower or
+                                                 take the most time
+      /projects/notes/operations                 every operation, searchable and sortable by any percentile
+        /projects/notes/operations/GET%20/api/feed?component=…
+                                                 one operation, its name as path segments: its load and p95 over time,
+                                                 its slowest and failed traces
+      /projects/notes/errors                     errors over time by component, and every error group
+        /projects/notes/errors/<id>              one error: its exception chain, every frame, its operation, its log record
+      /projects/notes/logs                       warnings and errors over time, and every line, searchable
+      /projects/notes/incidents                  every open incident, those resolved in the last 7 days, and the monitors,
+                                                 each with its last check
+      /projects/notes/traces/<trace id>[?around=<ISO 8601>]
+                                                 one trace from the archive: its steps on a time line, its log lines
+      /projects/notes/errors?component=notes-api&environment=staging&release=2.4.0%2B312
+                                                 any page of numbers narrowed to a component, an environment
+                                                 (production when none is named) and a release; an operation, an error
+                                                 or a trace opened from it keeps them
+    /projects/notes/releases?component=notes-api Releases: each component's delivery: its environments in the order
+                                                 releases go, each with the release there now and for how long, its
+                                                 commit, verdict and store stage, a promotion going there, and the one
+                                                 next step (building the latest commit, or promoting the release of
+                                                 the environment before); the components that ship with it inside it;
+                                                 its version and next build, bumped or set; its links. Then the
+                                                 history: the releases that ran, were deployed or uploaded, the latest
+                                                 first, each against the release before it; sources that failed
                                                  lately; how AI drafts of release notes read
-/notes/releases/notes-api/2.4.0+312?environment=production
-                                                 one release against the one before, one click from its performance, errors
-                                                 and logs: its commit, where it runs now ("In dev since 13:57 · not in prod
-                                                 yet"), its one next step when an environment's is it, promoting it to another
-                                                 environment, its App Store build, its promotions, releasing one App Store
-                                                 review approved, its notes for its users (drafted with AI, edited, saved),
-                                                 the pull requests or commits since, what got slower or fails more, its new
-                                                 errors, the incidents while it ran, what got faster or fails less, new
-                                                 operations
-/notes/analytics?component=notes-ios             how the apps are used: DAU, WAU, MAU and sessions by UTC day, the releases in
-                                                 use, weekly retention cohorts, the latest releases' app health against the
-                                                 release before each, the features most used, finding a person by the app's
-                                                 user ID; and each component's SDK keys (issued, copied, revoked after asking)
-                                                 and version policy (set, changed, cleared after asking). With no app sending,
-                                                 what to do first
-/notes/analytics/releases                        every release that sent in the period, by its app health and verdict
-/notes/analytics/releases/notes-ios/0.3.0+20?environment=production
-                                                 one release's app health, each measure beside the release before it's, the
-                                                 people on it by day, and its features with the memory each took
-/notes/analytics/features                        every feature key, searchable, sorted by people, events, screens or memory
-/notes/analytics/people?user=user-1842           one person, by the app's own user ID: their installations, days active, and
-                                                 what they did, newest first
-/notes/traces/<trace id>[?around=<ISO 8601>]     one trace from the archive: its steps on a time line, its log lines
+      /projects/notes/releases/notes-api/2.4.0+312?environment=production
+                                                 one release against the one before, one click from its performance,
+                                                 errors and logs: its commit, where it runs now ("In dev since 13:57 ·
+                                                 not in prod yet"), its one next step when an environment's is it,
+                                                 promoting it to another environment, its App Store build, its
+                                                 promotions, releasing one App Store review approved, its notes for its
+                                                 users (drafted with AI, edited, saved), the pull requests or commits
+                                                 since, what got slower or fails more, its new errors, the incidents
+                                                 while it ran, what got faster or fails less, new operations
 /phones                                          the paired phones, removing one, and adding one by its QR code
 /browsers                                        the browsers signed in with passkeys, signing one out, and adding a passkey
 /members                                         owners: the members, the projects each sees, inviting and removing
@@ -73,9 +97,10 @@ Pages, each with a permanent URL (`src/router.tsx`):
 /kit                                             every view in the theme, to review the design; opens signed out too
 ```
 
-An address with a key that isn't one, such as `/Notes!`, opens a page that says so. `/phones`,
-`/browsers`, `/members`, `/github`, `/invite` and `/kit` are the deployment's own, so a project with
-one of those keys has no pages.
+A project's pages are under `/projects/`, as in the API, so any key is a project's, `kit` too. An
+address from before they moved, such as `/notes/errors`, opens its page at its address now
+(`movedAddressOf`, in `src/main.tsx`). An address with a key that isn't one, such as
+`/projects/Notes!`, opens a page that says so.
 
 ## Owns
 
@@ -87,11 +112,26 @@ one of those keys has no pages.
   public API, run on the API's typed client (`src/api-client.ts`), with the period an atom too. An
   answer is kept 5 minutes after the last page showing it closes, and asked again when it is older
   than 30 seconds, as it is shown and when the tab comes back into view.
-- **What the pages say about the answers,** `src/project-facts.ts`: what needs attention, when
-  failures jumped, which errors are new or happening now, and which operations got slower. A step a
-  series has no point for is unknown, never zero; "now" is the time an answer covers up to. What
-  only the releases pages say, about promotions, deploy targets and versions, is
-  `src/release-facts.ts`, which loads with them, not with the first load.
+- **What the pages say about the answers,** `src/project-facts.ts`: what needs the founder (Needs
+  you), how each project is, people against last week, when failures jumped, which errors are new
+  or happening now, and which operations got slower. A step a series has no point for is unknown,
+  never zero; "now" is the time an answer covers up to. What only the releases pages say, about
+  promotions, deploy targets and versions, is `src/release-facts.ts`, which loads with them, not with
+  the first load.
+- **Needs you,** on Now and a project's page (`needsYouOf`, `src/views/needs-you-list.tsx`): Today's
+  items, in Today's order and in the environments each project calls production, each said in
+  words with its kind, project, what it is, a line of evidence and when, one click from what it is
+  about (an incident's operation, or the project's monitors for one that is Down; the error; the
+  operation; the release); then the releases waiting for a member, from each project's delivery:
+  one App Store review approved, and one whose workflow waits on GitHub for its environment to be
+  approved. A project Today couldn't ask is said to be unknown, never fine. Today is read through
+  the API's definition alone (`TodayList` in `src/project-data.ts`), as the dashboard doesn't depend
+  on the Today engine's package.
+- **People against last week,** on Now and a project's page (`peopleOf`): the apps' daily and
+  monthly people on the latest whole UTC day, beside the same day a week before, in the environment
+  Product opens on; a day not counted is unknown, and so is a change from a week before with none.
+- **The tree,** `trailOf` and `doorOf` in `src/router.tsx`: which level each page is, and the door
+  it is behind, which the trail above a page (`src/views/page-trail.tsx`) and the sidebar show.
 - **Showing what "slower", "new" and "happening now" mean:** the rules are Signals'
   (`slowerOf`, `errorStatusOf` in `@cluenori/signals`), which Today on the server uses too; the
   pages mark them and say them in words. There is no fixed limit and no setting: an operation slow
@@ -113,8 +153,9 @@ one of those keys has no pages.
   chooses what the page shows, never where a release goes. One alone is said as text; a deployment
   that doesn't say them gets no switch and no parameter. A page waits for the project's answer only
   when nothing names its environment, so it asks its questions once.
-- **Choosing production,** on the overview: the environments seen and any typed in, checked by the
-  API's rule for a key (`src/views/production-dialog.tsx`).
+- **Choosing production,** on Tech: the environments seen and any typed in, checked by the API's
+  rule for a key (`src/views/production-dialog.tsx`). Now and a project's page always show
+  production, whatever was picked on the project's other pages, as Today does.
 - **Delivery,** leading the Releases page (`src/views/delivery-list.tsx`, rules in
   `src/release-facts.ts`): a block for each component, its environments as stages in the order
   releases go, left to right, stacked on a phone, each with the release there now, for how long and
@@ -171,16 +212,16 @@ one of those keys has no pages.
   app health of every environment, as apps name environments of their own. A release's verdict and
   rules are Analytics' (`@cluenori/analytics`); the pages say them ("Worse: cold launch slower, more
   crashes") and color them as releases' verdicts are. A project whose apps sent nothing says what to
-  do first, with the SDK's start for this deployment; the overview's summary of the apps shows only
-  once they sent (`src/pages/overview-apps.tsx`). Each component's SDK keys, shown whole since they
+  do first, with the SDK's start for this deployment, and so does its project's People. Each component's SDK keys, shown whole since they
   are public, issued and revoked after asking, and its version policy, set in a dialog checked by the
   API's own schemas and cleared after asking, are on the Analytics page, for every component: the API
   doesn't say which are apps.
 - **What a color means,** `src/lib/colors.ts`: each component keeps one color everywhere; red is
-  failure, yellow a warning.
+  failure, yellow a warning; in Needs you, purple is a release waiting for a member.
 - **The panel** every question is answered in, `src/views/panel.tsx`, an answer's three states,
-  `src/views/loaded.tsx`, and the charts: `bar-rows.tsx` for counts over time, `operation-table.tsx`
-  for how long operations take.
+  `src/views/loaded.tsx`, and the charts: `bar-rows.tsx` for counts over time, a row each;
+  `load-bars.tsx` for one count over time with what failed on top, as a summary draws it;
+  `operation-table.tsx` for how long operations take.
 - **How people read numbers and times,** `src/lib/format.ts`: in the viewer's locale and time zone,
   passed to `Intl` explicitly.
 - **Adding a phone,** `src/pages/phones-page.tsx`: the pairing link as a QR code
@@ -235,9 +276,11 @@ one of those keys has no pages.
   shadcn CLI.
 - **The design,** after two looks were rejected (generic dark cards; then a speed spectrum with
   sentence filters, hover-only numbers, and a page per question):
-  - A project opens on its overview, the one place to act: what needs attention, the worst first,
-    each one click from its detail, and a summary of each area, the latest releases among them.
-    Analytics adds its summary there once the apps sent anything, and its pages beside the others.
+  - Then a third, "everything at one level", was replaced by the tree the iPhone app has too: at each
+    level a summary to act on or understand, and one level deeper for more, never overloaded. Now is
+    the place to act across projects; a project's page, within it; each door's summary leads to its
+    full pages, and an item with more to show has a page of its own. The web gives a level more room,
+    never more levels.
   - Each area is a page with a one-click component switch, kept in the URL and carried between
     pages.
   - Every control is one click: period and log level are visible buttons; projects are listed in
@@ -251,9 +294,10 @@ one of those keys has no pages.
   it did before an error); and an operation's origin. Their views
   wait in the design kit, "Ahead of the API", on sample data (`src/sample/`), which nothing else
   reads.
-- **Navigation is instant:** the pages most visits open are in the first load; one operation's page,
-  one error's page, a trace, the releases' pages, the analytics pages, and the overview's list of
-  releases and summary of the apps load right after start, as search, signing in and the phone's sidebar sheet (with Base UI's dialog
+- **Navigation is instant:** the pages most visits open, Now, a project and Tech, are in the first
+  load; Tech's full pages (performance, operations, errors, logs, incidents), one operation's page,
+  one error's page, a trace, the releases' pages and the analytics pages load right after start, as
+  search, signing in and the phone's sidebar sheet (with Base UI's dialog
   machinery, `src/views/ui/sidebar-sheet.tsx`) do, so they are there before anyone opens them. An answer a page showed a moment ago is shown again at once, and refreshed in the
   background when stale.
 - **The first load's budget** is 250 KB of scripts, compressed, of which the typed API client is
@@ -262,8 +306,12 @@ one of those keys has no pages.
   5 KB heavier.
 - **Releases are asked in every environment** and the page keeps the shown one's, with those that
   name none when it is production (`isShownIn`): the API's environment filter leaves out builds
-  that name none, such as one only App Store Connect knows. The overview's incidents are kept to the
-  shown environment the same way, as the incidents question takes none.
+  that name none, such as one only App Store Connect knows. Tech's incidents are kept to the shown
+  environment the same way, as the incidents question takes none; the incidents page shows every one.
+- **Now asks a question a project,** for what one answer would serve better: each project's
+  delivery, for the releases waiting, and each one's project, load over the last day, apps' release
+  health and usage, for its row. The API has no question across projects for them yet; Today is the
+  only one.
 - **A release filter widens the period,** when a release's page opens an area: to the shortest period
   that covers the release from its first minute to now, so nothing of it is cut off and its charts are
   as fine as they can be. The period stays one choice for every page, so the others show it too; an

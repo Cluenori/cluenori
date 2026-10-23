@@ -19,7 +19,7 @@ describe("app keys journey", () => {
   it.effect("issues an SDK key and revokes the old one after asking", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/analytics?component=notes-ios")
+      window.history.pushState(null, "", "/projects/notes/analytics?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
       const app = screen.getByRole("region", { name: "notes-ios" })
@@ -60,7 +60,7 @@ describe("app keys journey", () => {
   it.effect("sets a version policy, says why one isn't set, and clears it after asking", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/analytics?component=notes-ios")
+      window.history.pushState(null, "", "/projects/notes/analytics?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
       const app = screen.getByRole("region", { name: "notes-ios" })

@@ -13,7 +13,7 @@ describe("performance journey", () => {
   it.effect("leads from the operations that take the most time to one operation's latency", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/performance")
+      window.history.pushState(null, "", "/projects/notes/performance")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("Load on every component")).toBeVisible())
@@ -51,7 +51,7 @@ describe("performance journey", () => {
   it.effect("says over which days it keeps traces when the period is longer", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/operations/GET%20/api/notes")
+      window.history.pushState(null, "", "/projects/notes/operations/GET%20/api/notes")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => screen.getByRole("button", { name: "30d" }).click())
@@ -69,7 +69,11 @@ describe("performance journey", () => {
   it.effect("says when an operation got slower than usual, and what usual is", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", `/notes/operations/${encodeURIComponent("GET /api/feed")}?component=notes-api`)
+      window.history.pushState(
+        null,
+        "",
+        `/projects/notes/operations/${encodeURIComponent("GET /api/feed")}?component=notes-api`,
+      )
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("Slower than usual:")).toBeVisible())
@@ -84,7 +88,7 @@ describe("performance journey", () => {
     Effect.gen(function* () {
       answerApi(notesApi())
       yield* Effect.promise(() => page.viewport(390, 844))
-      window.history.pushState(null, "", "/notes/errors")
+      window.history.pushState(null, "", "/projects/notes/errors")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("Errors over time")).toBeVisible())

@@ -10,18 +10,18 @@ import { answerApi, apiCalls } from "./fake-api.ts"
 import { exportTrace, notesApi } from "./notes-project.ts"
 
 describe("errors journey", () => {
-  it.effect("leads from the overview's ongoing error to its stack, and to its trace", () =>
+  it.effect("leads from Now's error happening now to its stack, and to its trace", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes")
+      window.history.pushState(null, "", "/")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      // The overview names the error that is happening now first, with one way in.
-      yield* Effect.promise(() =>
-        expect.element(screen.getByText("NpgsqlException is happening right now")).toBeVisible(),
-      )
+      // Now names the error happening now right after the incident, one click from its page.
+      const needsYou = screen.getByRole("region", { name: "Needs you" })
+      const happening = needsYou.getByRole("link", { name: /^Happening now · Notes.*NpgsqlException/ })
+      yield* Effect.promise(() => expect.element(happening).toBeVisible())
       yield* expectAccessible()
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Open the error" }).first().click())
+      yield* Effect.promise(() => happening.click())
 
       // The error's page: what it said, every frame, the library ones folded, and the operation it happened in.
       yield* Effect.promise(() =>
@@ -52,7 +52,7 @@ describe("errors journey", () => {
   it.effect("opens a trace from an address with only its ID, as one pasted from elsewhere", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", `/notes/traces/${exportTrace}`)
+      window.history.pushState(null, "", `/projects/notes/traces/${exportTrace}`)
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() =>
@@ -70,7 +70,7 @@ describe("errors journey", () => {
   it.effect("finds a log line by what it says, and asks again only when the search is submitted", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/logs")
+      window.history.pushState(null, "", "/projects/notes/logs")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("Retrying the export, attempt 2 of 3")).toBeVisible())
@@ -92,16 +92,20 @@ describe("errors journey", () => {
   it.live("shows a page's answers at once on going back to it", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes")
+      window.history.pushState(null, "", "/projects/notes")
       const screen = yield* Effect.promise(() => render(<App />))
-      const ongoing = screen.getByText("NpgsqlException is happening right now")
+      const ongoing = screen.getByRole("link", { name: /^Happening now.*NpgsqlException/ })
       yield* Effect.promise(() => expect.element(ongoing).toBeVisible())
 
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Logs" }).first().click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Tech", exact: true }).first().click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "All logs" }).click())
       yield* Effect.promise(() => expect.element(screen.getByText("Retrying the export, attempt 2 of 3")).toBeVisible())
       yield* Effect.sleep("1 second")
       const before = apiCalls().length
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Overview" }).click())
+      // Back to the project by the trail above the page.
+      yield* Effect.promise(() =>
+        screen.getByRole("navigation", { name: "Where you are" }).getByRole("link", { name: "Notes" }).click(),
+      )
       yield* Effect.promise(() => expect.element(ongoing).toBeVisible())
       // Kept from the first visit and still fresh, so nothing is asked again.
       assert.deepStrictEqual(

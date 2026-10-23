@@ -22,7 +22,7 @@ import {
 } from "./notes-project.ts"
 
 const worse = "2026.10.21-e91f09c"
-const worsePage = `/notes/releases/notes-api/${worse}?environment=production`
+const worsePage = `/projects/notes/releases/notes-api/${worse}?environment=production`
 
 // The calls that asked for the API's latest release.
 const releaseAsked = () =>
@@ -30,7 +30,7 @@ const releaseAsked = () =>
     (call) => call.method === "GET" && call.path.join("/") === `projects/notes/releases/notes-api/${worse}`,
   ).length
 
-const appPage = `/notes/releases/notes-ios/${encodeURIComponent(appRelease)}?environment=production`
+const appPage = `/projects/notes/releases/notes-ios/${encodeURIComponent(appRelease)}?environment=production`
 
 // The bodies of the promotions asked for of one release, oldest first.
 const promotedOf = (component: string, release: string) =>
@@ -507,7 +507,7 @@ describe("promotions journey", () => {
   it.effect("keeps a component's deploy targets when its repository changes, and shows how each goes", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ linked: iosWithThreeApps }))
-      window.history.pushState(null, "", "/notes/releases?component=notes-ios")
+      window.history.pushState(null, "", "/projects/notes/releases?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // Each environment of its delivery says how a release gets there.
@@ -579,7 +579,7 @@ describe("promotions journey", () => {
       yield* Effect.promise(() => app.unmount())
 
       // The releases: each component's delivery and version, the history, and the notes style.
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const releases = yield* Effect.promise(() => render(<App />))
       yield* Effect.promise(() =>
         expect.element(releases.getByRole("region", { name: "notes-api" }).getByText("1.4.0+58")).toBeVisible(),

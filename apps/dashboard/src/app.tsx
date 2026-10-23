@@ -1,23 +1,24 @@
 import type { EnvironmentKey, ProjectKey } from "@cluenori/foundation"
 import { RegistryProvider, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
+import { cn } from "cn"
 import { Cause, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { FolderPlusIcon, SearchXIcon } from "lucide-react"
+import { SearchXIcon } from "lucide-react"
 import type { ReactNode } from "react"
 import { lazy, Suspense, useEffect, useState } from "react"
 
 import { useEnvironments } from "@/hooks/use-environments"
-import { ErrorsPage } from "@/pages/errors-page"
-import { LogsPage } from "@/pages/logs-page"
-import { OperationsPage } from "@/pages/operations-page"
-import { OverviewPage } from "@/pages/overview-page"
-import { PerformancePage } from "@/pages/performance-page"
+import type { ListedProject } from "@/pages/now-page"
+import { NowPage } from "@/pages/now-page"
+import { ProjectPage } from "@/pages/project-page"
+import { TechPage } from "@/pages/tech-page"
 import { meAtom, projectsAtom, signOutAtom } from "@/project-data"
 import type { Environments } from "@/project-facts"
 import type { Filters, Route } from "@/router"
-import { Link, useRoute } from "@/router"
+import { Link, trailOf, useRoute } from "@/router"
 import { AppSidebar } from "@/views/app-sidebar"
 import { failureText } from "@/views/loaded"
+import { PageTrail } from "@/views/page-trail"
 import { Panel } from "@/views/panel"
 import { Button, buttonVariants } from "@/views/ui/button"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/views/ui/sidebar"
@@ -37,8 +38,19 @@ const SignIn = lazy(() => signIn.then((module) => ({ default: module.SignIn })))
 const searchDialog = import("@/views/search-dialog")
 const SearchDialog = lazy(() => searchDialog.then((module) => ({ default: module.SearchDialog })))
 
-// One operation's page, one error's and one trace load after start too: most visits begin on a
-// summary, and they are there by the time anyone opens one.
+// Each of Tech's full pages loads after start too, and every operation's, one error's and one
+// trace: most visits begin on Now, a project, or Tech's summary, and they are there by the time
+// anyone opens one.
+const performancePage = import("@/pages/performance-page")
+const PerformancePage = lazy(() => performancePage.then((module) => ({ default: module.PerformancePage })))
+const operationsPage = import("@/pages/operations-page")
+const OperationsPage = lazy(() => operationsPage.then((module) => ({ default: module.OperationsPage })))
+const errorsPage = import("@/pages/errors-page")
+const ErrorsPage = lazy(() => errorsPage.then((module) => ({ default: module.ErrorsPage })))
+const logsPage = import("@/pages/logs-page")
+const LogsPage = lazy(() => logsPage.then((module) => ({ default: module.LogsPage })))
+const incidentsPage = import("@/pages/incidents-page")
+const IncidentsPage = lazy(() => incidentsPage.then((module) => ({ default: module.IncidentsPage })))
 const operationPage = import("@/pages/operation-page")
 const OperationPage = lazy(() => operationPage.then((module) => ({ default: module.OperationPage })))
 const errorPage = import("@/pages/error-page")
@@ -81,31 +93,6 @@ const opening = <div className="p-8 text-sm text-muted-foreground">Opening the p
 
 const page = "mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6"
 
-/** The start of a workspace without projects: how to create the first. */
-function NoProjects() {
-  return (
-    <div className={page}>
-      <Panel
-        icon={FolderPlusIcon}
-        title="No projects yet"
-        subtitle="A project is one product, with the components that ship separately"
-      >
-        <div className="flex max-w-2xl flex-col gap-3 px-5 py-6">
-          <p className="text-[15px]">Create the first from a terminal, in Cluenori&apos;s folder:</p>
-          <pre className="border bg-background px-3 py-2 font-mono text-sm">
-            ./cluenori project create notes --name Notes
-          </pre>
-          <p className="text-sm text-muted-foreground">
-            Then add its components, each with the ingest key its telemetry is sent with:{" "}
-            <span className="font-mono">./cluenori component add notes notes-api --name &quot;Notes API&quot;</span>.
-            Reload this page to see it.
-          </p>
-        </div>
-      </Panel>
-    </div>
-  )
-}
-
 /** An address no page has, such as a mistyped link. */
 function NoSuchPage() {
   return (
@@ -116,8 +103,8 @@ function NoSuchPage() {
         subtitle="The link may be mistyped or cut short"
       >
         <div className="flex flex-col gap-4 px-5 py-6">
-          <Link to={{ page: "start" }} className={buttonVariants({ variant: "outline", className: "self-start" })}>
-            Open the first project
+          <Link to={{ page: "now" }} className={buttonVariants({ variant: "outline", className: "self-start" })}>
+            Go to Now
           </Link>
         </div>
       </Panel>
@@ -148,29 +135,33 @@ function WithEnvironments({
   return environments === undefined ? opening : children(environments)
 }
 
-function PageOf({ route, first }: { readonly route: Route; readonly first: ProjectKey | undefined }) {
+function PageOf({ route, projects }: { readonly route: Route; readonly projects: ReadonlyArray<ListedProject> }) {
   switch (route.page) {
-    case "start":
-      return first === undefined ? (
-        <NoProjects />
-      ) : (
-        <WithEnvironments project={first} named={undefined}>
-          {(environments) => <OverviewPage project={first} environments={environments} />}
-        </WithEnvironments>
-      )
+    case "now":
+      return <NowPage projects={projects} />
     case "missing":
       return <NoSuchPage />
-    case "overview":
+    case "project":
+      return <ProjectPage key={route.project} project={route.project} />
+    case "tech":
       return (
         <WithEnvironments project={route.project} named={route.environment}>
-          {(environments) => <OverviewPage project={route.project} environments={environments} />}
+          {(environments) => <TechPage project={route.project} environments={environments} />}
         </WithEnvironments>
+      )
+    case "incidents":
+      return (
+        <Suspense fallback={opening}>
+          <IncidentsPage project={route.project} />
+        </Suspense>
       )
     case "performance":
       return (
         <WithEnvironments project={route.project} named={route.environment}>
           {(environments) => (
-            <PerformancePage project={route.project} environments={environments} {...filterProps(route)} />
+            <Suspense fallback={opening}>
+              <PerformancePage project={route.project} environments={environments} {...filterProps(route)} />
+            </Suspense>
           )}
         </WithEnvironments>
       )
@@ -178,7 +169,9 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
       return (
         <WithEnvironments project={route.project} named={route.environment}>
           {(environments) => (
-            <OperationsPage project={route.project} environments={environments} {...filterProps(route)} />
+            <Suspense fallback={opening}>
+              <OperationsPage project={route.project} environments={environments} {...filterProps(route)} />
+            </Suspense>
           )}
         </WithEnvironments>
       )
@@ -200,7 +193,11 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
     case "errors":
       return (
         <WithEnvironments project={route.project} named={route.environment}>
-          {(environments) => <ErrorsPage project={route.project} environments={environments} {...filterProps(route)} />}
+          {(environments) => (
+            <Suspense fallback={opening}>
+              <ErrorsPage project={route.project} environments={environments} {...filterProps(route)} />
+            </Suspense>
+          )}
         </WithEnvironments>
       )
     case "error":
@@ -222,7 +219,11 @@ function PageOf({ route, first }: { readonly route: Route; readonly first: Proje
     case "logs":
       return (
         <WithEnvironments project={route.project} named={route.environment}>
-          {(environments) => <LogsPage project={route.project} environments={environments} {...filterProps(route)} />}
+          {(environments) => (
+            <Suspense fallback={opening}>
+              <LogsPage project={route.project} environments={environments} {...filterProps(route)} />
+            </Suspense>
+          )}
         </WithEnvironments>
       )
     case "releases":
@@ -399,10 +400,9 @@ function Dashboard() {
   }
 
   const list = AsyncResult.isSuccess(projects) ? projects.value.projects : []
-  const first = list[0]?.key
-  // The project the page shows: the first one at the start.
-  const shown = "project" in route ? route.project : undefined
-  const current = route.page === "start" ? first : shown
+  // The project the page is of, if any.
+  const current = "project" in route ? route.project : undefined
+  const trail = trailOf(route, (project) => list.find((entry) => entry.key === project)?.name ?? project)
 
   return (
     <SidebarProvider>
@@ -415,10 +415,17 @@ function Dashboard() {
         onSignOut={() => signOut()}
       />
       <SidebarInset className="min-w-0">
-        <div className="flex h-12 items-center border-b px-3 md:hidden">
-          <SidebarTrigger />
+        {/* Where the page is, a level a step; on a phone, with the sidebar's button. Now has no trail. */}
+        <div
+          className={cn(
+            "flex h-12 min-w-0 items-center gap-3 border-b px-3 md:px-6",
+            trail.length === 0 && "md:hidden",
+          )}
+        >
+          <SidebarTrigger className="md:hidden" />
+          <PageTrail steps={trail} />
         </div>
-        <PageOf route={route} first={first} />
+        <PageOf route={route} projects={list} />
       </SidebarInset>
       <Suspense fallback={null}>
         <SearchDialog open={searching} onOpenChange={setSearching} project={current} projects={list} />

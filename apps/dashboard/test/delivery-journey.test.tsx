@@ -41,7 +41,7 @@ describe("delivery journey", () => {
   it.effect("shows what runs in each environment of each component, and the one next step", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ world: firstNumberedDay }))
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // The API goes to dev, then prod: in the order releases go.
@@ -67,7 +67,7 @@ describe("delivery journey", () => {
       yield* Effect.promise(() =>
         expect
           .element(dev.getByRole("link", { name: "1.0.0+1 of notes-api in dev" }))
-          .toHaveAttribute("href", "/notes/releases/notes-api/1.0.0%2B1?environment=dev"),
+          .toHaveAttribute("href", "/projects/notes/releases/notes-api/1.0.0%2B1?environment=dev"),
       )
       yield* Effect.promise(() => expect.element(dev.getByText(/^For .+, since .+$/)).toBeVisible())
       yield* Effect.promise(() => expect.element(dev.getByText("Open shared notes offline (#218)")).toBeVisible())
@@ -139,7 +139,7 @@ describe("delivery journey", () => {
   it.effect("promotes a release from its environment's next step, and shows the promotion going there", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ world: firstNumberedDay }))
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       const api = screen.getByRole("region", { name: "notes-api" })
@@ -202,7 +202,7 @@ describe("delivery journey", () => {
   it.effect("nests a component that ships with another inside it, with nothing to do of its own", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ world: firstNumberedDay }))
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // The worker is inside the API's block, not a block of its own.
@@ -253,7 +253,7 @@ describe("delivery journey", () => {
   it.effect("keeps the component a component ships with when its links are saved, and sets it", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ world: firstNumberedDay }))
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // The worker ships with the API: no deploy targets of its own, and saving keeps it so.
@@ -334,7 +334,7 @@ describe("delivery journey", () => {
   it.effect("says on a release's page where it runs now, its one next step, and promoting it elsewhere", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ world: firstNumberedDay }))
-      window.history.pushState(null, "", "/notes/releases/notes-api/1.0.0%2B1?environment=dev")
+      window.history.pushState(null, "", "/projects/notes/releases/notes-api/1.0.0%2B1?environment=dev")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // What it is, and where it runs: in dev, not in prod yet.
@@ -361,7 +361,7 @@ describe("delivery journey", () => {
 
       // The release prod runs: dev has moved on, so nothing's next step is it. Promoting it to dev is
       // a rollback there, which the confirmation says it is.
-      open(`/notes/releases/notes-api/${dated}?environment=prod`)
+      open(`/projects/notes/releases/notes-api/${dated}?environment=prod`)
       yield* Effect.promise(() =>
         expect.element(screen.getByText(/^In prod since .+ · dev runs 1\.0\.0\+1$/)).toBeVisible(),
       )
@@ -383,14 +383,14 @@ describe("delivery journey", () => {
       assert.deepStrictEqual(promoted(), [[`notes-api/${dated}/promotions`, '{"environment":"dev","runner":"auto"}']])
 
       // The worker's release ships with the API's: nothing to promote of its own.
-      open("/notes/releases/notes-worker/1.0.0%2B1?environment=dev")
+      open("/projects/notes/releases/notes-worker/1.0.0%2B1?environment=dev")
       yield* Effect.promise(() =>
         expect.element(screen.getByText("Ships with notes-api: its deploys deploy this release too.")).toBeVisible(),
       )
       yield* Effect.promise(() =>
         expect
           .element(screen.getByRole("link", { name: "Open notes-api 1.0.0+1" }))
-          .toHaveAttribute("href", "/notes/releases/notes-api/1.0.0%2B1?environment=dev"),
+          .toHaveAttribute("href", "/projects/notes/releases/notes-api/1.0.0%2B1?environment=dev"),
       )
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("button", { name: /^Promote/ })).not.toBeInTheDocument(),
@@ -403,7 +403,7 @@ describe("delivery journey", () => {
     Effect.gen(function* () {
       // Lately only prod's telemetry arrived.
       answerApi(notesApi({ world: firstNumberedDay, seen: [EnvironmentKey.make("prod")] }))
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       const environments = screen.getByRole("group", { name: "Environment" })
@@ -437,7 +437,7 @@ describe("delivery journey", () => {
     Effect.gen(function* () {
       answerApi(notesApi({ world: firstNumberedDay }))
       yield* Effect.promise(() => page.viewport(390, 844))
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() =>
@@ -445,7 +445,7 @@ describe("delivery journey", () => {
       )
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
       yield* expectAccessible()
-      open("/notes/releases/notes-api/1.0.0%2B1?environment=dev")
+      open("/projects/notes/releases/notes-api/1.0.0%2B1?environment=dev")
       yield* Effect.promise(() => expect.element(screen.getByText(/^In dev since .+ · not in prod yet$/)).toBeVisible())
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
       yield* expectAccessible()

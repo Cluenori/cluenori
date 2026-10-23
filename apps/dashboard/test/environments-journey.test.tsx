@@ -31,7 +31,7 @@ describe("environments journey", () => {
   it.effect("starts in production, asks every question there, and remembers a switch to staging", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/performance")
+      window.history.pushState(null, "", "/projects/notes/performance")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // Production, one click from staging, beside the component and the period.
@@ -54,15 +54,16 @@ describe("environments journey", () => {
       assert.strictEqual(window.location.search, "?environment=staging")
       yield* Effect.promise(() => expect.poll(() => lastAsked("load")).toBe("staging"))
 
-      // Kept on the project's other pages, opened from the sidebar.
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Errors", exact: true }).click())
+      // Kept on the project's other pages: Tech, from the sidebar, and its errors.
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Tech", exact: true }).first().click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "All errors" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Errors" })).toBeVisible(),
       )
       yield* Effect.promise(() => expect.element(screen.getByText("No errors in this period.")).toBeVisible())
       assert.deepStrictEqual(environmentsAsked("errors"), ["staging"])
 
-      // Another project, and back: Notes still shows staging, though its address doesn't say so.
+      // Another project, and back: Notes's Tech still shows staging, though its address doesn't say so.
       yield* Effect.promise(() => screen.getByRole("link", { name: "Landing" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Landing" })).toBeVisible(),
@@ -74,7 +75,9 @@ describe("environments journey", () => {
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Notes" })).toBeVisible(),
       )
-      assert.strictEqual(window.location.pathname, "/notes")
+      assert.strictEqual(window.location.pathname, "/projects/notes")
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Tech", exact: true }).first().click())
+      assert.strictEqual(window.location.pathname, "/projects/notes/tech")
       yield* Effect.promise(() =>
         expect
           .element(screen.getByRole("group", { name: "Environment" }).getByRole("button", { name: "staging" }))
@@ -89,7 +92,7 @@ describe("environments journey", () => {
     Effect.gen(function* () {
       // Production is the one its telemetry named, and no deploy target goes elsewhere.
       answerApi(notesApi({ seen: [EnvironmentKey.make("production")], linked: new Map() }))
-      window.history.pushState(null, "", "/notes/logs")
+      window.history.pushState(null, "", "/projects/notes/logs")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("Warnings and errors over time")).toBeVisible())
@@ -105,7 +108,7 @@ describe("environments journey", () => {
   it.effect("shows no environment on a deployment that doesn't say them, and asks without one", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ older: true }))
-      window.history.pushState(null, "", "/notes/logs")
+      window.history.pushState(null, "", "/projects/notes/logs")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("Warnings and errors over time")).toBeVisible())
@@ -113,8 +116,8 @@ describe("environments journey", () => {
         expect.element(screen.getByText("Environment", { exact: true })).not.toBeInTheDocument(),
       )
       assert.deepStrictEqual(environmentsAsked("logs"), [null])
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Overview" }).click())
-      yield* Effect.promise(() => expect.element(screen.getByRole("region", { name: "Needs attention" })).toBeVisible())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Tech", exact: true }).first().click())
+      yield* Effect.promise(() => expect.element(screen.getByRole("region", { name: "Requests" })).toBeVisible())
       // Without settings, there is no production to choose.
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("region", { name: "Production" })).not.toBeInTheDocument(),
@@ -125,7 +128,7 @@ describe("environments journey", () => {
   it.effect("keeps a release and its environment from its page to an error, a trace, and an operation", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", `/notes/releases/notes-api/${worse}?environment=production`)
+      window.history.pushState(null, "", `/projects/notes/releases/notes-api/${worse}?environment=production`)
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => screen.getByRole("link", { name: "Errors of this release" }).click())
@@ -162,7 +165,7 @@ describe("environments journey", () => {
     }),
   )
 
-  it.effect("chooses production from the overview, with the API's rule for a key and a failed save said", () =>
+  it.effect("chooses production from Tech, with the API's rule for a key and a failed save said", () =>
     Effect.gen(function* () {
       const notes = notesApi()
       // The first save finds the API not answering; the next goes through.
@@ -174,7 +177,7 @@ describe("environments journey", () => {
         }
         return notes(call)
       })
-      window.history.pushState(null, "", "/notes")
+      window.history.pushState(null, "", "/projects/notes/tech")
       const screen = yield* Effect.promise(() => render(<App />))
 
       const production = screen.getByRole("region", { name: "Production" })
@@ -230,7 +233,11 @@ describe("environments journey", () => {
     Effect.gen(function* () {
       answerApi(notesApi())
       yield* Effect.promise(() => page.viewport(390, 844))
-      window.history.pushState(null, "", `/notes/errors?component=notes-api&environment=production&release=${worse}`)
+      window.history.pushState(
+        null,
+        "",
+        `/projects/notes/errors?component=notes-api&environment=production&release=${worse}`,
+      )
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("NpgsqlException").first()).toBeVisible())

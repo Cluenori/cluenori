@@ -10,6 +10,11 @@ const whole = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 })
 const compactNumber = new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 })
 const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 })
 const percentFine = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 })
+const signedPercent = new Intl.NumberFormat(locale, {
+  style: "percent",
+  maximumFractionDigits: 0,
+  signDisplay: "exceptZero",
+})
 const oneDecimal = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 })
 const twoDecimals = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 })
 const clock = new Intl.DateTimeFormat(locale, { timeZone, hour: "2-digit", minute: "2-digit" })
@@ -66,6 +71,9 @@ export const share = (part: number, total: number) => {
   const ratio = part / total
   return ratio > 0 && ratio < 0.001 ? percentFine.format(ratio) : percent.format(ratio)
 }
+
+/** How much something moved, as a share of what it was: +6%, −2%, 0%. */
+export const change = (ratio: number) => signedPercent.format(ratio)
 
 /** A duration a person reads at a glance: 0.4 ms, 18 ms, 1.2 s, 2 min, 2.7 h. */
 export const duration = (milliseconds: number) => {

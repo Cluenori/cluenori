@@ -22,7 +22,7 @@ describe("promote latest journey", () => {
   it.effect("builds a component's newest commit for its first environment, numbered as its next release", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/releases?component=notes-api")
+      window.history.pushState(null, "", "/projects/notes/releases?component=notes-api")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // Staging, the API's first environment, takes the latest commit next.
@@ -72,7 +72,7 @@ describe("promote latest journey", () => {
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "1.4.0+58" })).toBeVisible(),
       )
-      assert.strictEqual(window.location.pathname, "/notes/releases/notes-api/1.4.0%2B58")
+      assert.strictEqual(window.location.pathname, "/projects/notes/releases/notes-api/1.4.0%2B58")
       assert.strictEqual(new URLSearchParams(window.location.search).get("environment"), "staging")
       const row = screen.getByRole("region", { name: "Promotions" }).getByRole("listitem").first()
       yield* Effect.promise(() => expect.element(row.getByText("Starting")).toBeVisible())
@@ -84,7 +84,7 @@ describe("promote latest journey", () => {
   it.effect("says a component's version isn't set, one click from setting it", () =>
     Effect.gen(function* () {
       answerApi(notesApi({ linked: iosWithThreeApps }))
-      window.history.pushState(null, "", "/notes/releases?component=notes-ios")
+      window.history.pushState(null, "", "/projects/notes/releases?component=notes-ios")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() =>
@@ -130,7 +130,7 @@ describe("promote latest journey", () => {
         run: { id: 9_401, url: "https://github.com/notesapp/notes-api/actions/runs/9401" },
       }
       answerApi(notesApi({ seeded: (now) => [{ ...running, startedAt: DateTime.makeUnsafe(now - 4 * 60_000) }] }))
-      window.history.pushState(null, "", "/notes/releases?component=notes-api")
+      window.history.pushState(null, "", "/projects/notes/releases?component=notes-api")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // Production shows it going there, with its run.

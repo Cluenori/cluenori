@@ -9,7 +9,7 @@ import { expectAccessible } from "./accessible.ts"
 import { answerApi, apiCalls } from "./fake-api.ts"
 import { appRelease, iosWithThreeApps, notesApi } from "./notes-project.ts"
 
-const appPage = `/notes/releases/notes-ios/${encodeURIComponent(appRelease)}?environment=production`
+const appPage = `/projects/notes/releases/notes-ios/${encodeURIComponent(appRelease)}?environment=production`
 
 // The bodies the dashboard saved at an address under the project, oldest first.
 const putTo = (path: string) =>
@@ -110,7 +110,7 @@ describe("release notes journey", () => {
   it.effect("saves the project's notes style, Cluenori's default until then", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/releases")
+      window.history.pushState(null, "", "/projects/notes/releases")
       const screen = yield* Effect.promise(() => render(<App />))
 
       const panel = screen.getByRole("region", { name: "Release notes style" })

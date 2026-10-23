@@ -16,6 +16,12 @@ import { useSyncExternalStore } from "react"
 export type Area = "performance" | "errors" | "logs" | "releases" | "analytics"
 
 /**
+ * The three doors of a project's page, each a level of its own: Product, how the apps are used;
+ * Tech, operations, errors, logs and incidents; and Releases.
+ */
+export type Door = "product" | "tech" | "releases"
+
+/**
  * What a page of numbers is narrowed to, in its address: one component, one environment, and one
  * release (`?component=notes-api&environment=staging&release=2.4.0%2B312`). Pages that lead to
  * others keep them, so an operation, an error, or a trace opened from a filtered page is of the same.
@@ -39,21 +45,25 @@ export type GitHubReturn =
   | { readonly _tag: "problem"; readonly problem: string }
 
 /**
- * Every page the dashboard has. The start, `/`, shows the first project; a project opens on its
- * overview; each area is a page with its `Filters`; performance leads to every operation and then
- * to one; the errors page leads to one error, with all it was sent with; the releases page leads to
- * one release, by its component and version, and its environment when it has one
- * (`/notes/releases/notes-api/2.4.0+312?environment=production`); a trace is a page of its own, by
- * its ID, with the time it happened when a link knows it (`?around=<ISO 8601>`), keeping the
- * environment and release of the page it came from; the GitHub page says what GitHub sent the
- * browser back with (`GitHubReturn`). `hrefOf` and `routeOf` convert to and from
- * URLs. An address is untrusted input, so its keys are decoded here, once: one that isn't a page's
- * is `missing`.
+ * Every page the dashboard has, as a tree (`trailOf`). Now, `/`, is what needs the founder across
+ * every project, and each project's state. A project, `/projects/notes`, is its people, its load,
+ * what needs the founder there, and three doors (`Door`): Product, for now the analytics pages; Tech,
+ * `/projects/notes/tech`, a summary of operations, errors, logs and incidents, each leading to its
+ * full page; and Releases. Each area is a page with its `Filters`; performance leads to every
+ * operation and then to one; the errors page leads to one error, with all it was sent with; the
+ * releases page leads to one release, by its component and version, and its environment when it has
+ * one (`/projects/notes/releases/notes-api/2.4.0+312?environment=production`); a trace is a page of
+ * its own, by its ID, with the time it happened when a link knows it (`?around=<ISO 8601>`), keeping
+ * the environment and release of the page it came from; the GitHub page says what GitHub sent the
+ * browser back with (`GitHubReturn`). `hrefOf` and `routeOf` convert to and from URLs. An address is
+ * untrusted input, so its keys are decoded here, once: one that isn't a page's is `missing`.
  */
 export type Route =
-  | { readonly page: "start" }
+  | { readonly page: "now" }
   | { readonly page: "missing" }
-  | { readonly page: "overview"; readonly project: ProjectKey; readonly environment?: EnvironmentKey }
+  | { readonly page: "project"; readonly project: ProjectKey }
+  | { readonly page: "tech"; readonly project: ProjectKey; readonly environment?: EnvironmentKey }
+  | { readonly page: "incidents"; readonly project: ProjectKey }
   | ({ readonly page: "performance"; readonly project: ProjectKey } & Filters)
   | ({ readonly page: "operations"; readonly project: ProjectKey } & Filters)
   | ({ readonly page: "operation"; readonly project: ProjectKey; readonly operation: EnvelopeName } & Filters)
@@ -156,44 +166,55 @@ const gitHubReturnOf = (query: URLSearchParams): GitHubReturn | undefined => {
   return undefined
 }
 
+// Where a project's pages are: under `/projects/`, as in the API, so no project's key can be one of
+// the deployment's pages.
+const projectPath = (project: ProjectKey) => `/projects/${project}`
+
 export const hrefOf = (route: Route): string => {
   switch (route.page) {
-    case "start":
+    case "now":
     case "missing":
       return "/"
-    case "overview":
-      return withQuery(`/${route.project}`, route)
+    case "project":
+      return projectPath(route.project)
+    case "tech":
+      return withQuery(`${projectPath(route.project)}/tech`, route)
+    case "incidents":
+      return `${projectPath(route.project)}/incidents`
     case "performance":
     case "operations":
     case "errors":
     case "logs":
     case "releases":
-      return withQuery(`/${route.project}/${route.page}`, route)
+      return withQuery(`${projectPath(route.project)}/${route.page}`, route)
     case "operation":
-      return withQuery(`/${route.project}/operations/${operationPath(route.operation)}`, route)
+      return withQuery(`${projectPath(route.project)}/operations/${operationPath(route.operation)}`, route)
     case "error":
-      return withQuery(`/${route.project}/errors/${route.error}`, route)
+      return withQuery(`${projectPath(route.project)}/errors/${route.error}`, route)
     case "release": {
       const { component: _, release: __, ...query } = route
-      return withQuery(`/${route.project}/releases/${route.component}/${encodeURIComponent(route.release)}`, query)
+      return withQuery(
+        `${projectPath(route.project)}/releases/${route.component}/${encodeURIComponent(route.release)}`,
+        query,
+      )
     }
     case "analytics":
-      return withQuery(`/${route.project}/analytics`, route)
+      return withQuery(`${projectPath(route.project)}/analytics`, route)
     case "appReleases":
-      return withQuery(`/${route.project}/analytics/releases`, route)
+      return withQuery(`${projectPath(route.project)}/analytics/releases`, route)
     case "features":
-      return withQuery(`/${route.project}/analytics/features`, route)
+      return withQuery(`${projectPath(route.project)}/analytics/features`, route)
     case "appRelease": {
       const { component: _, release: __, ...query } = route
       return withQuery(
-        `/${route.project}/analytics/releases/${route.component}/${encodeURIComponent(route.release)}`,
+        `${projectPath(route.project)}/analytics/releases/${route.component}/${encodeURIComponent(route.release)}`,
         query,
       )
     }
     case "person":
-      return `/${route.project}/analytics/people?user=${encodeURIComponent(route.user)}`
+      return `${projectPath(route.project)}/analytics/people?user=${encodeURIComponent(route.user)}`
     case "trace":
-      return withQuery(`/${route.project}/traces/${route.trace}`, route)
+      return withQuery(`${projectPath(route.project)}/traces/${route.trace}`, route)
     case "phones":
       return "/phones"
     case "browsers":
@@ -225,28 +246,33 @@ const keyOf = <T,>(schema: Schema.Codec<T, string>, text: string | undefined): O
 const projectKey = (text: string) => keyOf(ProjectKey, text)
 const componentKey = (text: string | undefined) => keyOf(ComponentKey, text)
 
+// The deployment's own pages, which are no project's: the first part of their addresses.
+const deploymentPages: ReadonlySet<string> = new Set(["kit", "github", "phones", "browsers", "members", "invite"])
+
 export const routeOf = (path: string, search: string): Route => {
-  const [first, page, id, ...rest] = path.split("/").filter((part) => part.length > 0)
+  const [first, key, page, id, ...rest] = path.split("/").filter((part) => part.length > 0)
   const query = new URLSearchParams(search)
   if (first === undefined) {
-    return { page: "start" }
+    return { page: "now" }
   }
-  // Not handled: a project whose key is `kit`, `phones`, `browsers`, `members`, `github` or `invite`
-  // opens these pages instead of its own; reserving them at project creation would take an error in
-  // Projects.
   if (first === "kit") {
-    return { page: "kit" }
+    return key === undefined ? { page: "kit" } : { page: "missing" }
   }
   if (first === "github") {
     const returned = gitHubReturnOf(query)
-    return page === undefined
-      ? { page: "github", ...(returned === undefined ? {} : { returned }) }
-      : { page: "missing" }
+    return key === undefined ? { page: "github", ...(returned === undefined ? {} : { returned }) } : { page: "missing" }
   }
   if (first === "phones" || first === "browsers" || first === "members" || first === "invite") {
-    return page === undefined ? { page: first } : { page: "missing" }
+    return key === undefined ? { page: first } : { page: "missing" }
   }
-  const project = projectKey(first)
+  if (first !== "projects") {
+    return { page: "missing" }
+  }
+  // `/projects` alone: every project, which Now lists.
+  if (key === undefined) {
+    return { page: "now" }
+  }
+  const project = projectKey(key)
   const component = componentKey(query.get("component") ?? undefined)
   const environment = keyOf(EnvironmentKey, query.get("environment") ?? undefined)
   const release = keyOf(ReleaseVersion, query.get("release") ?? undefined)
@@ -255,7 +281,7 @@ export const routeOf = (path: string, search: string): Route => {
     (query.has("component") && Option.isNone(component)) ||
     (query.has("environment") && Option.isNone(environment)) ||
     (query.has("release") && Option.isNone(release))
-  const operationsAt = `/${first}/operations/`
+  const operationsAt = `/projects/${key}/operations/`
   const isOperation = page === "operations" && id !== undefined && path.startsWith(operationsAt)
   const isRelease = page === "releases" && rest.length === 1
   const isAppRelease = page === "analytics" && id === "releases" && rest.length === 2
@@ -271,7 +297,13 @@ export const routeOf = (path: string, search: string): Route => {
     ...ofRelease,
   }
   if (page === undefined) {
-    return id === undefined ? { page: "overview", project: project.value, ...ofEnvironment } : { page: "missing" }
+    return { page: "project", project: project.value }
+  }
+  if (page === "tech" && id === undefined) {
+    return { page: "tech", project: project.value, ...ofEnvironment }
+  }
+  if (page === "incidents" && id === undefined) {
+    return { page: "incidents", project: project.value }
   }
   if ((page === "performance" || page === "logs") && id === undefined) {
     return { page, ...filters }
@@ -323,6 +355,145 @@ export const routeOf = (path: string, search: string): Route => {
       : { page: "missing" }
   }
   return { page: "missing" }
+}
+
+/**
+ * Where an address from before a project's pages moved under `/projects/` is now: `/notes/errors`
+ * is `/projects/notes/errors`, so a link kept from then still opens its page. Undefined for any
+ * other address, the deployment's own pages among them.
+ * Not handled: a project whose key is `projects` had its overview at `/projects`, which is Now.
+ */
+export const movedAddressOf = (path: string): string | undefined => {
+  const first = path.split("/").find((part) => part.length > 0)
+  if (first === undefined || first === "projects" || deploymentPages.has(first) || Option.isNone(projectKey(first))) {
+    return undefined
+  }
+  return `/projects${path}`
+}
+
+/** One step of the way from Now to a page: its name, and the page, for every step but the last. */
+export type TrailStep = { readonly label: string; readonly to?: Route }
+
+/**
+ * The door of its project a page is behind, if any: Tech's pages are about operations, errors, logs
+ * and incidents; Product's, how the apps are used; Releases', the releases.
+ */
+export const doorOf = (route: Route): Door | undefined => {
+  switch (route.page) {
+    case "tech":
+    case "incidents":
+    case "performance":
+    case "operations":
+    case "operation":
+    case "errors":
+    case "error":
+    case "logs":
+    case "trace":
+      return "tech"
+    case "analytics":
+    case "appReleases":
+    case "appRelease":
+    case "features":
+    case "person":
+      return "product"
+    case "releases":
+    case "release":
+      return "releases"
+    case "now":
+    case "missing":
+    case "project":
+    case "phones":
+    case "browsers":
+    case "members":
+    case "github":
+    case "invite":
+    case "kit":
+      return undefined
+  }
+}
+
+// What the last step of a page's trail says: the page's own name, short, as its heading says the rest.
+const pageNames: Readonly<Record<Exclude<Route["page"], "now" | "project" | "missing">, string>> = {
+  tech: "Tech",
+  incidents: "Incidents",
+  performance: "Performance",
+  operations: "Operations",
+  operation: "Operation",
+  errors: "Errors",
+  error: "Error",
+  logs: "Logs",
+  trace: "Trace",
+  analytics: "Product",
+  appReleases: "App health",
+  appRelease: "Release",
+  features: "Features",
+  person: "Person",
+  releases: "Releases",
+  release: "Release",
+  phones: "Phones",
+  browsers: "Browsers",
+  members: "Members",
+  github: "GitHub",
+  invite: "Invitation",
+  kit: "Design kit",
+}
+
+// A door's own page: Tech's summary, Product's analytics, Releases' delivery.
+const doorPageOf = (door: Door, project: ProjectKey): Route => {
+  switch (door) {
+    case "tech":
+      return { page: "tech", project }
+    case "product":
+      return { page: "analytics", project }
+    case "releases":
+      return { page: "releases", project }
+  }
+}
+
+const doorNames: Readonly<Record<Door, string>> = { tech: "Tech", product: "Product", releases: "Releases" }
+
+// The step between a door and a page two levels down, if any: an operation is one of Operations, an
+// error one of Errors, a release's app health one of App health's; each keeps the page's filters.
+const betweenOf = (route: Route): TrailStep | undefined => {
+  if (route.page === "operation") {
+    const { operation: _, ...filters } = route
+    return { label: pageNames.operations, to: { ...filters, page: "operations" } }
+  }
+  if (route.page === "error") {
+    const { error: _, ...filters } = route
+    return { label: pageNames.errors, to: { ...filters, page: "errors" } }
+  }
+  if (route.page === "appRelease") {
+    const { release: _, ...shown } = route
+    return { label: pageNames.appReleases, to: { ...shown, page: "appReleases" } }
+  }
+  return undefined
+}
+
+/**
+ * The way from Now to a page, a step a level, so every level above it is one click away: Now, the
+ * project, its door, the page between when there is one, and the page itself, last, which links
+ * nowhere. Now has none. `projectName` names a project by its key.
+ */
+export const trailOf = (route: Route, projectName: (project: ProjectKey) => string): ReadonlyArray<TrailStep> => {
+  if (route.page === "now" || route.page === "missing") {
+    return []
+  }
+  const now: TrailStep = { label: "Now", to: { page: "now" } }
+  if (!("project" in route)) {
+    return [now, { label: pageNames[route.page] }]
+  }
+  if (route.page === "project") {
+    return [now, { label: projectName(route.project) }]
+  }
+  const project: TrailStep = { label: projectName(route.project), to: { page: "project", project: route.project } }
+  const here: TrailStep = { label: pageNames[route.page] }
+  const door = doorOf(route)
+  const doorPage = door === undefined ? undefined : { label: doorNames[door], to: doorPageOf(door, route.project) }
+  // The door's own page is the last step on it.
+  const doorStep = doorPage === undefined || doorPage.to.page === route.page ? [] : [doorPage]
+  const between = betweenOf(route)
+  return [now, project, ...doorStep, ...(between === undefined ? [] : [between]), here]
 }
 
 // The analytics pages: the summary, its releases' app health and one release's, every feature, and

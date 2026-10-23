@@ -30,11 +30,9 @@ describe("start journey", () => {
 
       yield* Effect.promise(() => token.fill(notesToken))
       yield* Effect.promise(() => screen.getByRole("button", { name: "Sign in with the token" }).click())
-      // The start shows the first project.
-      yield* Effect.promise(() =>
-        expect.element(screen.getByRole("heading", { level: 1, name: "Notes" })).toBeVisible(),
-      )
-      yield* Effect.promise(() => expect.element(screen.getByText("Needs attention")).toBeVisible())
+      // The start is Now: what needs the founder across every project, and the projects.
+      yield* Effect.promise(() => expect.element(screen.getByRole("heading", { level: 1, name: "Now" })).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByRole("region", { name: "Needs you" })).toBeVisible())
     }),
   )
 
@@ -61,7 +59,7 @@ describe("start journey", () => {
       yield* expectAccessible()
 
       yield* Effect.promise(() => screen.unmount())
-      window.history.pushState(null, "", "/notes/traces/0123456789abcdef0123456789abcdef")
+      window.history.pushState(null, "", "/projects/notes/traces/0123456789abcdef0123456789abcdef")
       const again = yield* Effect.promise(() => render(<App />))
       yield* Effect.promise(() => expect.element(again.getByText("No steps of this trace")).toBeVisible())
       yield* expectAccessible()

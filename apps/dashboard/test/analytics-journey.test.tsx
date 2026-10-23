@@ -14,7 +14,7 @@ describe("analytics journey", () => {
   it.effect("leads from how the apps are used to a release that got worse, measure by measure", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/analytics")
+      window.history.pushState(null, "", "/projects/notes/analytics")
       const screen = yield* Effect.promise(() => render(<App />))
 
       // The apps sent from production and beta; the page shows production, the project's.
@@ -64,7 +64,7 @@ describe("analytics journey", () => {
   it.effect("finds a person by the app's user ID, and says when the apps never sent one", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/analytics")
+      window.history.pushState(null, "", "/projects/notes/analytics")
       const screen = yield* Effect.promise(() => render(<App />))
 
       const field = screen.getByLabelText("The app's user ID")
@@ -82,7 +82,7 @@ describe("analytics journey", () => {
       yield* Effect.promise(() => expect.element(screen.getByText("iPhone17,2, iOS 27.1")).toBeVisible())
       yield* expectAccessible()
 
-      window.history.pushState(null, "", "/notes/analytics/people?user=user-0000")
+      window.history.pushState(null, "", "/projects/notes/analytics/people?user=user-0000")
       window.dispatchEvent(new PopStateEvent("popstate"))
       yield* Effect.promise(() =>
         expect
@@ -98,7 +98,7 @@ describe("analytics journey", () => {
   it.effect("searches every feature", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
-      window.history.pushState(null, "", "/notes/analytics")
+      window.history.pushState(null, "", "/projects/notes/analytics")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => screen.getByRole("link", { name: "All features" }).click())
@@ -113,7 +113,7 @@ describe("analytics journey", () => {
     Effect.gen(function* () {
       answerApi(notesApi())
       yield* Effect.promise(() => page.viewport(390, 844))
-      window.history.pushState(null, "", "/landing/analytics")
+      window.history.pushState(null, "", "/projects/landing/analytics")
       const screen = yield* Effect.promise(() => render(<App />))
 
       yield* Effect.promise(() => expect.element(screen.getByText("No app sends to this project yet")).toBeVisible())
@@ -121,7 +121,7 @@ describe("analytics journey", () => {
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
       yield* expectAccessible()
 
-      window.history.pushState(null, "", "/notes/analytics")
+      window.history.pushState(null, "", "/projects/notes/analytics")
       window.dispatchEvent(new PopStateEvent("popstate"))
       yield* Effect.promise(() =>
         expect.element(screen.getByText("Worse: cold launch slower, more crashes")).toBeVisible(),

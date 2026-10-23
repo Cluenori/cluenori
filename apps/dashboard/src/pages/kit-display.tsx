@@ -225,7 +225,7 @@ function NavigationMenuSample() {
             <ul className="grid w-72 gap-1">
               {sampleProjects.map((project) => (
                 <li key={project.key}>
-                  <NavigationMenuLink render={<Link to={{ page: "overview", project: project.key }} />}>
+                  <NavigationMenuLink render={<Link to={{ page: "project", project: project.key }} />}>
                     <FolderIcon />
                     <span className="flex flex-col">
                       <span className="font-medium">{project.name}</span>
@@ -244,7 +244,7 @@ function NavigationMenuSample() {
           <NavigationMenuContent>
             <ul className="grid w-80 gap-1">
               <li>
-                <NavigationMenuLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
+                <NavigationMenuLink render={<Link to={{ page: "project", project: sampleProject }} />}>
                   <GaugeIcon />
                   <span className="flex flex-col">
                     <span className="font-medium">Performance</span>
@@ -253,7 +253,7 @@ function NavigationMenuSample() {
                 </NavigationMenuLink>
               </li>
               <li>
-                <NavigationMenuLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
+                <NavigationMenuLink render={<Link to={{ page: "project", project: sampleProject }} />}>
                   <BugIcon />
                   <span className="flex flex-col">
                     <span className="font-medium">Errors</span>
@@ -262,7 +262,7 @@ function NavigationMenuSample() {
                 </NavigationMenuLink>
               </li>
               <li>
-                <NavigationMenuLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
+                <NavigationMenuLink render={<Link to={{ page: "project", project: sampleProject }} />}>
                   <ScrollTextIcon />
                   <span className="flex flex-col">
                     <span className="font-medium">Logs</span>
@@ -295,7 +295,7 @@ export function KitDisplay() {
             <Badge variant="destructive">Failed</Badge>
             <Badge variant="outline">folio-api</Badge>
             <Badge variant="ghost">Draft</Badge>
-            <Badge variant="link" render={<Link to={{ page: "overview", project: sampleProject }} />}>
+            <Badge variant="link" render={<Link to={{ page: "project", project: sampleProject }} />}>
               {count(6)} errors
             </Badge>
           </KitSample>
@@ -331,7 +331,7 @@ export function KitDisplay() {
             </AlertDescription>
             <AlertAction>
               <Link
-                to={{ page: "overview", project: sampleProject }}
+                to={{ page: "project", project: sampleProject }}
                 className={buttonVariants({ variant: "outline", size: "xs" })}
               >
                 Open
@@ -675,13 +675,13 @@ export function KitDisplay() {
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
+                  <BreadcrumbLink render={<Link to={{ page: "project", project: sampleProject }} />}>
                     Folio
                   </BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
+                  <BreadcrumbLink render={<Link to={{ page: "project", project: sampleProject }} />}>
                     Errors
                   </BreadcrumbLink>
                 </BreadcrumbItem>
@@ -694,7 +694,7 @@ export function KitDisplay() {
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink render={<Link to={{ page: "overview", project: sampleProject }} />}>
+                  <BreadcrumbLink render={<Link to={{ page: "project", project: sampleProject }} />}>
                     Folio
                   </BreadcrumbLink>
                 </BreadcrumbItem>

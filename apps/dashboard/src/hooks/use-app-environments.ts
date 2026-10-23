@@ -2,9 +2,9 @@ import type { ComponentKey, EnvironmentKey, ProjectKey } from "@cluenori/foundat
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 
-import { appEnvironmentsOf } from "@/app-facts"
 import { appHealthAtom, chosenEnvironmentAtom, projectAtom } from "@/project-data"
 import type { Environments } from "@/project-facts"
+import { appEnvironmentsOf } from "@/project-facts"
 
 /**
  * The environments the analytics pages offer, and the one they show (`appEnvironmentsOf`): those the
