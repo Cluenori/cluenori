@@ -305,5 +305,5 @@
       "rules": { "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }] }
     }
   ],
-  "ignorePatterns": ["**/worker-configuration.d.ts"]
+  "ignorePatterns": ["**/worker-configuration.d.ts", ".claude/worktrees/**"]
 }

@@ -26,3 +26,6 @@ apps/ios/Config/Local.xcconfig
 apps/ios/build/
 apps/ios/CluenoriApp/.build/
 xcuserdata/
+
+# copies of the repository that agents work in
+.claude/worktrees/
