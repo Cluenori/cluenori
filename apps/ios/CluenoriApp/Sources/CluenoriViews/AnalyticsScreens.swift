@@ -200,7 +200,7 @@ struct NoAppSignalsSection: View {
                 }
             } actions: {
                 if let lookFurther {
-                    Button(action: lookFurther) {
+                    Button(action: { lookFurther() }) {
                         Text(
                             "Show \(analyticsPeriodPhrase(.quarter))", bundle: #bundle,
                             comment: "Widens the analytics period. The variable is a period, such as the last 90 days.")

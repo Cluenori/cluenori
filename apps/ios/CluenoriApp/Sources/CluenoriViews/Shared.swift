@@ -219,7 +219,7 @@ struct ReleaseFilterSection: View {
                 }
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 8)
-                Button(action: showEveryRelease) {
+                Button(action: { showEveryRelease() }) {
                     Label {
                         Text("Show every release", bundle: #bundle, comment: "Clears a screen's release filter.")
                     } icon: {

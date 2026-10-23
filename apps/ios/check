@@ -1,6 +1,7 @@
 #!/bin/sh
 # Checks the iOS app, as `bun run check:ios` does: its Swift's formatting; that the client and screen
-# layers import nothing Apple-only, so they build on Linux too; the package's tests, on this Mac; and
+# layers import nothing Apple-only, so they build on Linux too; that buttons get closure literals, so
+# previews build after an edit; the package's tests, on this Mac; and
 # the app built for the iOS Simulator and for iPhones, every warning an error. Needs a Mac with Xcode.
 set -eu
 cd "$(dirname "$0")"
@@ -18,6 +19,15 @@ if [ -n "$apple_only" ]; then
   echo "CluenoriClient and CluenoriScreens may import Foundation, Observation, and CluenoriClient alone, so they"
   echo "build on Linux. Move what needs these into CluenoriViews or the app:"
   echo "$apple_only"
+  exit 1
+fi
+
+echo "Checking that every Button gets a closure literal"
+stored_actions=$(grep -rnE 'Button\(action: [A-Za-z_][A-Za-z0-9_.]*\)' Cluenori CluenoriAlerts Alarms CluenoriApp/Sources || true)
+if [ -n "$stored_actions" ]; then
+  echo "Write Button(action: { open() }), not Button(action: open): after any edit to its file, Xcode 27.2's"
+  echo "previews fail to build the second form (PATTERNS.md, entry 24):"
+  echo "$stored_actions"
   exit 1
 fi
 

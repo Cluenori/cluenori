@@ -844,6 +844,9 @@ language.
   (`PairingModel.Problem.codeRejected`), never text; each view puts it in words, with
   `bundle: #bundle` and a translator's comment (`PairScreen.swift`). Models are `@Observable` on the
   main actor, with `Equatable` properties; rows take only the fields they show.
+- **A `Button` gets a closure literal:** `Button(action: { open() })`, never `Button(action: open)`.
+  After any edit to its file, Xcode 27.2's previews fail to build the second form ("ambiguous use
+  of `__designTimeSelection`"); `apps/ios/check` refuses it.
 - **One way to ask, typed failures.** Every screen's question is an `Answer` (`Answer.swift`):
   shown at once from what the phone kept, asked through the generated `CluenoriAPI`, whose methods
   run off the main actor and throw `APIError`. `.unreachable` keeps what was shown and says as of

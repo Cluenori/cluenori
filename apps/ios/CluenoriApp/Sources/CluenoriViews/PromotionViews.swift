@@ -969,13 +969,13 @@ struct PromotionProblemView: View {
                     }
                 }
                 if case .refused(_, .notes) = problem, let writeNotes {
-                    Button(action: writeNotes) {
+                    Button(action: { writeNotes() }) {
                         Text("Write the Notes", bundle: #bundle, comment: "Opens a release's notes editor.")
                     }
                     .buttonStyle(.borderless)
                 }
                 if case .refused(_, .version) = problem, let setVersion {
-                    Button(action: setVersion) {
+                    Button(action: { setVersion() }) {
                         Text(
                             "Set Version…", bundle: #bundle, comment: "Opens the sheet that sets a component's version."
                         )

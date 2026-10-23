@@ -470,7 +470,7 @@ struct NextStepRow: View {
     }
 
     private var button: some View {
-        Button(action: action) {
+        Button(action: { action() }) {
             stepTitle(step)
                 .frame(maxWidth: .infinity)
         }

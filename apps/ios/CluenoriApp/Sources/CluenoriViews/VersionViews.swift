@@ -82,7 +82,7 @@ struct VersionMenu: View {
                 }
                 Divider()
             }
-            Button(action: set) {
+            Button(action: { set() }) {
                 Text("Set Version…", bundle: #bundle, comment: "Opens the sheet that sets a component's version.")
             }
         } label: {

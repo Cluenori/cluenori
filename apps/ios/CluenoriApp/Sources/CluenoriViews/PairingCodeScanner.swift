@@ -145,7 +145,7 @@ extension View {
                 VStack {
                     HStack {
                         Spacer()
-                        Button(action: onClose) {
+                        Button(action: { onClose() }) {
                             Image(systemName: "xmark")
                                 .font(.title3.weight(.semibold))
                                 .frame(width: 44, height: 44)
