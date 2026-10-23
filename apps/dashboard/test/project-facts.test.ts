@@ -7,22 +7,22 @@ import {
   ProjectKey,
   ReleaseVersion,
   TraceId,
+  Uuidv7,
 } from "@cluenori/foundation"
 import { Incident, IncidentId, MonitorId, MonitorUrl } from "@cluenori/incidents"
 import { Project, ProjectName } from "@cluenori/projects"
-import type { Delivery, Promotion, PromotionState } from "@cluenori/releases"
-import { PromotionId } from "@cluenori/releases"
-import type { AppUsage, ErrorGroup, LoadSeries } from "@cluenori/signals"
+import type { ErrorGroup, LoadSeries } from "@cluenori/signals"
 import { ErrorGroupId, SpanId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
-import { axisTime, dayOf, duration, share } from "@/lib/format"
+import { ago, axisTime, dayOf, duration, share } from "@/lib/format"
 import type { TodayList } from "@/project-data"
 import {
   appEnvironmentsOf,
   changeOf,
   columnTimesOf,
+  dayLoadOf,
   environmentsOf,
   exceptionsOf,
   isShownIn,
@@ -32,7 +32,6 @@ import {
   operationSpanOf,
   peopleOf,
   projectStateOf,
-  waitingReleasesOf,
 } from "@/project-facts"
 
 const minute = 60_000
@@ -252,33 +251,25 @@ const answered = today([
   { _tag: "silent", project: landing, lastDataAt: at(now - 3 * 24 * hour) },
 ])
 
-// A promotion of notes-ios's 2.5.0+318 to production, in `state`.
-const promotion = (id: string, state: PromotionState): Promotion => ({
-  id: PromotionId.make(id),
+// Today's item for a promotion of notes-ios's 2.5.0+318 to production, in `state`, started 26 hours
+// ago, and ended 2 hours ago when its state is an end.
+const promotion = (state: PromotionItemState): TodayList["items"][number] => ({
+  _tag: "promotion",
+  project,
   component: ios,
-  release: ReleaseVersion.make("2.5.0+318"),
   environment: production,
-  startedAt: at(now - 26 * hour),
+  release: ReleaseVersion.make("2.5.0+318"),
+  promotion: Uuidv7.make("019a1000-0000-7000-8000-000000000023"),
   state,
+  startedAt: at(now - 26 * hour),
+  ...(state === "approved" || state === "waiting" ? {} : { endedAt: at(now - 2 * hour) }),
 })
-const delivery = (...promotions: ReadonlyArray<Promotion>): Delivery => ({
-  components: [
-    {
-      component: ios,
-      environments: promotions.map((each) => ({ environment: production, promotion: each })),
-    },
-  ],
-})
+type PromotionItemState = "approved" | "waiting" | "failed" | "rejected" | "lost"
 
 describe("needsYouOf", () => {
-  const waiting = waitingReleasesOf(
-    project,
-    delivery(promotion("019a1000-0000-7000-8000-000000000023", "approved")),
-    at(now),
-  )
-  const items = needsYouOf(answered, waiting)
+  const items = needsYouOf({ ...answered, items: [...answered.items, promotion("approved")] })
 
-  it("keeps Today's order, then the releases waiting for a member", () => {
+  it("keeps Today's order", () => {
     assert.deepStrictEqual(
       items.map((item) => [item.kind, item.project]),
       [
@@ -293,7 +284,7 @@ describe("needsYouOf", () => {
   })
 
   it("says each in words, with when, and opens the page that shows it", () => {
-    const [failing, ongoing, fresh, slower, silent, release] = items
+    const [failing, ongoing, fresh, slower, silent] = items
     assert.strictEqual(failing?.title, "POST /api/export")
     assert.strictEqual(
       failing?.detail,
@@ -317,14 +308,6 @@ describe("needsYouOf", () => {
     assert.strictEqual(slower?.detail, `p95 ${duration(620)} over the last day, usually ${duration(300)}; notes-api`)
     assert.isUndefined(slower?.when)
     assert.deepStrictEqual(silent?.to, { page: "tech", project: landing })
-    assert.strictEqual(release?.title, "2.5.0+318 passed App Store review")
-    assert.deepStrictEqual(release?.to, {
-      page: "release",
-      project,
-      component: ios,
-      release: ReleaseVersion.make("2.5.0+318"),
-      environment: production,
-    })
   })
 
   it("opens a monitor's incident on the project's incidents, where its checks are", () => {
@@ -349,7 +332,6 @@ describe("needsYouOf", () => {
           }),
         },
       ]),
-      [],
     )
     assert.deepStrictEqual(
       down.map((item) => [item.kind, item.detail, item.to]),
@@ -358,29 +340,63 @@ describe("needsYouOf", () => {
   })
 })
 
-describe("waitingReleasesOf", () => {
-  it("keeps a release approved in review, and one waiting on GitHub, and nothing else", () => {
-    const states: ReadonlyArray<PromotionState> = ["running", "approved", "waiting", "inReview", "succeeded"]
-    const found = waitingReleasesOf(
-      project,
-      delivery(...states.map((state, index) => promotion(`019a1000-0000-7000-8000-00000000003${index}`, state))),
-      at(now),
-    )
+describe("a release that needs a member", () => {
+  const states: ReadonlyArray<PromotionItemState> = ["approved", "waiting", "failed", "rejected", "lost"]
+  const rows = needsYouOf(today(states.map(promotion)))
+
+  it("says what happened and what to do, for each state, in plain words", () => {
     assert.deepStrictEqual(
-      found.map((item) => item.title),
-      ["2.5.0+318 passed App Store review", "2.5.0+318 waits for approval on GitHub"],
+      rows.map((row) => [row.title, row.detail]),
+      [
+        ["2.5.0+318 passed App Store review", "notes-ios to production: release it when you're ready"],
+        [
+          "2.5.0+318 waits for approval on GitHub",
+          "notes-ios to production: approve the environment on GitHub to go on",
+        ],
+        [
+          "Promoting 2.5.0+318 to production failed",
+          "notes-ios: its workflow or its build failed, and nothing has reached production since",
+        ],
+        [
+          "2.5.0+318 was rejected in App Store review",
+          "notes-ios: change what Apple asked for, then send a new build to production",
+        ],
+        [
+          "Promoting 2.5.0+318 to production couldn't be followed",
+          "notes-ios: no run or build turned up in time; GitHub or App Store Connect has what happened",
+        ],
+      ],
     )
+  })
+
+  it("is purple while it waits for a member, red once it ended without getting there, and opens the release", () => {
+    assert.deepStrictEqual(
+      rows.map((row) => row.tone),
+      ["release", "release", "failure", "failure", "failure"],
+    )
+    // One that ended is said from when it ended; one that waits, from when it started.
+    assert.strictEqual(rows[0]?.when, ago(now - 26 * hour, now))
+    assert.strictEqual(rows[2]?.when, ago(now - 2 * hour, now))
+    for (const row of rows) {
+      assert.deepStrictEqual(row.to, {
+        page: "release",
+        project,
+        component: ios,
+        release: ReleaseVersion.make("2.5.0+318"),
+        environment: production,
+      })
+    }
   })
 })
 
 describe("projectStateOf", () => {
-  const items = needsYouOf(answered, [])
+  const items = needsYouOf({ ...answered, items: [...answered.items, promotion("approved")] })
 
   it("colors a project as what needs the founder most there, and counts it all", () => {
     const notes = items.filter((item) => item.project === project)
     assert.deepStrictEqual(projectStateOf(notes, true), {
       tone: "failure",
-      line: "1 incident · 2 errors · 1 slower operation",
+      line: "1 incident · 2 errors · 1 slower operation · 1 release",
     })
     assert.deepStrictEqual(projectStateOf([], true), { tone: "fine", line: "Nothing needs you" })
   })
@@ -390,44 +406,52 @@ describe("projectStateOf", () => {
   })
 })
 
-// The usage of the 15 days up to today, `now`'s, each day with as many people as `peopleOn` says.
-const usage = (peopleOn: (daysAgo: number) => number | undefined): AppUsage => {
-  const todayNumber = Math.floor(now / (24 * hour))
-  const days = Array.from({ length: 15 }, (_, index) => 14 - index).flatMap((daysAgo) => {
-    const people = peopleOn(daysAgo)
-    return people === undefined
-      ? []
-      : [
-          {
-            day: calendarDayOf(at((todayNumber - daysAgo) * 24 * hour)),
-            people,
-            installations: people,
-            monthPeople: people * 10,
-            sessions: people,
-            foregroundMs: 0,
-          },
-        ]
+describe("dayLoadOf", () => {
+  const thisHour = Math.floor(now / hour) * hour
+  const pulse = {
+    project,
+    load: [
+      { start: at(thisHour - 23 * hour), count: 30, errors: 0 },
+      { start: at(thisHour - hour), count: 50, errors: 2 },
+      { start: at(thisHour), count: 20, errors: 1 },
+    ],
+  }
+
+  it("draws the hour Today looked in and the 23 before, an hour not listed unknown, never none", () => {
+    const load = dayLoadOf(pulse, at(now))
+    assert.strictEqual(load.ran.from, thisHour - 23 * hour)
+    assert.strictEqual(load.ran.values.length, 24)
+    assert.deepStrictEqual(
+      [load.ran.values[0], load.ran.values[1], load.ran.values[22], load.ran.values[23]],
+      [30, undefined, 50, 20],
+    )
+    assert.strictEqual(load.failed.values[22], 2)
+    assert.deepStrictEqual([load.total, load.failures], [100, 3])
   })
-  return { days, people: 0, installations: 0, sessions: 0, releases: [] }
-}
+})
+
+// A UTC day `daysAgo` before `now`, with as many people, and monthly people when given.
+const usageDay = (daysAgo: number, people: number, monthPeople?: number) => ({
+  day: calendarDayOf(at(now - daysAgo * 24 * hour)),
+  people,
+  installations: people,
+  ...(monthPeople === undefined ? {} : { monthPeople }),
+  sessions: people,
+  foregroundMs: 0,
+})
 
 describe("peopleOf", () => {
   it("compares the latest whole UTC day with the same day a week before", () => {
-    const people = peopleOf(
-      usage((daysAgo) => (daysAgo === 1 ? 53 : 50)),
-      at(now),
-    )
+    const people = peopleOf({ latest: usageDay(1, 53, 530), weekBefore: usageDay(8, 50, 500) })
     assert.deepStrictEqual(people.daily, { value: 53, weekBefore: 50 })
     assert.deepStrictEqual(people.monthly, { value: 530, weekBefore: 500 })
     assert.closeTo(changeOf(people.daily) ?? 0, 0.06, 1e-9)
   })
 
-  it("leaves a day the apps didn't send on unknown, and a week before without people uncompared", () => {
-    const people = peopleOf(
-      usage((daysAgo) => (daysAgo >= 8 ? undefined : 40)),
-      at(now),
-    )
+  it("leaves a day not counted unknown, and a week before without people uncompared", () => {
+    const people = peopleOf({ latest: usageDay(1, 40) })
     assert.deepStrictEqual(people.daily, { value: 40 })
+    assert.deepStrictEqual(people.monthly, {})
     assert.isUndefined(changeOf(people.daily))
     assert.isUndefined(changeOf({ value: 4, weekBefore: 0 }))
   })

@@ -1,5 +1,6 @@
 import type { ProjectKey } from "@cluenori/foundation"
 import { useAtomValue } from "@effect/atom-react"
+import type { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import type { LucideIcon } from "lucide-react"
 import {
@@ -15,20 +16,18 @@ import type { ReactNode } from "react"
 
 import { failureColor } from "@/lib/colors"
 import { calendarDayText, count, share } from "@/lib/format"
-import { ProductionLoad, ProjectPeople } from "@/pages/project-parts"
-import type { DayLoad } from "@/pages/project-parts"
-import { appHealthAtom, deliveryAtom, projectAtom, todayAtom } from "@/project-data"
-import type { PeopleCount } from "@/project-facts"
+import type { ProjectPulse } from "@/project-data"
+import { appHealthAtom, deliveryAtom, projectsAtom, todayAtom } from "@/project-data"
+import type { DayLoad, PeopleCount } from "@/project-facts"
 import {
   changeOf,
   columnTimesOf,
-  loadColumnsOf,
+  dayLoadOf,
   needsYouCountsOf,
   needsYouOf,
+  peopleOf,
   releasedLineOf,
   ticksOf,
-  waitingReleasesOf,
-  zoneOf,
 } from "@/project-facts"
 import type { Route } from "@/router"
 import { Link } from "@/router"
@@ -55,75 +54,64 @@ function PeopleFigure({ label, people }: { readonly label: string; readonly peop
   )
 }
 
+/** What a project's page knows of its pulse: Today's answer, with the pulse when it has one. */
+type PulseLook = { readonly pulse?: ProjectPulse; readonly at: DateTime.Utc }
+
+// A pulse the answer doesn't carry, for a project that didn't answer.
+const unknownNow = <p className="px-5 py-5 text-sm text-muted-foreground">Unknown right now.</p>
+
 /** The project's apps' daily and monthly people on the latest whole UTC day, against a week before. */
-function PeoplePanel({ project }: { readonly project: ProjectKey }) {
+function PeoplePanel({ look }: { readonly look: AsyncResult.AsyncResult<PulseLook, unknown> }) {
   return (
     <Panel icon={UsersRoundIcon} title="People" subtitle="Of its apps, against the week before" badge="UTC">
-      <ProjectPeople project={project}>
-        {(people) => {
-          if (people._tag === "none") {
+      <Loaded result={look}>
+        {({ pulse }) => {
+          if (pulse === undefined) {
+            return unknownNow
+          }
+          if (pulse.people === undefined) {
             return (
               <p className="px-5 py-5 text-sm text-muted-foreground">
-                No app sent anything in the last 30 days, so there is no one to count. Product says how to start.
+                No app sent anything by yesterday, so there is no one to count. Product says how to start.
               </p>
             )
           }
-          const { daily, monthly, day, days } = people.people
-          const first = days[0]
-          const weekBefore = days[7]
+          const { daily, monthly, day } = peopleOf(pulse.people)
           return (
             <>
-              <dl className="grid grid-cols-2 divide-x">
+              <dl className="grid flex-1 grid-cols-2 divide-x xl:grid-cols-1 xl:divide-x-0 xl:divide-y">
                 <PeopleFigure label="Daily people" people={daily} />
                 <PeopleFigure label="Monthly people" people={monthly} />
               </dl>
-              <div className="mt-auto px-5 pt-2 pb-4">
-                <LoadBars
-                  total={days.map((each) => each.people)}
-                  failed={[]}
-                  height={56}
-                  ticks={[
-                    ...(first === undefined ? [] : [{ column: 0, label: calendarDayText(first.day) }]),
-                    ...(weekBefore === undefined ? [] : [{ column: 7, label: calendarDayText(weekBefore.day) }]),
-                  ]}
-                  label={`Daily people over the 14 UTC days up to ${calendarDayText(day)}.`}
-                />
-              </div>
               <p className="border-t px-5 py-3 text-sm text-muted-foreground">
-                On {calendarDayText(day)}
-                {people.environment === undefined ? "" : `, in ${people.environment}`}, against the same day a week
-                before; by the day, the 14 up to it.
+                On {calendarDayText(day)}, in production, against the same day a week before.
               </p>
             </>
           )
         }}
-      </ProjectPeople>
+      </Loaded>
     </Panel>
   )
 }
 
 /** The load of the last day, by the hour, failures over it, and the numbers that matter beside it. */
 function DayLoadChart({ load }: { readonly load: DayLoad }) {
-  const total = loadColumnsOf(load.series, (point) => point.count)
-  const failed = loadColumnsOf(load.series, (point) => point.errors)
-  const { whenOf } = columnTimesOf(total)
-  const ran = load.series.points.reduce((sum, point) => sum + point.count, 0)
-  const failures = load.series.points.reduce((sum, point) => sum + point.errors, 0)
-  const busiest = total.values.reduce<number | undefined>(
+  const { whenOf } = columnTimesOf(load.ran)
+  const busiest = load.ran.values.reduce<number | undefined>(
     (best, value, column) =>
-      value !== undefined && value > 0 && (best === undefined || value > (total.values[best] ?? 0)) ? column : best,
+      value !== undefined && value > 0 && (best === undefined || value > (load.ran.values[best] ?? 0)) ? column : best,
     undefined,
   )
-  const unknown = total.values.some((value) => value === undefined)
+  const unknown = load.ran.values.some((value) => value === undefined)
   return (
     <>
       <div className="flex flex-1 flex-col gap-3 px-5 py-5">
         <LoadBars
-          total={total.values}
-          failed={failed.values}
+          total={load.ran.values}
+          failed={load.failed.values}
           height={112}
-          ticks={ticksOf(total)}
-          label={`${count(ran)} operations over the last 24 hours, ${count(failures)} of them failed.`}
+          ticks={ticksOf(load.ran)}
+          label={`${count(load.total)} operations over the last 24 hours, ${count(load.failures)} of them failed.`}
         />
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
           <span className="flex items-center gap-2">
@@ -140,15 +128,19 @@ function DayLoadChart({ load }: { readonly load: DayLoad }) {
               Nothing reported
             </span>
           )}
-          {load.environment !== undefined && <span>In {load.environment}</span>}
-          {zoneOf(load.series) !== undefined && <span>Times in {zoneOf(load.series)}</span>}
+          <span>In production</span>
+          <span>Times in {load.zone}</span>
         </p>
       </div>
       <PanelStats
         stats={[
-          { label: "Ran", value: count(ran) },
-          { label: "Failed", value: count(failures), ...(failures > 0 ? { color: failureColor } : {}) },
-          { label: "Error rate", value: share(failures, ran), ...(failures > 0 ? { color: failureColor } : {}) },
+          { label: "Ran", value: count(load.total) },
+          { label: "Failed", value: count(load.failures), ...(load.failures > 0 ? { color: failureColor } : {}) },
+          {
+            label: "Error rate",
+            value: share(load.failures, load.total),
+            ...(load.failures > 0 ? { color: failureColor } : {}),
+          },
           { label: "Busiest hour", value: busiest === undefined ? "–" : whenOf(busiest) },
         ]}
       />
@@ -205,19 +197,22 @@ function ProductLine({ project }: { readonly project: ProjectKey }) {
  * A project's page: its apps' people against last week, its load over the last day with what
  * failed, what needs the founder there, the most urgent first, and its three doors, Product, Tech
  * and Releases, each with a line of what is going on behind it. All of it in the environments the
- * project calls production, as Now.
+ * project calls production, as Now; people, load and what needs the founder are Today's answer,
+ * which Now asked too, and the doors' lines ask what runs where and how the apps' releases are.
  */
 export function ProjectPage({ project }: { readonly project: ProjectKey }) {
-  const detail = useAtomValue(projectAtom(project))
+  const projects = useAtomValue(projectsAtom)
   const today = useAtomValue(todayAtom)
   const delivery = useAtomValue(deliveryAtom(project))
-  const name = AsyncResult.isSuccess(detail) ? detail.value.project.name : project
-  const waiting = AsyncResult.isSuccess(delivery)
-    ? waitingReleasesOf(project, delivery.value.delivery, delivery.value.asOf)
-    : []
-  const items = AsyncResult.map(today, (answer) =>
-    needsYouOf(answer, waiting).filter((item) => item.project === project),
-  )
+  const name = AsyncResult.isSuccess(projects)
+    ? (projects.value.projects.find((each) => each.key === project)?.name ?? project)
+    : project
+  const items = AsyncResult.map(today, (answer) => needsYouOf(answer).filter((item) => item.project === project))
+  const look = AsyncResult.map(today, (answer): PulseLook => {
+    const pulse = answer.pulses?.find((each) => each.project === project)
+    return { ...(pulse === undefined ? {} : { pulse }), at: answer.at }
+  })
+  const releases = AsyncResult.isSuccess(items) ? items.value.filter((item) => item.group === "release").length : 0
   const techCounts = AsyncResult.isSuccess(items)
     ? needsYouCountsOf(items.value.filter((item) => item.group !== "release"))
     : undefined
@@ -233,17 +228,20 @@ export function ProjectPage({ project }: { readonly project: ProjectKey }) {
       </header>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <PeoplePanel project={project} />
+        <PeoplePanel look={look} />
         <Panel icon={ActivityIcon} title="Load" subtitle="Last 24 hours, with what failed">
-          <ProductionLoad project={project}>
-            {(load) =>
-              load.series.covered === undefined ? (
+          <Loaded result={look}>
+            {({ pulse, at }) => {
+              if (pulse === undefined) {
+                return unknownNow
+              }
+              return pulse.load.length === 0 ? (
                 <p className="px-5 py-5 text-sm text-muted-foreground">Nothing was reported in the last 24 hours.</p>
               ) : (
-                <DayLoadChart load={load} />
+                <DayLoadChart load={dayLoadOf(pulse, at)} />
               )
-            }
-          </ProductionLoad>
+            }}
+          </Loaded>
         </Panel>
       </div>
 
@@ -275,7 +273,7 @@ export function ProjectPage({ project }: { readonly project: ProjectKey }) {
           {AsyncResult.isSuccess(delivery)
             ? [
                 releasedLineOf(delivery.value.delivery) ?? "Nothing released yet",
-                ...(waiting.length === 0 ? [] : [`${count(waiting.length)} waiting for you`]),
+                ...(releases === 0 ? [] : [`${count(releases)} ${releases === 1 ? "needs" : "need"} you`]),
               ].join(" · ")
             : "What runs where, and what to release next"}
         </Door>

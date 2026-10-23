@@ -145,11 +145,16 @@ export const meAtom = kept(
  */
 export type TodayList = (typeof CluenoriApi)["groups"]["today"]["endpoints"]["today"]["~Success"]["Type"]
 export type TodayItem = TodayList["items"][number]
+/**
+ * How a project is going now, in the environments it calls production: its load by the hour over the
+ * last 24 hours, and its apps' people on the latest whole UTC day and a week before.
+ */
+export type ProjectPulse = NonNullable<TodayList["pulses"]>[number]
 
 /**
  * What needs attention now across every project the member sees (Today): open incidents, errors
- * new or happening now, slower operations, and projects that sent nothing in a day. One question,
- * which the API asks each project.
+ * new or happening now, slower operations, releases that need a member, and projects that sent
+ * nothing in a day; and each project's pulse. One question, which the API asks each project.
  */
 export const todayAtom = kept(
   CluenoriClient.runtime.atom(
@@ -284,25 +289,6 @@ export const loadAtom = Atom.family((scope: Scope) =>
         return yield* client.signals.load({
           params: { project: scope.project },
           query: { ...period, ...filtersOf(scope), step: stepOf[key] },
-        })
-      }),
-    ),
-  ),
-)
-
-/**
- * The load over the last 24 hours, by the hour, whatever the period: a project's day at a glance,
- * on Now and on its own page.
- */
-export const dayLoadAtom = Atom.family((scope: Scope) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(day)
-        return yield* client.signals.load({
-          params: { project: scope.project },
-          query: { ...period, ...filtersOf(scope), step: "1h" },
         })
       }),
     ),
@@ -477,17 +463,6 @@ export const deliveryAtom = Atom.family((project: ProjectKey) =>
         return { delivery, asOf }
       }),
     ),
-  ),
-)
-
-/**
- * Each project's delivery, for every project the member sees, as `deliveryAtom` asks it: what waits
- * for a member across projects, on Now. One question a project, each kept with the project's own;
- * one that fails is that project's alone.
- */
-export const deliveriesAtom = Atom.make((get) =>
-  AsyncResult.map(get(projectsAtom), ({ projects }) =>
-    projects.map((project) => ({ project: project.key, delivery: get(deliveryAtom(project.key)) })),
   ),
 )
 
@@ -747,27 +722,6 @@ export const usageAtom = Atom.family((scope: AppScope) =>
             ...appScopeOf(scope),
             ...(scope.release === undefined ? {} : { release: scope.release }),
           },
-        })
-        return { usage, period }
-      }),
-    ),
-  ),
-)
-
-/**
- * How the project's apps were used by UTC day over the last 15 days, whatever the analytics period:
- * enough for the latest whole day and the same day a week before, on Now and the project's page.
- * With the period asked about.
- */
-export const recentUsageAtom = Atom.family((scope: AppScope) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(15 * day)
-        const usage = yield* client.analytics.usage({
-          params: { project: scope.project },
-          query: { ...period, ...appScopeOf(scope) },
         })
         return { usage, period }
       }),

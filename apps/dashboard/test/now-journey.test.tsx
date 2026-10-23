@@ -9,9 +9,6 @@ import { expectAccessible } from "./accessible.ts"
 import { answerApi, apiCalls } from "./fake-api.ts"
 import { appRelease, appStorePromotions, notesApi } from "./notes-project.ts"
 
-// The calls made to an area of the API, by its path under a project, such as `delivery`.
-const askedFor = (area: string) => apiCalls().filter((call) => call.path[2] === area)
-
 describe("now journey", () => {
   it.effect("leads from what needs the founder across projects, down a level at a time, and back", () =>
     Effect.gen(function* () {
@@ -49,18 +46,20 @@ describe("now journey", () => {
       const projects = screen.getByRole("region", { name: "Projects" })
       const notesRow = projects.getByRole("link", { name: /^Notes/ })
       yield* Effect.promise(() =>
-        expect.element(notesRow).toMatchTextContent("1 incident · 2 errors · 1 slower operation · 1 release waiting"),
+        expect.element(notesRow).toMatchTextContent("1 incident · 2 errors · 1 slower operation · 1 release"),
       )
-      yield* Effect.promise(() => expect.element(notesRow).toMatchTextContent(/daily people/))
+      yield* Effect.promise(() => expect.element(notesRow).toMatchTextContent(/46\s*daily people.*vs last week/))
       const landingRow = projects.getByRole("link", { name: /^Landing/ })
       yield* Effect.promise(() => expect.element(landingRow).toMatchTextContent("Nothing needs you"))
+      yield* Effect.promise(() => expect.element(landingRow).toMatchTextContent("Nothing reported in 24 h"))
       yield* Effect.promise(() => expect.element(landingRow).toMatchTextContent("No app data"))
       yield* expectAccessible()
-      // Each project's delivery is asked once, for what waits for the founder.
-      assert.deepStrictEqual(
-        askedFor("delivery").map((call) => call.path[1]),
-        ["notes", "landing"],
-      )
+      // All of Now is Today's one answer: no question of any project's.
+      assert.deepStrictEqual([...new Set(apiCalls().map((call) => call.path.join("/")))].toSorted(), [
+        "me",
+        "projects",
+        "today",
+      ])
 
       // A project: its people, its last day, what needs the founder there, and its three doors.
       yield* Effect.promise(() => notesRow.click())
@@ -84,9 +83,15 @@ describe("now journey", () => {
           .toMatchTextContent("1 incident · 2 errors · 1 slower operation"),
       )
       yield* Effect.promise(() =>
-        expect.element(doors.getByRole("link", { name: /^Releases/ })).toMatchTextContent("1 waiting for you"),
+        expect.element(doors.getByRole("link", { name: /^Releases/ })).toMatchTextContent("1 needs you"),
       )
       yield* expectAccessible()
+      // Beside Today's answer, the page asks only what its doors say more of: what runs where, and how
+      // the apps' releases are.
+      assert.deepStrictEqual(
+        [...new Set(apiCalls().map((call) => call.path.join("/")))].filter((path) => path.startsWith("projects/")),
+        ["projects/notes/delivery", "projects/notes/app-health"],
+      )
 
       // Tech: the top few of each, and a way to every one.
       yield* Effect.promise(() => doors.getByRole("link", { name: /^Tech/ }).click())
@@ -175,6 +180,28 @@ describe("now journey", () => {
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
       yield* expectAccessible()
       yield* Effect.promise(() => page.viewport(1280, 900))
+    }),
+  )
+
+  it.effect("says a project's load and people are unknown when Today brings no pulse, as an older deployment's", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi({ older: true }))
+      window.history.pushState(null, "", "/")
+      const screen = yield* Effect.promise(() => render(<App />))
+
+      const notesRow = screen.getByRole("region", { name: "Projects" }).getByRole("link", { name: /^Notes/ })
+      yield* Effect.promise(() => expect.element(notesRow).toMatchTextContent("1 incident · 2 errors"))
+      yield* Effect.promise(() => expect.element(notesRow).toMatchTextContent(/Unknown.*Unknown/))
+      yield* Effect.promise(() => expect.element(notesRow).not.toMatchTextContent(/daily people|in 24 h/))
+      yield* expectAccessible()
+
+      yield* Effect.promise(() => notesRow.click())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("region", { name: "People" }).getByText("Unknown right now.")).toBeVisible(),
+      )
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("region", { name: "Load" }).getByText("Unknown right now.")).toBeVisible(),
+      )
     }),
   )
 

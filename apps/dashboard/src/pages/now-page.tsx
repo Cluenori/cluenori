@@ -1,14 +1,14 @@
 import type { ProjectKey } from "@cluenori/foundation"
 import { useAtomValue } from "@effect/atom-react"
+import type { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { BellIcon, FolderPlusIcon, FoldersIcon } from "lucide-react"
 
 import { compact, count } from "@/lib/format"
-import { ProductionLoad, ProjectPeople } from "@/pages/project-parts"
-import type { AppPeople, DayLoad } from "@/pages/project-parts"
-import { deliveriesAtom, todayAtom } from "@/project-data"
+import type { ProjectPulse } from "@/project-data"
+import { todayAtom } from "@/project-data"
 import type { NeedsYou, ProjectState } from "@/project-facts"
-import { changeOf, loadColumnsOf, needsYouOf, projectStateOf, waitingReleasesOf } from "@/project-facts"
+import { changeOf, dayLoadOf, needsYouOf, peopleOf, projectStateOf } from "@/project-facts"
 import { Link } from "@/router"
 import { LoadBars } from "@/views/load-bars"
 import { Loaded } from "@/views/loaded"
@@ -60,50 +60,63 @@ function NoProjects() {
   )
 }
 
+/**
+ * What Now knows of a project's pulse: still asking, Today failed, or Today's answer, with the pulse
+ * when it has one and when Today looked.
+ */
+type PulseLook = "asking" | "failed" | { readonly pulse?: ProjectPulse; readonly at: DateTime.Utc }
+
+/** A quiet word in place of a number Now doesn't have: still asking, or unknown. */
+function NoNumber({ look }: { readonly look: PulseLook }) {
+  return <span className="text-sm text-muted-foreground">{look === "asking" ? "…" : "Unknown"}</span>
+}
+
 /** A project's last 24 hours as a small chart, and how many ran. */
-function LoadSpark({ load }: { readonly load: DayLoad }) {
-  const total = loadColumnsOf(load.series, (point) => point.count)
-  const failed = loadColumnsOf(load.series, (point) => point.errors)
-  const ran = load.series.points.reduce((sum, point) => sum + point.count, 0)
-  const failures = load.series.points.reduce((sum, point) => sum + point.errors, 0)
-  if (load.series.covered === undefined || load.series.points.length === 0) {
-    return <span className="text-sm text-muted-foreground">Nothing in 24 h</span>
+function LoadSpark({ pulse, at }: { readonly pulse: ProjectPulse; readonly at: DateTime.Utc }) {
+  if (pulse.load.length === 0) {
+    return <span className="text-sm text-muted-foreground">Nothing reported in 24 h</span>
   }
+  const load = dayLoadOf(pulse, at)
   return (
     <span className="flex w-full flex-col gap-1">
       <LoadBars
-        total={total.values}
-        failed={failed.values}
+        total={load.ran.values}
+        failed={load.failed.values}
         height={24}
-        label={`${count(ran)} operations in the last 24 hours, ${count(failures)} failed`}
+        label={`${count(load.total)} operations in the last 24 hours, ${count(load.failures)} failed`}
       />
-      <span className="font-mono text-xs text-muted-foreground">{compact(ran)} in 24 h</span>
+      <span className="font-mono text-xs text-muted-foreground">{compact(load.total)} in 24 h</span>
     </span>
   )
 }
 
 /** A project's daily people, and how they moved since the week before. */
-function DailyPeople({ people }: { readonly people: AppPeople }) {
-  if (people._tag === "none") {
+function DailyPeople({ pulse }: { readonly pulse: ProjectPulse }) {
+  if (pulse.people === undefined) {
     return <span className="text-sm text-muted-foreground">No app data</span>
   }
-  const daily = people.people.daily
+  const { daily } = peopleOf(pulse.people)
   return (
     <span className="flex flex-col items-end gap-0.5">
       <span className="flex items-baseline gap-1.5">
         <span className="font-mono text-[17px]">{daily.value === undefined ? "–" : count(daily.value)}</span>
         <span className="text-xs text-muted-foreground">daily people</span>
       </span>
-      <TrendWords
-        moved={changeOf(daily)}
-        unknown={daily.value === undefined ? "Not counted yesterday" : "No week before"}
-        className="text-xs"
-      />
+      <TrendWords moved={changeOf(daily)} unknown="No week before" className="text-xs" />
     </span>
   )
 }
 
-function ProjectRow({ project, state }: { readonly project: ListedProject; readonly state: ProjectState | undefined }) {
+function ProjectRow({
+  project,
+  state,
+  look,
+}: {
+  readonly project: ListedProject
+  readonly state: ProjectState | undefined
+  readonly look: PulseLook
+}) {
+  const pulse = typeof look === "string" ? undefined : look.pulse
   return (
     <li>
       <Link
@@ -119,10 +132,14 @@ function ProjectRow({ project, state }: { readonly project: ListedProject; reado
         </span>
         {/* On a phone, the day's load goes under the name and the people, the width of the row. */}
         <span className="order-last col-span-2 flex min-w-0 sm:order-none sm:col-span-1">
-          <ProductionLoad project={project.key}>{(load) => <LoadSpark load={load} />}</ProductionLoad>
+          {pulse === undefined || typeof look === "string" ? (
+            <NoNumber look={look} />
+          ) : (
+            <LoadSpark pulse={pulse} at={look.at} />
+          )}
         </span>
         <span className="flex justify-end text-right">
-          <ProjectPeople project={project.key}>{(people) => <DailyPeople people={people} />}</ProjectPeople>
+          {pulse === undefined ? <NoNumber look={look} /> : <DailyPeople pulse={pulse} />}
         </span>
       </Link>
     </li>
@@ -132,29 +149,32 @@ function ProjectRow({ project, state }: { readonly project: ListedProject; reado
 /**
  * Now: what needs the founder across every project, the most urgent first, each one click from what
  * it is about; then every project, its state, its last 24 hours, and its daily people against last
- * week, one click from its own page.
+ * week, one click from its own page. All of it is Today's one answer.
  */
 export function NowPage({ projects }: { readonly projects: ReadonlyArray<ListedProject> }) {
   const today = useAtomValue(todayAtom)
-  const deliveries = useAtomValue(deliveriesAtom)
   const nameOf = (key: ProjectKey) => projects.find((project) => project.key === key)?.name ?? key
-  const asked = AsyncResult.isSuccess(deliveries) ? deliveries.value : []
-  // Releases waiting, from each project's delivery that answered; one that didn't is said below.
-  const waiting = asked.flatMap(({ project, delivery }) =>
-    AsyncResult.isSuccess(delivery) ? waitingReleasesOf(project, delivery.value.delivery, delivery.value.asOf) : [],
-  )
-  const deliveryFailed = asked.filter(({ delivery }) => AsyncResult.isFailure(delivery)).map(({ project }) => project)
-  const items = AsyncResult.isSuccess(today) ? needsYouOf(today.value, waiting) : undefined
+  const items = AsyncResult.isSuccess(today) ? needsYouOf(today.value) : undefined
   const stateOf = (project: ProjectKey) => {
     if (AsyncResult.isFailure(today)) {
       return projectStateOf([], false)
     }
-    return items === undefined || !AsyncResult.isSuccess(today)
-      ? undefined
-      : projectStateOf(
+    return AsyncResult.isSuccess(today) && items !== undefined
+      ? projectStateOf(
           items.filter((item) => item.project === project),
           !today.value.unanswered.includes(project),
         )
+      : undefined
+  }
+  const lookOf = (project: ProjectKey): PulseLook => {
+    if (AsyncResult.isFailure(today)) {
+      return "failed"
+    }
+    if (!AsyncResult.isSuccess(today)) {
+      return "asking"
+    }
+    const pulse = today.value.pulses?.find((each) => each.project === project)
+    return { ...(pulse === undefined ? {} : { pulse }), at: today.value.at }
   }
 
   return (
@@ -172,16 +192,10 @@ export function NowPage({ projects }: { readonly projects: ReadonlyArray<ListedP
             <Loaded result={today}>
               {(answer) => (
                 <>
-                  <NeedsYouList items={needsYouOf(answer, waiting)} projectName={nameOf} />
+                  <NeedsYouList items={needsYouOf(answer)} projectName={nameOf} />
                   {answer.unanswered.length > 0 && (
                     <p className="border-t px-5 py-3 text-sm text-muted-foreground">
                       {answer.unanswered.map(nameOf).join(", ")} didn&apos;t answer: what needs you there is unknown.
-                    </p>
-                  )}
-                  {deliveryFailed.length > 0 && (
-                    <p className="border-t px-5 py-3 text-sm text-muted-foreground">
-                      Whether releases wait for you in {deliveryFailed.map(nameOf).join(", ")} is unknown: its releases
-                      didn&apos;t answer.
                     </p>
                   )}
                 </>
@@ -192,7 +206,12 @@ export function NowPage({ projects }: { readonly projects: ReadonlyArray<ListedP
           <Panel icon={FoldersIcon} title="Projects" subtitle="State, last 24 hours, daily people">
             <ul className="divide-y">
               {projects.map((project) => (
-                <ProjectRow key={project.key} project={project} state={stateOf(project.key)} />
+                <ProjectRow
+                  key={project.key}
+                  project={project}
+                  state={stateOf(project.key)}
+                  look={lookOf(project.key)}
+                />
               ))}
             </ul>
           </Panel>

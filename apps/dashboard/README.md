@@ -25,8 +25,9 @@ open from. Above every page but Now, its trail: each level above it, one click a
 ```
 /                                                Now: what needs the founder across every project, the most urgent
                                                  first (incidents, errors happening now or new, operations slower
-                                                 than their own usual, projects that sent nothing, releases waiting
-                                                 for a member), each one click from what it is about; then each
+                                                 than their own usual, releases waiting for a member or that didn't
+                                                 get there, projects that sent nothing), each one click from what it
+                                                 is about; then each
                                                  project, its state, its last 24 hours, and its daily people against
                                                  last week. Without projects, how to create one; signed out, the sign-in
   /projects/notes                                a project: its apps' daily and monthly people against last week, its
@@ -122,14 +123,18 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
   items, in Today's order and in the environments each project calls production, each said in
   words with its kind, project, what it is, a line of evidence and when, one click from what it is
   about (an incident's operation, or the project's monitors for one that is Down; the error; the
-  operation; the release); then the releases waiting for a member, from each project's delivery:
-  one App Store review approved, and one whose workflow waits on GitHub for its environment to be
-  approved. A project Today couldn't ask is said to be unknown, never fine. Today is read through
-  the API's definition alone (`TodayList` in `src/project-data.ts`), as the dashboard doesn't depend
-  on the Today engine's package.
-- **People against last week,** on Now and a project's page (`peopleOf`): the apps' daily and
-  monthly people on the latest whole UTC day, beside the same day a week before, in the environment
-  Product opens on; a day not counted is unknown, and so is a change from a week before with none.
+  operation; the release). A release that needs a member is Today's too (`promotionWords`): one App
+  Store review approved, to release; one waiting on GitHub for its environment to be approved; and,
+  in red, one that failed, was rejected in review, or couldn't be followed, until something reaches
+  its environment. A project Today couldn't ask is said to be unknown, never fine. Today is read
+  through the API's definition alone (`TodayList` in `src/project-data.ts`), as the dashboard doesn't
+  depend on the Today engine's package.
+- **A project's pulse,** on Now and a project's page, from Today's answer (`dayLoadOf`, `peopleOf`):
+  its load by the hour over the last 24 hours, an hour not listed unknown, never none; and its apps'
+  daily and monthly people on the latest whole UTC day, beside the same day a week before, all in the
+  environments it calls production. A day not counted is unknown, and so is a change from a week
+  before with none; a project without a pulse, one that didn't answer, says its load and people are
+  unknown.
 - **The tree,** `trailOf` and `doorOf` in `src/router.tsx`: which level each page is, and the door
   it is behind, which the trail above a page (`src/views/page-trail.tsx`) and the sidebar show.
 - **Showing what "slower", "new" and "happening now" mean:** the rules are Signals'
@@ -308,10 +313,10 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
   name none when it is production (`isShownIn`): the API's environment filter leaves out builds
   that name none, such as one only App Store Connect knows. Tech's incidents are kept to the shown
   environment the same way, as the incidents question takes none; the incidents page shows every one.
-- **Now asks a question a project,** for what one answer would serve better: each project's
-  delivery, for the releases waiting, and each one's project, load over the last day, apps' release
-  health and usage, for its row. The API has no question across projects for them yet; Today is the
-  only one.
+- **Now asks one question,** Today, whatever the number of projects: what needs the founder,
+  releases among it, and each project's pulse. A project's page asks two more, for what its doors say
+  that a pulse doesn't: what runs where (its delivery) and how its apps' releases are (their app
+  health).
 - **A release filter widens the period,** when a release's page opens an area: to the shortest period
   that covers the release from its first minute to now, so nothing of it is cut off and its charts are
   as fine as they can be. The period stays one choice for every page, so the others show it too; an

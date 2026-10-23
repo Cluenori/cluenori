@@ -1,4 +1,5 @@
 import {
+  calendarDayOf,
   ComponentKey,
   EnvelopeName,
   EnvironmentKey,
@@ -9,6 +10,7 @@ import {
   ProjectKey,
   ReleaseVersion,
   TraceId,
+  Uuidv7,
 } from "@cluenori/foundation"
 import { Incident, IncidentId, IncidentList, Monitor, MonitorId, MonitorList, MonitorUrl } from "@cluenori/incidents"
 import { Email, Member, MemberList } from "@cluenori/members"
@@ -84,6 +86,7 @@ import {
   slowerOperations,
   stepMillis,
   TraceView,
+  UsageDay,
 } from "@cluenori/signals"
 import { Unauthorized } from "@cluenori/worker"
 import { Clock, DateTime, Effect, Schema } from "effect"
@@ -1203,26 +1206,126 @@ const TodayAnswer = Schema.Struct({
         p95Ms: Schema.Finite,
         usualP95Ms: Schema.Finite,
       }),
+      Schema.TaggedStruct("promotion", {
+        project: ProjectKey,
+        component: ComponentKey,
+        environment: EnvironmentKey,
+        release: ReleaseVersion,
+        promotion: Uuidv7,
+        state: Schema.Literals(["approved", "waiting", "failed", "rejected", "lost"]),
+        startedAt: Instant,
+        endedAt: Schema.optionalKey(Instant),
+      }),
       Schema.TaggedStruct("silent", { project: ProjectKey, lastDataAt: Schema.optionalKey(Instant) }),
     ]),
   ),
   projects: Schema.Array(Project),
   unanswered: Schema.Array(ProjectKey),
+  pulses: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        project: ProjectKey,
+        load: Schema.Array(Schema.Struct({ start: Instant, count: Schema.Int, errors: Schema.Int })),
+        people: Schema.optionalKey(Schema.Struct({ latest: UsageDay, weekBefore: Schema.optionalKey(UsageDay) })),
+      }),
+    ),
+  ),
   at: Instant,
 })
 const sameAsTheApi = (answer: TodayList): typeof TodayAnswer.Type => answer
 const sameAsThisOne = (answer: typeof TodayAnswer.Type): TodayList => answer
 
-// Today's order: incidents not acknowledged, errors happening now, then new ones, then slower.
-const todayRank = (item: TodayList["items"][number]) =>
-  ({ incident: 0, error: item._tag === "error" && item.ongoing ? 1 : 2, slower: 3, silent: 4 })[item._tag]
+type TodayItem = TodayList["items"][number]
+
+// Today's order: incidents not acknowledged, errors happening now, then new ones, slower operations,
+// releases that need a member, then projects that sent nothing.
+const todayRank = (item: TodayItem) =>
+  ({ incident: 0, error: item._tag === "error" && item.ongoing ? 1 : 2, slower: 3, promotion: 4, silent: 5 })[item._tag]
+
+// What Today says of a promotion: one that waits for a member, or ended without its release getting
+// there, the latest to each of the project's production environments.
+const promotionItemsOf = (
+  promotions: ReadonlyArray<Promotion>,
+  productionEnvironments: ReadonlyArray<EnvironmentKey>,
+): ReadonlyArray<TodayItem> => {
+  const latest = new Map<string, Promotion>()
+  for (const promotion of promotions) {
+    const key = `${promotion.component} ${promotion.environment}`
+    const earlier = latest.get(key)
+    if (
+      earlier === undefined ||
+      DateTime.toEpochMillis(earlier.startedAt) < DateTime.toEpochMillis(promotion.startedAt)
+    ) {
+      latest.set(key, promotion)
+    }
+  }
+  return [...latest.values()].flatMap((promotion): ReadonlyArray<TodayItem> => {
+    const { state } = promotion
+    const needsAMember =
+      state === "approved" || state === "waiting" || state === "failed" || state === "rejected" || state === "lost"
+    if (!productionEnvironments.includes(promotion.environment) || !needsAMember) {
+      return []
+    }
+    return [
+      {
+        _tag: "promotion",
+        project: notes,
+        component: promotion.component,
+        environment: promotion.environment,
+        release: promotion.release,
+        promotion: promotion.id,
+        state,
+        startedAt: promotion.startedAt,
+        ...(promotion.endedAt === undefined ? {} : { endedAt: promotion.endedAt }),
+      },
+    ]
+  })
+}
+
+/**
+ * Notes's pulse at `now`: its API's load in production by the hour, every hour of the last 24
+ * answered, and its iPhone app's people yesterday and the same day a week before, when the app had
+ * sent for under 30 days, so without monthly people. Landing's has no load and no people.
+ */
+const pulsesAt = (now: number, workspace: ReadonlyArray<Project>): NonNullable<TodayList["pulses"]> => {
+  const thisHour = Math.floor(now / hour) * hour
+  const dayOn = (daysAgo: number, people: number) => ({
+    day: calendarDayOf(DateTime.makeUnsafe(now - daysAgo * day)),
+    people,
+    installations: people,
+    weekPeople: people * 4,
+    sessions: people * 2,
+    foregroundMs: people * 6 * minute,
+  })
+  return workspace.map((project) =>
+    project.key === notes
+      ? {
+          project: project.key,
+          load: Array.from({ length: 24 }, (_, index) => ({
+            start: DateTime.makeUnsafe(thisHour - (23 - index) * hour),
+            count: 40 + (index % 7) * 6,
+            errors: index % 9 === 0 ? 1 : 0,
+          })),
+          people: { latest: dayOn(1, 46), weekBefore: dayOn(8, 43) },
+        }
+      : { project: project.key, load: [] },
+  )
+}
 
 /**
  * What needs attention now across `workspace`, as Today works it out at `now` in the environments
- * each project calls production: Notes's open incident, its errors happening now or new, and its
- * operations slower than over the 7 days before. Landing, without components, has nothing to say.
+ * each project calls production: Notes's open incident, its errors happening now or new, its
+ * operations slower than over the 7 days before, and its promotions that need a member; and how each
+ * project is going, unless the deployment is `older` than pulses. Landing, without components, has
+ * nothing to say.
  */
-const todayAt = (now: number, workspace: ReadonlyArray<Project>): TodayList => {
+const todayAt = (
+  now: number,
+  workspace: ReadonlyArray<Project>,
+  promotions: ReadonlyArray<Promotion>,
+  productionEnvironments: ReadonlyArray<EnvironmentKey>,
+  older: boolean,
+): TodayList => {
   const lastDay = new Period({ from: DateTime.makeUnsafe(now - day), to: DateTime.makeUnsafe(now) })
   const slower = slowerOperations({
     lastDay: { rows: lastDayRows, count: 0, errors: 0 },
@@ -1251,6 +1354,7 @@ const todayAt = (now: number, workspace: ReadonlyArray<Project>): TodayList => {
             },
           ]
     }),
+    ...promotionItemsOf(promotions, productionEnvironments),
   ]
   return sameAsThisOne({
     items: workspace.some((project) => project.key === notes)
@@ -1258,15 +1362,13 @@ const todayAt = (now: number, workspace: ReadonlyArray<Project>): TodayList => {
       : [],
     projects: workspace,
     unanswered: [],
+    ...(older ? {} : { pulses: pulsesAt(now, workspace) }),
     at: DateTime.makeUnsafe(now),
   })
 }
 
 /** Today's answer, encoded as the API sends it. */
-const today = (workspace: ReadonlyArray<Project>) =>
-  Effect.gen(function* () {
-    return yield* reply(TodayAnswer, sameAsTheApi(todayAt(yield* Clock.currentTimeMillis, workspace)))
-  })
+const today = (answer: TodayList) => reply(TodayAnswer, sameAsTheApi(answer))
 
 // What a project with nothing yet, Landing, answers: no load, no incidents, nothing delivered.
 const nothingYet = (call: ApiCall) =>
@@ -1769,7 +1871,9 @@ export const notesApi = ({
           : yield* reply(NotAllowed, new NotAllowed(), 403)
       }
       if (call.method === "GET" && first === "today" && project === undefined) {
-        return yield* today(workspace)
+        const now = yield* Clock.currentTimeMillis
+        promotions ??= (seeded ?? world.promotionsAt)(now)
+        return yield* today(todayAt(now, workspace, promotions, settings.productionEnvironments, older))
       }
       if (first !== "projects") {
         return yield* noSuchCall(call.method, call.path)

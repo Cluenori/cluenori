@@ -5,7 +5,6 @@
 // the same answers.
 
 import type { CalendarDay, EnvironmentKey, Period, ProjectKey } from "@cluenori/foundation"
-import { calendarDayOfNumber, dayNumberOf } from "@cluenori/foundation"
 import type { Incident } from "@cluenori/incidents"
 import type { ProjectSettings } from "@cluenori/projects"
 import type {
@@ -17,7 +16,6 @@ import type {
   StoreBuild,
 } from "@cluenori/releases"
 import type {
-  AppUsage,
   Compared,
   OperationRow,
   OperationTable,
@@ -37,7 +35,7 @@ import { DateTime } from "effect"
 
 import { componentColor } from "@/lib/colors"
 import { ago, axisTime, count, dayOf, duration, share, viewerTimeZone } from "@/lib/format"
-import type { PeriodKey, TodayItem, TodayList } from "@/project-data"
+import type { PeriodKey, ProjectPulse, TodayItem, TodayList } from "@/project-data"
 import { periodMillis, periods } from "@/project-data"
 import type { Route } from "@/router"
 
@@ -486,65 +484,80 @@ const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
         to: { page: "tech", project: item.project },
       }
     }
+    case "promotion": {
+      const ended = item.endedAt === undefined ? undefined : DateTime.toEpochMillis(item.endedAt)
+      return {
+        key: `promotion ${item.promotion}`,
+        group: "release",
+        kind: "Release",
+        // One waiting for a member is a release's purple; one that ended without getting there failed.
+        tone: item.state === "approved" || item.state === "waiting" ? "release" : "failure",
+        project: item.project,
+        ...promotionWords(item),
+        when: ago(ended ?? DateTime.toEpochMillis(item.startedAt), now),
+        to: releaseRouteOf(item.project, item),
+      }
+    }
   }
 }
 
 /**
- * The releases in a project's delivery that wait for a member: one App Store review approved, which
- * a member releases, and one whose workflow waits on GitHub for someone to approve its environment.
- * `asOf` is when the delivery was asked.
+ * What a promotion that needs a member is, in plain words: what happened, and what to do;
+ * "2.5.0+318 passed App Store review", "notes-ios to production: release it when you're ready".
  */
-export const waitingReleasesOf = (
-  project: ProjectKey,
-  delivery: Delivery,
-  asOf: DateTime.Utc,
-): ReadonlyArray<NeedsYou> =>
-  delivery.components.flatMap((component) =>
-    component.environments.flatMap(({ promotion }): ReadonlyArray<NeedsYou> => {
-      if (promotion === undefined || (promotion.state !== "approved" && promotion.state !== "waiting")) {
-        return []
+export const promotionWords = (
+  item: Extract<TodayItem, { readonly _tag: "promotion" }>,
+): { readonly title: string; readonly detail: string } => {
+  const { release, component, environment } = item
+  switch (item.state) {
+    case "approved":
+      return {
+        title: `${release} passed App Store review`,
+        detail: `${component} to ${environment}: release it when you're ready`,
       }
-      const approved = promotion.state === "approved"
-      return [
-        {
-          key: `promotion ${promotion.id}`,
-          group: "release",
-          kind: "Release",
-          tone: "release",
-          project,
-          title: approved
-            ? `${promotion.release} passed App Store review`
-            : `${promotion.release} waits for approval on GitHub`,
-          detail: approved
-            ? `${promotion.component} to ${promotion.environment}: release it when you're ready`
-            : `${promotion.component} to ${promotion.environment}: approve the environment on GitHub`,
-          when: ago(DateTime.toEpochMillis(promotion.startedAt), DateTime.toEpochMillis(asOf)),
-          to: releaseRouteOf(project, promotion),
-        },
-      ]
-    }),
-  )
+    case "waiting":
+      return {
+        title: `${release} waits for approval on GitHub`,
+        detail: `${component} to ${environment}: approve the environment on GitHub to go on`,
+      }
+    case "failed":
+      return {
+        title: `Promoting ${release} to ${environment} failed`,
+        detail: `${component}: its workflow or its build failed, and nothing has reached ${environment} since`,
+      }
+    case "rejected":
+      return {
+        title: `${release} was rejected in App Store review`,
+        detail: `${component}: change what Apple asked for, then send a new build to ${environment}`,
+      }
+    case "lost":
+      return {
+        title: `Promoting ${release} to ${environment} couldn't be followed`,
+        detail: `${component}: no run or build turned up in time; GitHub or App Store Connect has what happened`,
+      }
+  }
+}
 
 /**
  * What needs the founder now, the most urgent first: Today's items in Today's order, of the
- * environments each project calls production, then the releases `waiting` for a member.
+ * environments each project calls production, the releases that need a member among them.
  */
-export const needsYouOf = (today: TodayList, waiting: ReadonlyArray<NeedsYou>): ReadonlyArray<NeedsYou> => {
+export const needsYouOf = (today: TodayList): ReadonlyArray<NeedsYou> => {
   const now = DateTime.toEpochMillis(today.at)
-  return [...today.items.map((item) => todayRowOf(item, now)), ...waiting]
+  return today.items.map((item) => todayRowOf(item, now))
 }
 
 const groupWords: Readonly<Record<NeedsYouGroup, (value: number) => string>> = {
   incident: (value) => counted(value, "incident", "incidents"),
   error: (value) => counted(value, "error", "errors"),
   slower: (value) => counted(value, "slower operation", "slower operations"),
-  release: (value) => `${counted(value, "release", "releases")} waiting`,
+  release: (value) => counted(value, "release", "releases"),
   silent: () => "nothing sent in a day",
 }
 
 /**
- * What a few rows of Needs you count, in a line: "1 incident · 2 errors · 1 release waiting";
- * undefined for none.
+ * What a few rows of Needs you count, in a line: "1 incident · 2 errors · 1 release"; undefined for
+ * none.
  */
 export const needsYouCountsOf = (items: ReadonlyArray<NeedsYou>) => {
   const counts = (["incident", "error", "slower", "release", "silent"] as const).flatMap((group) => {
@@ -586,22 +599,48 @@ export const releasedLineOf = (delivery: Delivery) => {
   return released.length === 0 ? undefined : released.join(" · ")
 }
 
-// ---- People ----------------------------------------------------------------------------------------
+// ---- A project's pulse: its last day, and its people ------------------------------------------------
+
+const hourMs = 3_600_000
+
+/**
+ * A project's last 24 hours, from its pulse: how many ran, and failed, each hour, and in all; and the
+ * viewer's time zone then, which its hours are named in.
+ */
+export type DayLoad = {
+  readonly ran: Columns
+  readonly failed: Columns
+  readonly total: number
+  readonly failures: number
+  readonly zone: string
+}
+
+/**
+ * A project's last 24 hours of load, from its pulse, as a chart's columns: the hour Today looked in
+ * and the 23 before it. An hour the pulse doesn't list had nothing reported, which isn't none, so its
+ * column is unknown.
+ */
+export const dayLoadOf = (pulse: ProjectPulse, at: DateTime.Utc): DayLoad => {
+  const from = Math.floor(DateTime.toEpochMillis(at) / hourMs) * hourMs - 23 * hourMs
+  const byStart = new Map(pulse.load.map((hour) => [DateTime.toEpochMillis(hour.start), hour] as const))
+  const hours = Array.from({ length: 24 }, (_, index) => byStart.get(from + index * hourMs))
+  return {
+    ran: { from, step: hourMs, values: hours.map((hour) => hour?.count) },
+    failed: { from, step: hourMs, values: hours.map((hour) => hour?.errors) },
+    total: sumOf(pulse.load.map((hour) => hour.count)),
+    failures: sumOf(pulse.load.map((hour) => hour.errors)),
+    zone: zoneNameAt(DateTime.toEpochMillis(at)),
+  }
+}
 
 /** People counted on one UTC day and on the same day a week before; either absent when not counted. */
 export type PeopleCount = { readonly value?: number; readonly weekBefore?: number }
 
 /**
  * The project's apps' daily and monthly people on the latest whole UTC day, each beside the same day
- * a week before; and the daily people of each of the 14 whole days up to it, oldest first, unknown
- * on a day not counted.
+ * a week before.
  */
-export type People = {
-  readonly day: CalendarDay
-  readonly daily: PeopleCount
-  readonly monthly: PeopleCount
-  readonly days: ReadonlyArray<{ readonly day: CalendarDay; readonly people?: number }>
-}
+export type People = { readonly day: CalendarDay; readonly daily: PeopleCount; readonly monthly: PeopleCount }
 
 const peopleCountOf = (value: number | undefined, weekBefore: number | undefined): PeopleCount => ({
   ...(value === undefined ? {} : { value }),
@@ -609,26 +648,15 @@ const peopleCountOf = (value: number | undefined, weekBefore: number | undefined
 })
 
 /**
- * Daily and monthly people, from usage by UTC day: on the latest whole UTC day before `asOf`, and
- * the same day a week before. A day the answer doesn't list wasn't counted, so it is unknown, never
- * none; so is a month that reaches before the apps first sent.
+ * Daily and monthly people from a project's pulse: on the latest whole UTC day, and the same day a
+ * week before. A day not counted is unknown, never none; so is a month that reaches before the apps
+ * first sent.
  */
-export const peopleOf = (usage: AppUsage, asOf: DateTime.Utc): People => {
-  const today = dayNumberOf(DateTime.toEpochMillis(asOf))
-  const byDay = new Map(usage.days.map((entry) => [entry.day, entry] as const))
-  const latest = byDay.get(calendarDayOfNumber(today - 1))
-  const before = byDay.get(calendarDayOfNumber(today - 8))
-  return {
-    day: calendarDayOfNumber(today - 1),
-    daily: peopleCountOf(latest?.people, before?.people),
-    monthly: peopleCountOf(latest?.monthPeople, before?.monthPeople),
-    days: Array.from({ length: 14 }, (_, index) => {
-      const day = calendarDayOfNumber(today - 14 + index)
-      const counted = byDay.get(day)
-      return counted === undefined ? { day } : { day, people: counted.people }
-    }),
-  }
-}
+export const peopleOf = (people: NonNullable<ProjectPulse["people"]>): People => ({
+  day: people.latest.day,
+  daily: peopleCountOf(people.latest.people, people.weekBefore?.people),
+  monthly: peopleCountOf(people.latest.monthPeople, people.weekBefore?.monthPeople),
+})
 
 /**
  * How much a count moved since the week before, as a share of it: 0.06 for 6% more. Undefined when
