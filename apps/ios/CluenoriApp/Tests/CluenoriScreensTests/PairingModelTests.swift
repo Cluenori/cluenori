@@ -93,16 +93,11 @@ let pairedAnswer = #"""
     "appVersion":"1.0 (12)","pairedAt":"2026-10-21T12:15:43.690Z"},"key":"k2"}
     """#
 
-let projectsAnswer = #"""
-    {"projects":[{"key":"notes","name":"Notes","createdAt":"2026-10-01T10:00:00Z"},
-    {"key":"atlas","name":"atlas","createdAt":"2026-10-02T10:00:00.5Z"}]}
-    """#
-
 struct PairingModelTests {
     @Test func `pairs by a link, keeps the key, and shows the deployment's projects`() async throws {
         let deployment = FakeDeployment()
         deployment.answer("POST /api/phones", 201, pairedAnswer)
-        deployment.answer("GET /api/projects", 200, projectsAnswer)
+        deployment.answer("GET /api/today", 200, todayAnswer)
         let store = MemoryStore()
         let pairing = PairingModel(store: store, details: details, transport: deployment.transport)
         #expect(pairing.state == .unpaired)
@@ -112,15 +107,15 @@ struct PairingModelTests {
         #expect(pairing.state == .paired)
         #expect(pairing.host == "cluenori.example")
         #expect(store.saved?.key == "k2")
-        let projects = try #require(pairing.models?.projects)
-        await projects.load()
-        #expect(projects.projects?.map(\.name) == ["atlas", "Notes"])
+        let today = try #require(pairing.models?.today)
+        await today.load()
+        #expect(today.projects?.map(\.name) == ["Notes", "Atlas", "Quiet"])
     }
 
     @Test func `starts paired with the deployment kept from before`() {
         let pairing = PairingModel(store: MemoryStore(paired), details: details)
         #expect(pairing.state == .paired)
-        #expect(pairing.models?.projects != nil)
+        #expect(pairing.models?.today != nil)
     }
 
     @Test func `says why a code was refused, and keeps a pairing from before`() async {
@@ -174,11 +169,11 @@ struct PairingModelTests {
 
     @Test func `unpairs when the deployment refuses the phone's key`() async throws {
         let deployment = FakeDeployment()
-        deployment.answer("GET /api/projects", 401, #"{"_tag":"Unauthorized","message":"Pair the phone again."}"#)
+        deployment.answer("GET /api/today", 401, #"{"_tag":"Unauthorized","message":"Pair the phone again."}"#)
         let store = MemoryStore(paired)
         let pairing = PairingModel(store: store, details: details, transport: deployment.transport)
 
-        try await #require(pairing.models?.projects).load()
+        try await #require(pairing.models?.today).load()
 
         #expect(pairing.state == .unpaired)
         #expect(pairing.problem == .removed)
@@ -187,17 +182,17 @@ struct PairingModelTests {
 
     @Test func `keeps showing the projects when the phone goes offline`() async throws {
         let deployment = FakeDeployment()
-        deployment.answer("GET /api/projects", 200, projectsAnswer)
+        deployment.answer("GET /api/today", 200, todayAnswer)
         let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
-        let projects = try #require(pairing.models?.projects)
-        await projects.load()
+        let today = try #require(pairing.models?.today)
+        await today.load()
 
         deployment.setOffline(true)
-        await projects.load()
+        await today.load()
 
-        #expect(projects.projects?.count == 2)
-        #expect(projects.problem == .unreachable)
-        #expect(projects.isLoading == false)
+        #expect(today.projects?.count == 3)
+        #expect(today.problem == .unreachable)
+        #expect(today.isLoading == false)
     }
 
     @Test func `unpairing removes the phone from its deployment, then forgets it`() async {

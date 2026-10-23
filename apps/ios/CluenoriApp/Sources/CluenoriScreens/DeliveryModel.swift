@@ -115,6 +115,24 @@ public struct ComponentStages: Hashable, Sendable, Identifiable {
     }
 }
 
+/// A project's delivery at a glance, across the components that ship on their own: how many
+/// promotions are under way, how many ended without their release getting there, how many releases
+/// are ready for their next environment, and the release that reached production last.
+public struct DeliveryOverview: Equatable, Sendable {
+    public struct Latest: Equatable, Sendable {
+        /// The component's name.
+        public let component: String
+        public let release: String
+        public let since: Date
+    }
+
+    public let underWay: Int
+    public let failed: Int
+    public let ready: Int
+    /// Nil when no release is in a production environment.
+    public let latestInProduction: Latest?
+}
+
 /// Where one release of a component is now, from its component's delivery: the environments it is
 /// in and since when, those it hasn't reached yet, its promotions under way, the one step that moves
 /// it on, and deploying it anywhere else.
@@ -219,6 +237,27 @@ public final class DeliveryModel {
     /// What people call `component`: its name, from the project; its key until the project says.
     public func name(of component: String) -> String {
         detail.value?.components.first { $0.key == component }?.name ?? component
+    }
+
+    /// The delivery at a glance, as the project's door to it says it; nil until the delivery arrives.
+    public var overview: DeliveryOverview? {
+        guard answer.value != nil else { return nil }
+        let own = components.filter { $0.shipsWith == nil }
+        let stages = own.flatMap { component in component.stages.map { (component: component, stage: $0) } }
+        let latest =
+            stages
+            .filter { $0.stage.isProduction }
+            .compactMap { pair in pair.stage.current.map { (component: pair.component.name, current: $0) } }
+            .max { $0.current.since < $1.current.since }
+        return DeliveryOverview(
+            underWay: stages.filter { $0.stage.promotion != nil }.count,
+            failed: stages.filter { $0.stage.failed != nil }.count,
+            ready: own.reduce(0) { $0 + $1.readyToPromote.count },
+            latestInProduction: latest.map {
+                DeliveryOverview.Latest(
+                    component: $0.component, release: $0.current.summary.release, since: $0.current.since)
+            }
+        )
     }
 
     /// Whether a promotion this delivery shows hasn't ended, so `followPromotions` asks again.

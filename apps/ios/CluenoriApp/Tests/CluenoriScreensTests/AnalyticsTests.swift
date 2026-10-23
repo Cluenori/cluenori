@@ -128,7 +128,7 @@ struct AnalyticsRouteTests {
             project: "notes", component: "notes-ios", environment: "production", version: "0.3.0+20")
         navigation.open(.appHealth(release))
         #expect(
-            navigation.projectsPath == [
+            navigation.path == [
                 .project("notes"),
                 .analytics(AnalyticsRef(project: "notes", component: "notes-ios", environment: "production")),
                 .appHealth(release),
@@ -136,7 +136,7 @@ struct AnalyticsRouteTests {
 
         navigation.open(.person(project: "notes", user: "user-1842"))
         #expect(
-            navigation.projectsPath == [
+            navigation.path == [
                 .project("notes"), .analytics(AnalyticsRef(project: "notes")),
                 .person(project: "notes", user: "user-1842"),
             ])
@@ -151,12 +151,12 @@ struct AnalyticsRouteTests {
         navigation.showAnalytics(of: "notes-ios", inPlaceOf: shown)
 
         #expect(
-            navigation.projectsPath == [
+            navigation.path == [
                 .project("notes"),
                 .analytics(AnalyticsRef(project: "notes", component: "notes-ios", environment: "production")),
             ])
-        navigation.showAnalytics(of: nil, inPlaceOf: navigation.projectsPath[1])
-        #expect(navigation.projectsPath.last == shown)
+        navigation.showAnalytics(of: nil, inPlaceOf: navigation.path[1])
+        #expect(navigation.path.last == shown)
     }
 
     @Test func `shows a project's analytics in another environment when one is chosen`() throws {
@@ -167,7 +167,7 @@ struct AnalyticsRouteTests {
         navigation.show("beta", of: choice)
 
         #expect(
-            navigation.projectsPath.last
+            navigation.path.last
                 == .features(AnalyticsRef(project: "notes", component: "notes-ios", environment: "beta")))
     }
 }

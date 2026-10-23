@@ -3,11 +3,12 @@ import CluenoriClient
 import Foundation
 import SwiftUI
 
-/// The load over time: one bar per step that had anything counted, its failed part in red. A step
-/// without a bar had nothing reported, which isn't the same as nothing done.
+/// The load over time: one bar per step that had anything counted, in sky, its failed part in pink.
+/// A step without a bar had nothing reported, which isn't the same as nothing done.
 struct LoadChart: View {
     let points: [LoadPoint]
     let step: SeriesStep
+    var height: CGFloat = 140
 
     var body: some View {
         Chart(points, id: \.start) { point in
@@ -18,14 +19,14 @@ struct LoadChart: View {
                 yStart: .value(String(localized: "Count", bundle: #bundle), 0),
                 yEnd: .value(String(localized: "Succeeded", bundle: #bundle), point.count - point.errors)
             )
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Palette.sky.opacity(0.85))
             RectangleMark(
                 xStart: .value(String(localized: "Start", bundle: #bundle), point.start),
                 xEnd: .value(String(localized: "End", bundle: #bundle), end),
                 yStart: .value(String(localized: "Count", bundle: #bundle), point.count - point.errors),
                 yEnd: .value(String(localized: "Failed", bundle: #bundle), point.count)
             )
-            .foregroundStyle(.red)
+            .foregroundStyle(Palette.pink)
         }
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) { _ in
@@ -36,7 +37,7 @@ struct LoadChart: View {
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 3))
         }
-        .frame(height: 140)
+        .frame(height: height)
     }
 
     // Each bar's width: its step.

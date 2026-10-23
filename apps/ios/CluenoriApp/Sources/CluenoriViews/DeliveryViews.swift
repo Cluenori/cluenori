@@ -97,6 +97,43 @@ extension Promotion {
     }
 }
 
+/// A project's releases, the Releases door: its delivery, a row for each component, each opening the
+/// component's screen; and every release in the environment the project's screens show. Asked again
+/// every 15 seconds while a promotion it shows hasn't ended.
+struct DeliveryScreen: View {
+    let delivery: DeliveryModel
+    let environments: EnvironmentChoice
+
+    var body: some View {
+        List {
+            DeliverySection(delivery: delivery)
+            Section {
+                NavigationLink(value: Route.releases(project: delivery.project)) {
+                    Text("All releases", bundle: #bundle, comment: "Opens every release of a project over the period.")
+                }
+            } footer: {
+                Text(
+                    "Every release that ran in the environment the project's screens show, over the period.",
+                    bundle: #bundle,
+                    comment: "Below the row that opens every release of a project."
+                )
+            }
+        }
+        .navigationTitle(Text("Releases", bundle: #bundle, comment: "Title of a project's delivery."))
+        .refreshable {
+            async let releases: Void = delivery.load()
+            async let choice: Void = environments.refresh()
+            _ = await (releases, choice)
+        }
+        .task { await delivery.load() }
+        // Runs again once a promotion is shown that hasn't ended; stops when the screen leaves.
+        .task(id: delivery.hasUnendedPromotions) { await delivery.followPromotions() }
+        .safeAreaInset(edge: .bottom) {
+            AnswerBanner(problem: delivery.answer.problem, receivedAt: delivery.answer.receivedAt)
+        }
+    }
+}
+
 /// The project's delivery, a row for each component: what's in each of its environments, and a
 /// promotion under way or a release ready for the next; each opening the component's screen. A
 /// component that ships with another follows it, indented.

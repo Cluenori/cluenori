@@ -60,9 +60,9 @@ public nonisolated struct PushAlert: Equatable, Sendable {
         level == .alarm && now.timeIntervalSince(at) < Self.ringsWithin
     }
 
-    /// The screen tapping it opens: the incident's project, where its incidents are.
+    /// The screen tapping it opens: the incident's.
     public var route: Route? {
-        incident.map { .project($0.project) }
+        incident.map { .incident(project: $0.project, id: $0.id) }
     }
 
     private static let instant = Date.ISO8601FormatStyle(includingFractionalSeconds: true)

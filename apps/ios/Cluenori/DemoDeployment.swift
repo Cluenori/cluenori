@@ -8,8 +8,8 @@
     /// for screenshots in the Simulator: launched with `-CluenoriDemo YES`, the app pairs with it in
     /// place of the Keychain's pairing, keeps nothing, and opens the link `-CluenoriDemoOpen` names;
     /// with `-CluenoriDemoStep <environment>` too, a component's link opens the promote sheet of its
-    /// next step there; `-CluenoriDemoScroll <points>` scrolls the screen's list down that far, to show
-    /// its lower part; `-CluenoriDemoFailure YES` makes the API's last promotion to prod one that
+    /// next step there; `-CluenoriDemoScroll <points>` scrolls the screen, Now or the link's, down
+    /// that far, to show its lower part; `-CluenoriDemoFailure YES` makes the API's last promotion to prod one that
     /// failed. Debug builds alone have it: Release builds, which TestFlight gets, don't.
     ///
     /// ```
@@ -25,11 +25,12 @@
 
         /// Opens the screen `-CluenoriDemoOpen` names, and the promote sheet `-CluenoriDemoStep` asks for.
         static func open(in pairing: PairingModel) async {
-            guard UserDefaults.standard.bool(forKey: "CluenoriDemo"),
-                let link = UserDefaults.standard.string(forKey: "CluenoriDemoOpen").flatMap(URL.init(string:)),
-                let route = Route(link)
-            else { return }
-            pairing.navigation.open(route)
+            guard UserDefaults.standard.bool(forKey: "CluenoriDemo") else { return }
+            let route = UserDefaults.standard.string(forKey: "CluenoriDemoOpen").flatMap(URL.init(string:))
+                .flatMap(Route.init)
+            if let route {
+                pairing.navigation.open(route)
+            }
             let scroll = UserDefaults.standard.double(forKey: "CluenoriDemoScroll")
             if scroll > 0 {
                 try? await Task.sleep(for: .seconds(3))
@@ -148,6 +149,16 @@
                 return DemoAnswers.ok(SdkKeyList(keys: []))
             }
             return nil
+        }
+
+        /// The notes app's people on the latest whole UTC day and a week before, as Now's pulse counts
+        /// them: from production.
+        static func pulsePeople(_ now: Date) -> PulsePeople? {
+            let days = usage(from: now.addingTimeInterval(-9 * day), now: now, sent: true).days
+            let latest = dayText(dayStart(now).addingTimeInterval(-day))
+            let weekBefore = dayText(dayStart(now).addingTimeInterval(-8 * day))
+            guard let counted = days.first(where: { $0.day == latest }) else { return nil }
+            return PulsePeople(latest: counted, weekBefore: days.first { $0.day == weekBefore })
         }
 
         // MARK: Usage
@@ -424,8 +435,9 @@
     }
 
     /// The made-up deployment's answers: the notes project, with an API deployed dev then prod, a
-    /// worker that ships with it, and an iOS app through TestFlight to the App Store; times are
-    /// relative to now.
+    /// worker that ships with it, and an iOS app through TestFlight to the App Store, its monitor down,
+    /// a new error, and a build App Store review approved; and, on Now alone, atlas, with a slower
+    /// operation, and kiln, an API with nothing to do. Times are relative to now.
     private nonisolated enum DemoAnswers {
         static let transport: CluenoriAPI.Transport = { request in
             let path = request.url?.path(percentEncoded: false) ?? ""
@@ -445,9 +457,9 @@
             case ("GET", "/api/me"):
                 return ok(Member(id: "m1", role: .owner, addedAt: now.addingTimeInterval(-30 * day), passkeys: 1))
             case ("GET", "/api/projects"):
-                return ok(ProjectList(projects: [notes(now)]))
+                return ok(ProjectList(projects: projects(now)))
             case ("GET", "/api/today"):
-                return ok(TodayList(items: [], projects: [notes(now)], unanswered: [], at: now))
+                return ok(today(now))
             case ("GET", project):
                 return ok(detail(now))
             case ("GET", "\(project)/delivery"):
@@ -455,7 +467,9 @@
             case ("GET", "\(project)/versions"):
                 return ok(ComponentVersions(versions: versions(now)))
             case ("GET", "\(project)/incidents"):
-                return ok(IncidentList(open: [], resolved: []))
+                return ok(IncidentList(open: [down(now)], resolved: [recovered(now)], checkedAt: now))
+            case ("POST", "\(project)/incidents/\(downId)/acknowledge"):
+                return ok(down(now, acknowledgedAt: now))
             case ("GET", "\(project)/load"):
                 return ok(load(now))
             case ("GET", "\(project)/operations"):
@@ -472,6 +486,12 @@
                 break
             }
             let parts = path.split(separator: "/").map(String.init)
+            // /api/projects/notes/errors/<id>
+            if method == "GET", parts.count == 5, parts[3] == "errors",
+                let group = errors(now).groups.first(where: { $0.id == parts[4] })
+            {
+                return ok(ErrorDetail(group: group, latest: logs(now).lines.filter { $0.level == .error }))
+            }
             // /api/projects/notes/releases/<component>/<release>
             if method == "GET", parts.count == 6, parts[3] == "releases",
                 let found = summaries(now).first(where: {
@@ -504,6 +524,99 @@
 
         private static func notes(_ now: Date) -> Project {
             Project(key: "notes", name: "Notes", createdAt: now.addingTimeInterval(-60 * day))
+        }
+
+        private static func projects(_ now: Date) -> [Project] {
+            [
+                notes(now),
+                Project(key: "atlas", name: "Atlas", createdAt: now.addingTimeInterval(-90 * day)),
+                Project(key: "kiln", name: "Kiln", createdAt: now.addingTimeInterval(-20 * day)),
+            ]
+        }
+
+        // MARK: Now
+
+        private static let downId = "019a0fe0-7200-7b00-8c00-000000000001"
+
+        // The notes API's health check, down for 4 minutes.
+        private static func down(_ now: Date, acknowledgedAt: Date? = nil) -> Incident {
+            Incident(
+                id: downId, component: "notes-api", environment: "prod", subject: "https://notes.example/health",
+                title: "https://notes.example/health is down: HTTP 503",
+                evidence: .down(
+                    DownEvidence(
+                        monitor: "019a0fe0-7200-7b00-8c00-000000000002", url: "https://notes.example/health",
+                        failures: 3, problem: "HTTP 503")),
+                openedAt: now.addingTimeInterval(-4 * minute), acknowledgedAt: acknowledgedAt)
+        }
+
+        // Yesterday's: the feed failing for 20 minutes, since recovered.
+        private static func recovered(_ now: Date) -> Incident {
+            Incident(
+                id: "019a0fe0-7200-7b00-8c00-000000000003", component: "notes-api", environment: "prod",
+                subject: "GET /api/feed", title: "GET /api/feed: 9% failed, usually 0.2%",
+                evidence: .failing(
+                    FailingEvidence(operation: "GET /api/feed", failed: 54, count: 600, usualRate: 0.002)),
+                openedAt: now.addingTimeInterval(-26 * hour),
+                resolvedAt: now.addingTimeInterval(-26 * hour + 20 * minute),
+                acknowledgedAt: now.addingTimeInterval(-26 * hour + 3 * minute))
+        }
+
+        private static func today(_ now: Date) -> TodayList {
+            let errors = errors(now)
+            return TodayList(
+                items: [
+                    .incident(IncidentItem(project: "notes", incident: down(now))),
+                    .error(ErrorItem(project: "notes", error: errors.groups[1], isNew: true, ongoing: true)),
+                    .slower(
+                        SlowerItem(
+                            project: "atlas", component: "atlas-api", environment: "prod", operation: "GET /api/search",
+                            p95Ms: 640, usualP95Ms: 210)),
+                    .promotion(
+                        PromotionItem(
+                            project: "notes", component: "notes-ios", environment: "production", release: "1.2.0+12",
+                            promotion: reviewId, state: .approved, startedAt: now.addingTimeInterval(-5 * hour))),
+                ],
+                projects: projects(now),
+                unanswered: [],
+                pulses: [
+                    ProjectPulse(
+                        project: "notes", load: pulseLoad(now, busiest: 9_400, failingLately: true),
+                        people: DemoAnalytics.pulsePeople(now)),
+                    ProjectPulse(
+                        project: "atlas", load: pulseLoad(now, busiest: 3_100, failingLately: false),
+                        people: PulsePeople(
+                            latest: UsageDay(
+                                day: dayText(now, daysAgo: 1), people: 412, installations: 440, monthPeople: 3_150,
+                                sessions: 1_210, foregroundMs: 160_000_000),
+                            weekBefore: UsageDay(
+                                day: dayText(now, daysAgo: 8), people: 421, installations: 452, monthPeople: 3_080,
+                                sessions: 1_260, foregroundMs: 170_000_000))),
+                    // An API without apps: its people are unknown.
+                    ProjectPulse(project: "kiln", load: pulseLoad(now, busiest: 820, failingLately: false)),
+                ],
+                at: now)
+        }
+
+        // The current hour so far and the 23 before it: busiest in the afternoon, quiet at night;
+        // failing more over the last three hours when `failingLately`.
+        private static func pulseLoad(_ now: Date, busiest: Double, failingLately: Bool) -> [PulseHour] {
+            let current = (now.timeIntervalSince1970 / hour).rounded(.down) * hour
+            return (0..<24).map { index in
+                let at = current - Double(23 - index) * hour
+                let hourOfDay = at.truncatingRemainder(dividingBy: day) / hour
+                let busy = 0.55 + 0.45 * sin((hourOfDay - 9) / 24 * 2 * .pi)
+                let whole = Int(busiest * busy) + index * 37 % 23
+                let count = index == 23 ? whole * Int(now.timeIntervalSince1970 - current) / Int(hour) : whole
+                let errors = failingLately && index >= 21 ? count / 14 : count / 500
+                return PulseHour(start: Date(timeIntervalSince1970: at), count: count, errors: errors)
+            }
+        }
+
+        private static func dayText(_ now: Date, daysAgo: Int) -> String {
+            let start = (now.timeIntervalSince1970 / day).rounded(.down) * day - Double(daysAgo) * day
+            return Date(timeIntervalSince1970: start).formatted(
+                Date.ISO8601FormatStyle(timeZone: .gmt).year().month().day())
         }
 
         private static let apiDev = DeployTarget(environment: "dev", workflow: "deploy.yml")
@@ -628,6 +741,8 @@
             ]
         }
 
+        private static let reviewId = "019a0fa0-4f00-7f60-9a71-6c7d8e9fa0b1"
+
         private static func delivery(_ now: Date) -> Delivery {
             let placed = summaries(now)
             func current(_ component: String, _ environment: String) -> CurrentRelease? {
@@ -635,12 +750,13 @@
                     CurrentRelease(summary: $0.summary, since: $0.since)
                 }
             }
+            // Approved in App Store review: Now says it waits for you.
             let review = Promotion(
-                id: "019a0fa0-4f00-7f60-9a71-6c7d8e9fa0b1", component: "notes-ios", release: "1.2.0+12",
+                id: reviewId, component: "notes-ios", release: "1.2.0+12",
                 environment: "production", repository: "notesapp/notes-ios", workflow: "ios.yml", runner: .auto,
                 appStore: iosProduction.appStore,
-                submission: AppStoreSubmission(releaseType: .afterApproval, phased: true), startedBy: "m1",
-                reason: "Drafts sync for everyone", startedAt: now.addingTimeInterval(-5 * hour), state: .inReview,
+                submission: AppStoreSubmission(releaseType: .manual, phased: true), startedBy: "m1",
+                reason: "Drafts sync for everyone", startedAt: now.addingTimeInterval(-5 * hour), state: .approved,
                 run: PromotionRun(id: 118_730, url: "https://github.com/notesapp/notes-ios/actions/runs/118730"))
             let versions = versions(now)
             return Delivery(components: [
@@ -763,12 +879,19 @@
                         lastEnvironment: "prod",
                         lastRelease: "2026.10.20-a1b2c3d"),
                     ErrorGroup(
+                        id: "7c3b1a9e5d2f4680", kind: .exception, title: "TypeError: note.body is undefined",
+                        culprit: "drafts.ts in mergeDraft", occurrences: 37,
+                        firstSeen: now.addingTimeInterval(-41 * minute),
+                        lastSeen: now.addingTimeInterval(-2 * minute), lastComponent: "notes-api",
+                        lastEnvironment: "prod",
+                        lastRelease: "2026.10.20-a1b2c3d"),
+                    ErrorGroup(
                         id: "9e2d4c6b8a0f1357", kind: .log, title: "Push token rejected by APNs", culprit: "push.ts",
                         occurrences: 9, firstSeen: now.addingTimeInterval(-2 * day),
                         lastSeen: now.addingTimeInterval(-hour), lastComponent: "notes-worker", lastEnvironment: "prod",
                         lastRelease: "2026.10.20-a1b2c3d"),
                 ],
-                occurrences: 47)
+                occurrences: 84)
         }
 
         private static func logs(_ now: Date) -> LogPage {

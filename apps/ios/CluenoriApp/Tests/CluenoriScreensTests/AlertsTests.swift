@@ -51,7 +51,7 @@ struct AlertsTests {
 
         #expect(alert.level == .alarm)
         #expect(alert.incident == PushAlert.Incident(project: "notes", id: incidentId))
-        #expect(alert.route == .project("notes"))
+        #expect(alert.route == .incident(project: "notes", id: incidentId))
         #expect(alert.rings(at: at.addingTimeInterval(9 * 60)))
         #expect(!alert.rings(at: at.addingTimeInterval(11 * 60)))
 

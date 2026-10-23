@@ -274,8 +274,7 @@ public final class PairingModel {
         paired = nil
         host = nil
         models = nil
-        navigation.todayPath = []
-        navigation.projectsPath = []
+        navigation.path = []
         state = .unpaired
         if let reason {
             problem = reason

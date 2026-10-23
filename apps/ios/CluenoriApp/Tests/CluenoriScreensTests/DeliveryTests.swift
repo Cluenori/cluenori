@@ -305,6 +305,26 @@ struct DeliveryTests {
         #expect(!deployment.requests.contains { $0.contains("/releases/") })
     }
 
+    @Test func `sums the delivery up for its door: under way, didn't get there, ready, and the latest in production`()
+        async throws
+    {
+        let (delivery, _, _) = try await notesDelivery()
+
+        let overview = try #require(delivery.overview)
+        #expect(overview.underWay == 1)
+        #expect(overview.failed == 0)
+        // The API's 1.4.0+57 for prod; the app's production has a promotion under way, so nothing next.
+        #expect(overview.ready == 1)
+        // The API's 1.4.0+55 reached production after the app's 1.1.0+9 did.
+        #expect(overview.latestInProduction?.release == "1.4.0+55")
+        #expect(overview.latestInProduction?.component == "Notes API")
+
+        let (rejected, _, _) = try await notesDelivery(deliveryJSON(production: rejectedProduction))
+        #expect(rejected.overview?.underWay == 0)
+        #expect(rejected.overview?.failed == 1)
+        #expect(rejected.overview?.ready == 2)
+    }
+
     @Test func `shows the promotion that failed, after a relaunch too, and offers the next step again`()
         async throws
     {

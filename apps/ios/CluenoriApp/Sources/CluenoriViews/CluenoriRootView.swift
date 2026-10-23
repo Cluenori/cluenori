@@ -1,7 +1,8 @@
 import CluenoriScreens
 import SwiftUI
 
-/// The app's window: pairing until the phone is paired, then Today and the projects, in tabs.
+/// The app's window: pairing until the phone is paired, then Now, the screens a level deeper
+/// opening over it; dark always, in the founder's palette.
 public struct CluenoriRootView: View {
     let pairing: PairingModel
 
@@ -10,57 +11,33 @@ public struct CluenoriRootView: View {
     }
 
     public var body: some View {
-        if pairing.state == .paired, let models = pairing.models {
-            PairedTabs(models: models, navigation: pairing.navigation, pairing: pairing)
-        } else {
-            PairScreen(pairing: pairing)
+        Group {
+            if pairing.state == .paired, let models = pairing.models {
+                PairedRoot(models: models, navigation: pairing.navigation, pairing: pairing)
+            } else {
+                PairScreen(pairing: pairing)
+            }
         }
+        .preferredColorScheme(.dark)
+        .tint(Palette.blue)
     }
 }
 
-struct PairedTabs: View {
+struct PairedRoot: View {
     let models: DeploymentModels
     @Bindable var navigation: Navigation
     let pairing: PairingModel
 
     var body: some View {
-        TabView(selection: $navigation.tab) {
-            Tab(value: Navigation.Tab.today) {
-                NavigationStack(path: $navigation.todayPath) {
-                    TodayScreen(today: models.today, pairing: pairing)
-                        .navigationDestination(for: Route.self) { route in
-                            RouteScreen(route: route, models: models, navigation: navigation)
-                        }
+        NavigationStack(path: $navigation.path) {
+            NowScreen(today: models.today, pairing: pairing)
+                .navigationDestination(for: Route.self) { route in
+                    RouteScreen(route: route, models: models, navigation: navigation)
                 }
-            } label: {
-                Label {
-                    Text("Today", bundle: #bundle, comment: "Tab of the attention queue.")
-                } icon: {
-                    Image(systemName: "sun.max")
-                }
-            }
-            Tab(value: Navigation.Tab.projects) {
-                NavigationStack(path: $navigation.projectsPath) {
-                    ProjectsScreen(projects: models.projects, pairing: pairing)
-                        .navigationDestination(for: Route.self) { route in
-                            RouteScreen(route: route, models: models, navigation: navigation)
-                        }
-                }
-            } label: {
-                Label {
-                    Text("Projects", bundle: #bundle, comment: "Tab of the list of projects.")
-                } icon: {
-                    Image(systemName: "square.stack.3d.up")
-                }
-            }
         }
         // What the phone allows alerts to do changes in Settings, so it is looked at again on return.
         .task { await models.alerts.refreshPermission() }
         .refreshWhenActive { await models.alerts.refreshPermission() }
-        // The views also build for macOS, for the package's tests on a Mac; this is iOS's alone.
-        #if os(iOS)
-            .tabBarMinimizeBehavior(.onScrollDown)
-        #endif
     }
 }
 
@@ -95,10 +72,11 @@ struct RouteScreen: View {
             .componentReleases:
             true
         case .operation(let operation): operation.release == nil
+        // A project's tech follows the period in place; a project's summary is over the last day.
         // Analytics look over their own period of UTC days, which their screens follow in place.
-        case .project, .component, .release, .operations(.release), .errors(.release), .error(.release, _),
-            .logs(.release), .notes, .notesStyle, .analytics, .features, .appHealth, .person, .versionPolicy,
-            .sdkKeys:
+        case .project, .tech, .incidents, .incident, .delivery, .component, .release, .operations(.release),
+            .errors(.release), .error(.release, _), .logs(.release), .notes, .notesStyle, .analytics, .features,
+            .appHealth, .person, .versionPolicy, .sdkKeys:
             false
         }
     }
@@ -113,20 +91,29 @@ private struct Screen: View {
     var body: some View {
         let environments = models.environments(route.project)
         switch route {
-        case .project(let key, let environment):
+        case .project(let key):
             ProjectScreen(
-                project: models.project(key, environment: environment, period: navigation.period),
+                key: key,
+                today: models.today,
                 delivery: models.delivery(key),
+                // The analytics the Product door opens, in the environment the project's screens show.
+                analytics: models.analytics(
+                    AnalyticsRef(project: key, environment: environments.chosen), period: navigation.analyticsPeriod),
+                name: models.name(of: key)
+            )
+        case .tech(let key, let environment):
+            TechScreen(
+                project: models.project(key, environment: environment, period: navigation.period),
+                incidents: models.incidents(key),
                 environments: environments,
-                name: models.name(of: key),
                 navigation: navigation
             )
-            .task {
-                // Opened by a link at launch, before the projects: they bring its name.
-                if models.projects.projects == nil {
-                    await models.projects.load()
-                }
-            }
+        case .incidents(let key):
+            IncidentsScreen(incidents: models.incidents(key))
+        case .incident(let key, let id):
+            IncidentScreen(incidents: models.incidents(key), id: id, today: models.today)
+        case .delivery(let key):
+            DeliveryScreen(delivery: models.delivery(key), environments: environments)
         case .operations(let telemetry):
             OperationsScreen(
                 operations: models.operations(telemetry, period: navigation.period),

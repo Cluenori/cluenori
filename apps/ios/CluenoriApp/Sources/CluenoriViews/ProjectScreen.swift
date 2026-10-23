@@ -1,280 +1,512 @@
+import Charts
 import CluenoriClient
 import CluenoriScreens
 import Foundation
 import SwiftUI
 
-/// A project's overview: its open incidents, and its delivery, what release is in each of its
-/// components' environments and what's next, every environment at once; then, in the environment it
-/// shows over the period, its load, its errors, and its latest warnings and errors, each leading to
-/// a screen with all of them, in the same environment.
+/// A project's summary, in production: its daily and monthly people against a week before, and its
+/// load over the last 24 hours with its errors; what needs you there; and its doors, each with a line
+/// of what's inside: Product, its apps' analytics; Tech, its operations, errors, logs and incidents;
+/// and Releases, its delivery.
 struct ProjectScreen: View {
-    let project: ProjectModel
+    let key: String
+    let today: TodayModel
     let delivery: DeliveryModel
-    let environments: EnvironmentChoice
+    /// Its apps' analytics, in the environment the project's screens show, whose latest release's
+    /// app health the Product door says.
+    let analytics: AnalyticsModel
     let name: String
-    @Bindable var navigation: Navigation
 
     var body: some View {
-        // What the sections lead to: this project's screens in this environment.
-        let shown = Telemetry.project(project.key, environment: project.environment)
-        List {
-            IncidentsSection(incidents: project.incidents)
-            DeliverySection(delivery: delivery)
-            AnalyticsEntrySection(project: project.key, environment: project.environment)
-            // What the sections below cover, every environment's delivery above aside.
-            Section {
-                EnvironmentRow(choice: environments, shown: project.environment, navigation: navigation)
-                PeriodPicker(period: $navigation.period)
-            } footer: {
-                if let environment = project.environment {
+        let project = today.project(key)
+        PanelScreen(spacing: 24) {
+            if let project {
+                if !project.answered {
                     Text(
-                        "Load, errors and logs below are from \(environment), over \(periodPhrase(navigation.period)).",
+                        "\(project.name) didn't answer, so what it would show is missing. Pull down to try again.",
                         bundle: #bundle,
-                        comment:
-                            "Below the environment and period a project's screen shows. The variables are an environment and a period."
+                        comment: "A project that didn't answer. The variable is its name."
                     )
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.secondary)
+                } else if let pulse = project.pulse {
+                    VStack(alignment: .leading, spacing: 10) {
+                        PeopleTiles(people: pulse.people)
+                        LoadPanel(hours: pulse.hours)
+                    }
                 }
+                if !project.rows.isEmpty {
+                    ProjectNeedsYou(rows: project.rows)
+                }
+            } else {
+                AnswerPlaceholder(problem: today.rows == nil ? today.problem : .missing)
             }
-            LoadSection(telemetry: shown, load: project.load, operations: project.operations)
-            ErrorsSection(telemetry: shown, errors: project.errors, period: project.period)
-            LogsSection(telemetry: shown, logs: project.logs, period: project.period)
+            Doors(
+                key: key,
+                rows: project?.rows ?? [],
+                pulse: project?.pulse,
+                delivery: delivery.overview,
+                analytics: analytics
+            )
         }
         .navigationTitle(name)
         .refreshable {
-            async let project: Void = project.refresh()
-            async let delivery: Void = delivery.load()
-            async let environments: Void = environments.refresh()
-            _ = await (project, delivery, environments)
+            async let now: Void = today.load()
+            async let releases: Void = delivery.load()
+            async let health: Void = analytics.appHealth.load()
+            _ = await (now, releases, health)
         }
-        .task(id: navigation.period) {
-            // A new period asks everything again; the same one, shown again, does too.
-            if project.period == navigation.period {
-                async let project: Void = project.refresh()
-                async let delivery: Void = delivery.load()
-                _ = await (project, delivery)
-            } else {
-                await project.choose(navigation.period)
+        .task {
+            async let releases: Void = delivery.load()
+            // Opened by a link at launch, Now may not have asked yet.
+            if today.rows == nil {
+                await today.load()
             }
+            await releases
         }
-        // Runs again once a promotion is shown that hasn't ended; stops when the screen leaves.
-        .task(id: delivery.hasUnendedPromotions) { await delivery.followPromotions() }
         .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: project.load.problem, receivedAt: project.load.receivedAt)
+            AnswerBanner(problem: today.problem, receivedAt: today.lookedAt)
         }
     }
 }
 
-/// The way to a project's app analytics, in the environment the project's screen shows; over a
-/// period of its own, in UTC days.
-struct AnalyticsEntrySection: View {
-    let project: String
-    /// Nil for every environment.
-    let environment: String?
+/// A project's people on the latest whole UTC day: daily and monthly, each against a week before.
+struct PeopleTiles: View {
+    /// Nil when its apps sent nothing by then.
+    let people: PeopleNow?
 
     var body: some View {
-        Section {
-            NavigationLink(value: Route.analytics(AnalyticsRef(project: project, environment: environment))) {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Analytics", bundle: #bundle, comment: "Opens a project's app analytics.")
-                        Text(
-                            "People, retention, app health, features", bundle: #bundle,
-                            comment: "Below the row that opens a project's app analytics: what they show."
-                        )
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "chart.bar.xaxis")
-                }
-            }
-        } header: {
-            Text("Apps", bundle: #bundle, comment: "Section of how a project's apps are used.")
-        }
-    }
-}
-
-struct IncidentsSection: View {
-    let incidents: Answer<IncidentList>
-
-    var body: some View {
-        if let open = incidents.value?.open, !open.isEmpty {
-            Section {
-                ForEach(open, id: \.id) { incident in
-                    IncidentRow(
-                        title: incident.title,
-                        openedAt: incident.openedAt,
-                        acknowledged: incident.acknowledgedAt != nil,
-                        resolvedAt: incident.resolvedAt
+        VStack(alignment: .leading, spacing: 8) {
+            Grid(horizontalSpacing: 10) {
+                GridRow {
+                    PeopleTile(
+                        title: Text("Daily people", bundle: #bundle, comment: "People active on a day: DAU."),
+                        count: people?.daily,
+                        change: people?.dailyChange,
+                        counted: people != nil
+                    )
+                    PeopleTile(
+                        title: Text("Monthly people", bundle: #bundle, comment: "People active in 30 days: MAU."),
+                        count: people?.monthly,
+                        change: people?.monthlyChange,
+                        counted: people != nil
                     )
                 }
-            } header: {
-                Text("Open incidents", bundle: #bundle, comment: "Section of a project's open incidents.")
             }
+            Group {
+                if let people {
+                    Text(
+                        "On \(people.day, format: Date.FormatStyle(timeZone: .gmt).month(.abbreviated).day()), UTC, against the same day a week before.",
+                        bundle: #bundle,
+                        comment: "Below a project's people: the UTC day counted. The variable is a day, such as Oct 22."
+                    )
+                } else {
+                    Text(
+                        "Its apps haven't sent anything yet.", bundle: #bundle,
+                        comment: "Below a project's people, when its apps sent nothing.")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(Palette.secondary)
+            .padding(.horizontal, 2)
         }
     }
 }
 
-struct IncidentRow: View {
-    let title: String
-    let openedAt: Date
-    let acknowledged: Bool
-    /// Nil while it's open.
-    let resolvedAt: Date?
+/// One count of people: its name, the count, and how it moved against a week before; a dash when it
+/// isn't counted, never 0.
+struct PeopleTile: View {
+    let title: Text
+    /// Nil when it isn't counted.
+    let count: Int?
+    /// Nil when a week before isn't counted, or had no one.
+    let change: Double?
+    /// Whether the project's apps sent anything at all.
+    let counted: Bool
 
     var body: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+        Panel {
+            VStack(alignment: .leading, spacing: 4) {
+                title
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondary)
+                if let count {
+                    Text(count, format: .number)
+                        .font(.title2.monospaced())
+                } else {
+                    Text(verbatim: "—")
+                        .font(.title2.monospaced())
+                        .foregroundStyle(Palette.secondary)
+                        .accessibilityLabel(Text("Unknown", bundle: #bundle, comment: "A count that isn't known."))
+                }
                 Group {
-                    if let resolvedAt {
+                    if let change {
                         Text(
-                            "opened \(openedAt, format: .dateTime.month().day().hour().minute()), resolved after \(Duration.seconds(max(resolvedAt.timeIntervalSince(openedAt), 0)), format: .units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2))",
+                            "\(changeText(change)) vs a week before", bundle: #bundle,
+                            comment:
+                                "A count's change against a week before. The variable is a percentage, such as +6%."
+                        )
+                        .foregroundStyle(changeColor(change))
+                    } else if count != nil {
+                        Text(
+                            "Not counted a week before", bundle: #bundle,
+                            comment: "A count whose week before isn't known."
+                        )
+                        .foregroundStyle(Palette.secondary)
+                    } else if counted {
+                        Text(
+                            "Not 30 days counted yet", bundle: #bundle,
+                            comment: "A monthly count before 30 days were counted."
+                        )
+                        .foregroundStyle(Palette.secondary)
+                    } else {
+                        Text("No apps yet", bundle: #bundle, comment: "A project whose apps sent nothing.")
+                            .foregroundStyle(Palette.secondary)
+                    }
+                }
+                .font(.footnote)
+                .lineLimit(2)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A project's load over the last 24 hours in production, by the hour, its failed part on top.
+struct LoadPanel: View {
+    let hours: [PulseHour]
+
+    var body: some View {
+        let operations = hours.reduce(0) { $0 + $1.count }
+        let failed = hours.reduce(0) { $0 + $1.errors }
+        Panel {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Load, last 24 hours", bundle: #bundle, comment: "Title of a project's load over a day.")
+                        .foregroundStyle(Palette.secondary)
+                    Spacer(minLength: 8)
+                    if operations > 0 {
+                        Text(
+                            "\(operations, format: .number) · \(Double(failed) / Double(operations), format: .percent.precision(.fractionLength(0...1))) failed",
                             bundle: #bundle,
                             comment:
-                                "When a resolved incident opened, and how long it was open. The variables are a date and time, and a duration."
+                                "How many operations ran over a day, and the share that failed. The variables are a count and a percentage."
                         )
-                    } else {
-                        Text(
-                            "open \(Text(openedAt, style: .relative))",
-                            bundle: #bundle,
-                            comment: "How long an incident has been open. The variable is a duration."
-                        )
+                        .monospacedDigit()
                     }
                 }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            }
-        } icon: {
-            if resolvedAt != nil {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            } else {
-                Image(systemName: acknowledged ? "bell.badge.slash.fill" : "bell.badge.fill")
-                    .foregroundStyle(acknowledged ? .orange : .red)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-struct LoadSection: View {
-    let telemetry: Telemetry
-    let load: Answer<LoadSeries>
-    let operations: Answer<OperationTable>
-
-    var body: some View {
-        Section {
-            if let series = load.value {
-                LoadChart(points: series.points, step: series.step)
-                    .padding(.vertical, 8)
-            } else {
-                AnswerPlaceholder(problem: load.problem)
-            }
-            if let table = operations.value {
-                LoadStats(
-                    count: table.count,
-                    errors: table.errors,
-                    slowestP95Ms: table.rows.map(\.p95Ms).max()
-                )
-            }
-            NavigationLink(value: Route.operations(of: telemetry)) {
-                Text("All operations", bundle: #bundle, comment: "Opens every operation of a project.")
-            }
-        } header: {
-            Text("Load", bundle: #bundle, comment: "Section of a project's operations over time.")
-        }
-    }
-}
-
-struct LoadStats: View {
-    let count: Int
-    let errors: Int
-    let slowestP95Ms: Double?
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(count, format: .number)
-                    .font(.title3.monospacedDigit().weight(.semibold))
-                FailedShare(count: count, failed: errors)
+                .font(.footnote)
+                if hours.isEmpty {
+                    Text(
+                        "Nothing reported in 24 hours.", bundle: #bundle,
+                        comment: "A project's load when its services reported nothing in a day."
+                    )
                     .font(.subheadline)
-            }
-            Spacer()
-            if let slowestP95Ms {
-                VStack(alignment: .trailing, spacing: 2) {
-                    DurationText(milliseconds: slowestP95Ms)
-                        .font(.title3.weight(.semibold))
-                    Text("slowest p95", bundle: #bundle, comment: "Below the slowest operation's p95.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 100)
+                } else {
+                    PulseChart(hours: hours)
+                        .frame(height: 112)
                 }
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-struct ErrorsSection: View {
-    let telemetry: Telemetry
-    let errors: Answer<ErrorTable>
-    let period: PeriodKey
-
-    var body: some View {
-        Section {
-            if let table = errors.value {
-                if table.groups.isEmpty {
-                    Text(
-                        "No errors in \(periodPhrase(period)).",
-                        bundle: #bundle,
-                        comment: "A project had no errors. The variable is a period, such as the last hour."
-                    )
-                    .foregroundStyle(.secondary)
-                }
-                ForEach(table.groups.prefix(4), id: \.id) { group in
-                    NavigationLink(value: Route.error(of: telemetry, id: group.id)) {
-                        ErrorGroupRow(title: group.title, culprit: group.culprit, occurrences: group.occurrences)
+                HStack(spacing: 14) {
+                    LegendKey(color: Palette.sky) {
+                        Text("Operations", bundle: #bundle, comment: "The chart's key: operations that ran.")
+                    }
+                    LegendKey(color: Palette.pink) {
+                        Text("Errors", bundle: #bundle, comment: "The chart's key: operations that failed.")
                     }
                 }
-            } else {
-                AnswerPlaceholder(problem: errors.problem)
+                .font(.caption)
+                .foregroundStyle(Palette.secondary)
             }
-            NavigationLink(value: Route.errors(of: telemetry)) {
-                Text("All errors", bundle: #bundle, comment: "Opens every error of a project.")
-            }
-        } header: {
-            Text("Errors", bundle: #bundle, comment: "Section of a project's errors.")
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
         }
     }
 }
 
-struct LogsSection: View {
-    let telemetry: Telemetry
-    let logs: Answer<LogPage>
-    let period: PeriodKey
+/// A chart's key: a square of its color, and what it stands for.
+struct LegendKey<Label: View>: View {
+    let color: Color
+    @ViewBuilder let label: Label
 
     var body: some View {
-        Section {
-            if let page = logs.value {
-                if page.lines.isEmpty {
-                    Text(
-                        "No warnings or errors in \(periodPhrase(period)).",
-                        bundle: #bundle,
-                        comment: "A project logged no warnings or errors. The variable is a period."
-                    )
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 6) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+                .accessibilityHidden(true)
+            label
+        }
+    }
+}
+
+/// The hours of a pulse as bars: what ran in sky, what failed in pink on top; an hour without a bar
+/// reported nothing.
+struct PulseChart: View {
+    let hours: [PulseHour]
+
+    var body: some View {
+        let hour: TimeInterval = 3_600
+        let now = Date.now
+        let end = (now.timeIntervalSince1970 / hour).rounded(.down) * hour + hour
+        let domain = Date(timeIntervalSince1970: end - 24 * hour)...Date(timeIntervalSince1970: end)
+        Chart(hours, id: \.start) { point in
+            BarMark(
+                x: .value(String(localized: "Hour", bundle: #bundle), point.start, unit: .hour),
+                yStart: .value(String(localized: "Count", bundle: #bundle), 0),
+                yEnd: .value(String(localized: "Succeeded", bundle: #bundle), point.count - point.errors)
+            )
+            .foregroundStyle(Palette.sky.opacity(0.85))
+            BarMark(
+                x: .value(String(localized: "Hour", bundle: #bundle), point.start, unit: .hour),
+                yStart: .value(String(localized: "Succeeded", bundle: #bundle), point.count - point.errors),
+                yEnd: .value(String(localized: "Failed", bundle: #bundle), point.count)
+            )
+            .foregroundStyle(Palette.pink)
+        }
+        .chartXScale(domain: domain)
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .hour, count: 6)) { _ in
+                AxisValueLabel(format: .dateTime.hour().minute())
+                    .foregroundStyle(Palette.secondary)
+            }
+        }
+        .chartYAxis(.hidden)
+    }
+}
+
+/// What needs you in one project, the most urgent first, each opening the item itself.
+struct ProjectNeedsYou: View {
+    let rows: [TodayRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PanelTitle(title: Text("Needs you", bundle: #bundle, comment: "Title of what needs attention now."))
+            Panel {
+                ForEach(rows) { row in
+                    if row.id != rows.first?.id {
+                        PanelDivider()
+                    }
+                    if let route = row.route {
+                        NavigationLink(value: route) {
+                            NeedsYouRow(project: "", evidence: row.evidence, kind: row.kind)
+                        }
+                        .buttonStyle(PanelRowStyle())
+                    }
                 }
-                ForEach(page.lines.prefix(4), id: \.id) { line in
-                    LogLineRow(time: line.time, level: line.level, component: line.component, message: line.message)
+            }
+        }
+    }
+}
+
+/// A project's doors, each a level deeper, with a line of what's inside.
+struct Doors: View {
+    let key: String
+    /// What needs you in the project.
+    let rows: [TodayRow]
+    let pulse: Pulse?
+    /// Nil until the delivery arrives.
+    let delivery: DeliveryOverview?
+    let analytics: AnalyticsModel
+
+    var body: some View {
+        Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+            GridRow {
+                Door(
+                    name: Text("Product", bundle: #bundle, comment: "The door to a project's apps' analytics."),
+                    color: Palette.mint,
+                    route: .analytics(AnalyticsRef(project: key))
+                ) {
+                    ProductLine(analytics: analytics)
+                }
+                Door(
+                    name: Text(
+                        "Tech", bundle: #bundle,
+                        comment: "The door to a project's operations, errors, logs and incidents."),
+                    color: Palette.blue,
+                    route: .tech(project: key)
+                ) {
+                    TechLine(rows: rows, pulse: pulse)
+                }
+            }
+            GridRow {
+                Door(
+                    name: Text("Releases", bundle: #bundle, comment: "The door to a project's delivery."),
+                    color: Palette.purple,
+                    route: .delivery(project: key)
+                ) {
+                    ReleasesLine(overview: delivery)
+                }
+                .gridCellColumns(2)
+            }
+        }
+    }
+}
+
+/// A door: a square of its color, its name, and a line of what's inside, opening it.
+struct Door<Line: View>: View {
+    let name: Text
+    let color: Color
+    let route: Route
+    @ViewBuilder let line: Line
+
+    var body: some View {
+        NavigationLink(value: route) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Rectangle()
+                        .fill(color)
+                        .frame(width: 10, height: 10)
+                        .accessibilityHidden(true)
+                    name
+                        .font(.body.weight(.semibold))
+                }
+                Spacer(minLength: 0)
+                line
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(3)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        }
+        .buttonStyle(DoorStyle())
+    }
+}
+
+/// A door's look: a panel, darker while pressed.
+struct DoorStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Palette.text)
+            .background(configuration.isPressed ? Palette.border : Palette.panel)
+            .clipShape(.rect(cornerRadius: Palette.radius))
+            .overlay {
+                RoundedRectangle(cornerRadius: Palette.radius)
+                    .strokeBorder(Palette.border, lineWidth: 1)
+            }
+            .contentShape(.rect(cornerRadius: Palette.radius))
+    }
+}
+
+/// The Product door's line: its apps' latest release and how its app health compares with the
+/// release before; what's inside until that arrives.
+struct ProductLine: View {
+    let analytics: AnalyticsModel
+
+    var body: some View {
+        Group {
+            if let list = analytics.appHealth.value {
+                if let latest = list.releases.first {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: latest.release.release)
+                            .monospaced()
+                            .unhyphenated()
+                        HealthVerdictText(verdict: latest.verdict, worse: latest.worse, better: latest.better)
+                    }
+                } else if let environment = analytics.analytics.environment {
+                    Text(
+                        "No app sent anything from \(environment) in \(analyticsPeriodPhrase(analytics.period))",
+                        bundle: #bundle,
+                        comment:
+                            "The Product door's line when no app sent anything. The variables are an environment and a period."
+                    )
+                } else {
+                    Text(
+                        "No app sent anything in \(analyticsPeriodPhrase(analytics.period))", bundle: #bundle,
+                        comment: "The Product door's line when no app sent anything. The variable is a period.")
                 }
             } else {
-                AnswerPlaceholder(problem: logs.problem)
+                Text(
+                    "People, retention, app health, features", bundle: #bundle,
+                    comment: "The Product door's line before its analytics arrive: what they show.")
             }
-            NavigationLink(value: Route.logs(of: telemetry)) {
-                Text("All logs", bundle: #bundle, comment: "Opens every warning and error of a project.")
-            }
-        } header: {
-            Text("Logs", bundle: #bundle, comment: "Section of a project's latest warnings and errors.")
         }
+        .task(id: analytics.analytics) { await analytics.appHealth.load() }
+    }
+}
+
+/// The Tech door's line: what needs you there, else how its last 24 hours went.
+struct TechLine: View {
+    let rows: [TodayRow]
+    let pulse: Pulse?
+
+    var body: some View {
+        let incidents = rows.filter { if case .incident = $0.kind { true } else { false } }.count
+        let errors = rows.filter { $0.kind == .error }.count
+        let slower = rows.filter { $0.kind == .slower }.count
+        let parts = [
+            incidents > 0 ? KindCount(kind: .incident(acknowledged: false), count: incidents).text : nil,
+            errors > 0 ? KindCount(kind: .error, count: errors).text : nil,
+            slower > 0 ? KindCount(kind: .slower, count: slower).text : nil,
+        ].compactMap(\.self)
+        if let line = joined(parts) {
+            line
+        } else if let pulse, pulse.operations > 0 {
+            Text(
+                "\(pulse.operations, format: .number.notation(.compactName)) operations · \(Double(pulse.failed) / Double(pulse.operations), format: .percent.precision(.fractionLength(0...1))) failed",
+                bundle: #bundle,
+                comment:
+                    "A project's last 24 hours: how many operations ran, and the share that failed. The variables are a count and a percentage."
+            )
+        } else {
+            Text(
+                "Operations, errors, logs, incidents", bundle: #bundle,
+                comment: "The Tech door's line when nothing needs you: what's inside.")
+        }
+    }
+}
+
+/// The Releases door's line: promotions under way or that didn't get there, releases ready to
+/// promote; else the release that reached production last.
+struct ReleasesLine: View {
+    /// Nil until the delivery arrives.
+    let overview: DeliveryOverview?
+
+    var body: some View {
+        if let overview {
+            let parts = [
+                overview.underWay > 0
+                    ? Text(
+                        "^[\(overview.underWay) promotion](inflect: true) under way", bundle: #bundle,
+                        comment: "How many promotions haven't ended.") : nil,
+                overview.failed > 0
+                    ? Text(
+                        "^[\(overview.failed) promotion](inflect: true) didn't get there", bundle: #bundle,
+                        comment: "How many promotions ended without their release getting there.") : nil,
+                overview.ready > 0
+                    ? Text(
+                        "^[\(overview.ready) release](inflect: true) ready to promote", bundle: #bundle,
+                        comment: "How many releases can go on to their next environment.") : nil,
+            ].compactMap(\.self)
+            if let line = joined(parts) {
+                line
+            } else if let latest = overview.latestInProduction {
+                Text(
+                    "\(Text(verbatim: latest.release).monospaced()) of \(latest.component) in production for \(agoText(latest.since))",
+                    bundle: #bundle,
+                    comment:
+                        "The release that reached production last. The variables are a release, a component, and a duration."
+                )
+            } else {
+                Text("Nothing in production yet", bundle: #bundle, comment: "No release reached production.")
+            }
+        } else {
+            Text(
+                "What's in each environment, and what's next", bundle: #bundle,
+                comment: "The Releases door's line before the delivery arrives: what it shows.")
+        }
+    }
+}
+
+/// Parts of a line, one after another: `1 incident · 2 errors`; nil for none.
+func joined(_ parts: [Text]) -> Text? {
+    guard let first = parts.first else { return nil }
+    return parts.dropFirst().reduce(first) { line, part in
+        Text("\(line) · \(part)", bundle: #bundle, comment: "Two parts of a line, such as 1 incident · 2 errors.")
     }
 }

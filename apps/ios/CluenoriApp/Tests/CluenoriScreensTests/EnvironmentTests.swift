@@ -39,7 +39,9 @@ struct EnvironmentChoiceTests {
         #expect(
             models.resolved(.errors(of: .project("notes"))) == .errors(of: .project("notes", environment: "production"))
         )
-        #expect(models.resolved(.project("notes")) == .project("notes", environment: "production"))
+        #expect(models.resolved(.tech(project: "notes")) == .tech(project: "notes", environment: "production"))
+        // A project's own screen is in production, whatever is chosen.
+        #expect(models.resolved(.project("notes")) == .project("notes"))
         #expect(models.resolved(.releases(project: "notes")) == .releases(project: "notes", environment: "production"))
         #expect(
             models.resolved(.logs(of: .project("notes", environment: "staging")))
@@ -111,7 +113,7 @@ struct EnvironmentChoiceTests {
         first.navigation.show("staging", of: choice)
 
         #expect(choice.chosen == "staging")
-        #expect(first.navigation.projectsPath.last == .errors(of: .project("notes", environment: "staging")))
+        #expect(first.navigation.path.last == .errors(of: .project("notes", environment: "staging")))
 
         let offline = FakeDeployment()
         offline.setOffline(true)
@@ -122,7 +124,7 @@ struct EnvironmentChoiceTests {
         await kept.loadOnce()
         #expect(kept.detail.problem == .unreachable)
         #expect(kept.chosen == "staging")
-        #expect(models.resolved(.project("notes")) == .project("notes", environment: "staging"))
+        #expect(models.resolved(.tech(project: "notes")) == .tech(project: "notes", environment: "staging"))
         // Another project keeps its own.
         #expect(models.environments("atlas").chosen == nil)
     }
@@ -163,35 +165,40 @@ struct EnvironmentChoiceTests {
         let navigation = Navigation()
         let operation = OperationRef(
             project: "notes", component: "notes-api", environment: "production", name: "GET /api/feed")
-        navigation.projectsPath = [
-            .project("notes", environment: "production"), .operations(of: .project("notes", environment: "production")),
-            .operation(operation),
+        navigation.path = [
+            .project("notes"), .tech(project: "notes", environment: "production"),
+            .operations(of: .project("notes", environment: "production")), .operation(operation),
         ]
-        navigation.todayPath = [
-            .release(feedRelease), .errors(of: .release(feedRelease)), .project("atlas", environment: "production"),
+        let elsewhere = Navigation()
+        elsewhere.path = [
+            .release(feedRelease), .errors(of: .release(feedRelease)),
+            .tech(project: "atlas", environment: "production"),
         ]
         let deployment = notesDeployment()
         let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
         let choice = pairing.models!.environments("notes")
 
         navigation.show("staging", of: choice)
+        elsewhere.show("staging", of: choice)
 
         #expect(
-            navigation.projectsPath == [
-                .project("notes", environment: "staging"), .operations(of: .project("notes", environment: "staging")),
+            navigation.path == [
+                .project("notes"), .tech(project: "notes", environment: "staging"),
+                .operations(of: .project("notes", environment: "staging")),
                 .operation(
                     OperationRef(
                         project: "notes", component: "notes-api", environment: "staging", name: "GET /api/feed")),
             ])
         #expect(
-            navigation.todayPath == [
-                .release(feedRelease), .errors(of: .release(feedRelease)), .project("atlas", environment: "production"),
+            elsewhere.path == [
+                .release(feedRelease), .errors(of: .release(feedRelease)),
+                .tech(project: "atlas", environment: "production"),
             ])
     }
 
     @Test func `reads the environment a link names`() throws {
         let links: [(String, Route)] = [
-            ("cluenori://projects/notes?environment=staging", .project("notes", environment: "staging")),
+            ("cluenori://projects/notes/tech?environment=staging", .tech(project: "notes", environment: "staging")),
             (
                 "cluenori://projects/notes/errors?environment=staging",
                 .errors(of: .project("notes", environment: "staging"))

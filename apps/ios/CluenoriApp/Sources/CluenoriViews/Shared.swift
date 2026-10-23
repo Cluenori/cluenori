@@ -364,7 +364,7 @@ private struct ShowingLabel: View {
 
 /// An environment in the menu of those a screen can show: its name, and `Production` below it for
 /// one the project calls production.
-private struct EnvironmentOption: View {
+struct EnvironmentOption: View {
     let environment: String
     let isProduction: Bool
 

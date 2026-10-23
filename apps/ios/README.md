@@ -1,31 +1,29 @@
 # The iPhone app
 
 Cluenori on the founder's iPhone, installed from TestFlight: it pairs with a deployment by the QR
-code its web shows, and shows Today, what needs attention across the deployment's projects, and
-each project: its incidents; its delivery, what release is in each of its components' environments
-and what's next; and, over a period, its load, operations with their percentiles, errors with
-their stacks, and logs. A component shows its environments in the order its releases go through
-them, each with the release there now and since when, a promotion under way, and its one next
-step: build the latest commit for the first, which the deployment numbers as the component's next
-release, or promote the release of the environment before; with its version, bumped or set, and
-the components that ship with it. A release says where it runs now and is compared with the
-release before it, with its commit and the changes since that release from GitHub, and its build's
-stage in App Store Connect; it shows its operations, errors, and logs, narrowed to it, over its own
-span; and its promotions, each followed through its run on GitHub and its build in App Store
-Connect, TestFlight or App Store review, until it ends. A promotion chooses where the workflow runs
-and how an approved version goes live; one review approved is released from its release; a
-release goes anywhere else, such as back to roll an environment back, from a menu of its own. Its
-notes, What's New or What to Test, are edited in each language and drafted with AI, in the
-project's notes style. A project's monitoring screens show one environment at a time: its
-production environment, or the one chosen on the phone. A project's analytics show how its apps
-are used, over 7, 30 or 90 UTC days, of every component or one: DAU, WAU, MAU and sessions by day,
-the period's people, installations and sessions, each release's people, weekly retention, each
-release's app health beside the release before it, with its verdict and each measure it sent, and
-each feature's use; one person, found by the app's user ID, with their installations, active days
-and timeline; and a component's version policy, set or cleared, and its SDK keys, issued, copied or
-revoked. Alerts reach it as pushes: a project that
-is down rings like an alarm clock, through silent mode, with an Acknowledge button
-(`concept/Modules.md`).
+code its web shows, and an alert about a project that is down rings like an alarm clock, through
+silent mode, with an Acknowledge button. Its screens are a tree: each level is a summary to act on
+or understand, and one level deeper shows more, never everything at once (`concept/Modules.md`).
+
+- **Now**, the root: what needs you across every project, the most urgent first (Today's items:
+  incidents, new and ongoing errors, slower operations, releases waiting for you, silent
+  projects), each opening the item itself; then each project with its status, a line of what's
+  going on, its load over the last 24 hours, and its daily people against a week before.
+- **A project**, in production: its daily and monthly people against a week before, its load over
+  the last 24 hours with its errors, what needs you there, and a door to each part, with a line of
+  what's inside:
+  - **Product**, its apps' analytics in the environment chosen on the phone, over 7, 30 or 90 UTC
+    days: people by day, retention, each release's app health beside the release before, each
+    feature's use; one person by the app's user ID; an app's version policy and SDK keys.
+  - **Tech**, in the environment chosen on the phone, over the period: its load and busiest
+    operations, its errors, its latest warnings and errors, and its incidents, each the latest few
+    and the way to all of them, and on to one: an operation's percentiles, an error's stack, a log
+    line, an incident and Acknowledge.
+  - **Releases**, its delivery: what release is in each component's environment and the one next
+    step, leading to a component, its version and promotions, and a release, compared with the one
+    before, with its commit, changes, App Store build, promotions and notes; and every release.
+
+Product and Releases keep the screens they had before this tree; their own redesign comes next.
 
 ## Use it
 
@@ -41,7 +39,9 @@ with a deployment made up on the phone (`Cluenori/DemoDeployment.swift`, which R
 don't have), and opens the link `-CluenoriDemoOpen` names; `-CluenoriDemoStep <environment>` opens a
 component's promote sheet, `-CluenoriDemoScroll <points>` scrolls the screen, and
 `-CluenoriDemoFailure YES` fails the API's last promotion to prod, for screenshots with
-`xcrun simctl io booted screenshot`. Its notes-ios sends analytics from production and beta, and
+`xcrun simctl io booted screenshot`. Now shows three made-up projects: notes, with its monitor
+down, a new error and a build App Store review approved; atlas, with a slower operation; and kiln,
+an API without apps. Its notes-ios sends analytics from production and beta, and
 person `user-1842`; its other environments, such as `?environment=prod`, show analytics' empty
 state.
 
@@ -90,10 +90,19 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   `/.well-known/apple-app-site-association` let the app use them.
 - **Alarms** (`Alarms/`, in both targets): the alarm, under its incident's ID, and its Acknowledge
   button, an intent the system runs in the app, which stops it and acknowledges the incident.
-- **Screens** (`CluenoriApp/Sources/CluenoriViews`): SwiftUI alone, in Liquid Glass; its strings in
+- **Screens** (`CluenoriApp/Sources/CluenoriViews`): SwiftUI alone, dark always, in the founder's
+  palette (`Theme.swift`: near-black panels with thin borders on a dark ground, a pastel for each
+  state, one white primary button, monospaced numbers) under Liquid Glass bars; its strings in
   `Resources/Localizable.xcstrings`.
 - **Their state** (`CluenoriApp/Sources/CluenoriScreens`): pairing, unpairing, where the app is
-  (`Navigation`, `Route`), and each screen's model, which says what happened, never in words.
+  (`Navigation`: the screens open over Now, each a `Route`, and a link opens a screen over the
+  screens that lead to it, `Route.chain`), and each screen's model, which says what happened, never
+  in words. Now (`TodayModel`) is Today's answer: its items as rows, each with the route of the
+  item itself, and each project with its own rows, the most urgent first, and its pulse, which
+  leaves out what the deployment didn't count, never 0 (`ProjectNow`, `Pulse`, `PeopleNow`); a
+  project's summary is the same answer's. A project's tech (`ProjectModel`) asks its load,
+  operations, errors and logs in one environment over the period; its incidents
+  (`IncidentsModel`, one per project) are every environment's, and acknowledging one is sent once.
   Alerts (`AlertsModel`, `PushAlert`): what an alert push says, whether it still rings, what the
   phone allows, registering its push token, acknowledging, and a test alarm. Every
   question goes through `Answer`: shown at once from the phone, asked again, and kept when the
@@ -118,16 +127,18 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   screen shows a promotion that hasn't ended; the delivery says the last one that failed, until
   something reaches its environment. Who "you" is comes from `/api/me`, asked once a promotion names
   who started it, and kept for the pairing.
-- **Links to screens:** `cluenori://projects/<key>`, and under it `/operations`, `/errors`,
-  `/errors/<id>`, `/logs`, `/releases`, `/notes-style`, `/components/<component>` and its every
+- **Links to screens:** `cluenori://projects/<key>`, and under it `/tech`, `/incidents`,
+  `/incidents/<id>`, `/delivery`, `/operations`, `/errors`, `/errors/<id>`, `/logs`, `/releases`,
+  `/notes-style`, `/components/<component>` and its every
   release, `/components/<component>/releases`, `/components/<component>/version-policy` and
   `/components/<component>/sdk-keys`, and `/releases/<component>/<release>`, under which
   `/operations`, `/errors`, `/errors/<id>`, and `/logs` are that release's alone, and `/notes` its
   notes; a release opens over its component. `/analytics` and `/analytics/features` take
   `?component=<key>` too; `/analytics/app-health/<component>/<release>` opens over its component's
   analytics; `/people?user=<user ID>` opens one person. Each takes
-  `?environment=<key>`: the environment a project's screen shows, or the one a release's component
-  says it runs in. Alerts will open them. A screen narrowed to a release (`Telemetry` in its
+  `?environment=<key>`: the environment a project's tech and telemetry show, or the one a release's
+  component says it runs in; a project's own screen, in production, takes none. An alert opens its
+  incident. A screen narrowed to a release (`Telemetry` in its
   `Route`) says so at its top, with its environment and span and a button that shows every release
   in its place.
 - **Environments** (`EnvironmentChoice`, one per project): those of its components' deploy targets,
@@ -163,8 +174,8 @@ ActivityKit and App Intents. No third-party code.
   simulators run on Apple silicon alone.
 - **The project is small and made by Apple's `xcodeproj` tool** (Xcode 27's JSON format); settings
   live in `Config/Cluenori.xcconfig`, one place for every configuration.
-- **Offline, it keeps what it showed:** Today opens with what it last saw, and says as of when
-  when it can't ask again; the projects stay too. A refused key unpairs the phone and says it was
+- **Offline, it keeps what it showed:** Now opens with what it last saw, its projects too, and
+  says as of when when it can't ask again. A refused key unpairs the phone and says it was
   removed.
 - **One pairing per app,** made at launch (`Cluenori/CluenoriApp.swift`): the window, the delegate
   and the Acknowledge intent share it, and the intent finds it through `AppDependencyManager`,

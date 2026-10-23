@@ -36,6 +36,13 @@ func notesDeployment() -> FakeDeployment {
 struct RouteTests {
     @Test(arguments: [
         ("cluenori://projects/notes", Route.project("notes")),
+        ("cluenori://projects/notes/tech", .tech(project: "notes")),
+        ("cluenori://projects/notes/incidents", .incidents(project: "notes")),
+        (
+            "cluenori://projects/notes/incidents/0199f7a2-6000-7000-8000-000000000001",
+            .incident(project: "notes", id: "0199f7a2-6000-7000-8000-000000000001")
+        ),
+        ("cluenori://projects/notes/delivery", .delivery(project: "notes")),
         ("cluenori://projects/notes/errors", .errors(of: .project("notes"))),
         (
             "cluenori://projects/notes/errors/4f1c9a2e7b3d5068",
@@ -73,31 +80,43 @@ struct RouteTests {
         )
     }
 
-    @Test func `opens a screen over the ones that lead to it, on the projects tab`() {
+    @Test func `opens a screen over the ones that lead to it from Now, through its project's door`() {
         let navigation = Navigation()
         navigation.open(.error(of: .project("notes"), id: "4f1c9a2e7b3d5068"))
-        #expect(navigation.tab == .projects)
+        // Telemetry comes from the project's tech.
         #expect(
-            navigation.projectsPath == [
-                .project("notes"), .errors(of: .project("notes")),
+            navigation.path == [
+                .project("notes"), .tech(project: "notes"), .errors(of: .project("notes")),
                 .error(of: .project("notes"), id: "4f1c9a2e7b3d5068"),
+            ])
+        navigation.open(.incident(project: "notes", id: "0199f7a2-6000-7000-8000-000000000001"))
+        #expect(
+            navigation.path == [
+                .project("notes"), .tech(project: "notes"), .incidents(project: "notes"),
+                .incident(project: "notes", id: "0199f7a2-6000-7000-8000-000000000001"),
             ])
 
         let release = ReleaseRef(project: "notes", component: "notes-api", environment: nil, version: "1.8.0")
         navigation.open(.release(release))
-        // A release comes from its component's screen, where its environments are.
+        // A release comes from its component's screen, where its environments are, in the project's
+        // delivery.
         let api = Route.component(project: "notes", component: "notes-api")
-        #expect(navigation.projectsPath == [.project("notes"), api, .release(release)])
+        #expect(navigation.path == [.project("notes"), .delivery(project: "notes"), api, .release(release)])
 
         navigation.open(.notes(release))
-        #expect(navigation.projectsPath.suffix(2) == [.release(release), .notes(release)])
+        #expect(navigation.path.suffix(2) == [.release(release), .notes(release)])
         navigation.open(.notesStyle(project: "notes"))
-        #expect(navigation.projectsPath == [.project("notes"), .notesStyle(project: "notes")])
+        #expect(
+            navigation.path == [.project("notes"), .delivery(project: "notes"), .notesStyle(project: "notes")])
         navigation.open(.componentReleases(project: "notes", component: "notes-api"))
         #expect(
-            navigation.projectsPath == [
-                .project("notes"), api, .componentReleases(project: "notes", component: "notes-api"),
+            navigation.path == [
+                .project("notes"), .delivery(project: "notes"), api,
+                .componentReleases(project: "notes", component: "notes-api"),
             ])
+        navigation.open(.releases(project: "notes"))
+        #expect(
+            navigation.path == [.project("notes"), .delivery(project: "notes"), .releases(project: "notes")])
     }
 
     @Test(arguments: [
@@ -142,9 +161,10 @@ struct RouteTests {
         let navigation = Navigation()
         navigation.open(.error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068"))
         #expect(
-            navigation.projectsPath == [
-                .project("notes"), .component(project: "notes", component: "notes-api"), .release(feedRelease),
-                .errors(of: .release(feedRelease)), .error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068"),
+            navigation.path == [
+                .project("notes"), .delivery(project: "notes"), .component(project: "notes", component: "notes-api"),
+                .release(feedRelease), .errors(of: .release(feedRelease)),
+                .error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068"),
             ])
 
         let operation = OperationRef(
@@ -152,27 +172,27 @@ struct RouteTests {
             release: "2026.10.21-e91f09c")
         navigation.open(.operation(operation))
         #expect(
-            navigation.projectsPath == [
-                .project("notes"), .component(project: "notes", component: "notes-api"), .release(feedRelease),
-                .operations(of: .release(feedRelease)), .operation(operation),
+            navigation.path == [
+                .project("notes"), .delivery(project: "notes"), .component(project: "notes", component: "notes-api"),
+                .release(feedRelease), .operations(of: .release(feedRelease)), .operation(operation),
             ])
     }
 
-    @Test func `shows a screen without its release in its place, on the tab it's on`() {
+    @Test func `shows a screen without its release in its place`() {
         let navigation = Navigation()
         navigation.open(.logs(of: .release(feedRelease)))
 
         navigation.showWithoutRelease(.logs(of: .release(feedRelease)))
 
         #expect(
-            navigation.projectsPath == [
-                .project("notes"), .component(project: "notes", component: "notes-api"), .release(feedRelease),
-                .logs(of: .project("notes")),
+            navigation.path == [
+                .project("notes"), .delivery(project: "notes"), .component(project: "notes", component: "notes-api"),
+                .release(feedRelease), .logs(of: .project("notes")),
             ])
 
-        navigation.todayPath = [.error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068")]
+        navigation.path = [.error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068")]
         navigation.showWithoutRelease(.error(of: .release(feedRelease), id: "4f1c9a2e7b3d5068"))
-        #expect(navigation.todayPath == [.error(of: .project("notes"), id: "4f1c9a2e7b3d5068")])
+        #expect(navigation.path == [.error(of: .project("notes"), id: "4f1c9a2e7b3d5068")])
 
         let operation = OperationRef(
             project: "notes", component: "notes-api", environment: "production", name: "GET /api/feed",
@@ -183,12 +203,12 @@ struct RouteTests {
     @Test func `leaves a screen that isn't narrowed, or isn't on top, as it is`() {
         let navigation = Navigation()
         navigation.open(.errors(of: .release(feedRelease)))
-        let before = navigation.projectsPath
+        let before = navigation.path
 
         navigation.showWithoutRelease(.errors(of: .project("notes")))
         navigation.showWithoutRelease(.logs(of: .release(feedRelease)))
 
-        #expect(navigation.projectsPath == before)
+        #expect(navigation.path == before)
         #expect(Route.release(feedRelease).withoutRelease == nil)
     }
 
@@ -196,12 +216,13 @@ struct RouteTests {
         let url = try #require(URL(string: "cluenori://projects/notes/logs"))
         let unpaired = PairingModel(store: MemoryStore(), details: details)
         await unpaired.open(url)
-        #expect(unpaired.navigation.projectsPath.isEmpty)
+        #expect(unpaired.navigation.path.isEmpty)
         #expect(unpaired.problem == .notAPairingLink)
 
         let pairing = PairingModel(store: MemoryStore(paired), details: details)
         await pairing.open(url)
-        #expect(pairing.navigation.projectsPath == [.project("notes"), .logs(of: .project("notes"))])
+        #expect(
+            pairing.navigation.path == [.project("notes"), .tech(project: "notes"), .logs(of: .project("notes"))])
     }
 }
 
@@ -217,12 +238,13 @@ struct ProjectModelTests {
         #expect(project.load.value?.points.count == 1)
         #expect(project.errors.value?.groups.isEmpty == true)
         #expect(project.logs.value?.lines.count == 100)
-        // Its delivery is every environment's and every period's: the delivery model asks it.
-        #expect(Set(deployment.requests).count == 5)
+        // Its delivery and its incidents are every environment's and every period's: their own
+        // models ask them.
+        #expect(Set(deployment.requests).count == 4)
 
         await project.choose(.week)
         #expect(project.period == .week)
-        #expect(deployment.requests.count == 10)
+        #expect(deployment.requests.count == 8)
         // The same model comes back for the same project, so going back shows it as it was.
         #expect(models.project("notes", environment: nil, period: .week) === project)
     }

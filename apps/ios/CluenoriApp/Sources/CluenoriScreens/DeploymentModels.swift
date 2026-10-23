@@ -1,13 +1,12 @@
 import CluenoriClient
 import Foundation
 
-/// The paired deployment's screens: Today, the projects, each screen a route opens, and alerts, every one
+/// The paired deployment's screens: Now, from Today, each screen a route opens, and alerts, every one
 /// asking the deployment with this phone's key and keeping its answers on the phone. A screen's
 /// model is made once and kept while recently used, so going back to it shows it as it was, and a
 /// view may ask for it each time it draws.
 public final class DeploymentModels {
     public let today: TodayModel
-    public let projects: ProjectsModel
     public let alerts: AlertsModel
 
     private let api: CluenoriAPI
@@ -20,6 +19,7 @@ public final class DeploymentModels {
     // project, which its screens share.
     private var choices: [String: EnvironmentChoice] = [:]
     private var deliveries: [String: DeliveryModel] = [:]
+    private var incidents: [String: IncidentsModel] = [:]
 
     // The models of the screens recently opened, at most this many; past it, they are made anew.
     private static let keptAtMost = 64
@@ -28,17 +28,14 @@ public final class DeploymentModels {
         self.api = api
         self.context = context
         today = TodayModel(api: api, context: context)
-        projects = ProjectsModel(api: api, context: context)
         member = Answer(context, .init(key: "me") { () async throws(APIError) in try await api.me() })
         alerts = AlertsModel(api: api, phone: phone, system: alertSystem, keyRejected: context.keyRejected)
     }
 
-    /// What people call `project`: its name, from the projects or Today; its key until either says.
-    /// A view reading it shows the name once the projects arrive.
+    /// What people call `project`: its name, from Today; its key until Today says. A view reading it
+    /// shows the name once Today arrives.
     public func name(of project: String) -> String {
-        projects.projects?.first { $0.key == project }?.name
-            ?? today.answer.value?.projects.first { $0.key == project }?.name
-            ?? project
+        today.project(project)?.name ?? project
     }
 
     /// The environments a project's screens can show, and the one they show; one per project, kept
@@ -80,7 +77,18 @@ public final class DeploymentModels {
         return route.choosing(environment)
     }
 
-    /// A project's overview in `environment`; its period changes by `ProjectModel.choose`.
+    /// A project's incidents, every environment's, and acknowledging one; one per project, kept while
+    /// the app runs, which its tech, its incidents and each incident share.
+    public func incidents(_ project: String) -> IncidentsModel {
+        if let model = incidents[project] {
+            return model
+        }
+        let model = IncidentsModel(project: project, api: api, context: context)
+        incidents[project] = model
+        return model
+    }
+
+    /// A project's tech in `environment`; its period changes by `ProjectModel.choose`.
     public func project(_ key: String, environment: String?, period: PeriodKey) -> ProjectModel {
         model("project \(key) \(environment ?? "")") {
             ProjectModel(key: key, environment: environment, period: period, api: api, context: context)
