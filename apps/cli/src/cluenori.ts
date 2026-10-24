@@ -1,9 +1,6 @@
 import { Command } from "effect/cli"
 
-import { appleModels } from "./apple-models.ts"
-import { check } from "./check.ts"
 import { error, errors, logs, trace } from "./errors-commands.ts"
-import { generate } from "./generate.ts"
 import { acknowledge, incidents, monitor, monitors } from "./incidents-commands.ts"
 import { member, members } from "./members-commands.ts"
 import { notes, notesStyle } from "./notes-commands.ts"
@@ -21,12 +18,12 @@ import { versionPolicy } from "./version-policy-commands.ts"
 import { version } from "./versions-commands.ts"
 
 /**
- * The `cluenori` command. `./run`, `./setup`, `./update`, and `./cluenori` call it; `bun run check`
- * and `bun run generate` call its repository commands. Run it from the repository's root.
+ * The `cluenori` command. `./run`, `./setup`, `./update`, and `./cluenori` call it. Run it from the
+ * repository's root. The repository's own commands are `tools`.
  */
 export const cluenori = Command.make("cluenori").pipe(
   Command.withDescription(
-    "Run Cluenori, deploy it to Cloudflare, ask it about your projects, promote their releases, and check this repository.",
+    "Run Cluenori, deploy it to Cloudflare, ask it about your projects, and promote their releases.",
   ),
   Command.withSubcommands([
     run,
@@ -62,8 +59,5 @@ export const cluenori = Command.make("cluenori").pipe(
     phones,
     phone,
     push,
-    check,
-    generate,
-    appleModels,
   ]),
 )

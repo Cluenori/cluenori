@@ -3,7 +3,7 @@ import { CluenoriApi, CluenoriIngestApi } from "@cluenori/worker"
 import { Effect, Schema } from "effect"
 import { OpenApi } from "effect/http-api"
 
-import { refuse } from "./api-client.ts"
+import { refuse } from "./refuse.ts"
 
 // Each named Schema is a component under its own name: `Phone`, not the `PhoneEncoded` Effect gives
 // the wire form of a class, so the document and other languages' clients use the code's names.

@@ -1,7 +1,7 @@
 # @cluenori/cli
 
 `cluenori`: runs Cluenori on this computer, deploys and updates it, creates projects and components,
-asks about their operations, numbers and promotes their releases, and checks this repository.
+asks about their operations, numbers and promotes their releases.
 
 ## Use it
 
@@ -41,8 +41,6 @@ asks about their operations, numbers and promotes their releases, and checks thi
 ./cluenori github                                          whether the deployment is connected to GitHub, and where
 ./cluenori appstore setup <key.p8> --issuer <issuer ID> [--manager]
                                                            a Developer key reads builds; an App Manager key (--manager) submits them
-bun run check            … cluenori check     dependency rules, suppression comments, generated files
-bun run generate         cluenori generate    rewrites apps/worker/openapi.json
 ```
 
 Commands about projects ask the deployment `./setup` saved, or the Cluenori `./run` serves with
@@ -76,12 +74,10 @@ Write its notes for each of the app's languages: ./cluenori notes notes notes-io
   `apps/worker/.dev.vars`, and the deployment's URL and token in `~/.config/cluenori/deployment.json`,
   readable only by its user.
 - **What the terminal shows,** `src/terminal-text.ts`: numbers the en-US way and times in UTC.
-- **Cluenori's dependency rules,** `src/dependency-rules.ts`: the table in ARCHITECTURE.md as data.
-- **The repository checks** that the compiler and the linter can't make.
 
 ## Does not own
 
-- **How dependency rules are checked:** `@cluenori/workspace-rules`.
+- **The repository's checks and the files generated from code:** `tools`, which nothing ships.
 - **Signing in, prompts, deploying, and secrets:** Wrangler. The CLI runs it attached to the
   terminal.
 - **Any rule about projects or operations:** the Worker's API, which the CLI calls with its typed
@@ -89,8 +85,7 @@ Write its notes for each of the app's languages: ./cluenori notes notes notes-io
 
 ## Depends on
 
-- `@cluenori/workspace-rules`, to check the dependency rules.
-- `@cluenori/worker`, for the API definition: the typed client and the OpenAPI document.
+- `@cluenori/worker`, for the API definition, which the typed client is made from.
 - `@cluenori/foundation`, `@cluenori/projects`, `@cluenori/releases`, and `@cluenori/signals`, for
   the Schemas of what the commands send (ARCHITECTURE.md, open decision "How clients import the API
   definition").

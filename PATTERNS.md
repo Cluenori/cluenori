@@ -686,7 +686,7 @@ The configuration files are the specification; this entry says what each one own
 | `vitest.config.ts` (root) | Which packages' tests `bun run test` runs |
 | `apps/dashboard/vite.config.ts` | React Compiler, and the dashboard's first-load budget, which `bun run check` builds to check |
 | `apps/dashboard/vitest.config.ts` | The browser the dashboard's tests run in, and its locale and time zone |
-| `apps/cli/src/dependency-rules.ts` | The dependency rules the architecture check enforces |
+| `tools/src/dependency-rules.ts` | The dependency rules the architecture check enforces |
 | `flake.nix`, `flake.lock` | Bun, Node, Git |
 | `apps/worker/wrangler.jsonc` | The Worker's bindings, routes, and compatibility date |
 

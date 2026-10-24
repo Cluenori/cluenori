@@ -114,6 +114,15 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     mayInstallForDevelopment: forTests,
   },
   {
+    // The repository's program: its checks, and the files it generates from the API's definition.
+    folders: "tools",
+    name: "@cluenori/tools",
+    contract: false,
+    mayUse: ["packages/*", "apps/worker"],
+    mayInstall: ["effect", "@effect/platform-bun"],
+    mayInstallForDevelopment: forTests,
+  },
+  {
     folders: "tests/journeys",
     name: "@cluenori/journeys",
     contract: false,

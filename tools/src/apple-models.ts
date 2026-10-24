@@ -2,7 +2,7 @@ import { Console, Effect, FileSystem, Schema } from "effect"
 import { Command } from "effect/cli"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 
-import { refuse } from "./api-client.ts"
+import { refuse } from "./refuse.ts"
 
 /** Where the table of Apple's model names is written. */
 export const appleModelsPath = "product/engines/phones/src/apple-models.ts"

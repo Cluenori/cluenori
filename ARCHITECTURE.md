@@ -156,11 +156,12 @@ sdks/
     openapi.json, Sources/CluenoriIngest/CluenoriIngestAPI.swift   generated from the ingest API's definition
 tests/
   journeys/                    the real Worker through its public API
+tools/                         the repository's program: bun run check's own checks, bun run generate
 ```
 
 Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, `src/index.ts`,
 `src/`, `test/`. Hosts and test suites that nothing imports (`apps/cli`, `apps/dashboard`,
-`tests/journeys`) have no contract: no `exports` and no `src/index.ts`. The iPhone app is Swift
+`tests/journeys`, `tools`) have no contract: no `exports` and no `src/index.ts`. The iPhone app is Swift
 (`apps/ios`, its README): its layers are the targets of one Swift package, checked by
 `bun run check:ios` on a Mac with Xcode.
 
@@ -169,7 +170,8 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 | Part | Package | Purpose | Status |
 |---|---|---|---|
 | Worker | `apps/worker` | The one deployable Worker and composition root: the public API and MCP, ingest, the manifest, queue consumers, cron, Durable Object and Workflow classes, the dashboard's files | Built: the public API behind an API token, or a browser's sign-in (projects, components, operations, their load, errors and logs over time, kept traces, logs, traces, incidents and monitors, Today across projects with each project's pulse and the Releases module's promotions that need a member, phones, each calling with its own key, and GitHub's connection; and the Releases module's routes, its queries and its action), GitHub's return when an owner connects it (`/api/github/connected`), OTLP ingest of traces, logs and metrics, the ingest API apps' SDKs call with a component's SDK key (`CluenoriIngestApi`: batches of their signals, limited per key and per installation, and the manifest, kept at the edge five minutes), modules' ingest writes with a component's key (`/ingest/v1/<module>/<name>`, such as deploy reports), the archive in R2, each project's Durable Object and the workspace's, apps' batches in R2, the project's alarm that runs its detectors every minute and delivers its activity to the activity queue, the queue's consumer that hands it to the workspace's notifications, and the dashboard's files |
-| CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, questions about them, and the repository's check and generate | Built |
+| CLI | `apps/cli` | `cluenori`: run, setup, update, projects and components, and questions about them | Built |
+| Tools | `tools` | The repository's program, which nothing ships: the checks `bun run check` adds to the compiler and the linter, and the files `bun run generate` writes from the API's definition | Built |
 | Dashboard | `apps/dashboard` | The web app over the public API | Built: served by the Worker, signed in with a passkey or the API token; members, invitations and the browsers signed in; reads the public API for a project's overview, its performance, operations, errors, logs and releases by component, and a trace; its analytics: apps' usage, retention, each release's app health, features and one person, and each component's SDK keys and version policy; the views waiting for data apps don't send yet are in its design kit, on sample data |
 | iPhone app | `apps/ios` | Cluenori on the founder's iPhone, from TestFlight: near the web's parity, and where alerts reach them | Built: pairing by the web's QR code or a passkey, the phone's key in the Keychain; screens as a tree, each level a summary: Now, Today's items as "Needs you" and each project with its pulse; a project's summary, its people and load in production, what needs you there, and doors to its Product, Tech and Releases; Tech, each project's load, operations, errors, logs and incidents, acknowledged from the phone; Releases, its delivery, what release is in each environment with its one next step, and its releases; Product, its analytics: people by UTC day, retention, each release's app health beside the release before, features, and one person by the app's user ID, and an app component's version policy and SDK keys, changed from the phone; every screen kept for offline; alerts: the push token registered with the phone's key, an alarm through silent mode from its notification extension, Acknowledge on the alarm and the notification, and a test alarm |
 | Foundation | `product/foundation` | Scope keys, feature keys, the envelope, activity, the module contract | Built: the keys, IDs and names, the envelope, actors, `ActivityLog`, which commits a write with its activity and delivers it, at least once, and the module contract's first part, `defineModule`: a module's ID, scope, queries and their routes |
@@ -190,6 +192,7 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 | Module | foundation, engines, capabilities, `effect` | other modules, hosts |
 | `apps/worker` | everything above, `@effect/sql-*` drivers, Cloudflare packages | — |
 | `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; foundation's, engines' and modules' contracts, for the Schemas of what they send (open decision: "How clients import the API definition"); capabilities, `effect`; the CLI also `@effect/platform-bun`; the dashboard also React, Vite, Tailwind CSS, and the libraries of shadcn/ui's views, and for its build and tests React Compiler, Playwright, and axe (its README) | engine and module implementations |
+| `tools` | capabilities, `apps/worker`, whose contract is only the public API definition, to generate from it; `effect`, `@effect/platform-bun` | product packages; the hosts' private files |
 | `apps/ios` | Its own layers, each only the one beneath: the app's Xcode target, `CluenoriViews` (SwiftUI), `CluenoriScreens` (Observation), `CluenoriClient` (Foundation); Apple's SDKs, no third-party code. The API's contract only as `CluenoriAPI.swift`, generated from it | Apple-only frameworks in `CluenoriClient` and `CluenoriScreens`, which build on Linux too |
 | `@cluenori/sdk` | capabilities, `effect`, the API definition of what it calls | server packages |
 | `sdks/swift` | Its own libraries, each only the core beneath it, and the core only `CluenoriIngest`; Apple's SDKs, no third-party code. The ingest API's contract only as `CluenoriIngestAPI.swift`, generated from it; `CluenoriIngest` imports Foundation alone. Checked by `bun run check:sdk-swift`: it isn't a workspace package, so the architecture check doesn't read it | third-party code, server packages, anything else in this repository |
@@ -200,7 +203,7 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
   importing it. Reacting to activity is the sanctioned reverse direction, as it is between engines.
 - Only `src/index.ts` is importable; a deep import doesn't resolve.
 - The architecture check fails on any edge this table doesn't allow, and on a package whose folder
-  and name disagree. It reads this table as data from `apps/cli/src/dependency-rules.ts`; a change
+  and name disagree. It reads this table as data from `tools/src/dependency-rules.ts`; a change
   updates both.
 
 ## Runtime on Cloudflare
@@ -342,7 +345,7 @@ The tools do most of the work, and `bun run check` runs all of them.
   from every package; the root declares only command-line tools, and Vitest, which every package
   with tests declares too.
 - **Package `exports`:** only `src/index.ts` is importable from outside a package.
-- **The architecture check,** `cluenori check` on `@cluenori/workspace-rules`, reads every
+- **The architecture check,** `tools`' `check` on `@cluenori/workspace-rules`, reads every
   `package.json` and fails on a dependency the rules above don't allow, a wrong name or entry, a
   version outside the catalog, or a cycle. It also refuses comments that silence the compiler or the
   linter, and an OpenAPI document that is out of date.

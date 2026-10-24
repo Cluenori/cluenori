@@ -1,0 +1,15 @@
+{
+  "name": "@cluenori/tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@cluenori/openapi-swift": "workspace:*",
+    "@cluenori/worker": "workspace:*",
+    "@cluenori/workspace-rules": "workspace:*",
+    "@effect/platform-bun": "catalog:",
+    "effect": "catalog:"
+  }
+}

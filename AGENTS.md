@@ -688,7 +688,7 @@ conflict.
   - Packages in `packages/` are general-purpose: no product code in them; product packages
     compose them with a little glue (`ARCHITECTURE.md`, "Layers").
   - Allowed dependencies are in `ARCHITECTURE.md`, "Dependency rules", and checked by
-    `bun run check` from the same table as data, `apps/cli/src/dependency-rules.ts`. Change both
+    `bun run check` from the same table as data, `tools/src/dependency-rules.ts`. Change both
     together.
 - **General packages:** `packages/` holds `@cluenori/*`, the first versions of what bagatka/kit now
   owns as `@bagatka/*`, reshaped there: `es256-jwt` and `rs256-jwt` are `jwt`,

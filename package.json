@@ -9,7 +9,8 @@
       "product/modules/*",
       "apps/*",
       "sdks/*",
-      "tests/*"
+      "tests/*",
+      "tools"
     ],
     "catalog": {
       "@base-ui/react": "1.9.0",
@@ -59,7 +60,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "effect-tsgo patch && bun run --cwd apps/worker types && bun run --cwd apps/dashboard browsers",
-    "check": "bun run typecheck && bun run lint && oxfmt --check && bun apps/cli/src/main.ts check && bun run --cwd apps/dashboard build",
+    "check": "bun run typecheck && bun run lint && oxfmt --check && bun tools/src/main.ts check && bun run --cwd apps/dashboard build",
     "check:ios": "apps/ios/check",
     "check:sdk-swift": "sdks/swift/check",
     "testflight:ios": "apps/ios/testflight",
@@ -67,8 +68,8 @@
     "lint": "oxlint",
     "test": "TZ=Pacific/Chatham LANG=tr_TR.UTF-8 vitest run",
     "format": "oxfmt",
-    "generate": "bun apps/cli/src/main.ts generate",
-    "generate:apple-models": "bun apps/cli/src/main.ts apple-models"
+    "generate": "bun tools/src/main.ts generate",
+    "generate:apple-models": "bun tools/src/main.ts apple-models"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",

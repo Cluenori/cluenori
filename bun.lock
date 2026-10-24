@@ -21,14 +21,12 @@
         "@cluenori/github-app": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/members": "workspace:*",
-        "@cluenori/openapi-swift": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/today": "workspace:*",
         "@cluenori/worker": "workspace:*",
-        "@cluenori/workspace-rules": "workspace:*",
         "@effect/platform-bun": "catalog:",
         "effect": "catalog:",
       },
@@ -487,6 +485,16 @@
         "wrangler": "catalog:",
       },
     },
+    "tools": {
+      "name": "@cluenori/tools",
+      "dependencies": {
+        "@cluenori/openapi-swift": "workspace:*",
+        "@cluenori/worker": "workspace:*",
+        "@cluenori/workspace-rules": "workspace:*",
+        "@effect/platform-bun": "catalog:",
+        "effect": "catalog:",
+      },
+    },
   },
   "catalog": {
     "@base-ui/react": "1.9.0",
@@ -608,6 +616,8 @@
     "@cluenori/signals": ["@cluenori/signals@workspace:product/engines/signals"],
 
     "@cluenori/today": ["@cluenori/today@workspace:product/engines/today"],
+
+    "@cluenori/tools": ["@cluenori/tools@workspace:tools"],
 
     "@cluenori/web-crypto": ["@cluenori/web-crypto@workspace:packages/web-crypto"],
 

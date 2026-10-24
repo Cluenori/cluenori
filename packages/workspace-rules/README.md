@@ -53,7 +53,7 @@ A `package.json` that is missing or isn't valid JSON fails the whole check with
 ## Does not own
 
 - **Which rules a workspace has.** The caller passes them; Cluenori's are in
-  `apps/cli/src/dependency-rules.ts`.
+  `tools/src/dependency-rules.ts`.
 - **Whether imports match what `package.json` declares.** Bun's isolated installs make an undeclared
   import fail to resolve, in the type checker and at run time. Telling imports from text that only
   looks like one needs a parser, which this package doesn't take on.

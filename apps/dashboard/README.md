@@ -276,7 +276,7 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
   in `src/views/ui/` and ours in `src/views/`; `components.json` points `shadcn add` there.
 - **Adding a shadcn view:** `bunx shadcn@4.22.1 add <name>` from this folder, then move any new
   dependency to the catalog (`package.json` at the root, exact version), allow it in
-  `apps/cli/src/dependency-rules.ts`, and make the file pass `bun run check`.
+  `tools/src/dependency-rules.ts`, and make the file pass `bun run check`.
 - **shadcn's own CSS** (`src/shadcn.css`) is copied from the shadcn package, so building needs no
   shadcn CLI.
 - **The design,** after two looks were rejected (generic dark cards; then a speed spectrum with
