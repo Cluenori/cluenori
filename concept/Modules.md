@@ -4,7 +4,16 @@ This tab lists every module that Cluenori can have, with the phase that ships it
 
 ## Navigation
 
-The sidebar shows each module by name, as in PostHog. Above the sidebar are a workspace switcher, a project switcher (the portfolio or one project) and search (⌘K). Above the content is the shared filter bar: component (ran in or started from), environment, release, feature, person or account, and period. The filters stay when I move between modules, so "Export in the iOS app" stays selected from Analytics to Logs.
+Cluenori is a tree of levels, the same on the web and on the phone (decided on 2026-10-23, in place of a sidebar with every module by name):
+
+- **Now,** the root: what needs me across every project (incidents, new errors, operations slower than their own usual, releases waiting), each row opening the item itself; then each project, with its status, its daily people and their trend, and a small line of its load.
+- **A project:** its daily and monthly people against last week, its load over the last 24 hours with its errors drawn over it, what needs me there, and its doors: Product (its features, each with its usage, funnel, health, flag and releases inside it), Tech (requests, errors, logs and incidents, each a summary, then a list, then one item), Releases, and later People.
+
+Each level shows only the summary that I need to act or to understand, and one level deeper shows more. A module from the table below goes behind the door where it fits when it is built.
+
+Built so far (2026-10-23): Now, a project and Tech, on the web and on the phone; Product and Releases still show their earlier pages. Next, in this order: the words (jobs are not "requests", and nothing is called "runs"; proposed: Requests and Jobs as two sections of Tech, Load for the chart, and "operation" only in code); on the web, Tech without its Components and Production panels, Releases as a short line, and a quieter Logs chart; then Product and its features; then making a release ("Making a release", below).
+
+Above the sidebar are a workspace switcher, a project switcher (the portfolio or one project) and search (⌘K). Above the content is the shared filter bar: component (ran in or started from), environment, release, feature, person or account, and period. The filters stay when I move between modules, so "Export in the iOS app" stays selected from Analytics to Logs.
 
 | Group | Module | Use it to | Contains | Phase |
 | --- | --- | --- | --- | --- |
@@ -42,9 +51,11 @@ The sidebar shows each module by name, as in PostHog. Above the sidebar are a wo
 
 Settings are at the bottom of the sidebar: projects and components, blueprints, the feature catalog, members, integrations, SDK keys, data and privacy, and the usage of Cluenori itself.
 
-The four work areas sit at the top. A module stays hidden until its phase ships, so version 1 shows only what is ready. This table is the only place where phases are set. An engine can ship before its page: the Audiences engine serves version policies in version 1, before the Audiences page exists. A Today detector appears only when the module behind its action ships.
+A module stays hidden until its phase ships, so version 1 shows only what is ready. This table is the only place where phases are set. An engine can ship before its page: the Audiences engine serves version policies in version 1, before the Audiences page exists. A Today detector appears only when the module behind its action ships.
 
 ### How modules link
+
+These links are why Cluenori exists. Alone, no module is worth much, OpenTelemetry aside. Linked through the shared scope (release, component, feature, person), releases, performance, logs, features, flags and analytics give a developer, a product person or an agent the full context, fast. So each page filters by and links to the others, the API offers agents the same joins, and a module's first slice says which modules it links to and which links wait for modules not built yet.
 
 Each object has its own page and a permanent URL. Objects are projects, components, flags, releases, errors, customers, features, issues, incidents, decisions, agent runs, ideas, feedback items, changelog entries, campaigns, journeys and version policies. In other modules, an object shows as a chip.
 
@@ -154,6 +165,8 @@ An operation is what a service does, by name, such as a normalized route: an HTT
 
 Cluenori keeps every export it receives in an archive for 90 days, with emails, tokens and card numbers removed. Thus the full trace and every log line of any trace, failed or not, can be opened for 90 days, and new views can be built from data that arrived before them.
 
+Cluenori's own Worker and apps will report to Cluenori too, as a project of their own. It must not loop: the Worker never traces or logs its own ingest (`/otlp/*`) or its exporter's requests, and a failed export is never exported.
+
 | Data | Kept for |
 | --- | --- |
 | Product events | 5 years |
@@ -227,6 +240,17 @@ Cluenori makes a release from a git tag, a store build or a deploy. The release 
 - **Rollout:** platforms, the progress of the App Store phased release and the Google Play staged rollout, version adoption, and the flags that you turned on with the release.
 - **Impact, compared with the previous release:** crash-free sessions, new error groups, latency, the activation and retention of users on this version, and store rating.
 - **Notes:** an internal summary for you and a note for your customers.
+
+### Making a release
+
+Decided on 2026-10-23:
+
+1. Release starts from the latest commit on main; Change picks another.
+2. Cluenori suggests the version, and I can change it.
+3. AI drafts the notes, with a choice of model. Write again drafts them again, and Edit prompt changes the project's notes style, which drafts follow.
+4. I choose the environment, then Release.
+
+The release page then offers one next step, with the same notes: Promote to the next environment, Send to App Store review, or Release to everyone. Not built yet: the New release sheet, the choice of model, and the one next step on the release page, such as Release to everyone first for a build that App Store review approved.
 
 ### Versions and force update
 

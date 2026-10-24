@@ -52,6 +52,8 @@ didn't answer in `unanswered`, never as one with nothing to do, and has no pulse
     each production environment; the days counted summed, a week's or month's people only when
     every summed day has them. Absent when no environment counts the latest day; the week before
     absent when none counts it.
+  - **Cost:** the pulse about doubles the work each project's object does for Today; not yet
+    measured with hundreds of projects.
 
 ## Does not own
 

@@ -643,6 +643,20 @@ conflict.
   Production code runs in workerd, never in Bun.
 - **Environment:** `./dev` (Nix) opens a shell with the pinned Bun, Node (which Wrangler needs), and
   Git.
+- **The repository is public.** No names of the founder's private products, real domains, Apple
+  team IDs, or bundle IDs in any file or commit message. A deployment's domain, URL and token stay
+  out of committed config: `./setup` asks for them and keeps them in
+  `~/.config/cluenori/deployment.json`, and the iPhone app's bundle ID, team and domain are each
+  developer's own, in `apps/ios/Config/Local.xcconfig`. Examples and fixtures use made-up
+  products, such as Folio and `notes`.
+- **No private memory.** Everything an agent needs is in this repository, so everyone who clones it
+  gets the same result; Claude Code's auto memory is off (`.claude/settings.json`). What should
+  outlive a session (a rule, a decision, a correction) goes into AGENTS.md, PATTERNS.md,
+  `concept/`, or a package's README, in the change that taught it.
+- **Changes land on `main`,** without pull requests, and each one ends with proof that it works,
+  shown to the founder: the failure reproduced before the change, the same scenario passing after
+  it on the real stack (commands with their decisive output, numbers, screenshots), and what wasn't
+  tested. Answers to questions about the repository need none.
 - **Commands:**
   - Run Cluenori on this computer: `./run`
   - Deploy it to your Cloudflare account: `./setup`; install a new version: `./update`

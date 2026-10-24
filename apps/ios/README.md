@@ -23,7 +23,12 @@ or understand, and one level deeper shows more, never everything at once (`conce
     step, leading to a component, its version and promotions, and a release, compared with the one
     before, with its commit, changes, App Store build, promotions and notes; and every release.
 
-Product and Releases keep the screens they had before this tree; their own redesign comes next.
+Product and Releases keep the screens they had before this tree; their own redesign comes next
+(`concept/Modules.md`, "Navigation"). Until then, the deeper screens (analytics, delivery, a
+release, the lists) are system lists, not panels; monitors aren't shown; People waits for its data;
+and Product shows the environment chosen on the phone, often the API's (`prod`), so it can say no
+app sent anything while the apps send from `production`. It should open where the project's apps
+send, without its "Analytics" title.
 
 ## Use it
 
@@ -51,6 +56,12 @@ Local builds a second app beside it, `<bundle ID>.local`, for the one `./run` se
 everything but alerts: `./run` can't reach APNs. To pair with `./run`, which listens on this Mac alone, start the
 Worker for the local network instead (`bun run wrangler dev --ip 0.0.0.0` in `apps/worker`), and
 make the pairing link at the Mac's address; the first call asks for Local Network access.
+
+On an iPhone connected to the Mac, `xcrun devicectl device capture screenshot --device <name>
+--destination <file>.png` takes a screenshot; `xcrun devicectl device process launch --device <name>
+--payload-url <link> <bundle ID>` opens a link in the app, and is refused while the phone is locked;
+and `xcrun devicectl device info files --device <name> --domain-type systemCrashLogs` lists its crash
+reports, which the archive's dSYM in `build/testflight` symbolicates (arm64e).
 
 ## TestFlight
 
@@ -173,7 +184,10 @@ ActivityKit and App Intents. No third-party code.
   (`Cluenori.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings`), so
   simulators run on Apple silicon alone.
 - **The project is small and made by Apple's `xcodeproj` tool** (Xcode 27's JSON format); settings
-  live in `Config/Cluenori.xcconfig`, one place for every configuration.
+  live in `Config/Cluenori.xcconfig`, one place for every configuration. The tool turns
+  `GENERATE_INFOPLIST_FILE` on for apps alone, not extensions; keys such as
+  `NSAlarmKitUsageDescription` need an Info.plist outside the synchronized folder; and a
+  synchronized folder included before its target has a sources phase needs a clean build.
 - **Offline, it keeps what it showed:** Now opens with what it last saw, its projects too, and
   says as of when when it can't ask again. A refused key unpairs the phone and says it was
   removed.

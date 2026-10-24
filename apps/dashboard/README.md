@@ -292,6 +292,10 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
     the sidebar.
   - Numbers show without pointing: panels end with a strip of the numbers that matter.
   - Simple colors that each mean one thing; near-black panels; square corners; mono for numbers.
+  - A badge carries only a chart's time zone, never a bare number or label.
+  - The words, on the phone too: the standard terms (p50, p80, p95, p99, error rate, occurrences),
+    never "1 in 20" or "Typical"; nothing about Cluenori's own workings, such as how long its
+    archive keeps data; and a person is "they", never a guessed gender.
 - **The backend leads the shapes.** Pages show what the API answers and adapt to it; a page's wish
   becomes an API change only when it is right for the API's other clients too.
 - **Not in the API yet, so not on the pages:** which components are apps and which are backends;
