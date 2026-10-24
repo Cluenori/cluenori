@@ -10,22 +10,23 @@ export interface MutationTarget {
 }
 
 /**
- * The packages `.github/workflows/mutation.yml` measures, every night main has moved. Not here yet: the Worker, whose
- * tests are the journeys, in another folder, and the dashboard, whose tests run in Chromium. Nor
- * `packages/`: they are the first versions of what bagatka/kit owns, and kit measures its own.
+ * The packages `.github/workflows/mutation.yml` measures, every night main has moved. Not here yet:
+ * the Worker, whose tests are the journeys, in another folder, and the dashboard, whose tests run in
+ * Chromium. Nor `packages/`: they are the first versions of what bagatka/kit owns, and kit measures
+ * its own.
  */
 export const mutationTargets: ReadonlyArray<MutationTarget> = [
-  { folder: "product/foundation", floor: undefined },
-  { folder: "product/engines/github-app", floor: undefined },
-  { folder: "product/engines/incidents", floor: undefined },
-  { folder: "product/engines/members", floor: undefined },
-  { folder: "product/engines/notifications", floor: undefined },
-  { folder: "product/engines/phones", floor: undefined },
-  { folder: "product/engines/projects", floor: undefined },
-  { folder: "product/engines/signals", floor: undefined },
-  { folder: "product/engines/today", floor: undefined },
-  { folder: "product/modules/analytics", floor: undefined },
-  { folder: "product/modules/releases", floor: undefined },
-  { folder: "apps/cli", floor: undefined },
-  { folder: "tools", floor: undefined },
+  { folder: "product/foundation", floor: 43.97 },
+  { folder: "product/engines/github-app", floor: 53.67 },
+  { folder: "product/engines/incidents", floor: 67.62 },
+  { folder: "product/engines/members", floor: 57.66 },
+  { folder: "product/engines/notifications", floor: 75.57 },
+  { folder: "product/engines/phones", floor: 61.46 },
+  { folder: "product/engines/projects", floor: 62.67 },
+  { folder: "product/engines/signals", floor: 62.16 },
+  { folder: "product/engines/today", floor: 44.07 },
+  { folder: "product/modules/analytics", floor: 55.65 },
+  { folder: "product/modules/releases", floor: 70.91 },
+  { folder: "apps/cli", floor: 4.95 },
+  { folder: "tools", floor: 20.11 },
 ]

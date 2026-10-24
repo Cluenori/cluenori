@@ -42,3 +42,9 @@ export const scoreOf = (tally: Tally): Option.Option<number> => {
   const counted = tally.caught + tally.survived + tally.notCovered
   return counted === 0 ? Option.none() : Option.some((tally.caught / counted) * 100)
 }
+
+/**
+ * The floor `score` sets, in percent: rounded down to hundredths, so the run that set it clears it,
+ * and the same score never asks to raise it again.
+ */
+export const floorOf = (score: number): number => Math.floor(score * 100) / 100

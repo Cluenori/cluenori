@@ -3,7 +3,7 @@ import { Argument, Command, Flag } from "effect/cli"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 
 import { appleModelsPath } from "./apple-models.ts"
-import { type MutantStatus, scoreOf, tallyOf } from "./mutation-score.ts"
+import { floorOf, type MutantStatus, scoreOf, tallyOf } from "./mutation-score.ts"
 import { shardsOf, type SourceFile, testedPaths } from "./mutation-shards.ts"
 import { type MutationTarget, mutationTargets } from "./mutation-targets.ts"
 import { refuse } from "./refuse.ts"
@@ -195,8 +195,9 @@ const report = Command.make("report", { reports: reportsArgument, only: onlyFold
       if (Option.isSome(score) && target.floor !== undefined && score.value < target.floor) {
         problems.push(`${target.folder}: ${percent(score.value)} is under its floor, ${floor}.`)
       }
-      if (Option.isSome(score) && (target.floor === undefined || score.value > target.floor)) {
-        raises.push(`${target.folder}: ${Math.floor(score.value * 100) / 100}`)
+      const raised = Option.map(score, floorOf)
+      if (Option.isSome(raised) && (target.floor === undefined || raised.value > target.floor)) {
+        raises.push(`${target.folder}: ${raised.value}`)
       }
       const count = (value: number) => (complete ? `${value}` : "unknown")
       rows.push(

@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Option } from "effect"
 
-import { scoreOf, tallyOf } from "../src/mutation-score.ts"
+import { floorOf, scoreOf, tallyOf } from "../src/mutation-score.ts"
 
 describe("scoreOf", () => {
   it("counts killed and timed-out mutants as caught, and leaves out those that never ran", () => {
@@ -12,5 +12,15 @@ describe("scoreOf", () => {
 
   it("has no score when no mutant counts", () => {
     assert.deepStrictEqual(scoreOf(tallyOf(["CompileError", "Ignored"])), Option.none())
+  })
+})
+
+describe("floorOf", () => {
+  it("rounds a score down to hundredths, so the run that set the floor clears it", () => {
+    const score = Option.getOrThrow(scoreOf({ caught: 84, survived: 102, notCovered: 5 }))
+    // 84 of 191 is 43.979…%, shown as 43.98%.
+    assert.strictEqual(floorOf(score), 43.97)
+    assert.isTrue(score >= floorOf(score))
+    assert.strictEqual(floorOf(floorOf(score)), 43.97)
   })
 })
