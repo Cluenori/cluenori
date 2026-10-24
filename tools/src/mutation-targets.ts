@@ -10,7 +10,7 @@ export interface MutationTarget {
 }
 
 /**
- * The packages `.github/workflows/mutation.yml` measures, every week. Not here yet: the Worker, whose
+ * The packages `.github/workflows/mutation.yml` measures, every night main has moved. Not here yet: the Worker, whose
  * tests are the journeys, in another folder, and the dashboard, whose tests run in Chromium. Nor
  * `packages/`: they are the first versions of what bagatka/kit owns, and kit measures its own.
  */

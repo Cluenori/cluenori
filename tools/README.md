@@ -13,6 +13,8 @@ bun run generate:apple-models  tools apple-models     phones' table of Apple's m
 (mutation.yml in CI)           tools mutation plan    the shards of mutation testing's jobs, as GitHub's matrix
                                tools mutation report <reports>
                                                       each package's score from its shards, against its floor
+                               tools mutation survivors <reports>
+                                                      every mutant no test caught, by file and line, as Markdown
 ```
 
 When something is off, it says what and how to fix it, and exits with code 1:

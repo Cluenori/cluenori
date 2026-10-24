@@ -678,9 +678,11 @@ conflict.
     with `bun run testflight:ios`
   - Rewrite generated files (the OpenAPI document, and the iOS app's Swift client of it):
     `bun run generate`
-  - Mutation testing, in CI every Monday and by hand: `gh workflow run mutation.yml`. Each package's
-    score is in the run's summary, under its floor in `tools/src/mutation-targets.ts` fails, and
-    what survived is in the shards' HTML reports, the run's artifacts.
+  - Mutation testing runs in CI, never in an orb: every night main has moved, handing its results to
+    an Amp orb (`.github/prompts/mutation-testing.md`), and for some packages on any branch:
+    `gh workflow run mutation.yml --ref <branch> -f folders=<folder>,<folder>`. Each package's score
+    is in the run's summary, under its floor in `tools/src/mutation-targets.ts` fails, and every
+    survivor is in its `mutation-results` artifact: `gh run download <run> -n mutation-results`.
 - **System map:** `ARCHITECTURE.md`
 - **Pattern registry:** `PATTERNS.md`
 - **Glossary:** `GLOSSARY.md`; product terms are defined in `concept/` until code owns them
