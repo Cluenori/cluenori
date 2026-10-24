@@ -29,3 +29,6 @@ xcuserdata/
 
 # copies of the repository that agents work in
 .claude/worktrees/
+
+# Public URLs Amp writes for services running in an orb
+.amp/portals/*
