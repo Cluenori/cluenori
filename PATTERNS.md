@@ -689,7 +689,7 @@ The configuration files are the specification; this entry says what each one own
 | `tools/src/dependency-rules.ts` | The dependency rules the architecture check enforces |
 | `stryker.config.json` | Mutation testing's settings, which every package's run shares, run in the package's folder: in place, as a copy of one folder can't reach the workspace around it |
 | `tools/src/mutation-targets.ts` | The packages mutation testing measures, and each one's floor |
-| `flake.nix`, `flake.lock` | Bun, Node, Git |
+| `flake.nix`, `flake.lock` | Bun, Node |
 | `apps/worker/wrangler.jsonc` | The Worker's bindings, routes, and compatibility date |
 
 - **Compiler settings.** `strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`,

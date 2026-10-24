@@ -61,14 +61,14 @@
   },
   "type": "module",
   "scripts": {
-    "postinstall": "effect-tsgo patch && bun run --cwd apps/worker types && bun run --cwd apps/dashboard browsers",
+    "postinstall": "effect-tsgo patch && bun run --cwd apps/worker types",
     "check": "bun run typecheck && bun run lint && oxfmt --check && bun tools/src/main.ts check && bun run --cwd apps/dashboard build",
     "check:ios": "apps/ios/check",
     "check:sdk-swift": "sdks/swift/check",
     "testflight:ios": "apps/ios/testflight",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "oxlint",
-    "test": "TZ=Pacific/Chatham LANG=tr_TR.UTF-8 vitest run",
+    "test": "bun run --cwd apps/dashboard browsers && TZ=Pacific/Chatham LANG=tr_TR.UTF-8 vitest run",
     "format": "oxfmt",
     "generate": "bun tools/src/main.ts generate",
     "generate:apple-models": "bun tools/src/main.ts apple-models"

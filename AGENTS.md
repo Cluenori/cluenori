@@ -641,8 +641,8 @@ conflict.
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository
   programs, Vitest 5 with `@effect/vitest` and `@cloudflare/vitest-plugin`, Oxlint and Oxfmt, Nix.
   Production code runs in workerd, never in Bun.
-- **Environment:** `./dev` (Nix) opens a shell with the pinned Bun, Node (which Wrangler needs), and
-  Git.
+- **Environment:** `./dev` (Nix) opens a shell with the pinned Bun and Node (which Wrangler needs);
+  Git is the machine's own.
 - **The repository is public.** No names of the founder's private products, real domains, Apple
   team IDs, or bundle IDs in any file or commit message. A deployment's domain, URL and token stay
   out of committed config: `./setup` asks for them and keeps them in

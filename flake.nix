@@ -28,9 +28,10 @@
           default = pkgs.mkShellNoCC {
             packages = [
               # Installs packages and runs the repository's programs. Never the deployed runtime:
-              # production runs in workerd.
+              # production runs in workerd. Git is the machine's own: every machine that has the
+              # repository has one, and Nix's would add a third to the shell, for Perl and its
+              # modules.
               pkgs.bun
-              pkgs.git
 
               # Wrangler and Vitest run on Node; Wrangler requires Node 22 or later.
               pkgs.nodejs_24

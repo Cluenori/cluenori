@@ -44,5 +44,6 @@ EOF
 step "Login shells enter the environment" add_profile_hook
 
 # Also runs postinstall: `effect-tsgo patch`, which puts Effect's diagnostics into the compiler,
-# the Workers runtime types, and the Chromium the dashboard's browser tests run in.
+# and the Workers runtime types. Not the Chromium the dashboard's tests need: `bun run test` gets it,
+# and tests run in CI, not in orbs.
 step "Dependencies from bun.lock" ./dev bun install --frozen-lockfile
