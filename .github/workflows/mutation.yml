@@ -3,8 +3,9 @@
 # tools/src/mutation-targets.ts, and handed to an Amp orb that gives each survivor a verdict
 # (.github/prompts/mutation-testing.md). By hand, for some packages, on any branch:
 # `gh workflow run mutation.yml --ref <branch> -f folders=<folder>,<folder>`; orbs measure their work
-# this way, never in the orb. Each package is split into shards of about 1,200 lines
-# (mutation-shards.ts), one job each, sized to finish well inside the 6 hours GitHub gives a job; the
+# this way, never in the orb. Each package is split into shards of about 1,200 lines, each with a
+# file its tests load (mutation-shards.ts), one job each, sized to finish well inside the 6 hours
+# GitHub gives a job: the first run's longest shard took 83 minutes, and the whole run 2 hours; the
 # last job scores each package from its shards and fails when one is under its floor. The run's
 # summary has the scores, its `mutation-results` artifact the scores and every survivor, and each
 # shard's artifact Stryker's reports, the HTML one showing what survived.

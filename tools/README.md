@@ -32,7 +32,9 @@ apps/worker/openapi.json: is out of date with the API definition. Run `bun run g
 - **The repository checks** the compiler and the linter can't make: the dependency rules, comments
   that silence a check, and generated files that are out of date.
 - **What mutation testing measures,** `src/mutation-targets.ts`: the packages, each one's floor,
-  and the shards CI runs them in, of about 1,200 lines each (`src/mutation-shards.ts`).
+  and the shards CI runs them in, of about 1,200 lines each, every one with a file the package's
+  tests load, so Stryker can tell the rest aren't covered (`src/mutation-shards.ts`). Generated
+  files aren't measured.
 - **What is generated from code,** `src/generated-files.ts`: the OpenAPI documents of the API and
   the ingest API, and their Swift clients, for the iPhone app and the Swift SDK.
 

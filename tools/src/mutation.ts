@@ -2,8 +2,9 @@ import { Console, Effect, FileSystem, Option, Result, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 
+import { appleModelsPath } from "./apple-models.ts"
 import { type MutantStatus, scoreOf, tallyOf } from "./mutation-score.ts"
-import { shardsOf, type SourceFile } from "./mutation-shards.ts"
+import { shardsOf, type SourceFile, testedPaths } from "./mutation-shards.ts"
 import { type MutationTarget, mutationTargets } from "./mutation-targets.ts"
 import { refuse } from "./refuse.ts"
 
@@ -77,18 +78,29 @@ const targetsOf = Effect.fn("targetsOf")(function* (folders: Option.Option<strin
 })
 
 // A package's TypeScript in `src` as git tracks it, without declarations, by its path in the
-// package's folder, where Stryker runs.
+// package's folder, where Stryker runs, and whether its tests, `test/**/*.test.ts`, load it. A
+// generated file isn't measured: what writes it is, in tools.
 const sourceFilesOf = Effect.fn("sourceFilesOf")(function* (folder: string) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const fs = yield* FileSystem.FileSystem
-  const tracked = yield* spawner.lines(ChildProcess.make("git", ["ls-files", "--", `${folder}/src`])).pipe(Effect.orDie)
-  const sources = tracked.filter((path) => /\.tsx?$/.test(path) && !path.endsWith(".d.ts"))
-  return yield* Effect.forEach(sources, (path) =>
-    fs.readFileString(path).pipe(
-      Effect.orDie,
-      Effect.map((text): SourceFile => ({ path: path.slice(folder.length + 1), lines: text.split("\n").length - 1 })),
-    ),
+  const tracked = yield* spawner
+    .lines(ChildProcess.make("git", ["ls-files", "--", `${folder}/src`, `${folder}/test`]))
+    .pipe(Effect.orDie)
+  const files = yield* Effect.forEach(
+    tracked.filter((path) => /\.tsx?$/.test(path) && !path.endsWith(".d.ts")),
+    (path) =>
+      fs.readFileString(path).pipe(
+        Effect.orDie,
+        Effect.map((text) => ({ path: path.slice(folder.length + 1), text })),
+      ),
   )
+  const tested = testedPaths(
+    new Map(files.map(({ path, text }) => [path, text])),
+    files.map(({ path }) => path).filter((path) => path.startsWith("test/") && /\.test\.tsx?$/.test(path)),
+  )
+  return files
+    .filter(({ path }) => path.startsWith("src/") && `${folder}/${path}` !== appleModelsPath)
+    .map(({ path, text }): SourceFile => ({ path, lines: text.split("\n").length - 1, tested: tested.has(path) }))
 })
 
 // Each target's shards, from the files of the commit checked out, so the plan and the report agree.
