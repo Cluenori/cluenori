@@ -38,6 +38,7 @@ const fakeApns = (request: Request) =>
 
 // Runs the alerts journey inside workerd, next to the Worker that wrangler.jsonc describes, with
 // local storage of its own, the API settings `./setup` makes for a deployment, and push set up.
+// Nothing reaches Cloudflare, as in vitest.config.ts.
 export default defineConfig(() =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -46,6 +47,7 @@ export default defineConfig(() =>
         plugins: [
           cloudflareTest({
             wrangler: { configPath: "../../apps/worker/wrangler.jsonc" },
+            remoteBindings: false,
             miniflare: {
               bindings: {
                 CLUENORI_API_TOKEN: "journey-api-token",
