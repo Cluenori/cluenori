@@ -1,0 +1,49 @@
+# Runs `bun run check` and `bun run test` on every push to any branch, in the toolchain `./dev`
+# opens (flake.nix), so a commit's result here is the one it has on a person's computer. Agents read
+# it instead of running them in an orb, which has too little memory for the tests (AGENTS.md,
+# "Repository specifics"). Nothing here deploys: `./update` is run by hand, from a commit that passed.
+name: Checks
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+# A newer push to a branch makes the run of its older commit moot, except on main, where each commit
+# keeps its result for choosing what to deploy.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  checks:
+    name: bun run ${{ matrix.command }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        command: [check, test]
+    steps:
+      - name: Install Nix
+        run: |
+          set -euo pipefail
+          # Nix's own installer, pinned by its hash; it checks the hash of the Nix it downloads. The
+          # flake pins nixpkgs, so no channel is added.
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/install-nix" \
+            https://releases.nixos.org/nix/nix-2.35.2/install
+          echo "9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c  $RUNNER_TEMP/install-nix" \
+            | sha256sum --check --quiet
+          sh "$RUNNER_TEMP/install-nix" --daemon --yes --no-channel-add
+          echo /nix/var/nix/profiles/default/bin >> "$GITHUB_PATH"
+
+      - name: Get the commit
+        run: |
+          set -euo pipefail
+          git init --quiet .
+          git fetch --quiet --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "$GITHUB_SHA"
+          git checkout --quiet --detach FETCH_HEAD
+
+      - name: bun run ${{ matrix.command }}
+        run: ./dev sh -c 'bun install --frozen-lockfile && bun run "$1"' sh "${{ matrix.command }}"

@@ -657,6 +657,12 @@ conflict.
   shown to the founder: the failure reproduced before the change, the same scenario passing after
   it on the real stack (commands with their decisive output, numbers, screenshots), and what wasn't
   tested. Answers to questions about the repository need none.
+- **CI checks every push,** to any branch (`.github/workflows/checks.yml`): `bun run check` and
+  `bun run test`, in the toolchain `./dev` opens. The tests need several GiB at once (Chromium tabs,
+  and a workerd for each test file), more than an agent's 2 GiB orb has, so an agent pushes and reads
+  the result instead of running them: `gh run list --commit "$(git rev-parse HEAD)"` finds the run,
+  `gh run watch <id> --exit-status` waits for it, and `gh run view <id> --log-failed` shows what
+  failed. Nothing deploys on push: a deploy (`./update`) is run by hand, from a commit that passed.
 - **Commands:**
   - Run Cluenori on this computer: `./run`
   - Deploy it to your Cloudflare account: `./setup`; install a new version: `./update`
