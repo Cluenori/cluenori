@@ -44,6 +44,9 @@ Queue consumers, cron, alarms, and workflows this package owns, and what each on
 
 ## Decisions and constraints
 
-Non-obvious choices, platform limits it depends on, and constraints a future change must respect.
+First, what it trusts and what it doesn't (`AGENTS.md`, section 9): its caller, and the caller's
+keys and settings, are trusted; what others send is not, and every guarantee holds against it. Then
+the non-obvious choices, platform limits it depends on, and constraints a future change must
+respect, each with its reason, and, where a decision was argued over, what would reopen it.
 
 Delete the sections that don't apply.
