@@ -1,0 +1,123 @@
+# Mutation testing (AGENTS.md, section 10): Stryker makes small bugs in a package's code, one at a
+# time, and its tests must catch each. Every Monday, and by hand: `gh workflow run mutation.yml`.
+# Each package in tools/src/mutation-targets.ts is split into shards of about 1,200 lines
+# (mutation-shards.ts), one job each, sized to finish well inside the 6 hours GitHub gives a job;
+# the last job scores each package from its shards and fails when one is under its floor. The run's
+# summary has the scores; each shard's artifact has Stryker's reports, the HTML one showing what
+# survived.
+name: Mutation testing
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time; one started meanwhile waits.
+concurrency:
+  group: mutation
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Get the commit
+        run: |
+          set -euo pipefail
+          git init --quiet .
+          git fetch --quiet --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "$GITHUB_SHA"
+          git checkout --quiet --detach FETCH_HEAD
+
+      - uses: ./.github/actions/install-nix
+
+      # The shards' install scripts make what type checks and the dashboard's tests need, not these.
+      - name: Plan the shards
+        id: plan
+        run: |
+          set -euo pipefail
+          ./dev bun install --frozen-lockfile --ignore-scripts
+          echo "matrix=$(./dev bun tools/src/main.ts mutation plan)" >> "$GITHUB_OUTPUT"
+
+  shard:
+    needs: plan
+    name: ${{ matrix.folder }} ${{ matrix.shard }}/${{ matrix.shards }}
+    runs-on: ubuntu-24.04
+    # Stops a shard well before GitHub's 6 hours would, so it fails as ours, with time to spare.
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      # The organization runs 20 jobs at once; this leaves room for the checks of pushes meanwhile.
+      max-parallel: 16
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      FOLDER: ${{ matrix.folder }}
+      MUTATE: ${{ matrix.mutate }}
+      SHARD: ${{ matrix.shard }}
+    steps:
+      - name: Get the commit
+        run: |
+          set -euo pipefail
+          git init --quiet .
+          git fetch --quiet --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "$GITHUB_SHA"
+          git checkout --quiet --detach FETCH_HEAD
+
+      - uses: ./.github/actions/install-nix
+
+      - name: Mutate
+        run: |
+          set -euo pipefail
+          ./dev bun install --frozen-lockfile --ignore-scripts
+          ./dev sh -c 'cd "$FOLDER" && "$1/node_modules/.bin/stryker" run "$1/stryker.config.json" --mutate "$MUTATE"' \
+            sh "$PWD"
+
+      - name: Keep the reports
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mutation/$FOLDER"
+          cp "$FOLDER/.stryker/mutation.json" "$RUNNER_TEMP/mutation/$FOLDER/shard-$SHARD.json"
+          cp "$FOLDER/.stryker/mutation.html" "$RUNNER_TEMP/mutation/$FOLDER/shard-$SHARD.html"
+
+      - name: Upload the reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/mutation
+          if-no-files-found: error
+          retention-days: 30
+
+  report:
+    needs: [plan, shard]
+    # Scores even when a shard failed, to say which; a package missing one has no score.
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Get the commit
+        run: |
+          set -euo pipefail
+          git init --quiet .
+          git fetch --quiet --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "$GITHUB_SHA"
+          git checkout --quiet --detach FETCH_HEAD
+
+      - uses: ./.github/actions/install-nix
+
+      - name: Download the reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mutation-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/mutation
+
+      - name: Score
+        run: |
+          set -euo pipefail
+          ./dev bun install --frozen-lockfile --ignore-scripts
+          ./dev bun tools/src/main.ts mutation report "$RUNNER_TEMP/mutation" | tee -a "$GITHUB_STEP_SUMMARY"

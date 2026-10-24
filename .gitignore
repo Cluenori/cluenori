@@ -16,6 +16,9 @@ apps/dashboard/dist/
 # Screenshots Vitest takes of a browser test that failed
 .vitest/
 
+# What a package's mutation testing writes: its reports, and Stryker's working files
+.stryker/
+
 # Nix build links
 /result
 /result-*

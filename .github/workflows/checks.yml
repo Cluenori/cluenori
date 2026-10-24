@@ -26,24 +26,14 @@ jobs:
       matrix:
         command: [check, test]
     steps:
-      - name: Install Nix
-        run: |
-          set -euo pipefail
-          # Nix's own installer, pinned by its hash; it checks the hash of the Nix it downloads. The
-          # flake pins nixpkgs, so no channel is added.
-          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/install-nix" \
-            https://releases.nixos.org/nix/nix-2.35.2/install
-          echo "9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c  $RUNNER_TEMP/install-nix" \
-            | sha256sum --check --quiet
-          sh "$RUNNER_TEMP/install-nix" --daemon --yes --no-channel-add
-          echo /nix/var/nix/profiles/default/bin >> "$GITHUB_PATH"
-
       - name: Get the commit
         run: |
           set -euo pipefail
           git init --quiet .
           git fetch --quiet --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "$GITHUB_SHA"
           git checkout --quiet --detach FETCH_HEAD
+
+      - uses: ./.github/actions/install-nix
 
       - name: bun run ${{ matrix.command }}
         run: ./dev sh -c 'bun install --frozen-lockfile && bun run "$1"' sh "${{ matrix.command }}"

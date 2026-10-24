@@ -11,5 +11,9 @@
     "@cluenori/workspace-rules": "workspace:*",
     "@effect/platform-bun": "catalog:",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "vitest": "catalog:"
   }
 }

@@ -5,14 +5,18 @@ import { Command } from "effect/cli"
 import { appleModels } from "./apple-models.ts"
 import { check } from "./check.ts"
 import { generate } from "./generate.ts"
+import { mutation } from "./mutation.ts"
 
 /**
  * The repository's program: `bun run check`, `bun run generate` and `bun run generate:apple-models`
- * call it from the repository's root. Nothing of it ships: Cluenori's own command is `apps/cli`.
+ * call it from the repository's root, and mutation testing's CI jobs plan and score with it. Nothing
+ * of it ships: Cluenori's own command is `apps/cli`.
  */
 const tools = Command.make("tools").pipe(
-  Command.withDescription("Check this repository, and rewrite the files generated from code."),
-  Command.withSubcommands([check, generate, appleModels]),
+  Command.withDescription(
+    "Check this repository, rewrite the files generated from code, and plan and score mutation testing.",
+  ),
+  Command.withSubcommands([check, generate, appleModels, mutation]),
 )
 
 const program = tools.pipe(

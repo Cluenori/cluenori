@@ -678,6 +678,9 @@ conflict.
     with `bun run testflight:ios`
   - Rewrite generated files (the OpenAPI document, and the iOS app's Swift client of it):
     `bun run generate`
+  - Mutation testing, in CI every Monday and by hand: `gh workflow run mutation.yml`. Each package's
+    score is in the run's summary, under its floor in `tools/src/mutation-targets.ts` fails, and
+    what survived is in the shards' HTML reports, the run's artifacts.
 - **System map:** `ARCHITECTURE.md`
 - **Pattern registry:** `PATTERNS.md`
 - **Glossary:** `GLOSSARY.md`; product terms are defined in `concept/` until code owns them
@@ -708,5 +711,5 @@ conflict.
   - **What it trusts** (section 9) is new: a package's README says it, first in "Decisions and
     constraints", when that package next changes; the template asks for it. The copies in
     `packages/` don't, as kit's versions say it.
-  - **Mutation testing** (section 10) isn't set up here yet, so no test has been proven to catch a
-    change in behavior. bagatka/kit runs it with Stryker.
+  - **Mutation testing** (section 10) doesn't reach the Worker yet, whose tests are the journeys, in
+    another folder, nor the dashboard, whose tests run in Chromium.

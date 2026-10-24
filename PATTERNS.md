@@ -687,6 +687,8 @@ The configuration files are the specification; this entry says what each one own
 | `apps/dashboard/vite.config.ts` | React Compiler, and the dashboard's first-load budget, which `bun run check` builds to check |
 | `apps/dashboard/vitest.config.ts` | The browser the dashboard's tests run in, and its locale and time zone |
 | `tools/src/dependency-rules.ts` | The dependency rules the architecture check enforces |
+| `stryker.config.json` | Mutation testing's settings, which every package's run shares, run in the package's folder: in place, as a copy of one folder can't reach the workspace around it |
+| `tools/src/mutation-targets.ts` | The packages mutation testing measures, and each one's floor |
 | `flake.nix`, `flake.lock` | Bun, Node, Git |
 | `apps/worker/wrangler.jsonc` | The Worker's bindings, routes, and compatibility date |
 

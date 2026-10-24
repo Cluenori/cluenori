@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "coverageAnalysis": "perTest",
+  "inPlace": true,
+  "concurrency": 3,
+  "reporters": ["json", "html", "clear-text", "progress-append-only"],
+  "jsonReporter": { "fileName": ".stryker/mutation.json" },
+  "htmlReporter": { "fileName": ".stryker/mutation.html" },
+  "tempDirName": ".stryker/tmp",
+  "thresholds": { "high": 90, "low": 80, "break": null }
+}

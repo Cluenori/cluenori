@@ -9,6 +9,7 @@ export default defineConfig({
       "apps/*/vitest.config.ts",
       "sdks/*/vitest.config.ts",
       "tests/*/vitest.config.ts",
+      "tools/vitest.config.ts",
       // The alerts journey, which runs its Worker with push set up and a fake APNs.
       "tests/journeys/vitest.alerts.config.ts",
     ],

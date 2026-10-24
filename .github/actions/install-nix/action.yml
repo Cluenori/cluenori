@@ -1,0 +1,18 @@
+# Installs the Nix `./dev` runs the toolchain with, for the workflows' jobs. Nix's own installer,
+# pinned by its hash; it checks the hash of the Nix it downloads. The flake pins nixpkgs, so no
+# channel is added. A local action, so a job gets the commit before it.
+name: Install Nix
+description: Nix 2.35.2, from its installer pinned by hash
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl --fail --silent --show-error --location --output "$RUNNER_TEMP/install-nix" \
+          https://releases.nixos.org/nix/nix-2.35.2/install
+        echo "9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c  $RUNNER_TEMP/install-nix" \
+          | sha256sum --check --quiet
+        sh "$RUNNER_TEMP/install-nix" --daemon --yes --no-channel-add
+        echo /nix/var/nix/profiles/default/bin >> "$GITHUB_PATH"

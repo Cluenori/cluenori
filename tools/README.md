@@ -10,6 +10,9 @@ files `bun run generate` writes from code. Nothing of it ships; Cluenori's own c
 bun run check                  … tools check          dependency rules, suppression comments, generated files
 bun run generate               tools generate         the OpenAPI documents and the Swift clients of the API and the ingest API
 bun run generate:apple-models  tools apple-models     phones' table of Apple's model names, on a Mac with Xcode
+(mutation.yml in CI)           tools mutation plan    the shards of mutation testing's jobs, as GitHub's matrix
+                               tools mutation report <reports>
+                                                      each package's score from its shards, against its floor
 ```
 
 When something is off, it says what and how to fix it, and exits with code 1:
@@ -26,6 +29,8 @@ apps/worker/openapi.json: is out of date with the API definition. Run `bun run g
 - **Cluenori's dependency rules,** `src/dependency-rules.ts`: the table in ARCHITECTURE.md as data.
 - **The repository checks** the compiler and the linter can't make: the dependency rules, comments
   that silence a check, and generated files that are out of date.
+- **What mutation testing measures,** `src/mutation-targets.ts`: the packages, each one's floor,
+  and the shards CI runs them in, of about 1,200 lines each (`src/mutation-shards.ts`).
 - **What is generated from code,** `src/generated-files.ts`: the OpenAPI documents of the API and
   the ingest API, and their Swift clients, for the iPhone app and the Swift SDK.
 
