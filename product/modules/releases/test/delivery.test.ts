@@ -1,5 +1,6 @@
+import type { AppStoreConnect, AppStoreVersion, Build } from "@bagatka/app-store-connect"
+import { AppId, AppStoreVersionId, BuildId } from "@bagatka/app-store-connect"
 import { sketchOf } from "@bagatka/quantile-sketch"
-import type { AppStoreConnect, AppStoreVersion, Build } from "@cluenori/app-store-connect"
 import type { Actor } from "@cluenori/foundation"
 import { ComponentKey, EnvelopeName, EnvironmentKey, MemberId, ReleaseVersion } from "@cluenori/foundation"
 import type { WorkflowRun } from "@cluenori/github"
@@ -239,7 +240,8 @@ describe("Delivery", () => {
 
   it.effect("has an app's TestFlight build in testing, and on the App Store the one out there", () => {
     const build = (buildNumber: string, hoursAgo: number): Build => ({
-      id: `build-${buildNumber}`,
+      id: BuildId.make(`build-${buildNumber}`),
+      platform: "IOS",
       version: "0.3.0",
       buildNumber,
       uploadedAt: DateTime.makeUnsafe(start - hoursAgo * hour),
@@ -248,15 +250,20 @@ describe("Delivery", () => {
       internalTesting: "IN_BETA_TESTING",
     })
     const appStore: AppStoreConnect["Service"] = {
-      app: (bundleId) => Effect.succeedSome({ id: `app-${bundleId}`, name: "Notes", bundleId }),
-      builds: (appId) =>
-        Effect.succeed(appId === "app-com.example.notes" ? [build("19", 30)] : [build("20", 2), build("19", 30)]),
+      app: (bundleId) =>
+        Effect.succeedSome({
+          id: AppId.make(bundleId === "com.example.notes" ? "1574205213" : "1574205214"),
+          name: "Notes",
+          bundleId,
+        }),
+      builds: (appId) => Effect.succeed(appId === "1574205213" ? [build("19", 30)] : [build("20", 2), build("19", 30)]),
       appStoreVersions: (appId) =>
         Effect.succeed(
-          appId === "app-com.example.notes"
+          appId === "1574205213"
             ? [
                 {
-                  id: "version-1",
+                  id: AppStoreVersionId.make("version-1"),
+                  platform: "IOS",
                   version: "0.3.0",
                   state: "READY_FOR_SALE",
                   createdAt: DateTime.makeUnsafe(start - 30 * hour),

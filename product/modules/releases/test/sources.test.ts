@@ -1,6 +1,6 @@
+import type { AppStoreConnect, AppStoreVersion, Build } from "@bagatka/app-store-connect"
+import { AppId, AppStoreConnectCredentialsRefused, AppStoreVersionId, BuildId } from "@bagatka/app-store-connect"
 import { sketchOf } from "@bagatka/quantile-sketch"
-import type { AppStoreConnect, AppStoreVersion, Build } from "@cluenori/app-store-connect"
-import { AppStoreConnectRefused } from "@cluenori/app-store-connect"
 import type { Actor } from "@cluenori/foundation"
 import { ComponentKey, EnvelopeName, EnvironmentKey, MemberId, Period, ReleaseVersion } from "@cluenori/foundation"
 import type { Comparison, ReleaseToPublish } from "@cluenori/github"
@@ -168,7 +168,8 @@ const fakeGitHub = (calls: Array<string>, published: Array<Published> = []): Git
 })
 
 const build = (buildNumber: string, hoursAgo: number): Build => ({
-  id: `build-${buildNumber}`,
+  id: BuildId.make(`build-${buildNumber}`),
+  platform: "IOS",
   version: "2.4.0",
   buildNumber,
   uploadedAt: DateTime.makeUnsafe(start - hoursAgo * hour),
@@ -190,7 +191,7 @@ const noPublishing = {
 
 // App Store Connect with two builds of 2.4.0, the later one live in a phased release.
 const fakeAppStore = (reads: { count: number }): AppStoreConnect["Service"] => ({
-  app: (bundleId) => Effect.succeedSome({ id: "app-1", name: "Notes", bundleId }),
+  app: (bundleId) => Effect.succeedSome({ id: AppId.make("1574205213"), name: "Notes", bundleId }),
   builds: () =>
     Effect.sync(() => {
       reads.count += 1
@@ -199,7 +200,8 @@ const fakeAppStore = (reads: { count: number }): AppStoreConnect["Service"] => (
   appStoreVersions: () =>
     Effect.succeed([
       {
-        id: "version-1",
+        id: AppStoreVersionId.make("version-1"),
+        platform: "IOS",
         version: "2.4.0",
         state: "READY_FOR_SALE",
         createdAt: DateTime.makeUnsafe(start - 2 * hour),
@@ -352,7 +354,7 @@ describe("Releases' sources", () => {
       }),
       sourcesOf(undefined, {
         ...fakeAppStore({ count: 0 }),
-        app: () => Effect.fail(new AppStoreConnectRefused({ status: 401, reason: "NOT_AUTHORIZED" })),
+        app: () => Effect.fail(new AppStoreConnectCredentialsRefused({ reason: "NOT_AUTHORIZED" })),
       }),
     ),
   )
@@ -577,7 +579,8 @@ describe("GitHub's Releases page", () => {
       appStoreVersions: () =>
         Effect.sync(() => [
           {
-            id: "version-1",
+            id: AppStoreVersionId.make("version-1"),
+            platform: "IOS",
             version: "2.4.0",
             state: shipping.state,
             createdAt: DateTime.makeUnsafe(start - 2 * hour),

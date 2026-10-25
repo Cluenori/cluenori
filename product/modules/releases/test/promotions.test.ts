@@ -1,4 +1,5 @@
-import type { AppStoreConnect, AppStoreVersion } from "@cluenori/app-store-connect"
+import type { AppStoreConnect, AppStoreVersion } from "@bagatka/app-store-connect"
+import { AppId, AppStoreVersionId, BuildId, ReviewSubmissionId } from "@bagatka/app-store-connect"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvironmentKey, MemberId, ProcessName, ReleaseVersion } from "@cluenori/foundation"
 import type { WorkflowRun } from "@cluenori/github"
@@ -100,15 +101,25 @@ interface FakeStore {
 }
 
 const fakeAppStore = (store: FakeStore): AppStoreConnect["Service"] => ({
-  app: (bundleId) => Effect.succeedSome({ id: "app-1", name: "Notes", bundleId }),
+  app: (bundleId) => Effect.succeedSome({ id: AppId.make("1574205213"), name: "Notes", bundleId }),
   builds: () => Effect.succeed([]),
   appStoreVersions: () =>
     Effect.sync(() =>
       store.versionState === undefined
         ? []
         : [
+            // The app's Mac version of the same number, already out: a promotion follows its iPhone one.
             {
-              id: "version-9",
+              id: AppStoreVersionId.make("version-mac"),
+              platform: "MAC_OS",
+              version: "0.6.0",
+              state: "READY_FOR_SALE",
+              createdAt: DateTime.makeUnsafe(start),
+              buildNumber: "2",
+            } satisfies AppStoreVersion,
+            {
+              id: AppStoreVersionId.make("version-9"),
+              platform: "IOS",
               version: "0.6.0",
               state: store.versionState,
               createdAt: DateTime.makeUnsafe(start),
@@ -117,10 +128,11 @@ const fakeAppStore = (store: FakeStore): AppStoreConnect["Service"] => ({
           ],
     ),
   appLocales: () => Effect.succeed(["en-US"]),
-  build: (_appId, version, buildNumber) =>
+  build: (_appId, platform, version, buildNumber) =>
     Effect.sync(() =>
       Option.some({
-        id: "build-2",
+        id: BuildId.make("build-2"),
+        platform,
         version,
         buildNumber,
         uploadedAt: DateTime.makeUnsafe(start),
@@ -132,13 +144,17 @@ const fakeAppStore = (store: FakeStore): AppStoreConnect["Service"] => ({
     Effect.sync(() => {
       store.written.push(`prepare ${request.version} ${request.buildId} ${request.releaseType} ${request.phased}`)
       store.written.push(...request.whatsNew.map((note) => `whatsNew ${note.locale} ${note.text}`))
-      return { versionId: "version-9", version: request.version, state: "PREPARE_FOR_SUBMISSION" }
+      return {
+        versionId: AppStoreVersionId.make("version-9"),
+        version: request.version,
+        state: "PREPARE_FOR_SUBMISSION",
+      }
     }),
-  submitForReview: (_appId, versionId) =>
+  submitForReview: (_appId, _platform, versionId) =>
     Effect.sync(() => {
       store.written.push(`submit ${versionId}`)
       store.versionState = "WAITING_FOR_REVIEW"
-      return { submissionId: "submission-1", state: "WAITING_FOR_REVIEW" }
+      return { submissionId: ReviewSubmissionId.make("submission-1"), state: "WAITING_FOR_REVIEW" }
     }),
   releaseVersion: (versionId) =>
     Effect.sync(() => {

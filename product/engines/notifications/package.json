@@ -10,7 +10,7 @@
     "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
   },
   "dependencies": {
-    "@cluenori/apns": "workspace:*",
+    "@bagatka/apns": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/incidents": "workspace:*",
     "@cluenori/members": "workspace:*",

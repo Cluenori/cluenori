@@ -10,8 +10,7 @@
     "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
   },
   "dependencies": {
-    "@cluenori/app-store-connect": "workspace:*",
-    "@cluenori/es256-jwt": "workspace:*",
+    "@bagatka/app-store-connect": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github": "workspace:*",
     "@cluenori/incidents": "workspace:*",

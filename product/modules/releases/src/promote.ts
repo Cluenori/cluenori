@@ -1,14 +1,15 @@
-import type { AppStoreConnect } from "@cluenori/app-store-connect"
+import type { AppStoreConnect } from "@bagatka/app-store-connect"
+import { AppStoreVersionId } from "@bagatka/app-store-connect"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ProcessName, Source } from "@cluenori/foundation"
 import type { WorkflowRun } from "@cluenori/github"
 import { GitHub } from "@cluenori/github"
 import type { DeployTarget } from "@cluenori/projects"
 import { Projects } from "@cluenori/projects"
-import { Crypto, DateTime, Duration, Effect, Option } from "effect"
+import { Crypto, DateTime, Duration, Effect, Option, Schema } from "effect"
 
 import { knownRelease, knownReleases } from "./catalog.ts"
-import { stageOf } from "./identity.ts"
+import { appPlatform, stageOf } from "./identity.ts"
 import { numberCommit } from "./numbering.ts"
 import type {
   AppStoreSubmission,
@@ -285,8 +286,15 @@ export const releaseApproved = Effect.fn("Releases.releaseApproved")(function* (
   if (Option.isNone(sources.appStoreConnectManager)) {
     return yield* refusedBy("appStore", "Cluenori has no App Store Connect key that may release builds.")
   }
-  yield* sources.appStoreConnectManager.value.releaseVersion(promotion.storeVersionId).pipe(
+  // Stored as App Store Connect gave it; one that isn't an ID it gives can't be released.
+  const versionId = Schema.decodeOption(AppStoreVersionId)(promotion.storeVersionId)
+  if (Option.isNone(versionId)) {
+    return yield* new PromotionNotFound({ promotion: request.promotion })
+  }
+  yield* sources.appStoreConnectManager.value.releaseVersion(versionId.value).pipe(
     Effect.catchTags({
+      AppStoreConnectCredentialsRefused: (refused) => Effect.fail(refusedBy("appStore", refused.reason)),
+      AppStoreConnectForbidden: (refused) => Effect.fail(refusedBy("appStore", refused.reason)),
       AppStoreConnectRefused: (refused) => Effect.fail(refusedBy("appStore", refused.reason)),
       AppStoreConnectUnavailable: (unavailable) =>
         Effect.fail(new PromotionUnavailable({ reason: unavailable.reason })),
@@ -412,7 +420,7 @@ const followedStore = Effect.fn("Releases.followedStore")(function* (
   }
   const { version, number } = buildOf(promotion.release)
   if (promotion.state === "processing") {
-    const build = yield* reader.build(app.value.id, version, number)
+    const build = yield* reader.build(app.value.id, appPlatform, version, number)
     if (Option.isNone(build) || build.value.processingState === "PROCESSING") {
       return promotion
     }
@@ -428,19 +436,20 @@ const followedStore = Effect.fn("Releases.followedStore")(function* (
     }
     const submission = promotion.submission ?? defaultSubmission
     const prepared = yield* writer.prepareVersion(app.value.id, {
+      platform: appPlatform,
       version,
       buildId: build.value.id,
       releaseType: submission.releaseType,
       phased: submission.phased,
       whatsNew: notes,
     })
-    yield* writer.submitForReview(app.value.id, prepared.versionId)
+    yield* writer.submitForReview(app.value.id, appPlatform, prepared.versionId)
     return { ...promotion, state: "inReview" as const, storeVersionId: prepared.versionId }
   }
   // In review, or approved and waiting: the version's state says where it is now.
   const versions = yield* reader.appStoreVersions(app.value.id, 20)
-  const shipping = versions.find((each) => each.version === version)
-  const build = yield* reader.build(app.value.id, version, number)
+  const shipping = versions.find((each) => each.platform === appPlatform && each.version === version)
+  const build = yield* reader.build(app.value.id, appPlatform, version, number)
   if (Option.isNone(build)) {
     return promotion
   }
@@ -507,6 +516,16 @@ const followed = Effect.fn("Releases.followed")(function* (
   }
   return yield* followedStore(sources.appStoreConnect.value, sources.appStoreConnectManager.value, promotion, now).pipe(
     Effect.catchTags({
+      AppStoreConnectCredentialsRefused: (refused) =>
+        Effect.logWarning("App Store Connect refused following a promotion", {
+          promotion: promotion.id,
+          reason: refused.reason,
+        }).pipe(Effect.as(promotion)),
+      AppStoreConnectForbidden: (refused) =>
+        Effect.logWarning("App Store Connect refused following a promotion", {
+          promotion: promotion.id,
+          reason: refused.reason,
+        }).pipe(Effect.as(promotion)),
       AppStoreConnectRefused: (refused) =>
         Effect.logWarning("App Store Connect refused following a promotion", {
           promotion: promotion.id,

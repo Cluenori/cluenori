@@ -1,9 +1,15 @@
-import type { AppStoreVersion, Build } from "@cluenori/app-store-connect"
+import type { AppStoreVersion, Build, Platform } from "@bagatka/app-store-connect"
 import type { Tag } from "@cluenori/github"
 
 import type { StoreStage } from "./release.ts"
 
 // How a release is found in its repository and its store: the one place these rules live.
+
+/**
+ * The platform of the App Store builds and versions a release is: iPhone apps, as a deploy target
+ * doesn't name a platform. The rest of an app's builds and versions are left out.
+ */
+export const appPlatform: Platform = "IOS"
 
 /**
  * A commit SHA inside a version, such as `e91f09c` in `2026.10.21-e91f09c`: the last run of 7 to 40

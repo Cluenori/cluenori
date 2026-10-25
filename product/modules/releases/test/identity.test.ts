@@ -1,4 +1,5 @@
-import type { AppStoreVersion, Build } from "@cluenori/app-store-connect"
+import type { AppStoreVersion, Build } from "@bagatka/app-store-connect"
+import { AppStoreVersionId, BuildId } from "@bagatka/app-store-connect"
 import type { Tag } from "@cluenori/github"
 import { CommitSha } from "@cluenori/github"
 import { assert, describe, it } from "@effect/vitest"
@@ -10,7 +11,8 @@ const sha = CommitSha.make("e91f09c1a2b3c4d5e6f708192a3b4c5d6e7f8091")
 const tag = (name: string): Tag => ({ name, commit: sha })
 
 const build = (overrides: Partial<Build> = {}): Build => ({
-  id: "build-1",
+  id: BuildId.make("build-1"),
+  platform: "IOS",
   version: "2.4.0",
   buildNumber: "312",
   uploadedAt: DateTime.makeUnsafe(Date.UTC(2026, 9, 21)),
@@ -20,7 +22,8 @@ const build = (overrides: Partial<Build> = {}): Build => ({
 })
 
 const version = (state: string, overrides: Partial<AppStoreVersion> = {}): AppStoreVersion => ({
-  id: "version-1",
+  id: AppStoreVersionId.make("version-1"),
+  platform: "IOS",
   version: "2.4.0",
   state,
   createdAt: DateTime.makeUnsafe(Date.UTC(2026, 9, 21)),

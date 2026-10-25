@@ -1,12 +1,12 @@
-import type { ApnsCredentials, ApnsPush, ApnsSigning } from "@cluenori/apns"
-import { Apns } from "@cluenori/apns"
+import type { ApnsAnswer, ApnsCredentials, ApnsCredentialsInvalid, ApnsCrypto, ApnsPush } from "@bagatka/apns"
+import { Apns, DeviceToken } from "@bagatka/apns"
 import type { Envelope, MemberId, ProjectKey } from "@cluenori/foundation"
 import type { Access } from "@cluenori/members"
 import { canSee, Members } from "@cluenori/members"
 import type { PhoneId, PushTarget } from "@cluenori/phones"
 import { Phones } from "@cluenori/phones"
 import { ProjectIndex } from "@cluenori/projects"
-import { Clock, Context, Crypto, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Crypto, DateTime, Duration, Effect, Layer, Option, Result, Schema } from "effect"
 import type { HttpClient } from "effect/http"
 import { SqlClient, SqlSchema } from "effect/sql"
 
@@ -20,17 +20,18 @@ import { migrateNotifications } from "./notifications-migrations.ts"
  */
 export interface NotificationsSettings {
   readonly push: Option.Option<{ readonly credentials: ApnsCredentials; readonly topic: string }>
-  readonly signing: ApnsSigning
+  readonly signing: ApnsCrypto
 }
 
 // Which entry reached which phone is kept this long: longer than the platform retries a delivery.
 const sentKept = Duration.toMillis(Duration.days(7))
 
 // APNs keeps a push for a phone that is off this long, then drops it.
-const keptByApns = Duration.toSeconds(Duration.hours(1))
+const keptByApns = Duration.hours(1)
 
-// Apple's reasons for a token that no longer reaches its phone.
-const goneReasons = new Set(["BadDeviceToken", "Unregistered", "DeviceTokenNotForTopic"])
+// Apple's reasons for refusing a token that, besides Inactive, no longer reaches its phone: the
+// phone says its environment, and the topic is the deployment's one app.
+const goneReasons = new Set(["BadDeviceToken", "DeviceTokenNotForTopic"])
 
 const SentKey = Schema.Struct({ envelope: Schema.String, phone: Schema.String })
 
@@ -79,17 +80,32 @@ export class Notifications extends Context.Service<
           Notifications,
           Effect.gen(function* () {
             const apns = yield* Apns
-            return yield* make(Option.some({ apns, topic }))
+            return yield* make(Option.some({ apns: Result.succeed(apns), bundleId: topic }))
           }),
-        ).pipe(Layer.provide(Apns.layer(credentials, settings.signing))),
+        ).pipe(
+          Layer.provide(Apns.layer(credentials, settings.signing)),
+          // A key that can't sign leaves the workspace working: every alert is refused, and logged,
+          // and a test alarm says why, until `./cluenori push setup` gives a key that can.
+          Layer.catchTag("ApnsCredentialsInvalid", (invalid) =>
+            Layer.effect(
+              Notifications,
+              Effect.logError("APNs's key can't sign", { reason: invalid.reason }).pipe(
+                Effect.andThen(make(Option.some({ apns: Result.fail(invalid), bundleId: topic }))),
+              ),
+            ),
+          ),
+        ),
     })
 }
 
-/** APNs, and the app's bundle ID its pushes are for. */
+/** APNs, or why its key can't sign, and the app's bundle ID its pushes are for. */
 interface Pushing {
-  readonly apns: Apns["Service"]
-  readonly topic: string
+  readonly apns: Result.Result<Apns["Service"], ApnsCredentialsInvalid>
+  readonly bundleId: string
 }
+
+/** What came of one alert to one phone: APNs's answer, or its refusal of the deployment's key. */
+type Sent = ApnsAnswer | { readonly _tag: "KeyRefused"; readonly reason: string }
 
 const make = (push: Option.Option<Pushing>) =>
   Effect.gen(function* () {
@@ -107,21 +123,32 @@ const make = (push: Option.Option<Pushing>) =>
         sql`SELECT envelope, phone FROM notifications_sent WHERE ${sql.in("envelope", envelopes)}`,
     })
 
-    // Sends one alert to one phone: APNs's answer, with a token it says is gone forgotten.
-    const sendTo = Effect.fn("Notifications.sendTo")(function* (pushing: Pushing, target: PushTarget, alert: Alert) {
+    // Sends one alert to one phone, forgetting a token APNs says is gone.
+    const sendTo = Effect.fn("Notifications.sendTo")(function* (
+      pushing: Pushing,
+      target: PushTarget,
+      alert: Alert,
+    ): Effect.fn.Return<Sent, PushUnavailable> {
+      if (Result.isFailure(pushing.apns)) {
+        return { _tag: "KeyRefused", reason: pushing.apns.failure.reason }
+      }
       const apnsPush: ApnsPush = {
-        deviceToken: target.token,
+        deviceToken: DeviceToken.make(target.token),
         environment: target.environment,
-        topic: pushing.topic,
+        bundleId: pushing.bundleId,
+        pushType: "alert",
         priority: alert.level === "quiet" ? 5 : 10,
         payload: payloadOf(alert),
         collapseId: alert.alert,
-        expiresAt: Math.floor(DateTime.toEpochMillis(alert.at) / 1000) + keptByApns,
+        expiresAt: DateTime.addDuration(alert.at, keptByApns),
       }
-      const answer = yield* pushing.apns
-        .send(apnsPush)
-        .pipe(Effect.mapError((unavailable) => new PushUnavailable({ reason: unavailable.reason })))
-      if (answer._tag === "Rejected" && goneReasons.has(answer.reason)) {
+      const answer: Sent = yield* pushing.apns.success.send(apnsPush).pipe(
+        Effect.catchTag("ApnsCredentialsRefused", (refused) =>
+          Effect.succeed({ _tag: "KeyRefused" as const, reason: refused.reason }),
+        ),
+        Effect.mapError((unavailable) => new PushUnavailable({ reason: unavailable.reason })),
+      )
+      if (answer._tag === "Inactive" || (answer._tag === "Rejected" && goneReasons.has(answer.reason))) {
         yield* phones.forgetPushToken(target)
       }
       return answer
@@ -170,9 +197,9 @@ const make = (push: Option.Option<Pushing>) =>
             continue
           }
           const answer = yield* sendTo(push.value, target, alert)
-          if (answer._tag === "Rejected" && !goneReasons.has(answer.reason)) {
+          if (answer._tag === "KeyRefused" || (answer._tag === "Rejected" && !goneReasons.has(answer.reason))) {
             // Sending it again won't change Apple's answer, so it counts as sent.
-            yield* Effect.logError("APNs refused an alert", { reason: answer.reason, status: answer.status })
+            yield* Effect.logError("APNs refused an alert", { answer: answer._tag, reason: answer.reason })
           }
           yield* sql`INSERT OR IGNORE INTO notifications_sent ${sql.insert({ envelope: entry, phone: target.phone, at: now })}`.pipe(
             Effect.orDie,
@@ -198,7 +225,7 @@ const make = (push: Option.Option<Pushing>) =>
         incident: undefined,
       }
       const answer = yield* sendTo(push.value, target, alert)
-      if (answer._tag === "Rejected") {
+      if (answer._tag === "Rejected" || answer._tag === "KeyRefused") {
         return yield* new PushRejected({ reason: answer.reason })
       }
     })

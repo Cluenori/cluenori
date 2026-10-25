@@ -350,6 +350,36 @@ describe("Notifications", () => {
     }),
   )
 
+  it.effect("says why a test alarm can't ring when APNs refuses the key, or the key can't sign", () =>
+    Effect.gen(function* () {
+      const settings = yield* settingsWithKey
+      const unsignable: NotificationsSettings = {
+        ...settings,
+        push: Option.map(settings.push, (push) => ({
+          ...push,
+          credentials: { ...push.credentials, key: Redacted.make("not a key") },
+        })),
+      }
+      const refusing = fakeApns(() => ({ status: 403, reason: "InvalidProviderToken" }))
+      const accepting = fakeApns(accepts)
+      // Each test alarm twice: the phone's token is fine, so it is kept.
+      const twice = Effect.gen(function* () {
+        const notifications = yield* Notifications
+        const phone = yield* phoneWith(phoneToken)
+        const first = yield* notifications.testAlert(phone).pipe(Effect.flip)
+        const second = yield* notifications.testAlert(phone).pipe(Effect.flip)
+        return [first, second].map((failure) => (failure._tag === "PushRejected" ? failure.reason : failure._tag))
+      })
+      const refused = yield* inWorkspace("key-refused", start, settings, refusing.layer, twice)
+      const invalid = yield* inWorkspace("key-invalid", start, unsignable, accepting.layer, twice)
+
+      assert.deepStrictEqual(refused, ["InvalidProviderToken", "InvalidProviderToken"])
+      assert.strictEqual(invalid[0], invalid[1])
+      assert.include(invalid[0], "base64")
+      assert.strictEqual(accepting.accepted.length, 0)
+    }),
+  )
+
   it.effect("pushes nothing until push is set up", () =>
     Effect.gen(function* () {
       const apns = fakeApns(accepts)

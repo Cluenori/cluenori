@@ -1,4 +1,4 @@
-import type { AppStoreConnect } from "@cluenori/app-store-connect"
+import type { AppStoreConnect } from "@bagatka/app-store-connect"
 import type { ComponentKey, EnvironmentKey } from "@cluenori/foundation"
 import { ReleaseVersion } from "@cluenori/foundation"
 import type { Commit, Repository } from "@cluenori/github"
@@ -9,7 +9,7 @@ import { DateTime, Duration, Effect, Option, Schema } from "effect"
 
 import type { KnownRelease } from "./catalog.ts"
 import { knownReleases, previousOf } from "./catalog.ts"
-import { pullRequestOf, releaseOfBuild, shaInVersion, stageOf, tagFor, tagSearches } from "./identity.ts"
+import { appPlatform, pullRequestOf, releaseOfBuild, shaInVersion, stageOf, tagFor, tagSearches } from "./identity.ts"
 import type { Sync } from "./records.ts"
 import { ReleaseRecords } from "./records.ts"
 import type { MergedPullRequest, ReleaseChanges, ReleaseCommit, StoreBuild } from "./release.ts"
@@ -189,8 +189,12 @@ const syncStore = Effect.fn("Releases.syncStore")(function* (
   if (Option.isNone(app)) {
     return Option.some(`App Store Connect has no app with the bundle ID ${bundleId} on the API key's team.`)
   }
-  const builds = yield* appStoreConnect.builds(app.value.id, buildsRead)
-  const versions = yield* appStoreConnect.appStoreVersions(app.value.id, versionsRead)
+  const builds = (yield* appStoreConnect.builds(app.value.id, buildsRead)).filter(
+    (build) => build.platform === appPlatform,
+  )
+  const versions = (yield* appStoreConnect.appStoreVersions(app.value.id, versionsRead)).filter(
+    (version) => version.platform === appPlatform,
+  )
   const stored = builds.flatMap((build) => {
     const release = Schema.decodeOption(ReleaseVersion)(releaseOfBuild(build))
     // Not handled: a version or build number with characters a release can't have; it is left out,
@@ -264,7 +268,7 @@ export const problemOf = (
   source: "GitHub" | "App Store Connect",
   error: { readonly _tag: string; readonly reason: string },
 ) => {
-  if (!error._tag.endsWith("Refused")) {
+  if (error._tag.endsWith("Unavailable")) {
     return `${source} didn't answer: ${error.reason}. Cluenori tries again.`
   }
   return source === "GitHub"
@@ -337,6 +341,10 @@ export const syncReleases = Effect.gen(function* () {
         component.repository !== undefined,
       ).pipe(
         Effect.catchTags({
+          AppStoreConnectCredentialsRefused: (error) =>
+            noteProblem(component.key, "appStoreConnect", problemOf("App Store Connect", error), syncs),
+          AppStoreConnectForbidden: (error) =>
+            noteProblem(component.key, "appStoreConnect", problemOf("App Store Connect", error), syncs),
           AppStoreConnectRefused: (error) =>
             noteProblem(component.key, "appStoreConnect", problemOf("App Store Connect", error), syncs),
           AppStoreConnectUnavailable: (error) =>

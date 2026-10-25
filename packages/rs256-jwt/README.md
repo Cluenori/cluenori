@@ -32,7 +32,8 @@ compact JWS whose header names RS256 first and whose claims are as given.
 ## Does not own
 
 What a token says and how long it is kept: each caller (`@cluenori/github`'s `GitHubApp`) chooses
-its claims and when to sign a new one. ES256 tokens, such as Apple's, are `@cluenori/es256-jwt`'s.
+its claims and when to sign a new one. Apple's ES256 tokens are signed by `@bagatka/apns`
+and `@bagatka/app-store-connect`.
 
 ## Depends on
 
@@ -44,9 +45,7 @@ its claims and when to sign a new one. ES256 tokens, such as Apple's, are `@clue
   GitHub gives PKCS #1 (`BEGIN RSA PRIVATE KEY`), so a PKCS #1 key is wrapped in PKCS #8's
   PrivateKeyInfo with a few bytes of DER (RFC 5208): version 0, rsaEncryption, the key as an
   OCTET STRING. Which one a key is comes from its DER, not its armor, so the base64 alone works too.
-- **The same shape as `@cluenori/es256-jwt`:** the host passes Web Crypto, typed as only the two
-  functions signing uses; `alg` is always RS256, whatever the header says; the key is imported on
-  every call. The two share the compact JWS's few lines and could become one `@cluenori/jwt`; they
-  are kept apart while each algorithm has callers of its own and nothing else to share.
+- **The host passes Web Crypto,** typed as only the two functions signing uses; `alg` is always
+  RS256, whatever the header says; the key is imported on every call. `@bagatka/jwt` replaces it.
 - **Two-prime keys.** A multi-prime PKCS #1 key (version 1), which neither GitHub nor OpenSSL makes
   by default, isn't recognized, and fails with `InvalidSigningKey`.

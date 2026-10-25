@@ -116,40 +116,8 @@
         "wrangler": "catalog:",
       },
     },
-    "packages/apns": {
-      "name": "@cluenori/apns",
-      "dependencies": {
-        "@cluenori/es256-jwt": "workspace:*",
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@effect/vitest": "catalog:",
-        "vitest": "catalog:",
-      },
-    },
-    "packages/app-store-connect": {
-      "name": "@cluenori/app-store-connect",
-      "dependencies": {
-        "@cluenori/es256-jwt": "workspace:*",
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@effect/vitest": "catalog:",
-        "vitest": "catalog:",
-      },
-    },
     "packages/cloudflare-workers-ai": {
       "name": "@cluenori/cloudflare-workers-ai",
-      "dependencies": {
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@effect/vitest": "catalog:",
-        "vitest": "catalog:",
-      },
-    },
-    "packages/es256-jwt": {
-      "name": "@cluenori/es256-jwt",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -262,7 +230,7 @@
     "product/engines/notifications": {
       "name": "@cluenori/notifications",
       "dependencies": {
-        "@cluenori/apns": "workspace:*",
+        "@bagatka/apns": "catalog:",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/incidents": "workspace:*",
         "@cluenori/members": "workspace:*",
@@ -381,8 +349,7 @@
     "product/modules/releases": {
       "name": "@cluenori/releases",
       "dependencies": {
-        "@cluenori/app-store-connect": "workspace:*",
-        "@cluenori/es256-jwt": "workspace:*",
+        "@bagatka/app-store-connect": "catalog:",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/github": "workspace:*",
         "@cluenori/incidents": "workspace:*",
@@ -441,7 +408,10 @@
     },
   },
   "catalog": {
+    "@bagatka/apns": "0.1.0",
+    "@bagatka/app-store-connect": "0.1.0",
     "@bagatka/bun-workspace-rules": "0.1.0",
+    "@bagatka/jwt": "0.1.0",
     "@bagatka/otlp-protobuf": "0.1.0",
     "@bagatka/qr-code": "0.1.0",
     "@bagatka/quantile-sketch": "0.1.0",
@@ -569,7 +539,13 @@
 
     "@babel/types": ["@babel/types@8.0.8", "", { "dependencies": { "@babel/helper-string-parser": "^8.0.8", "@babel/helper-validator-identifier": "^8.0.6" } }, "sha512-iXSSZAKQWmaeAwGtFw10v9fg5hUiUs0L+w+Z2K11kym3pDNK+SF0VcAQPsEFvWcTSZ7LMgClMXDBvTbH0IlICg=="],
 
+    "@bagatka/apns": ["@bagatka/apns@0.1.0", "", { "dependencies": { "@bagatka/jwt": "0.1.0" }, "peerDependencies": { "effect": "~4.0.6" } }, "sha512-nV/n5vmp120oCWG8yrs2EjZErxSBloAvsCtbQVvH9adMx+MWZ0jYeTQhYviSTUvqCG7oln3Rl5HvLwLXwDFN0w=="],
+
+    "@bagatka/app-store-connect": ["@bagatka/app-store-connect@0.1.0", "", { "dependencies": { "@bagatka/jwt": "0.1.0" }, "peerDependencies": { "effect": "~4.0.6" } }, "sha512-s9MD/McWGWlDzw6gtJFdK4h1OXMnofRHEpdnAmpDthJnK7g5usBLIQdo1oWASsbwlo+P8YbETrx0ip3Ys74d6Q=="],
+
     "@bagatka/bun-workspace-rules": ["@bagatka/bun-workspace-rules@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-PZlsQCTcfdQNwib88p0vQwkQTP+ryL0zkNnJidpE5dDtyby6jmuidB/Qynoz+EPZjh/Gdo2F6BDvKiTxVkFu3A=="],
+
+    "@bagatka/jwt": ["@bagatka/jwt@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-4QXLlvLPPOOIaZ/h5OFslniUJRnvB0bkM24MylcZ3IN6qLuy38Myf2i2M90UEqBgpSg7RQXvrpYh0J58RoXZDA=="],
 
     "@bagatka/otlp-protobuf": ["@bagatka/otlp-protobuf@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-sGMeTSGvy12pg0PYY/7lUGNCNLFb/WiVb2d22xYfsGLbtQUAjsv4/80CG5WlD4wH39yrytPs8AQjgVRrhBZwSQ=="],
 
@@ -603,17 +579,11 @@
 
     "@cluenori/analytics": ["@cluenori/analytics@workspace:product/modules/analytics"],
 
-    "@cluenori/apns": ["@cluenori/apns@workspace:packages/apns"],
-
-    "@cluenori/app-store-connect": ["@cluenori/app-store-connect@workspace:packages/app-store-connect"],
-
     "@cluenori/cli": ["@cluenori/cli@workspace:apps/cli"],
 
     "@cluenori/cloudflare-workers-ai": ["@cluenori/cloudflare-workers-ai@workspace:packages/cloudflare-workers-ai"],
 
     "@cluenori/dashboard": ["@cluenori/dashboard@workspace:apps/dashboard"],
-
-    "@cluenori/es256-jwt": ["@cluenori/es256-jwt@workspace:packages/es256-jwt"],
 
     "@cluenori/foundation": ["@cluenori/foundation@workspace:product/foundation"],
 

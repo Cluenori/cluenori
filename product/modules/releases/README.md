@@ -129,8 +129,7 @@ const items = yield* promotionItems
   - `@cluenori/today`: the shape of Today's promotion item, `PromotionItem`.
 - **Capabilities:**
   - `@cluenori/github`: tags, commits, comparisons, pull requests, starting workflows and following their runs, and organizations' self-hosted runners, through the `GitHub` service the host provides;
-  - `@cluenori/app-store-connect`: builds, versions and languages; preparing, submitting and releasing versions; What to Test;
-  - `@cluenori/es256-jwt`: App Store Connect's tokens;
+  - `@bagatka/app-store-connect`: builds, versions and languages; preparing, submitting and releasing versions; What to Test; it signs its own tokens. Only an app's iOS builds and versions are read and promoted, as a deploy target names no platform;
   - `effect/ai`'s `LanguageModel`, which the host provides, for drafts.
 - **Foundation:** `@cluenori/foundation`, for `defineModule`.
 

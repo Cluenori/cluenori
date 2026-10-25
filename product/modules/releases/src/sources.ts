@@ -1,6 +1,5 @@
-import type { AppStoreConnectCredentials } from "@cluenori/app-store-connect"
-import { AppStoreConnect } from "@cluenori/app-store-connect"
-import type { Es256Signing } from "@cluenori/es256-jwt"
+import type { AppStoreConnectCredentials, AppStoreConnectCrypto } from "@bagatka/app-store-connect"
+import { AppStoreConnect, AppStoreConnectCredentialsRefused } from "@bagatka/app-store-connect"
 import { Context, Effect, Layer, Option } from "effect"
 import type { HttpClient } from "effect/http"
 
@@ -14,10 +13,28 @@ export interface ReleasesSettings {
   readonly appStoreConnect: Option.Option<AppStoreConnectCredentials>
   readonly appStoreConnectManager: Option.Option<AppStoreConnectCredentials>
   /** The platform's Web Crypto, which signs App Store Connect's tokens. */
-  readonly signing: Es256Signing
+  readonly signing: AppStoreConnectCrypto
 }
 
 /** The clients the module reaches its sources with besides GitHub, each absent without its key. */
+// A client for a key that can't sign: every call fails as a key App Store Connect refused does,
+// saying why, so the project's object keeps working and each place that uses it says to fix the key.
+const refusingClient = (reason: string): AppStoreConnect["Service"] => {
+  const refused = Effect.fail(new AppStoreConnectCredentialsRefused({ reason }))
+  return AppStoreConnect.of({
+    app: () => refused,
+    builds: () => refused,
+    build: () => refused,
+    appStoreVersions: () => refused,
+    appLocales: () => refused,
+    prepareVersion: () => refused,
+    submitForReview: () => refused,
+    releaseVersion: () => refused,
+    setPhasedRelease: () => refused,
+    setWhatToTest: () => refused,
+  })
+}
+
 export class ReleaseSources extends Context.Service<
   ReleaseSources,
   {
@@ -35,7 +52,15 @@ export class ReleaseSources extends Context.Service<
         const clientOf = (credentials: Option.Option<AppStoreConnectCredentials>) =>
           Option.match(credentials, {
             onNone: () => Effect.succeed(Option.none<AppStoreConnect["Service"]>()),
-            onSome: (key) => AppStoreConnect.make(key, settings.signing).pipe(Effect.asSome),
+            onSome: (key) =>
+              AppStoreConnect.make(key, settings.signing).pipe(
+                Effect.catchTag("AppStoreConnectCredentialsInvalid", (invalid) =>
+                  Effect.logError("An App Store Connect key can't sign", { reason: invalid.reason }).pipe(
+                    Effect.as(refusingClient(invalid.reason)),
+                  ),
+                ),
+                Effect.asSome,
+              ),
           })
         return ReleaseSources.of({
           appStoreConnect: yield* clientOf(settings.appStoreConnect),

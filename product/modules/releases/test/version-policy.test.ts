@@ -1,5 +1,5 @@
-import type { AppStoreConnect } from "@cluenori/app-store-connect"
-import { AppStoreConnectUnavailable } from "@cluenori/app-store-connect"
+import type { AppStoreConnect } from "@bagatka/app-store-connect"
+import { AppId, AppStoreConnectUnavailable } from "@bagatka/app-store-connect"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvironmentKey, MemberId, ReleaseVersion } from "@cluenori/foundation"
 import type { ManifestQuery } from "@cluenori/manifest"
@@ -81,7 +81,7 @@ const fakeAppStore = (asked: Array<string>): AppStoreConnect["Service"] => ({
     Effect.sync(() => {
       asked.push(bundleId)
       return bundleId === "com.example.notes"
-        ? Option.some({ id: "1234567890", name: "Notes", bundleId })
+        ? Option.some({ id: AppId.make("1234567890"), name: "Notes", bundleId })
         : Option.none()
     }),
   builds: () => Effect.die("No builds in these tests"),
