@@ -657,6 +657,15 @@ conflict.
   shown to the founder: the failure reproduced before the change, the same scenario passing after
   it on the real stack (commands with their decisive output, numbers, screenshots), and what wasn't
   tested. Answers to questions about the repository need none.
+- **The best shape over compatibility.** Cluenori serves its founder first: the web updates on
+  deploy, and the iPhone app on TestFlight is updated at once. So contracts, the API, the iPhone
+  app's client and stored data change in whatever way makes the code best, breaking included, in one
+  change that updates every caller. Data written before such a change is migrated to the new shape,
+  or its risk is taken with a `// Not handled:` comment; the main code keeps no compatibility path
+  for old shapes or old callers. This overrides the core's "Some callers can't be updated on
+  demand" and "Prefer additive changes" here. The exception is what apps' shipped builds call
+  through the SDK (the ingest API, the envelope, the manifest): those builds live for years
+  (`concept/Foundation.md`), so that contract changes additively.
 - **CI checks every push,** to any branch (`.github/workflows/checks.yml`): `bun run check` and
   `bun run test`, in the toolchain `./dev` opens. The tests need several GiB at once (Chromium tabs,
   and a workerd for each test file), more than an agent's 2 GiB orb has, so an agent pushes and reads

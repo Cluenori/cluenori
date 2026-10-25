@@ -70,8 +70,8 @@ const treeOf = (spans: ReadonlyArray<{ readonly span: Span; readonly component: 
  */
 // Not handled: an archive written before Signals took kit's reader (one object for each 16 bytes),
 // which scrubbing made denser than that, fails here as a defect saying so. Ingest refuses such
-// exports now, and old files leave the archive within its 90 days; reading them would take a
-// second, looser decoder.
+// exports now, and old files leave the archive within its 90 days. The risk is taken, not handled
+// (PATTERNS.md, "Persistence": old data is migrated, or its risk is taken).
 export const traceViewOf = Effect.fn("traceViewOf")(function* (
   trace: TraceId,
   searched: Period,

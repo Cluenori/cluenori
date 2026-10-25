@@ -459,6 +459,10 @@ export const apnsSettings = Config.all({
 - **Each package's migrations are its own:** an `effect/sql` `Migrator` with a table of its own,
   `<package>_migrations`, so numbers never collide in a project's one database. They run when the
   package's layer is built. Canonical example: `product/foundation/src/foundation-migrations.ts`.
+- **Old data is migrated, or its risk is taken; the code never bends for it** (AGENTS.md, "The best
+  shape over compatibility"). A change that makes stored data unreadable or wrong comes with a
+  migration to the new shape, or a `// Not handled:` comment where the old data may fail. Example:
+  `product/engines/signals/src/read-archived-trace.ts`, `traceViewOf`.
 
 ## 14. Writes, activity, and reactions
 
@@ -472,8 +476,9 @@ workflows, webhooks, agents, and the audit log read (`concept/Foundation.md`, "D
   `feedback.status_changed`. Its payload is a `Schema.TaggedStruct` whose tag is that name,
   exported from the emitting package's contract. Its fields are JSON values, with times as ISO 8601
   text, because activity is stored and delivered as it is.
-- **Changes are additive.** A new field is optional; a breaking change is a new activity name, and
-  the old one keeps being emitted until nothing reacts to it.
+- **Changes take the best shape** (AGENTS.md, "The best shape over compatibility"). An activity's
+  name and payload change with every reaction to it, in one change; stored activity is migrated, or
+  its risk is taken.
 - **Reactions are idempotent.** Delivery through Queues is at least once and may be out of order, so
   a reaction checks before it acts, on a key with a unique index.
 - **Delivery:** the project's object sends its new activity to the activity queue on its alarm
