@@ -7,7 +7,7 @@
   },
   "dependencies": {
     "@bagatka/bun-workspace-rules": "catalog:",
-    "@cluenori/openapi-swift": "workspace:*",
+    "@bagatka/openapi-swift": "catalog:",
     "@cluenori/worker": "workspace:*",
     "@effect/platform-bun": "catalog:",
     "effect": "catalog:"

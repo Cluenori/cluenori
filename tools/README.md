@@ -47,7 +47,7 @@ apps/worker/openapi.json: is out of date with the API definition. Run `bun run g
 
 - `@bagatka/bun-workspace-rules`, to check the dependency rules.
 - `@cluenori/worker`, for the API definitions the OpenAPI documents are generated from.
-- `@cluenori/openapi-swift`, for the Swift clients generated from them.
+- `@bagatka/openapi-swift`, for the Swift clients generated from them.
 - `effect/cli` for commands, and `@effect/platform-bun` for the file system and child processes.
 
 ## Decisions and constraints

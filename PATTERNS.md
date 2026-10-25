@@ -516,7 +516,8 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   `CluenoriApi`; nobody writes request types by hand.
 - **The OpenAPI document is generated and committed,** and a check fails when it is stale, so every
   API change shows in review. So is the iOS app's Swift client of it
-  (`apps/ios/CluenoriApp/Sources/CluenoriClient/CluenoriAPI.swift`); the Kotlin SDK will be too.
+  (`apps/ios/CluenoriApp/Sources/CluenoriClient/CluenoriAPI.swift`), which `@bagatka/openapi-swift`
+  writes from the document; the Kotlin SDK will be too.
 - **Every Schema the API carries has a name,** the one it is exported as: a `Schema.Class`, or
   `.annotate({ identifier: "PhoneList" })` on a struct, union, or literals. The document and the Swift
   client use the code's names, and `bun run generate` refuses an unnamed object or enum, since

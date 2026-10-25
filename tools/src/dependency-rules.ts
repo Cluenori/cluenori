@@ -142,7 +142,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/tools",
     contract: false,
     mayUse: ["packages/*", "apps/worker"],
-    mayInstall: ["effect", "@effect/platform-bun", "@bagatka/bun-workspace-rules"],
+    mayInstall: ["effect", "@effect/platform-bun", "@bagatka/bun-workspace-rules", "@bagatka/openapi-swift"],
     mayInstallForDevelopment: forTests,
   },
   {

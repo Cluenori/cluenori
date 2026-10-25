@@ -696,9 +696,8 @@ conflict.
     `bun run check` from the same table as data, `tools/src/dependency-rules.ts`. Change both
     together.
 - **General packages:** the general capabilities come from bagatka/kit, on npm as `@bagatka/*` at
-  exact versions in the catalog. `packages/` keeps two of Cluenori's own: `github`, a repository's
-  client, on `@bagatka/github-app`'s tokens; and `openapi-swift`, until kit's generator takes the
-  API's `allOf` (Schemas with two checks). Change a general package in kit, not here.
+  exact versions in the catalog. `packages/` keeps one of Cluenori's own: `github`, a repository's
+  client, on `@bagatka/github-app`'s tokens. Change a general package in kit, not here.
 - **High-risk here** (section 8) also covers the envelope and scope keys, and the SDK and its
   manifest.
 - **Composition roots:** `apps/worker`, the Worker's entry and its layers, and the iPhone app's
