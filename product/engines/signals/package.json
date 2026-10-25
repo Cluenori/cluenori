@@ -11,10 +11,10 @@
   },
   "dependencies": {
     "@bagatka/quantile-sketch": "catalog:",
+    "@bagatka/scrub": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/otlp": "workspace:*",
     "@cluenori/projects": "workspace:*",
-    "@cluenori/scrub": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

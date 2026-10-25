@@ -730,7 +730,8 @@ The configuration files are the specification; this entry says what each one own
 
 - **A credential is `Redacted` from the moment it is read** (entry 11), and never logged.
 - **Telemetry is scrubbed before anything stores it:** every text value goes through
-  `@cluenori/scrub`'s `scrubText`, and a value whose name `isSecretName` is removed whole. The
+  Signals' `scrubbedText`, `@bagatka/scrub`'s `scrubText` with Cluenori's own key prefix, and a
+  value whose name `isSecretName` is removed whole. The
   canonical example is `product/engines/signals/src/scrubbed.ts`.
 - **Stores keep a digest, never the credential.** Keys and tokens are compared by their SHA-256
   digests, which also makes the comparison take the same time whatever is presented. The one

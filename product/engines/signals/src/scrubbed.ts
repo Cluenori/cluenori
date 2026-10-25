@@ -1,12 +1,21 @@
+import { isSecretName, scrubText } from "@bagatka/scrub"
 import type { AnyValue, Attributes, ResourceLogs, ResourceSpans } from "@cluenori/otlp"
-import { isSecretName, scrubText } from "@cluenori/scrub"
+
+// Cluenori's own credentials, by their prefix: components' ingest keys
+// (`cluenori.<project>.<component>.<secret>`, `@cluenori/projects`), phones' keys
+// (`cluenori.phone.`) and browsers' sign-ins (`cluenori.sign-in.`), all of them followed by at
+// least 16 key characters. SDK keys (`cluenori-sdk.`) are public, and stay.
+const cluenoriKeyPrefixes = ["cluenori."]
+
+/** `text` without credentials, Cluenori's own included, or personal data. */
+export const scrubbedText = (text: string): string => scrubText(text, cluenoriKeyPrefixes)
 
 const isAttributes = (value: AnyValue): value is Attributes => value instanceof Map
 
 // A value without credentials or personal data; a value named like a credential is removed whole.
 const scrubbedValue = (name: string, value: AnyValue): AnyValue => {
   if (typeof value === "string") {
-    return isSecretName(name) ? "[secret]" : scrubText(value)
+    return isSecretName(name) ? "[secret]" : scrubbedText(value)
   }
   if (value === null || typeof value === "number" || typeof value === "boolean" || value instanceof Uint8Array) {
     return value
@@ -29,10 +38,10 @@ export const scrubbedTraces = (resources: ReadonlyArray<ResourceSpans>): Readonl
       scope: scope.scope,
       spans: scope.spans.map((span) => ({
         ...span,
-        name: scrubText(span.name),
+        name: scrubbedText(span.name),
         attributes: scrubbedAttributes(span.attributes),
         events: span.events.map((event) => ({ ...event, attributes: scrubbedAttributes(event.attributes) })),
-        status: { ...span.status, message: scrubText(span.status.message) },
+        status: { ...span.status, message: scrubbedText(span.status.message) },
       })),
     })),
   }))

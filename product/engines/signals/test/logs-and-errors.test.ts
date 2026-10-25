@@ -109,7 +109,9 @@ describe("readLogs", () => {
         body: "Invite to anna@example.com failed: Bearer abcDEF1234567890",
         attributes: new Map([
           ["password", "hunter2hunter2"],
+          ["api_keys", "k3yv4lu3s"],
           ["url.full", "https://notes.example/join?token=s3cr3t&team=7"],
+          ["sent.with", `Sent with cluenori.notes.notes-api.${"a1B2".repeat(10)}abc, by cluenori-sdk.notes.app.x1`],
         ]),
       })
       const { export: read } = yield* readAt(now, readLogs(encodeLogs(exported)))
@@ -120,7 +122,9 @@ describe("readLogs", () => {
       assert.strictEqual(entry?.message, "Invite to [email] failed: Bearer [token]")
       assert.deepStrictEqual(entry?.attributes, {
         password: "[secret]",
+        api_keys: "[secret]",
         "url.full": "https://notes.example/join?token=[secret]&team=7",
+        "sent.with": "Sent with [token], by cluenori-sdk.notes.app.x1",
       })
       assert.strictEqual(archivedRecord?.body, "Invite to [email] failed: Bearer [token]")
       assert.strictEqual(archivedRecord?.attributes.get("password"), "[secret]")

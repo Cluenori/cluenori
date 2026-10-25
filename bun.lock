@@ -209,16 +209,6 @@
         "vitest": "catalog:",
       },
     },
-    "packages/scrub": {
-      "name": "@cluenori/scrub",
-      "dependencies": {
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@effect/vitest": "catalog:",
-        "vitest": "catalog:",
-      },
-    },
     "packages/web-crypto": {
       "name": "@cluenori/web-crypto",
       "dependencies": {
@@ -365,10 +355,10 @@
       "name": "@cluenori/signals",
       "dependencies": {
         "@bagatka/quantile-sketch": "catalog:",
+        "@bagatka/scrub": "catalog:",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/otlp": "workspace:*",
         "@cluenori/projects": "workspace:*",
-        "@cluenori/scrub": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -493,6 +483,7 @@
   },
   "catalog": {
     "@bagatka/quantile-sketch": "0.1.0",
+    "@bagatka/scrub": "0.1.1",
     "@base-ui/react": "1.9.0",
     "@cloudflare/vitest-plugin": "1.4.6",
     "@effect/atom-react": "4.0.6",
@@ -617,6 +608,8 @@
 
     "@bagatka/quantile-sketch": ["@bagatka/quantile-sketch@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-WAKfKI+ekFZiruczMAFXthNKfqmyK338yWfS798SEq93cvzt15IZCXrbB56gAGd+6YX/UVC7wQhx2NVVN5+rLA=="],
 
+    "@bagatka/scrub": ["@bagatka/scrub@0.1.1", "", {}, "sha512-vSqirW5nMy1gU1loKHZ/+tw0n8Pj77hFYJGLXxPwwMgIMQ8zF6dEPPkcj6RofeB486lMPRSWO+uV3NS5a1q0sw=="],
+
     "@base-ui/react": ["@base-ui/react@1.9.0", "", { "dependencies": { "@babel/runtime": "^7.29.7 || ^8.0.0", "@base-ui/utils": "0.5.0", "@floating-ui/react-dom": "^2.1.9", "@floating-ui/utils": "^0.2.12", "use-sync-external-store": "^1.7.0" }, "peerDependencies": { "@date-fns/tz": "^1.2.0", "@types/react": "^17 || ^18 || ^19", "date-fns": "^4.0.0", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" }, "optionalPeers": ["@date-fns/tz", "@types/react", "date-fns"] }, "sha512-S8CSYosASBKtpL8SWUfS78rFElfLijiCgA7oHOK22jCJ95FULsYyKwBNFOgudt0RA+/7yNc7F81bOvQnRgbBiQ=="],
 
     "@base-ui/utils": ["@base-ui/utils@0.5.0", "", { "dependencies": { "@babel/runtime": "^7.29.7 || ^8.0.0", "@floating-ui/utils": "^0.2.12", "reselect": "^5.3.0", "use-sync-external-store": "^1.7.0" }, "peerDependencies": { "@types/react": "^17 || ^18 || ^19", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" }, "optionalPeers": ["@types/react"] }, "sha512-dYGGcEttjkYiMoa5nHm8vLaJ2UcuTWxo3BFAwOYXeRg/q7UVVvA6cacEIXEs3FgBfK1CGtW1ptElqs7wsx+t9A=="],
@@ -682,8 +675,6 @@
     "@cluenori/releases": ["@cluenori/releases@workspace:product/modules/releases"],
 
     "@cluenori/rs256-jwt": ["@cluenori/rs256-jwt@workspace:packages/rs256-jwt"],
-
-    "@cluenori/scrub": ["@cluenori/scrub@workspace:packages/scrub"],
 
     "@cluenori/signals": ["@cluenori/signals@workspace:product/engines/signals"],
 

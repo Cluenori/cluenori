@@ -136,7 +136,8 @@ the ingest API's, which apps' SDKs call with an SDK key (`AppBatch` is its wire 
 ## Depends on
 
 - `@cluenori/otlp`, to read and write exports; `@bagatka/quantile-sketch`, for percentiles, every sketch at its default accuracy, 2%;
-  `@cluenori/scrub`, to remove secrets and personal data.
+  `@bagatka/scrub`, to remove secrets and personal data, Cluenori's own keys by their prefix,
+  `cluenori.`.
 - `@cluenori/foundation`, for the scope keys and `Period`; `@cluenori/projects`, for the
   `ProjectNotFound` its API answers.
 

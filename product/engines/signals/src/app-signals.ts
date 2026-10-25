@@ -1,3 +1,4 @@
+import { isSecretName } from "@bagatka/scrub"
 import type { ComponentKey } from "@cluenori/foundation"
 import {
   calendarDayOf,
@@ -10,7 +11,6 @@ import {
   ReleaseVersion,
 } from "@cluenori/foundation"
 import type { SdkKey } from "@cluenori/projects"
-import { isSecretName, scrubText } from "@cluenori/scrub"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Ref, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 
@@ -39,6 +39,7 @@ import { appStore } from "./app-store.ts"
 import { keptSignalOf, talliesOf } from "./app-tallies.ts"
 import type { ArchiveSettings } from "./archive-index.ts"
 import type { ArchiveUnavailable } from "./archive-store.ts"
+import { scrubbedText } from "./scrubbed.ts"
 import { migrateSignals } from "./signals-migrations.ts"
 
 /** Whose apps' signals these are, and, for tests, the limits on how much they take. */
@@ -76,7 +77,7 @@ const ArchivedBatch = Schema.fromJsonString(
 
 // A name without credentials or personal data; one the scrubbing made no name is replaced.
 const scrubbedName = (name: EnvelopeName) => {
-  const scrubbed = scrubText(name)
+  const scrubbed = scrubbedText(name)
   return Schema.is(EnvelopeName)(scrubbed) ? scrubbed : EnvelopeName.make("[scrubbed]")
 }
 
@@ -85,14 +86,14 @@ const scrubbedProperty = (key: string, value: unknown) => {
   if (typeof value !== "string") {
     return value
   }
-  return isSecretName(key) ? "[secret]" : scrubText(value)
+  return isSecretName(key) ? "[secret]" : scrubbedText(value)
 }
 
 // MetricKit's JSON without credentials or personal data in any text, and values named like
 // credentials removed whole.
 const scrubbedJson = (value: unknown, name: string): unknown => {
   if (typeof value === "string") {
-    return isSecretName(name) ? "[secret]" : scrubText(value)
+    return isSecretName(name) ? "[secret]" : scrubbedText(value)
   }
   if (Array.isArray(value)) {
     return value.map((item) => scrubbedJson(item, name))
