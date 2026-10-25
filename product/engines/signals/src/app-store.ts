@@ -1,3 +1,5 @@
+import type { QuantileSketch as Sketch } from "@bagatka/quantile-sketch"
+import { countOf, Quantile, QuantileSketch, quantileOf, sketchOf } from "@bagatka/quantile-sketch"
 import {
   calendarDayOfNumber,
   ComponentKey,
@@ -10,8 +12,6 @@ import {
   PersonId,
   ReleaseVersion,
 } from "@cluenori/foundation"
-import type { QuantileSketch as Sketch } from "@cluenori/quantile-sketch"
-import { countOf, mergeSketches, Quantile, QuantileSketch, quantileOf, sketchOf } from "@cluenori/quantile-sketch"
 import { DateTime, Duration, Effect, Option, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 
@@ -39,6 +39,7 @@ import type {
 } from "./app-queries.ts"
 import { CountryCode as CountryCodeSchema, PersonNotFound, TimelineEntry } from "./app-queries.ts"
 import type { PersonSignal, Tallies } from "./app-tallies.ts"
+import { mergedSketch } from "./merged-sketch.ts"
 
 /** How long what is counted by day is kept: 15 months, so a year compares with the one before. */
 export const appDayRetention = Duration.days(455)
@@ -122,7 +123,7 @@ export const appStore = Effect.gen(function* () {
   const encodeSketch = Schema.encodeEffect(SketchJson)
   // Sketches merged, as stored; none for a measure only counted, such as a prewarmed launch.
   const sketchJsonOf = (sketches: ReadonlyArray<Sketch>) =>
-    sketches.length === 0 ? Effect.succeed(null) : encodeSketch(mergeSketches(sketches))
+    sketches.length === 0 ? Effect.succeed(null) : encodeSketch(mergedSketch(sketches))
   const encodeEntry = Schema.encodeEffect(EntryJson)
   const encodeDevice = Schema.encodeEffect(DeviceJson)
   const encodeSdk = Schema.encodeEffect(SdkJson)
@@ -387,7 +388,7 @@ export const appStore = Effect.gen(function* () {
       const stored = yield* findSketch(key)
       const sketches = [
         ...(Option.isSome(stored) && stored.value.sketch !== null ? [stored.value.sketch] : []),
-        ...(tally.values.length === 0 ? [] : [sketchOf(tally.values)]),
+        ...(tally.values.length === 0 ? [] : [sketchOf(tally.values).sketch]),
       ]
       const sketch = yield* sketchJsonOf(sketches)
       yield* sql`
@@ -735,7 +736,7 @@ export const appStore = Effect.gen(function* () {
     }
     const sketchOfMeasure = (measure: string) => {
       const found = sketches.get(measure)
-      return found === undefined ? undefined : mergeSketches(found)
+      return found === undefined ? undefined : mergedSketch(found)
     }
     return { sketchOf: sketchOfMeasure, countOf: (measure: string) => counts.get(measure) ?? 0 }
   }

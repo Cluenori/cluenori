@@ -1,7 +1,7 @@
 import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, Period, ReleaseVersion } from "@cluenori/foundation"
 import { Schema } from "effect"
 
-import { KeptTrace } from "./operation-counts.ts"
+import { KeptTrace } from "./kept-trace.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))

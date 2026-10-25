@@ -1,11 +1,13 @@
+import type { QuantileSketch as Sketch } from "@bagatka/quantile-sketch"
+import { Quantile, QuantileSketch, quantileOf } from "@bagatka/quantile-sketch"
 import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
-import type { QuantileSketch as Sketch } from "@cluenori/quantile-sketch"
-import { mergeSketches, Quantile, QuantileSketch, quantileOf } from "@cluenori/quantile-sketch"
 import { DateTime, Duration, Effect, Option, Order, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 
-import type { KeptTrace, OperationCounts } from "./operation-counts.ts"
-import { HttpStatus, keptPerHour } from "./operation-counts.ts"
+import type { KeptTrace } from "./kept-trace.ts"
+import { HttpStatus, keptPerHour } from "./kept-trace.ts"
+import { mergedSketch } from "./merged-sketch.ts"
+import type { OperationCounts } from "./operation-counts.ts"
 import type {
   OperationRow,
   OperationTable,
@@ -147,7 +149,7 @@ const hoursOf = (counts: ReadonlyArray<OperationCounts>): ReadonlyArray<Operatio
             count: earlier.count + entry.count,
             errors: earlier.errors + entry.errors,
             totalMs: earlier.totalMs + entry.totalMs,
-            durations: mergeSketches([earlier.durations, entry.durations]),
+            durations: mergedSketch([earlier.durations, entry.durations]),
           },
     )
   }
@@ -342,7 +344,7 @@ export const operationStore = Effect.gen(function* () {
     const stored = yield* findDurations(resolution)({ bucket, operation, environment, release })
     const durations = Option.match(stored, {
       onNone: () => counts.durations,
-      onSome: (row) => mergeSketches([row.durations, counts.durations]),
+      onSome: (row) => mergedSketch([row.durations, counts.durations]),
     })
     const json = yield* encodeSketch(durations)
     yield* sql`
@@ -505,7 +507,7 @@ export const operationStore = Effect.gen(function* () {
       return yield* Effect.die("An operation row needs counts")
     }
     const count = rows.reduce((total, counts) => total + counts.count, 0)
-    const durations = mergeSketches(rows.map((counts) => counts.durations))
+    const durations = mergedSketch(rows.map((counts) => counts.durations))
     const p50Ms = yield* percentile(durations, 0.5)
     const p80Ms = yield* percentile(durations, 0.8)
     const p95Ms = yield* percentile(durations, 0.95)
@@ -546,7 +548,7 @@ export const operationStore = Effect.gen(function* () {
     const byStep = Map.groupBy(rows, (row) => floorTo(row.bucket, stepMillis[used]))
     const points = yield* Effect.forEach(byStep, ([start, inStep]) =>
       Effect.gen(function* () {
-        const durations = mergeSketches(inStep.map((row) => row.durations))
+        const durations = mergedSketch(inStep.map((row) => row.durations))
         return {
           start: DateTime.makeUnsafe(start),
           count: inStep.reduce((total, row) => total + row.count, 0),

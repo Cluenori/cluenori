@@ -1,7 +1,7 @@
+import { sketchOf } from "@bagatka/quantile-sketch"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvelopeName, EnvironmentKey, MemberId } from "@cluenori/foundation"
 import { ComponentName, ProjectName, Projects } from "@cluenori/projects"
-import { SketchValue, sketchOf } from "@cluenori/quantile-sketch"
 import type { OperationCounts } from "@cluenori/signals"
 import { BatchDigest, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
@@ -29,7 +29,7 @@ const counts = (operation: string, at: number, count: number, errors = 0): Opera
   count,
   errors,
   totalMs: count * 20,
-  durations: sketchOf(Array.from({ length: count }, () => SketchValue.make(20))),
+  durations: sketchOf(Array.from({ length: count }, () => 20)).sketch,
 })
 
 // The URL of the `index`th of many monitors.

@@ -1,8 +1,8 @@
+import { sketchOf } from "@bagatka/quantile-sketch"
 import type { Actor } from "@cluenori/foundation"
 import { ComponentKey, EnvelopeName, EnvironmentKey, MemberId, Period, ReleaseVersion } from "@cluenori/foundation"
 import { Incidents, MonitorUrl } from "@cluenori/incidents"
 import { ComponentName, ProjectName, Projects } from "@cluenori/projects"
-import { SketchValue, sketchOf } from "@cluenori/quantile-sketch"
 import type { OperationCounts } from "@cluenori/signals"
 import { BatchDigest, ErrorGroupId, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
@@ -39,7 +39,7 @@ const counts = (
   count,
   errors,
   totalMs: count * ms,
-  durations: sketchOf(Array.from({ length: count }, () => SketchValue.make(ms))),
+  durations: sketchOf(Array.from({ length: count }, () => ms)).sketch,
 })
 
 let batches = 0

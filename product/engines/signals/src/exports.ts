@@ -1,8 +1,9 @@
 import { Instant, TraceId } from "@cluenori/foundation"
 import { Schema } from "effect"
 
+import { KeptTrace } from "./kept-trace.ts"
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
-import { BatchDigest, KeptTrace, OperationCounts } from "./operation-counts.ts"
+import { BatchDigest, OperationCounts } from "./operation-counts.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 

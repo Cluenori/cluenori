@@ -1,3 +1,4 @@
+import { sketchOf } from "@bagatka/quantile-sketch"
 import type { AppStoreConnect, AppStoreVersion, Build } from "@cluenori/app-store-connect"
 import { AppStoreConnectRefused } from "@cluenori/app-store-connect"
 import type { Actor } from "@cluenori/foundation"
@@ -5,7 +6,6 @@ import { ComponentKey, EnvelopeName, EnvironmentKey, MemberId, Period, ReleaseVe
 import type { Comparison, ReleaseToPublish } from "@cluenori/github"
 import { CommitSha, GitHub, GitHubRefused, Repository } from "@cluenori/github"
 import { BundleId, ComponentName, ProjectName, Projects } from "@cluenori/projects"
-import { SketchValue, sketchOf } from "@cluenori/quantile-sketch"
 import type { OperationCounts } from "@cluenori/signals"
 import { BatchDigest, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
@@ -38,7 +38,7 @@ const counts = (release: ReleaseVersion, at: number, count: number): OperationCo
   count,
   errors: 0,
   totalMs: count * 20,
-  durations: sketchOf(Array.from({ length: count }, () => SketchValue.make(20))),
+  durations: sketchOf(Array.from({ length: count }, () => 20)).sketch,
 })
 
 let batches = 0

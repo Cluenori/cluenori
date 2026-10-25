@@ -1,10 +1,10 @@
+import { sketchOf } from "@bagatka/quantile-sketch"
 import type { AppStoreConnect, AppStoreVersion, Build } from "@cluenori/app-store-connect"
 import type { Actor } from "@cluenori/foundation"
 import { ComponentKey, EnvelopeName, EnvironmentKey, MemberId, ReleaseVersion } from "@cluenori/foundation"
 import type { WorkflowRun } from "@cluenori/github"
 import { CommitSha, GitHub, Repository, WorkflowFile } from "@cluenori/github"
 import { BundleId, ComponentName, ProjectName, Projects } from "@cluenori/projects"
-import { SketchValue, sketchOf } from "@cluenori/quantile-sketch"
 import type { OperationCounts } from "@cluenori/signals"
 import { BatchDigest, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
@@ -68,7 +68,7 @@ const ran = (component: ComponentKey, release: ReleaseVersion, environment: Envi
       count: 100,
       errors: 0,
       totalMs: 2000,
-      durations: sketchOf(Array.from({ length: 100 }, () => SketchValue.make(20))),
+      durations: sketchOf(Array.from({ length: 100 }, () => 20)).sketch,
     }
     const now = yield* DateTime.now
     yield* signals.recordTraces(component, {

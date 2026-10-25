@@ -1,14 +1,15 @@
+import { sketchOf } from "@bagatka/quantile-sketch"
 import { EnvelopeName, EnvironmentKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import type { Attributes, Span } from "@cluenori/otlp"
 import { decodeTraces, encodeTraces } from "@cluenori/otlp"
-import type { SketchValue } from "@cluenori/quantile-sketch"
-import { SketchValue as SketchValueSchema, sketchOf } from "@cluenori/quantile-sketch"
 import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Hex } from "effect/encoding"
 
 import type { TraceExport } from "./exports.ts"
-import type { KeptTrace, OperationCounts } from "./operation-counts.ts"
-import { BatchDigest, HttpStatus, keptPerHour } from "./operation-counts.ts"
+import type { KeptTrace } from "./kept-trace.ts"
+import { HttpStatus, keptPerHour } from "./kept-trace.ts"
+import type { OperationCounts } from "./operation-counts.ts"
+import { BatchDigest } from "./operation-counts.ts"
 import { scrubbedTraces } from "./scrubbed.ts"
 
 /**
@@ -109,7 +110,7 @@ interface Group {
   count: number
   errors: number
   totalMs: number
-  readonly durations: Array<SketchValue>
+  readonly durations: Array<number>
 }
 
 /**
@@ -164,7 +165,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
           group.count += 1
           group.errors += failed ? 1 : 0
           group.totalMs += durationMs
-          group.durations.push(SketchValueSchema.make(durationMs))
+          group.durations.push(durationMs)
           groups.set(key, group)
           if (Schema.is(TraceId)(span.traceId)) {
             const status = statusOf(span)
@@ -195,7 +196,8 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
     count: group.count,
     errors: group.errors,
     totalMs: group.totalMs,
-    durations: sketchOf(group.durations),
+    // `problemOf` refused spans that end before they start, so the sketch refuses none.
+    durations: sketchOf(group.durations).sketch,
   }))
   const spans = resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
   const earliest = spans.reduce(

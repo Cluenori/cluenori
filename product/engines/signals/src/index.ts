@@ -90,7 +90,8 @@ export { logRetention, readLogs } from "./read-logs.ts"
 export { readMetrics } from "./read-metrics.ts"
 export type { ReadTraces, Rejected } from "./read-traces.ts"
 export { bucketMillis, environmentOf, readTraces, countRetention } from "./read-traces.ts"
-export { BatchDigest, HttpStatus, KeptTrace, keptPerHour, OperationCounts } from "./operation-counts.ts"
+export { HttpStatus, KeptTrace, keptPerHour } from "./kept-trace.ts"
+export { BatchDigest, OperationCounts } from "./operation-counts.ts"
 export {
   OperationRow,
   OperationTable,

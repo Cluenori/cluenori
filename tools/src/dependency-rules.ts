@@ -2,6 +2,10 @@ import type { PackageRule } from "@cluenori/workspace-rules"
 
 const forTests = ["@effect/vitest", "vitest"]
 
+// bagatka/kit's packages from npm, the general capabilities that were first written here
+// (AGENTS.md, "General packages"), each at its exact version in the catalog.
+const toolkit = ["@bagatka/quantile-sketch"]
+
 // Product packages run inside a project's Durable Object, so their tests do too: in workerd, on the
 // Durable Object's SQLite.
 const forTestsInDurableObjects = ["@cloudflare/vitest-plugin", "@effect/sql-sqlite-do", "wrangler", ...forTests]
@@ -54,7 +58,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/*",
     contract: true,
     mayUse: ["packages/*", "product/foundation", "product/engines/*"],
-    mayInstall: ["effect"],
+    mayInstall: ["effect", ...toolkit],
     mayInstallForDevelopment: forTestsInDurableObjects,
   },
   {
@@ -62,7 +66,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/*",
     contract: true,
     mayUse: ["packages/*", "product/foundation", "product/engines/*"],
-    mayInstall: ["effect"],
+    mayInstall: ["effect", ...toolkit],
     mayInstallForDevelopment: forTestsInDurableObjects,
   },
   {

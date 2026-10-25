@@ -300,5 +300,15 @@ export const migrateSignals = Migrator.make({})({
       ) WITHOUT ROWID`
       yield* sql`CREATE INDEX signals_app_timeline_at ON signals_app_timeline (at)`
     }),
+    // Each stored sketch names its accuracy, as @bagatka/quantile-sketch reads them. Every sketch
+    // until now was made at 2%, with that accuracy's buckets, so naming it changes no value.
+    "0010_sketch_accuracy": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      for (const table of ["signals_minute_counts", "signals_hour_counts"]) {
+        yield* sql`UPDATE ${sql(table)} SET durations = json_set(durations, '$.relativeAccuracy', 0.02)`
+      }
+      yield* sql`UPDATE signals_app_measures SET sketch = json_set(sketch, '$.relativeAccuracy', 0.02)
+        WHERE sketch IS NOT NULL`
+    }),
   }),
 })

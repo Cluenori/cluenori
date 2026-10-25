@@ -1,7 +1,5 @@
 import type { FeatureKey, PersonId, ReleaseVersion, SessionId } from "@cluenori/foundation"
 import { dayNumberOf } from "@cluenori/foundation"
-import type { SketchValue } from "@cluenori/quantile-sketch"
-import { SketchValue as SketchValueSchema } from "@cluenori/quantile-sketch"
 import { DateTime } from "effect"
 
 import type { AppSignal, AppUserId } from "./app-batch.ts"
@@ -50,7 +48,7 @@ export interface MeasureTally {
   readonly feature: string
   readonly measure: Measure
   /** Empty for a measure only counted, such as a prewarmed launch. */
-  readonly values: Array<SketchValue>
+  readonly values: Array<number>
   count: number
 }
 
@@ -101,8 +99,6 @@ const featureOf = (feature: FeatureKey | undefined) => feature ?? ""
 
 // Keys of maps whose parts hold no NUL, so it separates them unambiguously.
 const keyOf = (...parts: ReadonlyArray<string | number>) => parts.join("\u0000")
-
-const measureValue = (value: number) => SketchValueSchema.make(value)
 
 // A signal as kept by person: the app's own user ID stays out, as the person stands for it.
 const withoutUser = <S extends { readonly user?: AppUserId }>(signal: S): Omit<S, "user"> => {
@@ -173,7 +169,7 @@ export const talliesOf = (signals: ReadonlyArray<PersonSignal>, release: Release
     measures.set(key, tally)
     tally.count += 1
     if (value !== undefined) {
-      tally.values.push(measureValue(value))
+      tally.values.push(value)
     }
   }
   const sessionOf = (person: PersonId, session: SessionId, at: number) => {

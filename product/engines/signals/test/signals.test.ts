@@ -1,7 +1,7 @@
+import { sketchOf } from "@bagatka/quantile-sketch"
 import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import type { Span } from "@cluenori/otlp"
 import { encodeTraces } from "@cluenori/otlp"
-import { SketchValue, sketchOf } from "@cluenori/quantile-sketch"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Duration, Effect } from "effect"
 import { Base64 } from "effect/encoding"
@@ -39,7 +39,7 @@ const counts = (operation: string, count: number, overrides: Partial<OperationCo
   count,
   errors: 0,
   totalMs: count * 10,
-  durations: sketchOf(Array.from({ length: count }, () => SketchValue.make(10))),
+  durations: sketchOf(Array.from({ length: count }, () => 10)).sketch,
   ...overrides,
 })
 
@@ -446,7 +446,7 @@ describe("Signals", () => {
         // GET /slow a hundred times, taking 100 to 199 ms; four quick ones elsewhere.
         const slow = counts("GET /slow", 100, {
           totalMs: 14_950,
-          durations: sketchOf(Array.from({ length: 100 }, (_, index) => SketchValue.make(100 + index))),
+          durations: sketchOf(Array.from({ length: 100 }, (_, index) => 100 + index)).sketch,
         })
         yield* signals.recordTraces(api, batchOf("e", [counts("GET /a", 4), slow]))
         const operation = EnvelopeName.make("GET /slow")
@@ -749,6 +749,40 @@ describe("Signals by release", () => {
         )
       }),
     ),
+  )
+
+  it.effect("reads the sketches stored before they named their accuracy", () =>
+    Effect.gen(function* () {
+      // A database as it was before: its sketches without `relativeAccuracy`, the change undone.
+      yield* inProject(
+        "before-accuracy",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          const sql = yield* SqlClient.SqlClient
+          yield* signals.recordTraces(api, batchOf("a", [counts("GET /a", 3)]))
+          for (const table of ["signals_minute_counts", "signals_hour_counts"]) {
+            yield* sql`UPDATE ${sql(table)} SET durations = json_remove(durations, '$.relativeAccuracy')`
+          }
+          yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 10`
+        }).pipe(Effect.orDie),
+      )
+      // Built again on it, its percentiles read as before, and new counts merge with them.
+      const read = yield* inProject(
+        "before-accuracy",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordTraces(api, batchOf("b", [counts("GET /a", 2)]))
+          const table = yield* signals.operations({ period: lastHour })
+          return table.rows.map((row) => [row.count, row.p50Ms])
+        }),
+      )
+
+      assert.strictEqual(read.length, 1)
+      assert.strictEqual(read[0]?.[0], 5)
+      assert.closeTo(read[0]?.[1] ?? 0, 10, 10 * 0.02)
+    }),
   )
 
   it.effect("keeps the counts from before releases were counted, as release unknown", () =>
