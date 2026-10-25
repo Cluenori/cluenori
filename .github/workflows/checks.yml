@@ -37,3 +37,9 @@ jobs:
 
       - name: bun run ${{ matrix.command }}
         run: ./dev sh -c 'bun install --frozen-lockfile && bun run "$1"' sh "${{ matrix.command }}"
+
+      # A frozen install doesn't notice a dependency removed from a package.json; a lock that an
+      # install would change is out of date.
+      - name: bun.lock is up to date
+        if: matrix.command == 'check'
+        run: ./dev bun install --silent && git diff --exit-code bun.lock

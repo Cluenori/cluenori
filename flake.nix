@@ -22,9 +22,11 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          node = pkgs.nodejs_latest;
         in
         {
-          # No C compiler: every dependency ships built, and it is a third of the shell's download.
+          # Only what the repository's commands run, as the shell is every orb's download. No C
+          # compiler: every dependency ships built, and it was a third of it.
           default = pkgs.mkShellNoCC {
             packages = [
               # Installs packages and runs the repository's programs. Never the deployed runtime:
@@ -33,8 +35,8 @@
               # modules.
               pkgs.bun
 
-              # Wrangler and Vitest run on Node; Wrangler requires Node 22 or later.
-              pkgs.nodejs_24
+              # Wrangler and Vitest run on Node (Wrangler requires 22 or later): its newest release.
+              node
             ];
 
             # Wrangler asks before sending usage data; nobody should be asked in a dev shell.

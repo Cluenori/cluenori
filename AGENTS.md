@@ -642,7 +642,7 @@ conflict.
   programs, Vitest 5 with `@effect/vitest` and `@cloudflare/vitest-plugin`, Oxlint and Oxfmt, Nix.
   Production code runs in workerd, never in Bun.
 - **Environment:** `./dev` (Nix) opens a shell with the pinned Bun and Node (which Wrangler needs);
-  Git is the machine's own.
+  Git is the machine's own. Bun installs every dependency, so there is no npm in it.
 - **The repository is public.** No names of the founder's private products, real domains, Apple
   team IDs, or bundle IDs in any file or commit message. A deployment's domain, URL and token stay
   out of committed config: `./setup` asks for them and keeps them in

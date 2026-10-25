@@ -316,9 +316,10 @@ From `concept/`; each gets its pattern when it is built.
 
 ## Toolchain and entry points
 
-- **Nix pins the toolchain:** Bun and Node 24 (Wrangler requires Node 22 or later); Git is the
-  machine's own. Wrangler, TypeScript, and everything else come from `bun.lock`, so every machine
-  uses the same versions.
+- **Nix pins the toolchain:** Bun, and Node's newest release (Wrangler requires Node 22 or later);
+  Git is the machine's own, which cloned the repository. Bun installs every dependency, so there is
+  no npm in it: nothing here is published. Wrangler,
+  TypeScript, and everything else come from `bun.lock`, so every machine uses the same versions.
 - **Five entry points, one command each:**
   - `./dev` opens the pinned shell.
   - `./run` runs Cluenori on this computer, with local Durable Objects, R2, and Queues, and an API
