@@ -15,8 +15,10 @@ import { defineConfig } from "vite"
 // module; and to 250 KB when the pages began asking Analytics' questions (their atoms in
 // project-data.ts, their routes; the pages themselves load after start); and to 253 KB when Effect
 // went from 4.0.5 to 4.0.6, which the toolkit's packages need, and which alone took the first load
-// from 249.4 KB to 252.8 KB.
-const firstLoadBudget = { scriptKb: 253, styleKb: 36 }
+// from 249.4 KB to 252.8 KB; and to 254 KB with @bagatka/webauthn (252.3 KB to 253.9 KB): the API's
+// passkey Schemas come with the module's checks, which a bundler keeps since its top-level
+// `Effect.fn` calls aren't marked pure. Kit's fix (a pure mark, or the Schemas apart) gives it back.
+const firstLoadBudget = { scriptKb: 254, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

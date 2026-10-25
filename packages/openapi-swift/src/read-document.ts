@@ -160,6 +160,8 @@ export const readDocument = Effect.fn("readDocument")(function* (document: unkno
     }
   }
 
+  const isNullType = (schema: unknown) => isRecord(schema) && schema["type"] === "null"
+
   const valueType = (schema: unknown, path: string): Effect.Effect<ValueType, UnsupportedOpenApi> =>
     Effect.gen(function* () {
       if (!isRecord(schema)) {
@@ -239,7 +241,17 @@ export const readDocument = Effect.fn("readDocument")(function* (document: unkno
         if (constant !== undefined) {
           constants.push({ key, value: constant })
         } else {
-          properties.push({ key, type: yield* valueType(property, propertyPath), required: required.includes(key) })
+          const isRequired = required.includes(key)
+          // One type or null, on a property that may be missing: Swift's optional holds both, and
+          // nil is sent as the key left out. A required one would have to be sent as null: refused.
+          const members = isRecord(property) ? property["anyOf"] : undefined
+          const nonNull = Array.isArray(members) ? members.filter((member) => !isNullType(member)) : []
+          const nullable = Array.isArray(members) && members.length === 2 && nonNull.length === 1
+          if (nullable && isRequired) {
+            return yield* refused(propertyPath, "a required property that may be null")
+          }
+          const type = yield* valueType(nullable ? nonNull[0] : property, propertyPath)
+          properties.push({ key, type, required: isRequired })
         }
       }
       const declaration = { _tag: "Struct", name, properties, constants } as const

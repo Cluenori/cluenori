@@ -1,6 +1,11 @@
+import {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+} from "@bagatka/webauthn"
 import { MemberId, NotAllowed, ProjectKey } from "@cluenori/foundation"
 import { ProjectNotFound } from "@cluenori/projects"
-import { AssertionResponse, CreationOptions, RegistrationResponse, RequestOptions } from "@cluenori/webauthn"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
@@ -28,7 +33,7 @@ export const SetProjects = Schema.Struct({ projects: Schema.Array(ProjectKey) })
 export const InvitationCode = Schema.Struct({ code: InviteCode }).annotate({ identifier: "InvitationCode" })
 
 /** An invitation's code, and the passkey made with its options. */
-export const JoinWithPasskey = Schema.Struct({ code: InviteCode, registration: RegistrationResponse }).annotate({
+export const JoinWithPasskey = Schema.Struct({ code: InviteCode, registration: RegistrationResponseJSON }).annotate({
   identifier: "JoinWithPasskey",
 })
 
@@ -41,14 +46,16 @@ export class MembersGroup extends HttpApiGroup.make("members")
     ),
   )
   .add(
-    HttpApiEndpoint.post("passkeyOptions", "/me/passkeys/options", { success: CreationOptions }).annotate(
+    HttpApiEndpoint.post("passkeyOptions", "/me/passkeys/options", {
+      success: PublicKeyCredentialCreationOptionsJSON,
+    }).annotate(
       OpenApi.Description,
       "The options that make another passkey for the member who calls, on this site, good for 5 minutes: pass them to navigator.credentials.create().",
     ),
   )
   .add(
     HttpApiEndpoint.post("addPasskey", "/me/passkeys", {
-      payload: RegistrationResponse,
+      payload: RegistrationResponseJSON,
       success: HttpApiSchema.NoContent,
       error: PasskeyRejected.pipe(HttpApiSchema.status(400)),
     }).annotate(
@@ -120,7 +127,7 @@ export class PasskeysGroup extends HttpApiGroup.make("passkeys")
   .add(
     HttpApiEndpoint.post("joinOptions", "/invites/options", {
       payload: InvitationCode,
-      success: CreationOptions,
+      success: PublicKeyCredentialCreationOptionsJSON,
       error: InviteRejected.pipe(HttpApiSchema.status(403)),
     }).annotate(
       OpenApi.Description,
@@ -138,14 +145,16 @@ export class PasskeysGroup extends HttpApiGroup.make("passkeys")
     ),
   )
   .add(
-    HttpApiEndpoint.post("signInOptions", "/sign-in/passkey/options", { success: RequestOptions }).annotate(
+    HttpApiEndpoint.post("signInOptions", "/sign-in/passkey/options", {
+      success: PublicKeyCredentialRequestOptionsJSON,
+    }).annotate(
       OpenApi.Description,
       "The options that sign in with any of this site's passkeys, good for 5 minutes: pass them to navigator.credentials.get().",
     ),
   )
   .add(
     HttpApiEndpoint.post("signInWithPasskey", "/sign-in/passkey", {
-      payload: AssertionResponse,
+      payload: AuthenticationResponseJSON,
       success: Member,
       error: PasskeyRejected.pipe(HttpApiSchema.status(401)),
     }).annotate(

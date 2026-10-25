@@ -695,11 +695,10 @@ conflict.
   - Allowed dependencies are in `ARCHITECTURE.md`, "Dependency rules", and checked by
     `bun run check` from the same table as data, `tools/src/dependency-rules.ts`. Change both
     together.
-- **General packages:** `packages/` holds `@cluenori/*`, the first versions of what bagatka/kit now
-  owns as `@bagatka/*`, reshaped there: `es256-jwt` and `rs256-jwt` are `jwt`,
-  `cloudflare-workers-ai` is `ai-cloudflare-binding`, `github`'s app part is `github-app` and the
-  rest of it stays here, and `web-crypto` gave way to Effect's own. When one is on npm, Cluenori
-  takes it at an exact version and deletes its copy in the same change.
+- **General packages:** the general capabilities come from bagatka/kit, on npm as `@bagatka/*` at
+  exact versions in the catalog. `packages/` keeps two of Cluenori's own: `github`, a repository's
+  client, on `@bagatka/github-app`'s tokens; and `openapi-swift`, until kit's generator takes the
+  API's `allOf` (Schemas with two checks). Change a general package in kit, not here.
 - **High-risk here** (section 8) also covers the envelope and scope keys, and the SDK and its
   manifest.
 - **Composition roots:** `apps/worker`, the Worker's entry and its layers, and the iPhone app's

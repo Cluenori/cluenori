@@ -1,9 +1,13 @@
+import type { SoftwareAuthenticator } from "@bagatka/webauthn"
+import {
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  softwareAuthenticator,
+} from "@bagatka/webauthn"
 import { ProjectKey } from "@cluenori/foundation"
 import { Email, InviteCode, Member, SignInList } from "@cluenori/members"
 import { AppVersion, ModelIdentifier, PairedPhone, PairingCode, SystemVersion } from "@cluenori/phones"
 import { ProjectList, ProjectName } from "@cluenori/projects"
-import type { SoftwareAuthenticator } from "@cluenori/webauthn"
-import { CreationOptions, RequestOptions, softwareAuthenticator } from "@cluenori/webauthn"
 import { assert, layer } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
@@ -48,19 +52,22 @@ const ceremony = Effect.fn("ceremony")(function* (
 ) {
   if (kind === "join") {
     const options = yield* fromBrowser("POST", "/invites/options", "", { code }).pipe(
-      Effect.flatMap(decoded(CreationOptions)),
+      Effect.flatMap(decoded(PublicKeyCredentialCreationOptionsJSON)),
     )
-    const registration = yield* device.register({ ...site, challenge: options.challenge })
+    const registration = yield* device.register(
+      { ...site, challenge: options.challenge },
+      { userHandle: options.user.id },
+    )
     return yield* fromBrowser("POST", "/invites/join", "", { code, registration })
   }
   const options = yield* fromBrowser("POST", "/sign-in/passkey/options", "").pipe(
-    Effect.flatMap(decoded(RequestOptions)),
+    Effect.flatMap(decoded(PublicKeyCredentialRequestOptionsJSON)),
   )
   return yield* fromBrowser(
     "POST",
     "/sign-in/passkey",
     "",
-    yield* device.sign({ ...site, challenge: options.challenge }),
+    yield* device.authenticate({ ...site, challenge: options.challenge }),
   )
 })
 
@@ -143,10 +150,10 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("members", (it) => {
       // Another phone signs in with Ada's passkey, synced to it, in place of a pairing code: it acts
       // for Ada, and sees what Ada sees.
       const phoneOptions = yield* fromBrowser("POST", "/sign-in/passkey/options", "").pipe(
-        Effect.flatMap(decoded(RequestOptions)),
+        Effect.flatMap(decoded(PublicKeyCredentialRequestOptionsJSON)),
       )
       const signedOnPhone = yield* fromBrowser("POST", "/phones/passkey", "", {
-        assertion: yield* device.sign({ ...site, challenge: phoneOptions.challenge }),
+        assertion: yield* device.authenticate({ ...site, challenge: phoneOptions.challenge }),
         model: "iPhone19,3",
         systemVersion: "27.0",
         appVersion: "1.0 (1)",
@@ -163,10 +170,10 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("members", (it) => {
       // A passkey the deployment doesn't know pairs nothing.
       const stranger = yield* softwareAuthenticator(crypto)
       const strangerOptions = yield* fromBrowser("POST", "/sign-in/passkey/options", "").pipe(
-        Effect.flatMap(decoded(RequestOptions)),
+        Effect.flatMap(decoded(PublicKeyCredentialRequestOptionsJSON)),
       )
       const refused = yield* fromBrowser("POST", "/phones/passkey", "", {
-        assertion: yield* stranger.sign({ ...site, challenge: strangerOptions.challenge }),
+        assertion: yield* stranger.authenticate({ ...site, challenge: strangerOptions.challenge }),
         model: "iPhone19,3",
         systemVersion: "27.0",
         appVersion: "1.0 (1)",

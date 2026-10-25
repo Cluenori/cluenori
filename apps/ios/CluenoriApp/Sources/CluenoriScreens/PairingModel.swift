@@ -146,7 +146,8 @@ public final class PairingModel {
     /// for with the deployment's options, in place of a pairing link. A phone paired before stays
     /// paired when it fails, and `problem` says why.
     public func signInWithPasskey(
-        _ askForPasskey: (PasskeyRequestOptions) async throws(PasskeyRefusal) -> PasskeyAssertion
+        _ askForPasskey:
+            (PublicKeyCredentialRequestOptionsJSON) async throws(PasskeyRefusal) -> AuthenticationResponseJSON
     ) async {
         guard let deployment = passkeyDeployment else { return }
         let before = state
@@ -155,7 +156,7 @@ public final class PairingModel {
         canRetry = false
         do throws(APIError) {
             let options = try await PairedDeployment.passkeyOptions(at: deployment, as: details, transport: transport)
-            let assertion: PasskeyAssertion
+            let assertion: AuthenticationResponseJSON
             do throws(PasskeyRefusal) {
                 assertion = try await askForPasskey(options)
             } catch {

@@ -51,7 +51,7 @@ its exact rule.
 | Phone key | The credential a paired phone calls the API with: `cluenori.phone.<phone ID>.<secret>` | `PhoneKey`, `@cluenori/phones` | API token (the deployment's), device token (APNs') |
 | Member | Someone who signs in to the deployment: an owner, who sees every project and manages members, or a member, who sees the projects chosen | `Member`, `Members`, `@cluenori/members` | user (that is an end user: a person), account (a customer's), team |
 | Invitation | A link good once for 7 days that makes its member's passkey and signs them in: `<deployment>/invite#<code>` | `Invite`, `InviteCode`, `@cluenori/members` | invite code, signup link |
-| Passkey | A key a person's device keeps for the deployment's site, unlocked by Face ID, Touch ID or a PIN: how members sign in | `Passkey`, `@cluenori/webauthn` | password, credential (any of the ways in) |
+| Passkey | A key a person's device keeps for the deployment's site, unlocked by Face ID, Touch ID or a PIN: how members sign in | `Passkey`, `@bagatka/webauthn` | password, credential (any of the ways in) |
 | Sign-in | A browser signed in as a member, kept 30 days: what it is, and when and where it was last seen | `SignIn`, `SignInToken`, `@cluenori/members` | session (that is a person's app session), login |
 | Access | What a member sees: every project, or those listed | `Access`, `canSee`, `@cluenori/members` | permissions, scope (scope keys place records), role (owner or member) |
 | Alert | A push to a paired phone about an incident: when it opens, gets worse, reopens, recovers, or someone acknowledges it | `Alert`, `Notifications`, `@cluenori/notifications` | notification (any of them, alerts are one kind), page, incident (what an alert is about) |

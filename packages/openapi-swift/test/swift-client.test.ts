@@ -56,7 +56,8 @@ const notes = {
           id: ref("NoteId"),
           text,
           writtenAt: { type: "string", format: "date-time" },
-          pinned: { type: "boolean" },
+          // May be missing or null: an optional either way.
+          pinned: { anyOf: [{ type: "boolean" }, { type: "null" }] },
           default: text,
           attributes: { type: "object" },
           source: ref("Source"),
@@ -201,6 +202,17 @@ describe("swiftClient", () => {
         withSchema("AddNote", { type: "object", properties: { color: { type: "string", enum: ["red", "blue"] } } }),
       )
       assert.strictEqual(inlineEnum.path, "#/components/schemas/AddNote/properties/color")
+      const requiredNull = yield* refusal(
+        withSchema("AddNote", {
+          type: "object",
+          properties: { color: { anyOf: [{ type: "string" }, { type: "null" }] } },
+          required: ["color"],
+        }),
+      )
+      assert.deepStrictEqual(
+        { path: requiredNull.path, reason: requiredNull.reason },
+        { path: "#/components/schemas/AddNote/properties/color", reason: "a required property that may be null" },
+      )
     }),
   )
 

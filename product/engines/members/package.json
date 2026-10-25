@@ -10,9 +10,9 @@
     "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
   },
   "dependencies": {
+    "@bagatka/webauthn": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/projects": "workspace:*",
-    "@cluenori/webauthn": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

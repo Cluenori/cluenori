@@ -1,14 +1,20 @@
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+  WebAuthnCrypto,
+} from "@bagatka/webauthn"
+import {
+  authenticationOptions,
+  challengeOf,
+  registrationOptions,
+  verifyAuthentication,
+  verifyRegistration,
+} from "@bagatka/webauthn"
 import type { Actor, Caller } from "@cluenori/foundation"
 import { ActivityLog, Instant, MemberId, NotAllowed, ProjectKey, Source } from "@cluenori/foundation"
 import { ProjectIndex, ProjectNotFound } from "@cluenori/projects"
-import type {
-  AssertionResponse,
-  CreationOptions,
-  RegistrationResponse,
-  RequestOptions,
-  WebAuthnCrypto,
-} from "@cluenori/webauthn"
-import { challengeOf, creationOptions, requestOptions, verifyAssertion, verifyRegistration } from "@cluenori/webauthn"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Base64Url, Hex } from "effect/encoding"
 import { SqlClient, SqlSchema } from "effect/sql"
@@ -88,6 +94,9 @@ const PasskeyRow = Schema.Struct({
 })
 const InviteRow = Schema.Struct({ email: Email, projects: Schema.fromJsonString(Schema.Array(ProjectKey)) })
 
+// The account a member's passkeys name, WebAuthn's user handle: their ID's bytes, in base64url.
+const userHandleOf = (member: MemberId) => Base64Url.encode(member)
+
 // A passkey that didn't hold: why goes to the log, and the person is told only to try again.
 const rejectedPasskey = (rejected: { readonly reason: string }) =>
   Effect.logWarning("A passkey was refused", { reason: rejected.reason }).pipe(
@@ -123,7 +132,10 @@ export class Members extends Context.Service<
      * The options that make the invited person's passkey on `site`. Fails with `InviteRejected`
      * for an invitation that is wrong, used, or expired, the same way whichever.
      */
-    readonly startJoining: (code: InviteCode, site: Site) => Effect.Effect<CreationOptions, InviteRejected>
+    readonly startJoining: (
+      code: InviteCode,
+      site: Site,
+    ) => Effect.Effect<PublicKeyCredentialCreationOptionsJSON, InviteRejected>
     /**
      * Makes the member, with the passkey they made from `startJoining`'s options and the projects of
      * their invitation, with `member.joined` and `passkey.added`, and signs their browser in. The
@@ -132,19 +144,19 @@ export class Members extends Context.Service<
      */
     readonly join: (
       code: InviteCode,
-      registration: RegistrationResponse,
+      registration: RegistrationResponseJSON,
       site: Site,
       caller: Caller,
     ) => Effect.Effect<SignedIn, InviteRejected | PasskeyRejected>
     /** The options that sign in with any of `site`'s passkeys. */
-    readonly startSignIn: (site: Site) => Effect.Effect<RequestOptions>
+    readonly startSignIn: (site: Site) => Effect.Effect<PublicKeyCredentialRequestOptionsJSON>
     /**
      * Signs in with a passkey answering `startSignIn`'s options: its member, and a sign-in for the
      * browser `caller` is. `PasskeyRejected` for a passkey the deployment doesn't know, or an answer that doesn't
      * hold, the same way whichever.
      */
     readonly signIn: (
-      assertion: AssertionResponse,
+      assertion: AuthenticationResponseJSON,
       site: Site,
       caller: Caller,
     ) => Effect.Effect<SignedIn, PasskeyRejected>
@@ -153,7 +165,10 @@ export class Members extends Context.Service<
      * its own credential afterwards, such as a phone that pairs. No browser sign-in is made.
      * `PasskeyRejected` as for `signIn`.
      */
-    readonly verifyPasskey: (assertion: AssertionResponse, site: Site) => Effect.Effect<Member, PasskeyRejected>
+    readonly verifyPasskey: (
+      assertion: AuthenticationResponseJSON,
+      site: Site,
+    ) => Effect.Effect<Member, PasskeyRejected>
     /**
      * Who a browser's sign-in is for, and what they see. `SignInRejected`, the same way whatever is
      * wrong, for a token that isn't a sign-in, that signed out, that is older than 30 days, or whose
@@ -177,14 +192,17 @@ export class Members extends Context.Service<
      */
     readonly endSignIn: (actor: Actor, signIn: SignInId) => Effect.Effect<void, SignInNotFound>
     /** The options that add a passkey on `site` for the signed-in member `actor`. */
-    readonly startAddingPasskey: (actor: Actor, site: Site) => Effect.Effect<CreationOptions, NotAllowed>
+    readonly startAddingPasskey: (
+      actor: Actor,
+      site: Site,
+    ) => Effect.Effect<PublicKeyCredentialCreationOptionsJSON, NotAllowed>
     /**
      * Adds the passkey `actor` made from `startAddingPasskey`'s options, with `passkey.added`.
      * `PasskeyRejected` when it doesn't hold.
      */
     readonly addPasskey: (
       actor: Actor,
-      registration: RegistrationResponse,
+      registration: RegistrationResponseJSON,
       site: Site,
     ) => Effect.Effect<void, NotAllowed | PasskeyRejected>
     /**
@@ -353,14 +371,14 @@ export class Members extends Context.Service<
           return [...new Set(projects)].toSorted()
         })
 
-        // A challenge for one ceremony of `purpose` on `site`, about `subject`.
-        const newChallenge = Effect.fn("Members.newChallenge")(function* (
+        // Keeps the challenge of one ceremony's options, of `purpose` on `site`, about `subject`.
+        const keepChallenge = Effect.fn("Members.keepChallenge")(function* (
+          challenge: string,
           purpose: string,
           subject: string,
           site: Site,
         ) {
           const now = yield* nowMs
-          const challenge = yield* secret
           yield* sql`DELETE FROM members_challenges WHERE expires_at <= ${now}`.pipe(Effect.orDie)
           yield* sql`INSERT INTO members_challenges ${sql.insert({
             challenge,
@@ -370,17 +388,16 @@ export class Members extends Context.Service<
             rp_id: site.rpId,
             expires_at: now + challengeLasts,
           })}`.pipe(Effect.orDie)
-          return challenge
         })
 
         // The subject of the challenge a ceremony answers, used up; none when it isn't one of
         // `purpose` on `site`, or expired.
         const takeChallenge = Effect.fn("Members.takeChallenge")(function* (
-          clientDataJSON: string,
+          answer: RegistrationResponseJSON | AuthenticationResponseJSON,
           purpose: string,
           site: Site,
         ) {
-          const challenge = yield* challengeOf(clientDataJSON).pipe(Effect.option)
+          const challenge = yield* challengeOf(answer).pipe(Effect.option)
           if (Option.isNone(challenge)) {
             return Option.none<{ readonly challenge: string; readonly subject: string }>()
           }
@@ -424,16 +441,16 @@ export class Members extends Context.Service<
           name: string,
           site: Site,
         ) {
-          const challenge = yield* newChallenge(purpose, subject, site)
           const excludeIds = (yield* findPasskeyIds({ member: subject, rpId: site.rpId }).pipe(Effect.orDie)).map(
             (row) => row.id,
           )
-          return creationOptions({
+          const options = yield* registrationOptions({
             rp: { id: site.rpId, name: "Cluenori" },
-            user: { id: Base64Url.encode(subject), name, displayName: name },
-            challenge,
+            user: { id: userHandleOf(subject), name, displayName: name },
             excludeIds,
-          })
+          }).pipe(Effect.provideService(Crypto.Crypto, crypto))
+          yield* keepChallenge(options.challenge, purpose, subject, site)
+          return options
         })
 
         const members = Effect.fn("Members.members")(function* (actor: Actor) {
@@ -504,20 +521,21 @@ export class Members extends Context.Service<
 
         const join = Effect.fn("Members.join")(function* (
           code: InviteCode,
-          registration: RegistrationResponse,
+          registration: RegistrationResponseJSON,
           site: Site,
           caller: Caller,
         ) {
           const invitation = yield* openInvite(code)
-          const taken = yield* takeChallenge(registration.response.clientDataJSON, `join:${invitation.digest}`, site)
+          const taken = yield* takeChallenge(registration, `join:${invitation.digest}`, site)
           if (Option.isNone(taken)) {
             return yield* rejectedPasskey({ reason: "No open challenge to join with" })
           }
           const id = MemberId.make(taken.value.subject)
           const passkey = yield* verifyRegistration(settings.crypto, registration, {
             challenge: taken.value.challenge,
-            origin: site.origin,
+            origins: [site.origin],
             rpId: site.rpId,
+            userHandle: userHandleOf(id),
           }).pipe(Effect.catchTag("WebAuthnRejected", rejectedPasskey))
           const now = yield* DateTime.now
           const actor: Actor = { _tag: "Member", id }
@@ -558,22 +576,29 @@ export class Members extends Context.Service<
         })
 
         const startSignIn = Effect.fn("Members.startSignIn")(function* (site: Site) {
-          const challenge = yield* newChallenge("sign-in", "", site)
-          return requestOptions({ rpId: site.rpId, challenge })
+          const options = yield* authenticationOptions({ rpId: site.rpId }).pipe(
+            Effect.provideService(Crypto.Crypto, crypto),
+          )
+          yield* keepChallenge(options.challenge, "sign-in", "", site)
+          return options
         })
 
-        const verifyPasskey = Effect.fn("Members.verifyPasskey")(function* (assertion: AssertionResponse, site: Site) {
-          const taken = yield* takeChallenge(assertion.response.clientDataJSON, "sign-in", site)
+        const verifyPasskey = Effect.fn("Members.verifyPasskey")(function* (
+          assertion: AuthenticationResponseJSON,
+          site: Site,
+        ) {
+          const taken = yield* takeChallenge(assertion, "sign-in", site)
           const found = yield* findPasskey({ id: assertion.id, rpId: site.rpId }).pipe(Effect.orDie)
           if (Option.isNone(taken) || Option.isNone(found)) {
             return yield* rejectedPasskey({ reason: "No open challenge, or a passkey the deployment doesn't know" })
           }
           const passkey = found.value
-          const checked = yield* verifyAssertion(settings.crypto, assertion, passkey, {
-            challenge: taken.value.challenge,
-            origin: site.origin,
-            rpId: site.rpId,
-          }).pipe(Effect.catchTag("WebAuthnRejected", rejectedPasskey))
+          const checked = yield* verifyAuthentication(
+            settings.crypto,
+            assertion,
+            { ...passkey, userHandle: userHandleOf(passkey.member) },
+            { challenge: taken.value.challenge, origins: [site.origin], rpId: site.rpId },
+          ).pipe(Effect.catchTag("WebAuthnRejected", rejectedPasskey))
           yield* sql`UPDATE members_passkeys SET sign_count = ${checked.signCount} WHERE id = ${passkey.id}`.pipe(
             Effect.orDie,
           )
@@ -583,7 +608,7 @@ export class Members extends Context.Service<
         })
 
         const signIn = Effect.fn("Members.signIn")(function* (
-          assertion: AssertionResponse,
+          assertion: AuthenticationResponseJSON,
           site: Site,
           caller: Caller,
         ) {
@@ -685,18 +710,19 @@ export class Members extends Context.Service<
 
         const addPasskey = Effect.fn("Members.addPasskey")(function* (
           actor: Actor,
-          registration: RegistrationResponse,
+          registration: RegistrationResponseJSON,
           site: Site,
         ) {
           const found = yield* signedInMember(actor)
-          const taken = yield* takeChallenge(registration.response.clientDataJSON, `add:${found.id}`, site)
+          const taken = yield* takeChallenge(registration, `add:${found.id}`, site)
           if (Option.isNone(taken)) {
             return yield* rejectedPasskey({ reason: "No open challenge to add a passkey with" })
           }
           const passkey = yield* verifyRegistration(settings.crypto, registration, {
             challenge: taken.value.challenge,
-            origin: site.origin,
+            origins: [site.origin],
             rpId: site.rpId,
+            userHandle: userHandleOf(found.id),
           }).pipe(Effect.catchTag("WebAuthnRejected", rejectedPasskey))
           const now = yield* nowMs
           yield* log.commit({

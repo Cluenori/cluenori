@@ -58,9 +58,9 @@ public struct CluenoriAPI: Sendable {
     @concurrent
     public func joinOptions(
         _ body: InvitationCode,
-    ) async throws(APIError) -> PasskeyCreationOptions {
+    ) async throws(APIError) -> PublicKeyCredentialCreationOptionsJSON {
         let answer = try await self.send("POST", "/api/invites/options", body: try Self.encoded(body))
-        return try Self.decoded(PasskeyCreationOptions.self, from: answer)
+        return try Self.decoded(PublicKeyCredentialCreationOptionsJSON.self, from: answer)
     }
 
     /// Joins with the passkey made from joinOptions: the new member, signed in with the sign-in
@@ -77,9 +77,9 @@ public struct CluenoriAPI: Sendable {
     /// The options that sign in with any of this site's passkeys, good for 5 minutes: pass them to
     /// navigator.credentials.get().
     @concurrent
-    public func signInOptions() async throws(APIError) -> PasskeyRequestOptions {
+    public func signInOptions() async throws(APIError) -> PublicKeyCredentialRequestOptionsJSON {
         let answer = try await self.send("POST", "/api/sign-in/passkey/options")
-        return try Self.decoded(PasskeyRequestOptions.self, from: answer)
+        return try Self.decoded(PublicKeyCredentialRequestOptionsJSON.self, from: answer)
     }
 
     /// Signs in with a passkey answering signInOptions: the member, signed in with the sign-in
@@ -88,7 +88,9 @@ public struct CluenoriAPI: Sendable {
     ///
     /// Fails with `.passkeyRejected`, or as any call can.
     @concurrent
-    public func signInWithPasskey(_ body: PasskeyAssertion) async throws(APIError) -> Member {
+    public func signInWithPasskey(
+        _ body: AuthenticationResponseJSON,
+    ) async throws(APIError) -> Member {
         let answer = try await self.send("POST", "/api/sign-in/passkey", body: try Self.encoded(body))
         return try Self.decoded(Member.self, from: answer)
     }
@@ -107,9 +109,9 @@ public struct CluenoriAPI: Sendable {
     ///
     /// Fails with `.unauthorized`, or as any call can.
     @concurrent
-    public func passkeyOptions() async throws(APIError) -> PasskeyCreationOptions {
+    public func passkeyOptions() async throws(APIError) -> PublicKeyCredentialCreationOptionsJSON {
         let answer = try await self.send("POST", "/api/me/passkeys/options")
-        return try Self.decoded(PasskeyCreationOptions.self, from: answer)
+        return try Self.decoded(PublicKeyCredentialCreationOptionsJSON.self, from: answer)
     }
 
     /// Adds the passkey made from passkeyOptions to the member who calls. 400 when it doesn't hold,
@@ -117,7 +119,7 @@ public struct CluenoriAPI: Sendable {
     ///
     /// Fails with `.passkeyRejected`, `.unauthorized`, or as any call can.
     @concurrent
-    public func addPasskey(_ body: PasskeyRegistration) async throws(APIError) {
+    public func addPasskey(_ body: RegistrationResponseJSON) async throws(APIError) {
         _ = try await self.send("POST", "/api/me/passkeys", body: try Self.encoded(body))
     }
 
@@ -1472,6 +1474,55 @@ public struct ArchiveUnavailable: Codable, Hashable, Sendable {
     }
 }
 
+public struct AuthenticationResponseJSON: Codable, Hashable, Sendable {
+    public let id: String
+    public let type: String
+    public let response: AuthenticatorAssertionResponseJSON
+
+    public init(id: String, type: String, response: AuthenticatorAssertionResponseJSON) {
+        self.id = id
+        self.type = type
+        self.response = response
+    }
+}
+
+public struct AuthenticatorAssertionResponseJSON: Codable, Hashable, Sendable {
+    public let clientDataJSON: String
+    public let authenticatorData: String
+    public let signature: String
+    public let userHandle: String?
+
+    public init(
+        clientDataJSON: String,
+        authenticatorData: String,
+        signature: String,
+        userHandle: String? = nil,
+    ) {
+        self.clientDataJSON = clientDataJSON
+        self.authenticatorData = authenticatorData
+        self.signature = signature
+        self.userHandle = userHandle
+    }
+}
+
+public struct AuthenticatorAttestationResponseJSON: Codable, Hashable, Sendable {
+    public let clientDataJSON: String
+    public let attestationObject: String
+
+    public init(clientDataJSON: String, attestationObject: String) {
+        self.clientDataJSON = clientDataJSON
+        self.attestationObject = attestationObject
+    }
+}
+
+public struct AuthenticatorSelectionCriteria: Codable, Hashable, Sendable {
+    public let requireResidentKey: Bool
+
+    public init(requireResidentKey: Bool) {
+        self.requireResidentKey = requireResidentKey
+    }
+}
+
 public struct BuildLatestNext: Codable, Hashable, Sendable {
     public init() {
     }
@@ -2236,9 +2287,9 @@ public struct IssuedSdkKey: Codable, Hashable, Sendable {
 
 public struct JoinWithPasskey: Codable, Hashable, Sendable {
     public let code: String
-    public let registration: PasskeyRegistration
+    public let registration: RegistrationResponseJSON
 
-    public init(code: String, registration: PasskeyRegistration) {
+    public init(code: String, registration: RegistrationResponseJSON) {
         self.code = code
         self.registration = registration
     }
@@ -2846,13 +2897,13 @@ public struct PairPhone: Codable, Hashable, Sendable {
 }
 
 public struct PairWithPasskey: Codable, Hashable, Sendable {
-    public let assertion: PasskeyAssertion
+    public let assertion: AuthenticationResponseJSON
     public let model: String
     public let systemVersion: String
     public let appVersion: String
 
     public init(
-        assertion: PasskeyAssertion,
+        assertion: AuthenticationResponseJSON,
         model: String,
         systemVersion: String,
         appVersion: String,
@@ -2889,177 +2940,8 @@ public struct PairingCodeRejected: Codable, Hashable, Sendable {
     }
 }
 
-public struct PasskeyAlgorithm: Codable, Hashable, Sendable {
-    public let type: String
-    public let alg: Int
-
-    public init(type: String, alg: Int) {
-        self.type = type
-        self.alg = alg
-    }
-}
-
-public struct PasskeyAssertion: Codable, Hashable, Sendable {
-    public let id: String
-    public let type: String
-    public let response: PasskeySignature
-
-    public init(id: String, type: String, response: PasskeySignature) {
-        self.id = id
-        self.type = type
-        self.response = response
-    }
-}
-
-public struct PasskeyAttestation: Codable, Hashable, Sendable {
-    public let clientDataJSON: String
-    public let authenticatorData: String
-    public let publicKey: String?
-    public let publicKeyAlgorithm: Double
-
-    public init(
-        clientDataJSON: String,
-        authenticatorData: String,
-        publicKey: String? = nil,
-        publicKeyAlgorithm: Double,
-    ) {
-        self.clientDataJSON = clientDataJSON
-        self.authenticatorData = authenticatorData
-        self.publicKey = publicKey
-        self.publicKeyAlgorithm = publicKeyAlgorithm
-    }
-}
-
-public struct PasskeyCreationOptions: Codable, Hashable, Sendable {
-    public let rp: PasskeySite
-    public let user: PasskeyUser
-    public let challenge: String
-    public let pubKeyCredParams: [PasskeyAlgorithm]
-    public let timeout: Int
-    public let excludeCredentials: [PasskeyCredential]
-    public let authenticatorSelection: PasskeySelection
-    public let attestation: String
-
-    public init(
-        rp: PasskeySite,
-        user: PasskeyUser,
-        challenge: String,
-        pubKeyCredParams: [PasskeyAlgorithm],
-        timeout: Int,
-        excludeCredentials: [PasskeyCredential],
-        authenticatorSelection: PasskeySelection,
-        attestation: String,
-    ) {
-        self.rp = rp
-        self.user = user
-        self.challenge = challenge
-        self.pubKeyCredParams = pubKeyCredParams
-        self.timeout = timeout
-        self.excludeCredentials = excludeCredentials
-        self.authenticatorSelection = authenticatorSelection
-        self.attestation = attestation
-    }
-}
-
-public struct PasskeyCredential: Codable, Hashable, Sendable {
-    public let type: String
-    public let id: String
-
-    public init(type: String, id: String) {
-        self.type = type
-        self.id = id
-    }
-}
-
-public struct PasskeyRegistration: Codable, Hashable, Sendable {
-    public let id: String
-    public let type: String
-    public let response: PasskeyAttestation
-
-    public init(id: String, type: String, response: PasskeyAttestation) {
-        self.id = id
-        self.type = type
-        self.response = response
-    }
-}
-
 public struct PasskeyRejected: Codable, Hashable, Sendable {
     public init() {
-    }
-}
-
-public struct PasskeyRequestOptions: Codable, Hashable, Sendable {
-    public let challenge: String
-    public let rpId: String
-    public let timeout: Int
-    public let userVerification: String
-    public let allowCredentials: [PasskeyCredential]
-
-    public init(
-        challenge: String,
-        rpId: String,
-        timeout: Int,
-        userVerification: String,
-        allowCredentials: [PasskeyCredential],
-    ) {
-        self.challenge = challenge
-        self.rpId = rpId
-        self.timeout = timeout
-        self.userVerification = userVerification
-        self.allowCredentials = allowCredentials
-    }
-}
-
-public struct PasskeySelection: Codable, Hashable, Sendable {
-    public let residentKey: String
-    public let requireResidentKey: Bool
-    public let userVerification: String
-
-    public init(residentKey: String, requireResidentKey: Bool, userVerification: String) {
-        self.residentKey = residentKey
-        self.requireResidentKey = requireResidentKey
-        self.userVerification = userVerification
-    }
-}
-
-public struct PasskeySignature: Codable, Hashable, Sendable {
-    public let clientDataJSON: String
-    public let authenticatorData: String
-    public let signature: String
-    public let userHandle: String?
-
-    public init(
-        clientDataJSON: String,
-        authenticatorData: String,
-        signature: String,
-        userHandle: String? = nil,
-    ) {
-        self.clientDataJSON = clientDataJSON
-        self.authenticatorData = authenticatorData
-        self.signature = signature
-        self.userHandle = userHandle
-    }
-}
-
-public struct PasskeySite: Codable, Hashable, Sendable {
-    public let id: String
-    public let name: String
-
-    public init(id: String, name: String) {
-        self.id = id
-        self.name = name
-    }
-}
-
-public struct PasskeyUser: Codable, Hashable, Sendable {
-    public let id: String
-    public let name: String
-    public let displayName: String
-
-    public init(id: String, name: String, displayName: String) {
-        self.id = id
-        self.name = name
-        self.displayName = displayName
     }
 }
 
@@ -3464,6 +3346,91 @@ public struct PromotionUnavailable: Codable, Hashable, Sendable {
     }
 }
 
+public struct PublicKeyCredentialCreationOptionsJSON: Codable, Hashable, Sendable {
+    public let rp: PublicKeyCredentialRpEntity
+    public let user: PublicKeyCredentialUserEntityJSON
+    public let challenge: String
+    public let pubKeyCredParams: [PublicKeyCredentialParameters]
+    public let timeout: Int
+    public let excludeCredentials: [PublicKeyCredentialDescriptorJSON]
+    public let authenticatorSelection: AuthenticatorSelectionCriteria
+
+    public init(
+        rp: PublicKeyCredentialRpEntity,
+        user: PublicKeyCredentialUserEntityJSON,
+        challenge: String,
+        pubKeyCredParams: [PublicKeyCredentialParameters],
+        timeout: Int,
+        excludeCredentials: [PublicKeyCredentialDescriptorJSON],
+        authenticatorSelection: AuthenticatorSelectionCriteria,
+    ) {
+        self.rp = rp
+        self.user = user
+        self.challenge = challenge
+        self.pubKeyCredParams = pubKeyCredParams
+        self.timeout = timeout
+        self.excludeCredentials = excludeCredentials
+        self.authenticatorSelection = authenticatorSelection
+    }
+}
+
+public struct PublicKeyCredentialDescriptorJSON: Codable, Hashable, Sendable {
+    public let id: String
+
+    public init(id: String) {
+        self.id = id
+    }
+}
+
+public struct PublicKeyCredentialParameters: Codable, Hashable, Sendable {
+    public let alg: Int
+
+    public init(alg: Int) {
+        self.alg = alg
+    }
+}
+
+public struct PublicKeyCredentialRequestOptionsJSON: Codable, Hashable, Sendable {
+    public let challenge: String
+    public let rpId: String
+    public let timeout: Int
+    public let allowCredentials: [PublicKeyCredentialDescriptorJSON]
+
+    public init(
+        challenge: String,
+        rpId: String,
+        timeout: Int,
+        allowCredentials: [PublicKeyCredentialDescriptorJSON],
+    ) {
+        self.challenge = challenge
+        self.rpId = rpId
+        self.timeout = timeout
+        self.allowCredentials = allowCredentials
+    }
+}
+
+public struct PublicKeyCredentialRpEntity: Codable, Hashable, Sendable {
+    public let id: String
+    public let name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
+public struct PublicKeyCredentialUserEntityJSON: Codable, Hashable, Sendable {
+    public let id: String
+    public let name: String
+    public let displayName: String
+
+    public init(id: String, name: String, displayName: String) {
+        self.id = id
+        self.name = name
+        self.displayName = displayName
+    }
+}
+
 public struct PulseHour: Codable, Hashable, Sendable {
     public let start: Date
     public let count: Int
@@ -3538,6 +3505,18 @@ public struct RegisterPush: Codable, Hashable, Sendable {
     public init(token: String, environment: PushEnvironment) {
         self.token = token
         self.environment = environment
+    }
+}
+
+public struct RegistrationResponseJSON: Codable, Hashable, Sendable {
+    public let id: String
+    public let type: String
+    public let response: AuthenticatorAttestationResponseJSON
+
+    public init(id: String, type: String, response: AuthenticatorAttestationResponseJSON) {
+        self.id = id
+        self.type = type
+        self.response = response
     }
 }
 

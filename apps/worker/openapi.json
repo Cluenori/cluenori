@@ -83,11 +83,11 @@
         "security": [],
         "responses": {
           "200": {
-            "description": "PasskeyCreationOptions",
+            "description": "PublicKeyCredentialCreationOptionsJSON",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PasskeyCreationOptions"
+                  "$ref": "#/components/schemas/PublicKeyCredentialCreationOptionsJSON"
                 }
               }
             }
@@ -179,11 +179,11 @@
         "security": [],
         "responses": {
           "200": {
-            "description": "PasskeyRequestOptions",
+            "description": "PublicKeyCredentialRequestOptionsJSON",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PasskeyRequestOptions"
+                  "$ref": "#/components/schemas/PublicKeyCredentialRequestOptionsJSON"
                 }
               }
             }
@@ -227,7 +227,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PasskeyAssertion"
+                "$ref": "#/components/schemas/AuthenticationResponseJSON"
               }
             }
           },
@@ -292,11 +292,11 @@
         ],
         "responses": {
           "200": {
-            "description": "PasskeyCreationOptions",
+            "description": "PublicKeyCredentialCreationOptionsJSON",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PasskeyCreationOptions"
+                  "$ref": "#/components/schemas/PublicKeyCredentialCreationOptionsJSON"
                 }
               }
             }
@@ -360,7 +360,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PasskeyRegistration"
+                "$ref": "#/components/schemas/RegistrationResponseJSON"
               }
             }
           },
@@ -8570,7 +8570,7 @@
         "type": "object",
         "properties": {
           "assertion": {
-            "$ref": "#/components/schemas/PasskeyAssertion"
+            "$ref": "#/components/schemas/AuthenticationResponseJSON"
           },
           "model": {
             "type": "string"
@@ -8590,7 +8590,7 @@
         ],
         "additionalProperties": false
       },
-      "PasskeyAssertion": {
+      "AuthenticationResponseJSON": {
         "type": "object",
         "properties": {
           "id": {
@@ -8600,7 +8600,7 @@
             "type": "string"
           },
           "response": {
-            "$ref": "#/components/schemas/PasskeySignature"
+            "$ref": "#/components/schemas/AuthenticatorAssertionResponseJSON"
           }
         },
         "required": [
@@ -8610,7 +8610,7 @@
         ],
         "additionalProperties": false
       },
-      "PasskeySignature": {
+      "AuthenticatorAssertionResponseJSON": {
         "type": "object",
         "properties": {
           "clientDataJSON": {
@@ -8623,7 +8623,14 @@
             "type": "string"
           },
           "userHandle": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -10136,7 +10143,7 @@
         ],
         "additionalProperties": false
       },
-      "PasskeyRegistration": {
+      "RegistrationResponseJSON": {
         "type": "object",
         "properties": {
           "id": {
@@ -10146,7 +10153,7 @@
             "type": "string"
           },
           "response": {
-            "$ref": "#/components/schemas/PasskeyAttestation"
+            "$ref": "#/components/schemas/AuthenticatorAttestationResponseJSON"
           }
         },
         "required": [
@@ -10156,37 +10163,30 @@
         ],
         "additionalProperties": false
       },
-      "PasskeyAttestation": {
+      "AuthenticatorAttestationResponseJSON": {
         "type": "object",
         "properties": {
           "clientDataJSON": {
             "type": "string"
           },
-          "authenticatorData": {
+          "attestationObject": {
             "type": "string"
-          },
-          "publicKey": {
-            "type": "string"
-          },
-          "publicKeyAlgorithm": {
-            "type": "number"
           }
         },
         "required": [
           "clientDataJSON",
-          "authenticatorData",
-          "publicKeyAlgorithm"
+          "attestationObject"
         ],
         "additionalProperties": false
       },
-      "PasskeyCreationOptions": {
+      "PublicKeyCredentialCreationOptionsJSON": {
         "type": "object",
         "properties": {
           "rp": {
-            "$ref": "#/components/schemas/PasskeySite"
+            "$ref": "#/components/schemas/PublicKeyCredentialRpEntity"
           },
           "user": {
-            "$ref": "#/components/schemas/PasskeyUser"
+            "$ref": "#/components/schemas/PublicKeyCredentialUserEntityJSON"
           },
           "challenge": {
             "type": "string"
@@ -10194,7 +10194,7 @@
           "pubKeyCredParams": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PasskeyAlgorithm"
+              "$ref": "#/components/schemas/PublicKeyCredentialParameters"
             }
           },
           "timeout": {
@@ -10205,14 +10205,17 @@
           "excludeCredentials": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PasskeyCredential"
+              "$ref": "#/components/schemas/PublicKeyCredentialDescriptorJSON"
             }
           },
           "authenticatorSelection": {
-            "$ref": "#/components/schemas/PasskeySelection"
+            "$ref": "#/components/schemas/AuthenticatorSelectionCriteria"
           },
           "attestation": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "none"
+            ]
           }
         },
         "required": [
@@ -10227,17 +10230,26 @@
         ],
         "additionalProperties": false
       },
-      "PasskeySelection": {
+      "AuthenticatorSelectionCriteria": {
         "type": "object",
         "properties": {
           "residentKey": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "required"
+            ]
           },
           "requireResidentKey": {
-            "type": "boolean"
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           },
           "userVerification": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "required"
+            ]
           }
         },
         "required": [
@@ -10247,11 +10259,14 @@
         ],
         "additionalProperties": false
       },
-      "PasskeyCredential": {
+      "PublicKeyCredentialDescriptorJSON": {
         "type": "object",
         "properties": {
           "type": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "public-key"
+            ]
           },
           "id": {
             "type": "string"
@@ -10263,11 +10278,14 @@
         ],
         "additionalProperties": false
       },
-      "PasskeyAlgorithm": {
+      "PublicKeyCredentialParameters": {
         "type": "object",
         "properties": {
           "type": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "public-key"
+            ]
           },
           "alg": {
             "type": "integer",
@@ -10281,7 +10299,7 @@
         ],
         "additionalProperties": false
       },
-      "PasskeyUser": {
+      "PublicKeyCredentialUserEntityJSON": {
         "type": "object",
         "properties": {
           "id": {
@@ -10301,7 +10319,7 @@
         ],
         "additionalProperties": false
       },
-      "PasskeySite": {
+      "PublicKeyCredentialRpEntity": {
         "type": "object",
         "properties": {
           "id": {
@@ -10317,7 +10335,7 @@
         ],
         "additionalProperties": false
       },
-      "PasskeyRequestOptions": {
+      "PublicKeyCredentialRequestOptionsJSON": {
         "type": "object",
         "properties": {
           "challenge": {
@@ -10332,12 +10350,15 @@
             "maximum": 9007199254740991
           },
           "userVerification": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "required"
+            ]
           },
           "allowCredentials": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PasskeyCredential"
+              "$ref": "#/components/schemas/PublicKeyCredentialDescriptorJSON"
             }
           }
         },
@@ -10372,7 +10393,7 @@
             "type": "string"
           },
           "registration": {
-            "$ref": "#/components/schemas/PasskeyRegistration"
+            "$ref": "#/components/schemas/RegistrationResponseJSON"
           }
         },
         "required": [

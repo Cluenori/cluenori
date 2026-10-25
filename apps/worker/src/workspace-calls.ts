@@ -1,3 +1,9 @@
+import {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+} from "@bagatka/webauthn"
 import { Actor, Envelope, Instant, MemberId, NotAllowed, ProjectKey } from "@cluenori/foundation"
 import { Caller } from "@cluenori/foundation"
 import { GitHubRefused, GitHubUnavailable, Repository } from "@cluenori/github"
@@ -43,7 +49,6 @@ import {
   RegisterPush,
 } from "@cluenori/phones"
 import { Project, ProjectList, ProjectNotFound } from "@cluenori/projects"
-import { CreationOptions, RegistrationResponse, RequestOptions, AssertionResponse } from "@cluenori/webauthn"
 import { Schema } from "effect"
 
 import type { ObjectCall, PlainSchema } from "./object-calls.ts"
@@ -184,40 +189,40 @@ export const workspaceCalls = {
   joinOptions: workspaceCall(
     "joinOptions",
     Schema.Struct({ code: InviteCode, site: Site }),
-    CreationOptions,
+    PublicKeyCredentialCreationOptionsJSON,
     InviteRejected,
   ),
   // The new sign-in's token crosses to the Worker only in the answer, and then to the cookie.
   join: workspaceCall(
     "join",
-    Schema.Struct({ code: InviteCode, registration: RegistrationResponse, site: Site, caller: Caller }),
+    Schema.Struct({ code: InviteCode, registration: RegistrationResponseJSON, site: Site, caller: Caller }),
     SignedIn,
     Schema.Union([InviteRejected, PasskeyRejected]),
   ),
-  signInOptions: workspaceCall("signInOptions", Site, RequestOptions, Schema.Never),
+  signInOptions: workspaceCall("signInOptions", Site, PublicKeyCredentialRequestOptionsJSON, Schema.Never),
   signIn: workspaceCall(
     "signIn",
-    Schema.Struct({ assertion: AssertionResponse, site: Site, caller: Caller }),
+    Schema.Struct({ assertion: AuthenticationResponseJSON, site: Site, caller: Caller }),
     SignedIn,
     PasskeyRejected,
   ),
   passkeyOptions: workspaceCall(
     "passkeyOptions",
     Schema.Struct({ actor: Actor, site: Site }),
-    CreationOptions,
+    PublicKeyCredentialCreationOptionsJSON,
     NotAllowed,
   ),
   // The passkey's member, then a phone acting for them: its key crosses to the Worker only in the
   // answer, and then to the phone.
   pairWithPasskey: workspaceCall(
     "pairWithPasskey",
-    Schema.Struct({ assertion: AssertionResponse, phone: PhoneDetails, site: Site, caller: Caller }),
+    Schema.Struct({ assertion: AuthenticationResponseJSON, phone: PhoneDetails, site: Site, caller: Caller }),
     PairedPhone,
     PasskeyRejected,
   ),
   addPasskey: workspaceCall(
     "addPasskey",
-    Schema.Struct({ actor: Actor, registration: RegistrationResponse, site: Site }),
+    Schema.Struct({ actor: Actor, registration: RegistrationResponseJSON, site: Site }),
     Schema.Void,
     Schema.Union([NotAllowed, PasskeyRejected]),
   ),

@@ -31,8 +31,8 @@ struct PasskeySignInButton: View {
 
     // The person's passkey for the options' site, as the deployment takes it.
     private func assertion(
-        for options: PasskeyRequestOptions
-    ) async throws(PairingModel.PasskeyRefusal) -> PasskeyAssertion {
+        for options: PublicKeyCredentialRequestOptionsJSON
+    ) async throws(PairingModel.PasskeyRefusal) -> AuthenticationResponseJSON {
         guard let challenge = Data(base64URL: options.challenge) else { throw .unavailable }
         let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: options.rpId)
         let request = provider.createCredentialAssertionRequest(challenge: challenge)
@@ -48,10 +48,10 @@ struct PasskeySignInButton: View {
             throw .unavailable
         }
         guard case .passkeyAssertion(let credential) = result else { throw .unavailable }
-        return PasskeyAssertion(
+        return AuthenticationResponseJSON(
             id: credential.credentialID.base64URLEncoded,
             type: "public-key",
-            response: PasskeySignature(
+            response: AuthenticatorAssertionResponseJSON(
                 clientDataJSON: credential.rawClientDataJSON.base64URLEncoded,
                 authenticatorData: credential.rawAuthenticatorData.base64URLEncoded,
                 signature: credential.signature.base64URLEncoded,

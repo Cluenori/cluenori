@@ -19,8 +19,8 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@bagatka/webauthn": "catalog:",
     "@cloudflare/vitest-plugin": "catalog:",
-    "@cluenori/webauthn": "workspace:*",
     "@effect/platform-browser": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",
     "@effect/vitest": "catalog:",

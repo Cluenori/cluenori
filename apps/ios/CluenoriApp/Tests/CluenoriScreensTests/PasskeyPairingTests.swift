@@ -9,10 +9,10 @@ let passkeyOptionsAnswer = #"""
     """#
 
 /// What the phone's passkey request answers, as the app builds it.
-let answeredPasskey = PasskeyAssertion(
+let answeredPasskey = AuthenticationResponseJSON(
     id: "c29tZS1rZXk",
     type: "public-key",
-    response: PasskeySignature(
+    response: AuthenticatorAssertionResponseJSON(
         clientDataJSON: "e30", authenticatorData: "AAAA", signature: "MEUC", userHandle: "bWVtYmVy")
 )
 
@@ -26,7 +26,7 @@ struct PasskeyPairingTests {
             store: store, details: details, transport: deployment.transport,
             passkeyDeployment: URL(string: "https://cluenori.example")!)
 
-        var asked: PasskeyRequestOptions? = nil
+        var asked: PublicKeyCredentialRequestOptionsJSON? = nil
         await pairing.signInWithPasskey { options throws(PairingModel.PasskeyRefusal) in
             asked = options
             return answeredPasskey

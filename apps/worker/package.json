@@ -13,6 +13,7 @@
   "dependencies": {
     "@bagatka/ai-cloudflare-binding": "catalog:",
     "@bagatka/otlp-protobuf": "catalog:",
+    "@bagatka/webauthn": "catalog:",
     "@cluenori/analytics": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github": "workspace:*",
@@ -26,7 +27,6 @@
     "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/today": "workspace:*",
-    "@cluenori/webauthn": "workspace:*",
     "@effect/ai-cloudflare": "catalog:",
     "@effect/platform-browser": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",

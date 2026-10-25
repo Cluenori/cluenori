@@ -1,3 +1,4 @@
+import { softwareAuthenticator } from "@bagatka/webauthn"
 import type { ActivityPayload, Actor } from "@cluenori/foundation"
 import {
   ComponentKey,
@@ -24,7 +25,6 @@ import { Email, InviteCode, Members } from "@cluenori/members"
 import type { PushEnvironment } from "@cluenori/phones"
 import { AppVersion, ModelIdentifier, PairingCode, Phones, PushToken, SystemVersion } from "@cluenori/phones"
 import { ProjectIndex, ProjectName } from "@cluenori/projects"
-import { softwareAuthenticator } from "@cluenori/webauthn"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Option, Redacted, Schema } from "effect"
 import { Base64 } from "effect/encoding"
@@ -425,7 +425,7 @@ describe("Notifications", () => {
           const device = yield* softwareAuthenticator(crypto)
           const joined = yield* members.join(
             code,
-            yield* device.register({ ...site, challenge: options.challenge }),
+            yield* device.register({ ...site, challenge: options.challenge }, { userHandle: options.user.id }),
             site,
             home,
           )

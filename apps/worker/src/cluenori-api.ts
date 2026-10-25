@@ -1,3 +1,4 @@
+import { AuthenticationResponseJSON } from "@bagatka/webauthn"
 import { AnalyticsGroup } from "@cluenori/analytics"
 import { GitHubGroup } from "@cluenori/github-app"
 import { IncidentsGroup } from "@cluenori/incidents"
@@ -8,7 +9,6 @@ import { ProjectsGroup } from "@cluenori/projects"
 import { ReleasesGroup } from "@cluenori/releases"
 import { SignalsGroup } from "@cluenori/signals"
 import { TodayGroup } from "@cluenori/today"
-import { AssertionResponse } from "@cluenori/webauthn"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
@@ -47,7 +47,10 @@ export class SignInGroup extends HttpApiGroup.make("signIn", { topLevel: true })
   ) {}
 
 /** A phone's passkey answer, and what the phone says about itself. */
-export const PairWithPasskey = Schema.Struct({ assertion: AssertionResponse, ...PhoneDetails.fields }).annotate({
+export const PairWithPasskey = Schema.Struct({
+  assertion: AuthenticationResponseJSON,
+  ...PhoneDetails.fields,
+}).annotate({
   identifier: "PairWithPasskey",
 })
 

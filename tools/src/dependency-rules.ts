@@ -13,6 +13,7 @@ const toolkit = [
   "@bagatka/qr-code",
   "@bagatka/quantile-sketch",
   "@bagatka/scrub",
+  "@bagatka/webauthn",
 ]
 
 // Product packages run inside a project's Durable Object, so their tests do too: in workerd, on the
@@ -148,9 +149,10 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     folders: "tests/journeys",
     name: "@cluenori/journeys",
     contract: false,
-    // Capabilities too, for what a journey plays a client with, such as a passkey's authenticator.
+    // Capabilities too, kit's among them, for what a journey plays a client with, such as a
+    // passkey's authenticator.
     mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*", "apps/worker"],
     mayInstall: [],
-    mayInstallForDevelopment: ["effect", "@cloudflare/vitest-plugin", "wrangler", ...forTests],
+    mayInstallForDevelopment: ["effect", "@cloudflare/vitest-plugin", "wrangler", ...toolkit, ...forTests],
   },
 ]

@@ -44,7 +44,7 @@ public struct PairedDeployment: Codable, Hashable, Sendable {
         at deployment: URL,
         as details: PhoneDetails,
         transport: CluenoriAPI.Transport? = nil,
-    ) async throws(APIError) -> PasskeyRequestOptions {
+    ) async throws(APIError) -> PublicKeyCredentialRequestOptionsJSON {
         try await CluenoriAPI(baseURL: deployment, userAgent: details.userAgent, transport: transport).signInOptions()
     }
 
@@ -54,7 +54,7 @@ public struct PairedDeployment: Codable, Hashable, Sendable {
     @concurrent
     public static func pair(
         at deployment: URL,
-        with assertion: PasskeyAssertion,
+        with assertion: AuthenticationResponseJSON,
         as details: PhoneDetails,
         transport: CluenoriAPI.Transport? = nil,
     ) async throws(APIError) -> PairedDeployment {

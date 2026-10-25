@@ -1,8 +1,8 @@
+import type { SoftwareAuthenticator } from "@bagatka/webauthn"
+import { softwareAuthenticator } from "@bagatka/webauthn"
 import type { Actor, Caller } from "@cluenori/foundation"
 import { ActivityLog, MemberId, ProjectKey } from "@cluenori/foundation"
 import { ProjectIndex, ProjectName } from "@cluenori/projects"
-import type { SoftwareAuthenticator } from "@cluenori/webauthn"
-import { softwareAuthenticator } from "@cluenori/webauthn"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Redacted } from "effect"
 import { TestClock } from "effect/testing"
@@ -53,7 +53,10 @@ const adaJoins = Effect.gen(function* () {
   const invite = yield* members.invite(owner, { email: ada, projects: [notes] }, site)
   const code = codeOf(invite.link)
   const options = yield* members.startJoining(code, site)
-  const registration = yield* device.register({ challenge: options.challenge, ...site })
+  const registration = yield* device.register(
+    { challenge: options.challenge, ...site },
+    { userHandle: options.user.id },
+  )
   const joined = yield* members.join(code, registration, site, macSafari)
   return { device, code, joined }
 })
@@ -62,7 +65,11 @@ const signInWith = (device: SoftwareAuthenticator) =>
   Effect.gen(function* () {
     const members = yield* Members
     const options = yield* members.startSignIn(site)
-    return yield* members.signIn(yield* device.sign({ challenge: options.challenge, ...site }), site, iPhoneChrome)
+    return yield* members.signIn(
+      yield* device.authenticate({ challenge: options.challenge, ...site }),
+      site,
+      iPhoneChrome,
+    )
   })
 
 describe("Members", () => {
@@ -166,11 +173,10 @@ describe("Members", () => {
         const code = codeOf(invite.link)
 
         const options = yield* members.startJoining(code, site)
-        const elsewhere = yield* device.register({
-          ...site,
-          challenge: options.challenge,
-          origin: "https://evil.example",
-        })
+        const elsewhere = yield* device.register(
+          { ...site, challenge: options.challenge, origin: "https://evil.example" },
+          { userHandle: options.user.id },
+        )
         assert.strictEqual(
           (yield* members.join(code, elsewhere, site, macSafari).pipe(Effect.flip))._tag,
           "PasskeyRejected",
@@ -179,13 +185,19 @@ describe("Members", () => {
         const retry = yield* members.startJoining(code, site)
         const joined = yield* members.join(
           code,
-          yield* device.register({ ...site, challenge: retry.challenge }),
+          yield* device.register({ ...site, challenge: retry.challenge }, { userHandle: retry.user.id }),
           site,
           macSafari,
         )
 
+        // An answer naming another account than its passkey's is refused, its challenge used up.
+        const misnamed = yield* members.startSignIn(site)
+        const forAda = yield* device.authenticate({ ...site, challenge: misnamed.challenge })
+        const asBob = { ...forAda, response: { ...forAda.response, userHandle: "Ym9i" } }
+        assert.strictEqual((yield* members.signIn(asBob, site, macSafari).pipe(Effect.flip))._tag, "PasskeyRejected")
+
         const signIn = yield* members.startSignIn(site)
-        const assertion = yield* device.sign({ ...site, challenge: signIn.challenge })
+        const assertion = yield* device.authenticate({ ...site, challenge: signIn.challenge })
         yield* members.signIn(assertion, site, macSafari)
         assert.strictEqual(
           (yield* members.signIn(assertion, site, macSafari).pipe(Effect.flip))._tag,
@@ -193,7 +205,7 @@ describe("Members", () => {
         )
         const stranger = yield* softwareAuthenticator(crypto)
         const other = yield* members.startSignIn(site)
-        const unknown = yield* stranger.sign({ ...site, challenge: other.challenge })
+        const unknown = yield* stranger.authenticate({ ...site, challenge: other.challenge })
         assert.strictEqual((yield* members.signIn(unknown, site, macSafari).pipe(Effect.flip))._tag, "PasskeyRejected")
 
         const late = yield* members.invite(owner, { email: Email.make("bob@example.com"), projects: [atlas] }, site)
@@ -220,7 +232,11 @@ describe("Members", () => {
         const device = yield* softwareAuthenticator(crypto)
         const options = yield* members.startAddingPasskey(owner, site)
         assert.strictEqual(options.user.name, "Owner")
-        yield* members.addPasskey(owner, yield* device.register({ ...site, challenge: options.challenge }), site)
+        yield* members.addPasskey(
+          owner,
+          yield* device.register({ ...site, challenge: options.challenge }, { userHandle: options.user.id }),
+          site,
+        )
 
         const signedIn = yield* signInWith(device)
         assert.deepStrictEqual(

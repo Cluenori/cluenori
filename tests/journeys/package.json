@@ -6,6 +6,7 @@
     "typecheck": "tsc"
   },
   "devDependencies": {
+    "@bagatka/webauthn": "catalog:",
     "@cloudflare/vitest-plugin": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github": "workspace:*",
@@ -18,7 +19,6 @@
     "@cluenori/projects": "workspace:*",
     "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
-    "@cluenori/webauthn": "workspace:*",
     "@cluenori/worker": "workspace:*",
     "@effect/vitest": "catalog:",
     "effect": "catalog:",

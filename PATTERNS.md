@@ -753,7 +753,7 @@ The configuration files are the specification; this entry says what each one own
   through `MemberProjects`, which answers "not found" for a project the member doesn't see, as for
   one that doesn't exist. A lint rule keeps handlers from importing `ProjectObjects`. Owner-only
   actions fail with Foundation's `NotAllowed`.
-- **People sign in with passkeys** (`@cluenori/webauthn`); a browser keeps a sign-in token, stored
+- **People sign in with passkeys** (`@bagatka/webauthn`); a browser keeps a sign-in token, stored
   as a digest like every key, and a refused passkey says nothing about why.
 - Canonical examples: ingest keys, `product/engines/projects/src/ingest-key.ts` and `projects.ts`;
   the API token and sign-ins, `apps/worker/src/member-authorization-layer.ts`; access,
