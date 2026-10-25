@@ -77,6 +77,10 @@ describe("componentLinksOf", () => {
     Effect.gen(function* () {
       const links = yield* linksOf(none)
       assert.deepStrictEqual(links, {})
+      const explicitlyUnlinked = yield* linksOf({ ...none, shipsWith: Option.none() })
+      assert.deepStrictEqual(explicitlyUnlinked, {})
+      const shippedTogether = yield* linksOf({ ...none, shipsWith: Option.some("notes-api") })
+      assert.deepStrictEqual(shippedTogether, { shipsWith: "notes-api" })
     }),
   )
 
@@ -154,6 +158,16 @@ describe("deployTargetLines", () => {
         "beta        ios.yml, then com.notesapp.notes.beta in TestFlight",
         "production  com.notesapp.notes on the App Store",
       ])
+      const service = yield* componentLinksOf({
+        ...none,
+        repository: Option.some("notesapp/notes-api"),
+        deploy: ["dev=preview.yml", "production=deploy.yml"],
+      })
+      assert.deepStrictEqual(deployTargetLines(service.deployTargets ?? []), [
+        "dev         preview.yml",
+        "production  deploy.yml",
+      ])
+      assert.deepStrictEqual(deployTargetLines([]), [])
     }),
   )
 })
