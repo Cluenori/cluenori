@@ -14,6 +14,7 @@
     ],
     "catalog": {
       "@bagatka/bun-workspace-rules": "0.1.0",
+      "@bagatka/otlp-protobuf": "0.1.0",
       "@bagatka/qr-code": "0.1.0",
       "@bagatka/quantile-sketch": "0.1.0",
       "@bagatka/scrub": "0.1.1",

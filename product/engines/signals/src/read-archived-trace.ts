@@ -1,6 +1,6 @@
+import type { Attributes, ResourceLogs, ResourceSpans, Span, SpanKind } from "@bagatka/otlp-protobuf"
+import { decodeLogs, decodeTraces } from "@bagatka/otlp-protobuf"
 import type { ComponentKey, Period, TraceId } from "@cluenori/foundation"
-import type { Attributes, ResourceLogs, ResourceSpans, Span, SpanKind } from "@cluenori/otlp"
-import { decodeLogs, decodeTraces } from "@cluenori/otlp"
 import { DateTime, Effect, Schema } from "effect"
 
 import type { ExportSignal } from "./exports.ts"
@@ -68,6 +68,10 @@ const treeOf = (spans: ReadonlyArray<{ readonly span: Span; readonly component: 
  * The view of trace `trace` from archive files: its spans and logs, from every file given. Files are
  * Cluenori's own, so one that doesn't decode is a defect.
  */
+// Not handled: an archive written before Signals took kit's reader (one object for each 16 bytes),
+// which scrubbing made denser than that, fails here as a defect saying so. Ingest refuses such
+// exports now, and old files leave the archive within its 90 days; reading them would take a
+// second, looser decoder.
 export const traceViewOf = Effect.fn("traceViewOf")(function* (
   trace: TraceId,
   searched: Period,
@@ -90,7 +94,7 @@ export const traceViewOf = Effect.fn("traceViewOf")(function* (
       for (const { resource, scopeLogs } of resources) {
         for (const { scope, logRecords } of scopeLogs) {
           for (const record of logRecords.filter((candidate) => candidate.traceId === trace)) {
-            const entry = yield* entryOf(record, timeOf(record, 0), scope.name, resource)
+            const entry = yield* entryOf(record, timeOf(record, 0), scope.name, resource.attributes)
             const level = levelOf(record)
             logs.push({ ...entry, ...(level === undefined ? {} : { level }), component: file.component })
           }

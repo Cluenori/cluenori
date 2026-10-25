@@ -1,7 +1,7 @@
+import type { Attributes, Span } from "@bagatka/otlp-protobuf"
+import { decodeTraces, encodeTraces } from "@bagatka/otlp-protobuf"
 import { sketchOf } from "@bagatka/quantile-sketch"
 import { EnvelopeName, EnvironmentKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
-import type { Attributes, Span } from "@cluenori/otlp"
-import { decodeTraces, encodeTraces } from "@cluenori/otlp"
 import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Hex } from "effect/encoding"
 
@@ -10,7 +10,7 @@ import type { KeptTrace } from "./kept-trace.ts"
 import { HttpStatus, keptPerHour } from "./kept-trace.ts"
 import type { OperationCounts } from "./operation-counts.ts"
 import { BatchDigest } from "./operation-counts.ts"
-import { scrubbedTraces } from "./scrubbed.ts"
+import { scrubbedTraces, unarchivable } from "./scrubbed.ts"
 
 /**
  * How long operations are counted by the minute: older spans are refused at ingest, and counts
@@ -76,7 +76,9 @@ const problemOf = (span: Span, now: number): string | undefined => {
 // The HTTP status a server span answered with, under its current name or the older one.
 const statusOf = (span: Span): HttpStatus | undefined => {
   const reported = span.attributes.get("http.response.status_code") ?? span.attributes.get("http.status_code")
-  return Schema.is(HttpStatus)(reported) ? reported : undefined
+  // An integer, as the semantic conventions say; a double, as some exporters send, is taken too.
+  const status = typeof reported === "bigint" ? Number(reported) : reported
+  return Schema.is(HttpStatus)(status) ? status : undefined
 }
 
 // Of each hour's traces of one operation and environment, those that may be kept: the slowest, and
@@ -119,7 +121,9 @@ interface Group {
  * picks the traces that may be kept. An operation's span is a server or consumer span, or an
  * internal span that starts its trace, a job (`isOperationSpan`); its name is the operation's
  * (`GET /api/notes/{id}`, `cleanup.run`); it failed when its status is an error. Pure apart from
- * the clock and the digest; runs where the export arrives, so a project's object only stores.
+ * the clock and the digest; runs where the export arrives, so a project's object only stores. Fails
+ * with `OtlpInvalid` when the body isn't an export, or when its scrubbed archive couldn't be read
+ * back (`unarchivable`).
  */
 export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   const crypto = yield* Crypto.Crypto
@@ -134,8 +138,8 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   let rejectedCount = 0
   let firstProblem: string | undefined
   for (const { resource, scopeSpans } of resourceSpans) {
-    const environment = environmentOf(resource)
-    const release = releaseOf(resource)
+    const environment = environmentOf(resource.attributes)
+    const release = releaseOf(resource.attributes)
     for (const { spans } of scopeSpans) {
       for (const span of spans) {
         const counted = isOperationSpan(span)
@@ -206,10 +210,12 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   )
   const latest = spans.reduce((most, span) => Math.max(most, Number(span.endTimeUnixNano / 1_000_000n)), 0)
   const traces = new Set(spans.map((span) => span.traceId).filter((trace) => Schema.is(TraceId)(trace)))
+  const archive = yield* encodeTraces(resourceSpans)
+  yield* decodeTraces(archive).pipe(Effect.mapError(unarchivable))
   const read: ReadTraces = {
     export: {
       digest: BatchDigest.make(Hex.encode(digest)),
-      archive: encodeTraces(resourceSpans),
+      archive,
       from: DateTime.makeUnsafe(spans.length === 0 ? nowMillis : earliest),
       to: DateTime.makeUnsafe(spans.length === 0 ? nowMillis : latest),
       spans: spans.length,

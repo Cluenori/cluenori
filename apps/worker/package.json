@@ -11,6 +11,7 @@
     "typecheck": "wrangler types > /dev/null && tsc"
   },
   "dependencies": {
+    "@bagatka/otlp-protobuf": "catalog:",
     "@cluenori/analytics": "workspace:*",
     "@cluenori/cloudflare-workers-ai": "workspace:*",
     "@cluenori/foundation": "workspace:*",
@@ -20,7 +21,6 @@
     "@cluenori/manifest": "workspace:*",
     "@cluenori/members": "workspace:*",
     "@cluenori/notifications": "workspace:*",
-    "@cluenori/otlp": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/releases": "workspace:*",

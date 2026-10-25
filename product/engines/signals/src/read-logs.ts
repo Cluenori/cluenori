@@ -1,6 +1,6 @@
+import type { AnyValue, Attributes, LogRecord } from "@bagatka/otlp-protobuf"
+import { decodeLogs, encodeLogs } from "@bagatka/otlp-protobuf"
 import { TraceId } from "@cluenori/foundation"
-import type { AnyValue, Attributes, LogRecord } from "@cluenori/otlp"
-import { decodeLogs, encodeLogs } from "@cluenori/otlp"
 import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Base64, Hex } from "effect/encoding"
 
@@ -12,7 +12,7 @@ import { ErrorGroupId, SpanId } from "./log-entry.ts"
 import { BatchDigest } from "./operation-counts.ts"
 import type { Rejected } from "./read-traces.ts"
 import { environmentOf, releaseOf } from "./read-traces.ts"
-import { scrubbedLogs } from "./scrubbed.ts"
+import { scrubbedLogs, unarchivable } from "./scrubbed.ts"
 
 /** How long warnings and errors are kept: older ones are refused at ingest, and removed after. */
 export const logRetention = Duration.days(90)
@@ -54,10 +54,17 @@ export interface ReadLogs {
 
 const isAttributes = (value: AnyValue): value is Attributes => value instanceof Map
 
-/** An attribute's value as JSON: bytes become base64 text. */
+/**
+ * An attribute's value as JSON: bytes become base64 text, and an integer a number, or its decimal
+ * text past 2^53, where a JSON number can't hold it exactly.
+ */
 export const jsonOf = (value: AnyValue): Schema.Json => {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return value
+  }
+  if (typeof value === "bigint") {
+    const asNumber = Number(value)
+    return Number.isSafeInteger(asNumber) ? asNumber : value.toString(10)
   }
   if (value instanceof Uint8Array) {
     return Base64.encode(value)
@@ -150,7 +157,8 @@ const errorIdOf = Effect.fn("errorIdOf")(function* (shape: ErrorShape | undefine
  * the file the archive keeps, and picks out its warnings and errors, grouping each error by what
  * makes it the same error. Other records are only archived. A warning or error older than the 90
  * days they are kept, or more than an hour in the future, is archived but not indexed, and counted
- * in `rejected`.
+ * in `rejected`. Fails with `OtlpInvalid` when the body isn't an export, or when its scrubbed
+ * archive couldn't be read back (`unarchivable`).
  */
 export const readLogs = Effect.fn("readLogs")(function* (body: Uint8Array) {
   const crypto = yield* Crypto.Crypto
@@ -189,7 +197,7 @@ export const readLogs = Effect.fn("readLogs")(function* (body: Uint8Array) {
             : "A warning or error is more than an hour from now; check the sender's clock"
         }
         if (level !== undefined && isIndexed && !tooOld && !tooNew) {
-          const entry = yield* entryOf(record, time, scope.name, resource)
+          const entry = yield* entryOf(record, time, scope.name, resource.attributes)
           const shape = errors.has(level) ? errorShapeOf(entry) : undefined
           const errorId = yield* errorIdOf(shape)
           if (shape !== undefined && errorId !== undefined && !shapes.has(errorId)) {
@@ -200,10 +208,12 @@ export const readLogs = Effect.fn("readLogs")(function* (body: Uint8Array) {
       }
     }
   }
+  const archive = yield* encodeLogs(resourceLogs)
+  yield* decodeLogs(archive).pipe(Effect.mapError(unarchivable))
   const read: ReadLogs = {
     export: {
       digest: BatchDigest.make(Hex.encode(digest)),
-      archive: encodeLogs(resourceLogs),
+      archive,
       from: DateTime.makeUnsafe(records === 0 ? nowMillis : earliest),
       to: DateTime.makeUnsafe(records === 0 ? nowMillis : latest),
       records,

@@ -10,10 +10,10 @@
     "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
   },
   "dependencies": {
+    "@bagatka/otlp-protobuf": "catalog:",
     "@bagatka/quantile-sketch": "catalog:",
     "@bagatka/scrub": "catalog:",
     "@cluenori/foundation": "workspace:*",
-    "@cluenori/otlp": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "effect": "catalog:"
   },

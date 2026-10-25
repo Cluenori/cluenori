@@ -92,6 +92,7 @@
     "apps/worker": {
       "name": "@cluenori/worker",
       "dependencies": {
+        "@bagatka/otlp-protobuf": "catalog:",
         "@cluenori/analytics": "workspace:*",
         "@cluenori/cloudflare-workers-ai": "workspace:*",
         "@cluenori/foundation": "workspace:*",
@@ -101,7 +102,6 @@
         "@cluenori/manifest": "workspace:*",
         "@cluenori/members": "workspace:*",
         "@cluenori/notifications": "workspace:*",
-        "@cluenori/otlp": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "@cluenori/releases": "workspace:*",
@@ -171,16 +171,6 @@
     },
     "packages/openapi-swift": {
       "name": "@cluenori/openapi-swift",
-      "dependencies": {
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@effect/vitest": "catalog:",
-        "vitest": "catalog:",
-      },
-    },
-    "packages/otlp": {
-      "name": "@cluenori/otlp",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -324,10 +314,10 @@
     "product/engines/signals": {
       "name": "@cluenori/signals",
       "dependencies": {
+        "@bagatka/otlp-protobuf": "catalog:",
         "@bagatka/quantile-sketch": "catalog:",
         "@bagatka/scrub": "catalog:",
         "@cluenori/foundation": "workspace:*",
-        "@cluenori/otlp": "workspace:*",
         "@cluenori/projects": "workspace:*",
         "effect": "catalog:",
       },
@@ -452,6 +442,7 @@
   },
   "catalog": {
     "@bagatka/bun-workspace-rules": "0.1.0",
+    "@bagatka/otlp-protobuf": "0.1.0",
     "@bagatka/qr-code": "0.1.0",
     "@bagatka/quantile-sketch": "0.1.0",
     "@bagatka/scrub": "0.1.1",
@@ -580,6 +571,8 @@
 
     "@bagatka/bun-workspace-rules": ["@bagatka/bun-workspace-rules@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-PZlsQCTcfdQNwib88p0vQwkQTP+ryL0zkNnJidpE5dDtyby6jmuidB/Qynoz+EPZjh/Gdo2F6BDvKiTxVkFu3A=="],
 
+    "@bagatka/otlp-protobuf": ["@bagatka/otlp-protobuf@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-sGMeTSGvy12pg0PYY/7lUGNCNLFb/WiVb2d22xYfsGLbtQUAjsv4/80CG5WlD4wH39yrytPs8AQjgVRrhBZwSQ=="],
+
     "@bagatka/qr-code": ["@bagatka/qr-code@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-Mi7wENLieSnEwt4dw5wC0wCb2OzPfGptbn2yJFEVGSTSpfNG2YduXg8pL8rTFsU3All2dfNiLoboBzhOCyg7QQ=="],
 
     "@bagatka/quantile-sketch": ["@bagatka/quantile-sketch@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-WAKfKI+ekFZiruczMAFXthNKfqmyK338yWfS798SEq93cvzt15IZCXrbB56gAGd+6YX/UVC7wQhx2NVVN5+rLA=="],
@@ -639,8 +632,6 @@
     "@cluenori/notifications": ["@cluenori/notifications@workspace:product/engines/notifications"],
 
     "@cluenori/openapi-swift": ["@cluenori/openapi-swift@workspace:packages/openapi-swift"],
-
-    "@cluenori/otlp": ["@cluenori/otlp@workspace:packages/otlp"],
 
     "@cluenori/phones": ["@cluenori/phones@workspace:product/engines/phones"],
 

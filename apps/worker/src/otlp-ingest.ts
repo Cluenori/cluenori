@@ -1,6 +1,6 @@
+import { exportResponse, protobufContentType } from "@bagatka/otlp-protobuf"
+import type { OtlpInvalid } from "@bagatka/otlp-protobuf"
 import type { ProjectKey } from "@cluenori/foundation"
-import { exportResponse, protobufContentType } from "@cluenori/otlp"
-import type { OtlpInvalid } from "@cluenori/otlp"
 import type { IngestKeyRejected } from "@cluenori/projects"
 import { IngestKey, ingestKeyScope } from "@cluenori/projects"
 import type { ArchiveUnavailable, Rejected } from "@cluenori/signals"
@@ -89,7 +89,7 @@ const otlpRoute = <E extends { readonly rejected: Rejected | undefined }>(
       }
       const readExport = yield* read(arrived.body).pipe(Effect.result)
       if (Result.isFailure(readExport)) {
-        return refuse(400, `The body isn't an OTLP export: ${readExport.failure.message}`)
+        return refuse(400, readExport.failure.message)
       }
       const recorded = yield* record(arrived.project, arrived.ingestKey, readExport.success).pipe(Effect.result)
       if (Result.isFailure(recorded) && recorded.failure._tag === "ArchiveUnavailable") {
@@ -99,8 +99,8 @@ const otlpRoute = <E extends { readonly rejected: Rejected | undefined }>(
         return refuse(401, "The ingest key isn't one of this deployment's.")
       }
       const { rejected } = readExport.success
-      const answer = exportResponse(
-        rejected === undefined ? undefined : { count: rejected.count, message: rejected.problem },
+      const answer = yield* exportResponse(
+        rejected === undefined ? undefined : { rejected: rejected.count, errorMessage: rejected.problem },
       )
       return HttpServerResponse.uint8Array(answer, { contentType: protobufContentType })
     }),

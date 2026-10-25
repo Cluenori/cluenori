@@ -1,6 +1,6 @@
+import type { LogRecord, ResourceLogs } from "@bagatka/otlp-protobuf"
+import { decodeLogs, encodeLogs } from "@bagatka/otlp-protobuf"
 import { ComponentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
-import type { LogRecord, ResourceLogs } from "@cluenori/otlp"
-import { decodeLogs, encodeLogs } from "@cluenori/otlp"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Duration, Effect, Layer } from "effect"
 import { Base64 } from "effect/encoding"
@@ -35,14 +35,19 @@ const readAt = <A, E, R>(time: number, read: Effect.Effect<A, E, R>) =>
   TestClock.setTime(time).pipe(Effect.andThen(read), Effect.provide(WebCrypto))
 
 const fixtureLogs = bytesOf(dotnetLogs).pipe(Effect.flatMap(readLogs))
+
+// Reads the export `encoded` writes.
+const readEncoded = (encoded: Effect.Effect<Uint8Array>) => encoded.pipe(Effect.flatMap(readLogs))
 const fixtureTraces = bytesOf(dotnetTraces).pipe(Effect.flatMap(readTraces))
 
 const oneRecordExport = (record: Partial<LogRecord>): ReadonlyArray<ResourceLogs> => [
   {
-    resource: new Map([["service.name", "notes-api"]]),
+    resource: { attributes: new Map([["service.name", "notes-api"]]), droppedAttributesCount: 0 },
+    schemaUrl: "",
     scopeLogs: [
       {
-        scope: { name: "Notes.Invites", version: "" },
+        scope: { name: "Notes.Invites", version: "", attributes: new Map(), droppedAttributesCount: 0 },
+        schemaUrl: "",
         logRecords: [
           {
             timeUnixNano: BigInt(capturedAt) * 1_000_000n,
@@ -51,6 +56,8 @@ const oneRecordExport = (record: Partial<LogRecord>): ReadonlyArray<ResourceLogs
             severityText: "Warning",
             body: "",
             attributes: new Map(),
+            droppedAttributesCount: 0,
+            flags: 0,
             traceId: undefined,
             spanId: undefined,
             eventName: "",
@@ -105,7 +112,7 @@ describe("readLogs", () => {
 
   it.effect("removes emails and credentials before anything is kept, in the archive too", () =>
     Effect.gen(function* () {
-      const exported = oneRecordExport({
+      const oneRecord = oneRecordExport({
         body: "Invite to anna@example.com failed: Bearer abcDEF1234567890",
         attributes: new Map([
           ["password", "hunter2hunter2"],
@@ -114,7 +121,29 @@ describe("readLogs", () => {
           ["sent.with", `Sent with cluenori.notes.notes-api.${"a1B2".repeat(10)}abc, by cluenori-sdk.notes.app.x1`],
         ]),
       })
-      const { export: read } = yield* readAt(now, readLogs(encodeLogs(exported)))
+      // The resource's and the scope's attributes are text too, and the archive keeps them.
+      // So are its schema URLs and event names.
+      const exported = oneRecord.map((resource) => ({
+        ...resource,
+        resource: { attributes: new Map([["host.owner", "anna@example.com"]]), droppedAttributesCount: 0 },
+        schemaUrl: "https://schemas.example/v1?token=s3cr3tvalue",
+        scopeLogs: resource.scopeLogs.map((scope) => ({
+          ...scope,
+          scope: {
+            name: "Notes.Invites Bearer abcDEF1234567890",
+            version: "anna@example.com",
+            attributes: new Map([["owner", "anna@example.com"]]),
+            droppedAttributesCount: 0,
+          },
+          schemaUrl: "https://schemas.example/v1?token=s3cr3tvalue",
+          logRecords: scope.logRecords.map((record) => ({
+            ...record,
+            severityText: "Warning Bearer abcDEF1234567890",
+            eventName: "invite sent to anna@example.com",
+          })),
+        })),
+      }))
+      const { export: read } = yield* readAt(now, readEncoded(encodeLogs(exported)))
       const [entry] = read.entries
       const archived = yield* decodeLogs(read.archive)
       const archivedRecord = archived[0]?.scopeLogs[0]?.logRecords[0]
@@ -128,6 +157,15 @@ describe("readLogs", () => {
       })
       assert.strictEqual(archivedRecord?.body, "Invite to [email] failed: Bearer [token]")
       assert.strictEqual(archivedRecord?.attributes.get("password"), "[secret]")
+      assert.strictEqual(archived[0]?.resource.attributes.get("host.owner"), "[email]")
+      assert.strictEqual(archived[0]?.scopeLogs[0]?.scope.attributes.get("owner"), "[email]")
+      assert.strictEqual(archived[0]?.schemaUrl, "https://schemas.example/v1?token=[secret]")
+      assert.strictEqual(archived[0]?.scopeLogs[0]?.schemaUrl, "https://schemas.example/v1?token=[secret]")
+      assert.strictEqual(archivedRecord?.eventName, "invite sent to [email]")
+      assert.strictEqual(entry?.category, "Notes.Invites Bearer [token]")
+      assert.strictEqual(archived[0]?.scopeLogs[0]?.scope.name, "Notes.Invites Bearer [token]")
+      assert.strictEqual(archived[0]?.scopeLogs[0]?.scope.version, "[email]")
+      assert.strictEqual(archivedRecord?.severityText, "Warning Bearer [token]")
     }),
   )
 
@@ -632,8 +670,8 @@ const unboundOf = (parameter: string, withEndpointFrame: boolean) =>
 describe("error groups", () => {
   it.effect("group the same code's errors after a rebuild, naming where they happen as written", () =>
     Effect.gen(function* () {
-      const before = yield* readAt(now, readLogs(failureOf("5", 108, "exp-1")))
-      const after = yield* readAt(now, readLogs(failureOf("6", 112, "exp-9")))
+      const before = yield* readAt(now, readEncoded(failureOf("5", 108, "exp-1")))
+      const after = yield* readAt(now, readEncoded(failureOf("6", 112, "exp-9")))
       const [group] = before.export.errors
 
       assert.strictEqual(group?.id, after.export.errors[0]?.id)
@@ -644,8 +682,8 @@ describe("error groups", () => {
 
   it.effect("group an error by the app's own frames, whatever the framework's around them", () =>
     Effect.gen(function* () {
-      const one = yield* readAt(now, readLogs(unboundOf("unreadOnly", false)))
-      const again = yield* readAt(now, readLogs(unboundOf("unreadOnly", true)))
+      const one = yield* readAt(now, readEncoded(unboundOf("unreadOnly", false)))
+      const again = yield* readAt(now, readEncoded(unboundOf("unreadOnly", true)))
       const [group] = one.export.errors
 
       assert.strictEqual(group?.id, again.export.errors[0]?.id)
@@ -658,8 +696,8 @@ describe("error groups", () => {
 
   it.effect("tell apart errors thrown in shared code by what they say", () =>
     Effect.gen(function* () {
-      const unread = yield* readAt(now, readLogs(unboundOf("unreadOnly", false)))
-      const verified = yield* readAt(now, readLogs(unboundOf("verifiedOnly", false)))
+      const unread = yield* readAt(now, readEncoded(unboundOf("unreadOnly", false)))
+      const verified = yield* readAt(now, readEncoded(unboundOf("verifiedOnly", false)))
 
       assert.notStrictEqual(unread.export.errors[0]?.id, verified.export.errors[0]?.id)
     }),
@@ -667,8 +705,8 @@ describe("error groups", () => {
 
   it.effect("group errors without an exception by their logger and template", () =>
     Effect.gen(function* () {
-      const first = yield* readAt(now, readLogs(failed("42")))
-      const second = yield* readAt(now, readLogs(failed("43")))
+      const first = yield* readAt(now, readEncoded(failed("42")))
+      const second = yield* readAt(now, readEncoded(failed("43")))
 
       assert.deepInclude(first.export.errors[0], {
         kind: "log",

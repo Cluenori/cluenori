@@ -4,7 +4,7 @@ const forTests = ["@effect/vitest", "vitest"]
 
 // bagatka/kit's packages from npm, the general capabilities that were first written here
 // (AGENTS.md, "General packages"), each at its exact version in the catalog.
-const toolkit = ["@bagatka/qr-code", "@bagatka/quantile-sketch", "@bagatka/scrub"]
+const toolkit = ["@bagatka/otlp-protobuf", "@bagatka/qr-code", "@bagatka/quantile-sketch", "@bagatka/scrub"]
 
 // Product packages run inside a project's Durable Object, so their tests do too: in workerd, on the
 // Durable Object's SQLite.
@@ -81,7 +81,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/worker",
     contract: true,
     mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*"],
-    mayInstall: ["effect", "@effect/platform-browser", "@effect/sql-sqlite-do"],
+    mayInstall: ["effect", "@effect/platform-browser", "@effect/sql-sqlite-do", ...toolkit],
     mayInstallForDevelopment: ["wrangler", ...forTests],
   },
   {

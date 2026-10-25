@@ -1,8 +1,8 @@
-import { countResourceMetrics } from "@cluenori/otlp"
 import { Crypto, DateTime, Effect } from "effect"
 import { Hex } from "effect/encoding"
 
 import type { MetricsExport } from "./exports.ts"
+import { countResourceMetrics } from "./metrics-framing.ts"
 import { BatchDigest } from "./operation-counts.ts"
 
 /**

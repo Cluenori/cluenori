@@ -135,7 +135,8 @@ the ingest API's, which apps' SDKs call with an SDK key (`AppBatch` is its wire 
 
 ## Depends on
 
-- `@cluenori/otlp`, to read and write exports; `@bagatka/quantile-sketch`, for percentiles, every sketch at its default accuracy, 2%;
+- `@bagatka/otlp-protobuf`, to read and write exports of traces and logs; metrics exports are
+  checked only by their framing, here (`src/metrics-framing.ts`), until Cluenori reads them; `@bagatka/quantile-sketch`, for percentiles, every sketch at its default accuracy, 2%;
   `@bagatka/scrub`, to remove secrets and personal data, Cluenori's own keys by their prefix,
   `cluenori.`.
 - `@cluenori/foundation`, for the scope keys and `Period`; `@cluenori/projects`, for the
@@ -145,6 +146,10 @@ the ingest API's, which apps' SDKs call with an SDK key (`AppBatch` is its wire 
 
 - **Everything is archived; views are derived.** Every export is kept 90 days, so a new view can be
   built from data that arrived before it. Records below warning are only in the archive.
+- **Every archive can be read back.** The OTLP reader allows one span, record or value for each 16
+  bytes, and scrubbing shortens text, so `readTraces` and `readLogs` read the scrubbed archive once
+  more and refuse an export whose archive fails (`OtlpInvalid`), rather than keep one no view can
+  open.
 - **Archived before recorded:** the archive file is written first, outside the transaction, then
   everything else in one transaction that checks again for a retry. A failure leaves at most a
   file no index points to, which the bucket's lifecycle removes.

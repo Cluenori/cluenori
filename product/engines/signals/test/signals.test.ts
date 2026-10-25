@@ -1,15 +1,15 @@
+import type { ResourceSpans, Span } from "@bagatka/otlp-protobuf"
+import { decodeTraces, encodeTraces, SpanId, TraceId as OtlpTraceId } from "@bagatka/otlp-protobuf"
 import { sketchOf } from "@bagatka/quantile-sketch"
 import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
-import type { Span } from "@cluenori/otlp"
-import { encodeTraces } from "@cluenori/otlp"
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Duration, Effect } from "effect"
+import { DateTime, Duration, Effect, Result } from "effect"
 import { Base64 } from "effect/encoding"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 
 import type { KeptTrace, OperationCounts, TraceExport } from "../src/index.ts"
-import { BatchDigest, readTraces, Signals } from "../src/index.ts"
+import { BatchDigest, readMetrics, readTraces, Signals } from "../src/index.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
 import { dropAppTables, inProject, WebCrypto } from "./in-object.ts"
 
@@ -78,18 +78,74 @@ const span = (
   parent: string | undefined,
   failed = false,
 ): Span => ({
-  traceId: trace.repeat(32),
-  spanId: id.repeat(16),
-  parentSpanId: parent === undefined ? undefined : parent.repeat(16),
+  traceId: OtlpTraceId.make(trace.repeat(32)),
+  spanId: SpanId.make(id.repeat(16)),
+  traceState: "",
+  parentSpanId: parent === undefined ? undefined : SpanId.make(parent.repeat(16)),
+  flags: 0,
   name,
   kind,
   startTimeUnixNano: BigInt(capturedAt) * 1_000_000n,
   endTimeUnixNano: BigInt(capturedAt + 1_200) * 1_000_000n,
   attributes: new Map(),
+  droppedAttributesCount: 0,
   events: [],
+  droppedEventsCount: 0,
+  links: [],
+  droppedLinksCount: 0,
   status: { code: failed ? "error" : "unset", message: "" },
 })
 const lastDay = new Period({ from: DateTime.makeUnsafe(now - days(1)), to: DateTime.makeUnsafe(now) })
+
+// How many resources it read, or why it refused the body.
+const outcomeOf = (bytes: ReadonlyArray<number> | Uint8Array) =>
+  readMetrics(Uint8Array.from(bytes)).pipe(
+    Effect.provide(WebCrypto),
+    Effect.result,
+    Effect.map((read) => (Result.isSuccess(read) ? read.success.resources : read.failure.reason)),
+  )
+
+describe("readMetrics", () => {
+  it.effect("counts an export's resources, and refuses a body whose framing breaks, saying where", () =>
+    Effect.gen(function* () {
+      // Two resources, field 1, around a field of each other wire type: a varint, 64 and 32 bits.
+      const two = [0x0a, 0x00, 0x10, 0x96, 0x01, 0x19, 1, 2, 3, 4, 5, 6, 7, 8, 0x25, 1, 2, 3, 4, 0x0a, 0x01, 0x00]
+      const outcomes = yield* Effect.forEach(
+        [
+          two,
+          [0x0a, 0x05, 0x00],
+          [0x0b],
+          [0x00],
+          [0x08, 0x80],
+          [0x08, ...Array.from({ length: 10 }, () => 0x80), 0x01],
+          [0x0a, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f],
+        ],
+        outcomeOf,
+      )
+
+      assert.deepStrictEqual(outcomes, [
+        2,
+        "The field at byte 0 runs past the body's 3 bytes",
+        "The field at byte 0 has wire type 3, which OTLP's messages don't use",
+        "The field at byte 0 has number 0, which protobuf has none of",
+        "The number at byte 1 isn't a varint of at most 10 bytes within the body",
+        "The number at byte 1 isn't a varint of at most 10 bytes within the body",
+        "The field at byte 0 runs past the body's 10 bytes",
+      ])
+    }),
+  )
+
+  it.effect("reads the worst case, 4 MiB of the smallest fields, in one pass", () =>
+    Effect.gen(function* () {
+      const fields = new Uint8Array(4 * 1024 * 1024)
+      for (let at = 0; at < fields.length; at += 2) {
+        fields[at] = 0x0a
+      }
+
+      assert.strictEqual(yield* outcomeOf(fields), 2 * 1024 * 1024)
+    }),
+  )
+})
 
 describe("readTraces", () => {
   it.effect("counts a .NET export's server spans by operation, and skips its client spans", () =>
@@ -139,12 +195,14 @@ describe("readTraces", () => {
     Effect.gen(function* () {
       // A cleanup job run twice, once failing, each with a step under it; a database call no job
       // made; and an internal span whose parent is in another service.
-      const body = encodeTraces([
+      const body = yield* encodeTraces([
         {
-          resource: new Map([["service.name", "notes-api"]]),
+          resource: { attributes: new Map([["service.name", "notes-api"]]), droppedAttributesCount: 0 },
+          schemaUrl: "",
           scopeSpans: [
             {
-              scope: { name: "Notes.Cleanup", version: "" },
+              scope: { name: "Notes.Cleanup", version: "", attributes: new Map(), droppedAttributesCount: 0 },
+              schemaUrl: "",
               spans: [
                 span("a", "1", "cleanup.run", "internal", undefined),
                 span("a", "2", "cleanup.batch", "internal", "1"),
@@ -184,6 +242,96 @@ describe("readTraces", () => {
         count: 16,
         problem: "A span is older than the 14 days operations are counted",
       })
+    }),
+  )
+  it.effect("removes emails and credentials from the archive's names, versions, schema URLs and trace states", () =>
+    Effect.gen(function* () {
+      const scope = {
+        name: "Notes Bearer abcDEF1234567890",
+        version: "ada@example.com",
+        attributes: new Map(),
+        droppedAttributesCount: 0,
+      }
+      const linked = span("a", "1", "GET /a", "server", undefined)
+      const body = yield* encodeTraces([
+        {
+          resource: { attributes: new Map(), droppedAttributesCount: 0 },
+          schemaUrl: "https://schemas.example/v1?token=s3cr3tvalue",
+          scopeSpans: [
+            {
+              scope,
+              schemaUrl: "https://schemas.example/v1?token=s3cr3tvalue",
+              spans: [
+                {
+                  ...linked,
+                  traceState: "vendor=ada@example.com",
+                  events: [
+                    {
+                      timeUnixNano: linked.startTimeUnixNano,
+                      name: "retried for ada@example.com",
+                      attributes: new Map(),
+                      droppedAttributesCount: 0,
+                    },
+                  ],
+                  links: [
+                    {
+                      traceId: linked.traceId,
+                      spanId: linked.spanId,
+                      traceState: "vendor=ada@example.com",
+                      attributes: new Map(),
+                      droppedAttributesCount: 0,
+                      flags: 0,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ])
+      const { export: batch } = yield* TestClock.setTime(now).pipe(
+        Effect.andThen(readTraces(body)),
+        Effect.provide(WebCrypto),
+      )
+      const [archived] = yield* decodeTraces(batch.archive)
+      const archivedSpan = archived?.scopeSpans[0]?.spans[0]
+
+      assert.strictEqual(archived?.schemaUrl, "https://schemas.example/v1?token=[secret]")
+      assert.strictEqual(archived?.scopeSpans[0]?.schemaUrl, "https://schemas.example/v1?token=[secret]")
+      assert.strictEqual(archivedSpan?.traceState, "vendor=[email]")
+      assert.strictEqual(archivedSpan?.links[0]?.traceState, "vendor=[email]")
+      assert.strictEqual(archived?.scopeSpans[0]?.scope.name, "Notes Bearer [token]")
+      assert.strictEqual(archived?.scopeSpans[0]?.scope.version, "[email]")
+      assert.strictEqual(archivedSpan?.events[0]?.name, "retried for [email]")
+    }),
+  )
+
+  it.effect("refuses an export whose scrubbed archive it couldn't read back, saying why", () =>
+    Effect.gen(function* () {
+      // A long credential pays for many empty scopes; once removed, the archive is too short for
+      // them, by the one object for each 16 bytes the reader allows.
+      const empty = { name: "", version: "", attributes: new Map(), droppedAttributesCount: 0 }
+      const body = yield* encodeTraces([
+        {
+          resource: {
+            attributes: new Map([["authorization", `Bearer ${"A".repeat(4000)}`]]),
+            droppedAttributesCount: 0,
+          },
+          schemaUrl: "",
+          scopeSpans: [
+            { scope: empty, schemaUrl: "", spans: [span("a", "1", "GET /a", "server", undefined)] },
+            ...Array.from({ length: 100 }, () => ({ scope: empty, schemaUrl: "", spans: [] })),
+          ],
+        },
+      ])
+      const refused = yield* TestClock.setTime(now).pipe(
+        Effect.andThen(readTraces(body)),
+        Effect.provide(WebCrypto),
+        Effect.flip,
+      )
+
+      assert.strictEqual(refused._tag, "OtlpInvalid")
+      assert.include(refused.message, "Without its credentials and personal data")
     }),
   )
 })
@@ -586,12 +734,22 @@ describe("Signals", () => {
 })
 
 // A service of `version` with one server span of trace `trace`.
-const resource = (version: string, trace: string) => ({
-  resource: new Map<string, string>([
-    ["service.name", "notes-api"],
-    ["service.version", version],
-  ]),
-  scopeSpans: [{ scope: { name: "Notes", version: "" }, spans: [span(trace, "1", "GET /a", "server", undefined)] }],
+const resource = (version: string, trace: string): ResourceSpans => ({
+  resource: {
+    attributes: new Map([
+      ["service.name", "notes-api"],
+      ["service.version", version],
+    ]),
+    droppedAttributesCount: 0,
+  },
+  schemaUrl: "",
+  scopeSpans: [
+    {
+      scope: { name: "Notes", version: "", attributes: new Map(), droppedAttributesCount: 0 },
+      schemaUrl: "",
+      spans: [span(trace, "1", "GET /a", "server", undefined)],
+    },
+  ],
 })
 
 // The end of the minute `ago` milliseconds before the fixture's.
@@ -605,7 +763,7 @@ describe("Signals by release", () => {
     Effect.gen(function* () {
       // The same operation in the same minute from two releases, as during a rollout, and from a
       // service whose version is no release version.
-      const body = encodeTraces([
+      const body = yield* encodeTraces([
         resource(older, "a"),
         resource(newer, "b"),
         resource(newer, "c"),
