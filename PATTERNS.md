@@ -605,7 +605,7 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   service instead (`product/modules/releases/test/sources.test.ts`), since the client's tests
   already cover the wire.
 - **A language model is `effect/ai`'s `LanguageModel`,** which the host provides
-  (`@cluenori/cloudflare-workers-ai` on the Worker's `AI` binding); product code asks it with
+  (`@bagatka/ai-cloudflare-binding` on the Worker's `AI` binding); product code asks it with
   `generateText` and never names a provider. Text from commits, logs or people goes in the prompt
   as data, with the instruction not to follow it, and what the model writes reaches the outside
   only after a person saves it (`product/modules/releases/src/notes.ts`). Tests fake it with

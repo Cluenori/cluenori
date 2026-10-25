@@ -5,6 +5,7 @@ const forTests = ["@effect/vitest", "vitest"]
 // bagatka/kit's packages from npm, the general capabilities that were first written here
 // (AGENTS.md, "General packages"), each at its exact version in the catalog.
 const toolkit = [
+  "@bagatka/ai-cloudflare-binding",
   "@bagatka/apns",
   "@bagatka/app-store-connect",
   "@bagatka/github-app",
@@ -90,7 +91,8 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/worker",
     contract: true,
     mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*"],
-    mayInstall: ["effect", "@effect/platform-browser", "@effect/sql-sqlite-do", ...toolkit],
+    // @effect/ai-cloudflare is @bagatka/ai-cloudflare-binding's peer, so the Worker installs it.
+    mayInstall: ["effect", "@effect/ai-cloudflare", "@effect/platform-browser", "@effect/sql-sqlite-do", ...toolkit],
     mayInstallForDevelopment: ["wrangler", ...forTests],
   },
   {

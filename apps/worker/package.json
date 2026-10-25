@@ -11,9 +11,9 @@
     "typecheck": "wrangler types > /dev/null && tsc"
   },
   "dependencies": {
+    "@bagatka/ai-cloudflare-binding": "catalog:",
     "@bagatka/otlp-protobuf": "catalog:",
     "@cluenori/analytics": "workspace:*",
-    "@cluenori/cloudflare-workers-ai": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github": "workspace:*",
     "@cluenori/github-app": "workspace:*",
@@ -27,6 +27,7 @@
     "@cluenori/signals": "workspace:*",
     "@cluenori/today": "workspace:*",
     "@cluenori/webauthn": "workspace:*",
+    "@effect/ai-cloudflare": "catalog:",
     "@effect/platform-browser": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",
     "effect": "catalog:"

@@ -13,6 +13,7 @@
       "tools"
     ],
     "catalog": {
+      "@bagatka/ai-cloudflare-binding": "0.1.0",
       "@bagatka/apns": "0.1.0",
       "@bagatka/app-store-connect": "0.1.0",
       "@bagatka/bun-workspace-rules": "0.1.0",
@@ -23,6 +24,7 @@
       "@bagatka/scrub": "0.1.1",
       "@base-ui/react": "1.9.0",
       "@cloudflare/vitest-plugin": "1.4.6",
+      "@effect/ai-cloudflare": "4.0.6",
       "@effect/atom-react": "4.0.6",
       "@effect/platform-browser": "4.0.6",
       "@effect/platform-bun": "4.0.6",

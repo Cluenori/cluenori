@@ -1,5 +1,5 @@
+import { CloudflareBindingLanguageModel, WorkersAiModel } from "@bagatka/ai-cloudflare-binding"
 import { analyticsModule } from "@cluenori/analytics"
-import { WorkersAi, WorkersAiModel } from "@cluenori/cloudflare-workers-ai"
 import type {
   ErrorSchema,
   ModuleAction,
@@ -490,7 +490,7 @@ export class ProjectObject extends DurableObject<Env> {
         Layer.provideMerge(
           Layer.unwrap(
             Effect.map(languageModelSetting, (model) =>
-              WorkersAi.layer({ binding: env.AI, model, maxTokens: draftTokens }),
+              CloudflareBindingLanguageModel.layer({ binding: env.AI, model, config: { max_tokens: draftTokens } }),
             ),
           ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie),
         ),
