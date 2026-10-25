@@ -79,7 +79,7 @@ const envelope = yield* Schema.decodeUnknownEffect(Envelope)(body)
 ## Depends on
 
 `effect`, including `effect/sql` for the transaction and the migrations. The tests run in workerd
-on a Durable Object's SQLite (`@effect/sql-sqlite-do`), with `@cluenori/web-crypto` for `Crypto`.
+on a Durable Object's SQLite (`@effect/sql-sqlite-do`), with `@effect/platform-browser`'s `BrowserCrypto.layer` for `Crypto`.
 
 ## Activity
 

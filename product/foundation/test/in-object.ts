@@ -1,4 +1,4 @@
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
@@ -24,7 +24,7 @@ export const inObject = <A, E>(
         program.pipe(
           Effect.provide(
             ActivityLog.layer(settings).pipe(
-              Layer.provide(webCryptoLayer(crypto)),
+              Layer.provide(BrowserCrypto.layer),
               Layer.provideMerge(SqliteClient.layer({ storage: state.storage })),
             ),
           ),

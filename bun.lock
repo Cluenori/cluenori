@@ -107,8 +107,8 @@
         "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/today": "workspace:*",
-        "@cluenori/web-crypto": "workspace:*",
         "@cluenori/webauthn": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "effect": "catalog:",
       },
@@ -199,16 +199,6 @@
         "vitest": "catalog:",
       },
     },
-    "packages/web-crypto": {
-      "name": "@cluenori/web-crypto",
-      "dependencies": {
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@effect/vitest": "catalog:",
-        "vitest": "catalog:",
-      },
-    },
     "packages/webauthn": {
       "name": "@cluenori/webauthn",
       "dependencies": {
@@ -230,7 +220,7 @@
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -248,7 +238,7 @@
       "devDependencies": {
         "@bagatka/quantile-sketch": "catalog:",
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -272,7 +262,7 @@
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -292,8 +282,8 @@
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
         "@cluenori/webauthn": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -308,7 +298,7 @@
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -324,7 +314,7 @@
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -343,7 +333,7 @@
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -361,7 +351,6 @@
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -375,7 +364,7 @@
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -392,7 +381,7 @@
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -416,7 +405,7 @@
       "devDependencies": {
         "@bagatka/quantile-sketch": "catalog:",
         "@cloudflare/vitest-plugin": "catalog:",
-        "@cluenori/web-crypto": "workspace:*",
+        "@effect/platform-browser": "catalog:",
         "@effect/sql-sqlite-do": "catalog:",
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
@@ -469,6 +458,7 @@
     "@base-ui/react": "1.9.0",
     "@cloudflare/vitest-plugin": "1.4.6",
     "@effect/atom-react": "4.0.6",
+    "@effect/platform-browser": "4.0.6",
     "@effect/platform-bun": "4.0.6",
     "@effect/platform-node": "4.0.6",
     "@effect/sql-sqlite-do": "4.0.6",
@@ -666,8 +656,6 @@
 
     "@cluenori/tools": ["@cluenori/tools@workspace:tools"],
 
-    "@cluenori/web-crypto": ["@cluenori/web-crypto@workspace:packages/web-crypto"],
-
     "@cluenori/webauthn": ["@cluenori/webauthn@workspace:packages/webauthn"],
 
     "@cluenori/worker": ["@cluenori/worker@workspace:apps/worker"],
@@ -677,6 +665,8 @@
     "@date-fns/tz": ["@date-fns/tz@1.5.0", "", {}, "sha512-lwYN/vDPeNRULcepoE/LO2Pgx+7/RV+S9ARfbc9lr2DtGkOD7pAiruHvbR1RX3Qyf6ja47EWJDMsNK5vK08DJg=="],
 
     "@effect/atom-react": ["@effect/atom-react@4.0.6", "", { "peerDependencies": { "effect": "^4.0.6", "react": ">=19.0.0 <20.0.0", "scheduler": ">=0.25.0 <0.29.0" } }, "sha512-DpbuEdaJl+2/GW4KkrKtRD8YVPT+I29bh/TFE7JCGkB4YNiHWNE5q69EagDeK/QXi4RlSb+iR+rNGkORJ9qB/A=="],
+
+    "@effect/platform-browser": ["@effect/platform-browser@4.0.6", "", { "peerDependencies": { "effect": "^4.0.6" } }, "sha512-i4bf1+FlUnZypqK0pQ5cq46KhroTgqFGktFn2WorwIk+yc+RuZO6qsF+Sk6lY5uHwdHTOLGMlnlXSJ8u1UG42g=="],
 
     "@effect/platform-bun": ["@effect/platform-bun@4.0.6", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.6" }, "peerDependencies": { "effect": "^4.0.6" } }, "sha512-RAsGcIVcqhV4aBiM07VnMeNWDyewp8WDwTdIUtiklUDBRtddDllYzPsTlsn+0gLdpdz2lGnMEOFzoNaNrcMfSA=="],
 

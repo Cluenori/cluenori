@@ -1,5 +1,5 @@
 import { ActivityLog, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
@@ -25,7 +25,7 @@ export const inProject = <A, E>(
               Layer.provideMerge(
                 ActivityLog.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }),
               ),
-              Layer.provide(webCryptoLayer(crypto)),
+              Layer.provide(BrowserCrypto.layer),
               Layer.provideMerge(SqliteClient.layer({ storage: state.storage })),
             ),
           ),

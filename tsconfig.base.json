@@ -55,6 +55,8 @@
           "effect/PlatformError",
           "effect/reactivity",
           "@effect/atom-react",
+          // Effect's Crypto on Web Crypto, which Workers have as browsers do.
+          "@effect/platform-browser",
           "@effect/platform-bun",
           "@effect/sql-sqlite-do",
           "@effect/vitest"

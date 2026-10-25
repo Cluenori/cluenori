@@ -7,7 +7,7 @@ import { NoPushToken, Notifications } from "@cluenori/notifications"
 import type { PhoneId } from "@cluenori/phones"
 import { PhoneKeyRejected, PhoneNotFound, Phones } from "@cluenori/phones"
 import { ProjectIndex } from "@cluenori/projects"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
 import { Config, ConfigProvider, Effect, Layer, ManagedRuntime, Option, Redacted } from "effect"
@@ -295,7 +295,7 @@ export class WorkspaceObject extends DurableObject<Env> {
         Layer.provideMerge(Layer.mergeAll(Phones.layer, MembersLive)),
         Layer.provideMerge(ProjectIndex.layer),
         Layer.provide(ActivityLog.layer({ workspace })),
-        Layer.provide(webCryptoLayer(crypto)),
+        Layer.provide(BrowserCrypto.layer),
         Layer.provide(FetchHttpClient.layer),
         Layer.provide(SqliteClient.layer({ storage: ctx.storage })),
         // In the runtime itself, so every call runs on it as the Worker's requests do.

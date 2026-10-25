@@ -2,7 +2,7 @@ import { ActivityLog, MemberId, WorkspaceKey } from "@cluenori/foundation"
 import { Members } from "@cluenori/members"
 import { Phones } from "@cluenori/phones"
 import { ProjectIndex } from "@cluenori/projects"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
@@ -77,7 +77,7 @@ export const inWorkspace = <A, E>(
               ),
               Layer.provideMerge(ProjectIndex.layer),
               Layer.provide(ActivityLog.layer({ workspace: WorkspaceKey.make("main") })),
-              Layer.provideMerge(webCryptoLayer(crypto)),
+              Layer.provideMerge(BrowserCrypto.layer),
               Layer.provide(apns),
               Layer.provide(SqliteClient.layer({ storage: state.storage })),
               Layer.provideMerge(TestClock.layer()),

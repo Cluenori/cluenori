@@ -1,5 +1,5 @@
 import { ActivityLog, WorkspaceKey } from "@cluenori/foundation"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
@@ -22,7 +22,7 @@ export const inWorkspace = <A, E>(name: string, now: number, program: Effect.Eff
           Effect.provide(
             Phones.layer.pipe(
               Layer.provideMerge(ActivityLog.layer({ workspace: WorkspaceKey.make("main") })),
-              Layer.provide(webCryptoLayer(crypto)),
+              Layer.provide(BrowserCrypto.layer),
               Layer.provide(SqliteClient.layer({ storage: state.storage })),
               Layer.provideMerge(TestClock.layer()),
             ),

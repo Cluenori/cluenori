@@ -3,7 +3,7 @@ import { GitHub, GitHubRefused } from "@cluenori/github"
 import { Incidents } from "@cluenori/incidents"
 import { Projects } from "@cluenori/projects"
 import { ArchiveStore, Signals } from "@cluenori/signals"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
@@ -122,7 +122,7 @@ export const inProject = <A, E>(
               ),
               Layer.provide(ArchiveStore.layerMemory),
               Layer.provide(unreachableWeb),
-              Layer.provideMerge(webCryptoLayer(crypto)),
+              Layer.provideMerge(BrowserCrypto.layer),
               Layer.provide(SqliteClient.layer({ storage: state.storage })),
               Layer.provideMerge(TestClock.layer()),
             ),

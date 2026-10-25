@@ -1,6 +1,6 @@
 import { MemberId, WorkspaceKey } from "@cluenori/foundation"
 import { releasesModule } from "@cluenori/releases"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { env } from "cloudflare:workers"
 import { Config, ConfigProvider, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { HttpRouter, HttpServer } from "effect/http"
@@ -125,7 +125,7 @@ const app = HttpRouter.toWebHandler(
     // The OTLP route asks for these per request, so they are outputs of the app's layer.
     Layer.provideMerge(Projects),
     Layer.provideMerge(Workspace),
-    Layer.provideMerge(webCryptoLayer(crypto)),
+    Layer.provideMerge(BrowserCrypto.layer),
     Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
     Layer.provide(HttpServer.layerServices),
     Layer.provideMerge(SyncScheduler),

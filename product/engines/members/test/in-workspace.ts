@@ -1,7 +1,7 @@
 import type { MemberId } from "@cluenori/foundation"
 import { ActivityLog, WorkspaceKey } from "@cluenori/foundation"
 import { ProjectIndex } from "@cluenori/projects"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
@@ -30,7 +30,7 @@ export const inWorkspace = <A, E>(
             Members.layer({ owner: Option.some(owner), crypto: crypto.subtle }).pipe(
               Layer.provideMerge(ProjectIndex.layer),
               Layer.provideMerge(ActivityLog.layer({ workspace: WorkspaceKey.make("main") })),
-              Layer.provide(webCryptoLayer(crypto)),
+              Layer.provide(BrowserCrypto.layer),
               Layer.provide(SqliteClient.layer({ storage: state.storage })),
               Layer.provideMerge(TestClock.layer()),
             ),

@@ -8,7 +8,14 @@ const toolkit = ["@bagatka/qr-code", "@bagatka/quantile-sketch", "@bagatka/scrub
 
 // Product packages run inside a project's Durable Object, so their tests do too: in workerd, on the
 // Durable Object's SQLite.
-const forTestsInDurableObjects = ["@cloudflare/vitest-plugin", "@effect/sql-sqlite-do", "wrangler", ...forTests]
+// Effect's Crypto on Web Crypto, which the Worker provides and their tests too.
+const forTestsInDurableObjects = [
+  "@cloudflare/vitest-plugin",
+  "@effect/platform-browser",
+  "@effect/sql-sqlite-do",
+  "wrangler",
+  ...forTests,
+]
 
 // The dashboard is React with shadcn/ui, whose views are our source and use these (its README,
 // "Depends on").
@@ -74,7 +81,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/worker",
     contract: true,
     mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*"],
-    mayInstall: ["effect", "@effect/sql-sqlite-do"],
+    mayInstall: ["effect", "@effect/platform-browser", "@effect/sql-sqlite-do"],
     mayInstallForDevelopment: ["wrangler", ...forTests],
   },
   {

@@ -207,8 +207,9 @@ export class FeatureCatalog extends Context.Service<FeatureCatalog, {
 - **Only hosts and tests provide layers.** `Effect.provide` appears in `apps/` and `test/`, never
   inside a package (`strictEffectProvide`).
 - **Effect's platform services in workerd.** Effect has no platform package for Workers. `Crypto`
-  comes from `@cluenori/web-crypto`, which the host provides with `webCryptoLayer(crypto)`; `Clock`
-  and `Random` are Effect's defaults.
+  is `@effect/platform-browser`'s `BrowserCrypto.layer`, which the host provides: it uses the
+  platform's Web Crypto, which Workers have as browsers do. `Clock` and `Random` are Effect's
+  defaults.
 - Canonical example: `product/foundation/src/activity-log.ts`, a service whose layer takes its
   settings and does its setup (migrations) once, when it is built.
 

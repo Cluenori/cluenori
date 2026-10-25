@@ -1,5 +1,5 @@
 import { ProjectKey, WorkspaceKey } from "@cluenori/foundation"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
@@ -39,7 +39,7 @@ export const inProject = <A, E>(
   )
 
 /** Effect's `Crypto` on the runtime's Web Crypto, as a host provides it. */
-export const WebCrypto = webCryptoLayer(crypto)
+export const WebCrypto = BrowserCrypto.layer
 
 /**
  * Runs `program` inside the Durable Object of project `project` at the time `now` (Unix ms), with

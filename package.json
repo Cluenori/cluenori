@@ -20,6 +20,7 @@
       "@base-ui/react": "1.9.0",
       "@cloudflare/vitest-plugin": "1.4.6",
       "@effect/atom-react": "4.0.6",
+      "@effect/platform-browser": "4.0.6",
       "@effect/platform-bun": "4.0.6",
       "@effect/platform-node": "4.0.6",
       "@effect/sql-sqlite-do": "4.0.6",

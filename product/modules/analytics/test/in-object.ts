@@ -1,6 +1,6 @@
 import { ProjectKey, WorkspaceKey } from "@cluenori/foundation"
 import { AppBatchStore, AppSignals } from "@cluenori/signals"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
@@ -20,7 +20,7 @@ export const inProject = <A, E>(project: string, now: number, program: Effect.Ef
           Effect.provide(
             AppSignals.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }).pipe(
               Layer.provide(AppBatchStore.layerMemory()),
-              Layer.provide(webCryptoLayer(crypto)),
+              Layer.provide(BrowserCrypto.layer),
               Layer.provide(SqliteClient.layer({ storage: state.storage })),
               Layer.provideMerge(TestClock.layer()),
             ),

@@ -16,7 +16,7 @@ import type { ReleaseRecords, ReleaseSources } from "@cluenori/releases"
 import { promotionItems, releasesLayer, releasesModule, versionPolicyFor } from "@cluenori/releases"
 import { AppSignals, SdkKeyRejected, Signals } from "@cluenori/signals"
 import { Today } from "@cluenori/today"
-import { webCryptoLayer } from "@cluenori/web-crypto"
+import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
 import type { Crypto } from "effect"
@@ -515,7 +515,7 @@ export class ProjectObject extends DurableObject<Env> {
             ),
           ),
         ),
-        Layer.provideMerge(webCryptoLayer(crypto)),
+        Layer.provideMerge(BrowserCrypto.layer),
         Layer.provide(r2ArchiveLayer(env.ARCHIVE)),
         Layer.provide(r2AppBatchLayer(env.APP_BATCHES)),
         Layer.provide(FetchHttpClient.layer),

@@ -26,8 +26,8 @@
     "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/today": "workspace:*",
-    "@cluenori/web-crypto": "workspace:*",
     "@cluenori/webauthn": "workspace:*",
+    "@effect/platform-browser": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",
     "effect": "catalog:"
   },
