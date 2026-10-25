@@ -1,8 +1,9 @@
+import type { GitHubAppCrypto, IssuedToken } from "@bagatka/github-app"
+import { AppSlug, appManifest, convertManifest, GitHubApp, installLink } from "@bagatka/github-app"
 import { ActivityLog, Actor, Instant, NotAllowed, Source } from "@cluenori/foundation"
-import type { GitHubRefused, GitHubUnavailable, IssuedToken, Repository } from "@cluenori/github"
-import { appManifest, convertManifest, GitHubApp, GitHubRefused as Refused, installLink } from "@cluenori/github"
+import type { Repository } from "@cluenori/github"
+import { GitHubRefused, GitHubUnavailable } from "@cluenori/github"
 import type { Access } from "@cluenori/members"
-import type { Rs256Signing } from "@cluenori/rs256-jwt"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Base64Url, Hex } from "effect/encoding"
 import { HttpClient } from "effect/http"
@@ -35,12 +36,12 @@ const permissions = {
 
 /** The engine's settings: the platform's Web Crypto, which signs the app's tokens. */
 export interface GitHubConnectionSettings {
-  readonly signing: Rs256Signing
+  readonly signing: GitHubAppCrypto
 }
 
 const AppRow = Schema.Struct({
   appId: Schema.Int,
-  slug: Schema.String,
+  slug: AppSlug,
   name: Schema.String,
   url: Schema.String,
   organization: Schema.NullOr(GitHubAccount),
@@ -73,7 +74,7 @@ const appNameFor = (deployment: string) => {
 }
 
 // Refused before anything is sent to GitHub: status 0, as GitHubRefused has it.
-const notConnected = new Refused({
+const notConnected = new GitHubRefused({
   status: 0,
   reason: "Cluenori isn't connected to GitHub yet: an owner connects it on the web, on the GitHub page",
 })
@@ -174,6 +175,14 @@ export class GitHubConnection extends Context.Service<
             ? Effect.succeed(client.app)
             : GitHubApp.make({ appId: row.appId, privateKey: Redacted.make(row.privateKey) }, settings.signing).pipe(
                 Effect.provideService(HttpClient.HttpClient, http),
+                // Refused before anything is sent: the key GitHub gave can't sign.
+                Effect.mapError(
+                  (invalid) =>
+                    new GitHubRefused({
+                      status: 0,
+                      reason: `${row.name}'s key can't sign: ${invalid.reason}. Disconnect GitHub and connect it again`,
+                    }),
+                ),
                 Effect.tap((built) =>
                   Effect.sync(() => {
                     client = { appId: row.appId, app: built }
@@ -188,8 +197,10 @@ export class GitHubConnection extends Context.Service<
             const none: GitHubStatus = { installations: [] }
             return none
           }
-          const github = yield* clientFor(row.value)
-          const installations = yield* github.installations.pipe(Effect.result)
+          const installations = yield* clientFor(row.value).pipe(
+            Effect.flatMap((github) => github.installations),
+            Effect.result,
+          )
           const answer: GitHubStatus =
             installations._tag === "Success"
               ? {
@@ -198,7 +209,7 @@ export class GitHubConnection extends Context.Service<
                     account: installation.account,
                     accountType: installation.accountType,
                     repositories: installation.repositories,
-                    ...(installation.url === undefined ? {} : { url: installation.url }),
+                    url: installation.url,
                   })),
                 }
               : { app: summaryOf(row.value), installations: [], problem: installations.failure.reason }
@@ -256,19 +267,23 @@ export class GitHubConnection extends Context.Service<
             yield* dropConnect
             return yield* new ConnectRejected({ reason: "Cluenori is connected to GitHub already" })
           }
+          // A code GitHub refuses won't be taken later either, so its state is dropped too.
+          const refusedCode = (refused: { readonly reason: string }) =>
+            dropConnect.pipe(
+              Effect.andThen(
+                Effect.fail(
+                  new ConnectRejected({
+                    reason: `GitHub refused the new app's code: ${refused.reason}. Connect GitHub again`,
+                  }),
+                ),
+              ),
+            )
           const created = yield* convertManifest(code).pipe(
             Effect.provideService(HttpClient.HttpClient, http),
             Effect.catchTags({
-              GitHubRefused: (refused) =>
-                dropConnect.pipe(
-                  Effect.andThen(
-                    Effect.fail(
-                      new ConnectRejected({
-                        reason: `GitHub refused the new app's code: ${refused.reason}. Connect GitHub again`,
-                      }),
-                    ),
-                  ),
-                ),
+              GitHubRefused: refusedCode,
+              GitHubAppCredentialsRefused: refusedCode,
+              GitHubForbidden: refusedCode,
               // The code stays good for an hour, and so does the state, so the same link can try again.
               GitHubUnavailable: (unavailable) =>
                 Effect.fail(
@@ -339,14 +354,45 @@ export class GitHubConnection extends Context.Service<
             return yield* notConnected
           }
           const github = yield* clientFor(row.value)
-          const installation = yield* github.installationOf(repository)
-          if (Option.isNone(installation)) {
-            return yield* new Refused({
-              status: 0,
-              reason: `${row.value.name} isn't installed where it reaches ${repository}: install it on the account and choose the repository, from the GitHub page`,
-            })
-          }
-          return yield* github.installationToken(installation.value.id)
+          const name = row.value.name
+          // GitHub's answers as the GitHub client's errors, each saying what to do.
+          return yield* github.tokenFor(repository).pipe(
+            Effect.catchTags({
+              GitHubRefused: () =>
+                Effect.fail(
+                  new GitHubRefused({
+                    status: 404,
+                    reason: `${name} isn't installed where it reaches ${repository}: install it on the account and choose the repository, from the GitHub page`,
+                  }),
+                ),
+              GitHubAppCredentialsRefused: (refused) =>
+                Effect.fail(
+                  new GitHubRefused({
+                    status: 401,
+                    reason: `GitHub refused ${name}'s key: ${refused.reason}. Disconnect GitHub and connect it again`,
+                  }),
+                ),
+              GitHubForbidden: (forbidden) =>
+                Effect.fail(
+                  new GitHubRefused({
+                    status: 403,
+                    reason: `GitHub forbade ${name} on ${repository}: ${forbidden.reason}. Check its installation on GitHub`,
+                  }),
+                ),
+              // Kit says how long to wait; Cluenori's error says until when.
+              GitHubUnavailable: (unavailable) =>
+                Effect.flatMap(DateTime.now, (now) =>
+                  Effect.fail(
+                    new GitHubUnavailable({
+                      reason: unavailable.reason,
+                      ...(unavailable.retryAfter === undefined
+                        ? {}
+                        : { retryAfter: DateTime.addDuration(now, unavailable.retryAfter) }),
+                    }),
+                  ),
+                ),
+            }),
+          )
         })
 
         return GitHubConnection.of({ status, startConnecting, finishConnecting, disconnect, tokenFor })

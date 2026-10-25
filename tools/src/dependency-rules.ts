@@ -7,7 +7,7 @@ const forTests = ["@effect/vitest", "vitest"]
 const toolkit = [
   "@bagatka/apns",
   "@bagatka/app-store-connect",
-  "@bagatka/jwt",
+  "@bagatka/github-app",
   "@bagatka/otlp-protobuf",
   "@bagatka/qr-code",
   "@bagatka/quantile-sketch",
@@ -57,7 +57,8 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/*",
     contract: true,
     mayUse: ["packages/*"],
-    mayInstall: ["effect"],
+    // Kit's packages are capabilities too, of the same layer, from npm.
+    mayInstall: ["effect", ...toolkit],
     mayInstallForDevelopment: forTests,
   },
   {

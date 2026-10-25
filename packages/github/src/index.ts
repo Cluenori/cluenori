@@ -1,13 +1,11 @@
 /**
- * GitHub's REST API, through a token or a GitHub App: a repository's tags, commits, comparisons,
- * pull requests and default branch; its releases, published; its workflows, started and followed; and the app's
- * installations, tokens, creation from a manifest, and webhooks' signatures.
+ * A repository on GitHub, through its REST API with a token per repository: its tags, commits,
+ * comparisons, pull requests and default branch; its releases, published; its workflows, started
+ * and followed; and its organization's self-hosted runners. A GitHub App's tokens come from
+ * `@bagatka/github-app`, whose `Repository` this is.
  */
-export type { AppManifestForm, AppManifestOptions, CreatedApp } from "./app-manifest.ts"
-export { appManifest, convertManifest, installLink } from "./app-manifest.ts"
+export { Repository } from "@bagatka/github-app"
 export { CommitSha } from "./commit-sha.ts"
-export type { GitHubAppCredentials, GitHubAppSigning, Installation, IssuedToken } from "./github-app.ts"
-export { GitHubApp } from "./github-app.ts"
 export { GitHubRefused, GitHubUnavailable, WorkflowNotFound, WorkflowRejected } from "./github-errors.ts"
 export type {
   Comparison,
@@ -21,8 +19,5 @@ export type {
   WorkflowRun,
 } from "./github.ts"
 export { GitHub } from "./github.ts"
-export { Repository } from "./repository.ts"
-export type { WebhookVerifying } from "./webhook-signature.ts"
-export { verifyWebhook } from "./webhook-signature.ts"
 export { WorkflowFile } from "./workflow-file.ts"
 export { WorkflowRunStatus } from "./workflow-run-status.ts"

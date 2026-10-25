@@ -6,9 +6,8 @@ import { HttpClientRequest } from "effect/http"
 import { ErrorAnswer, RateLimitHeaders } from "./answers.ts"
 import { GitHubRefused, GitHubUnavailable } from "./github-errors.ts"
 
-// GitHub's REST API as both `GitHub` and `GitHubApp` ask it: one request with the headers GitHub
-// asks for, its answer read whole within 15 s, and what a status means when the caller doesn't read
-// it itself.
+// GitHub's REST API as `GitHub` asks it: one request with the headers GitHub asks for, its answer
+// read whole within 15 s, and what a status means when the caller doesn't read it itself.
 
 const api = "https://api.github.com"
 const apiVersion = "2022-11-28"
@@ -22,7 +21,7 @@ export interface Question {
   /** The path under `https://api.github.com`, its segments already safe. */
   readonly path: string
   readonly urlParams?: Readonly<Record<string, string | number>>
-  /** The bearer: a token or the app's JWT; absent for a request GitHub takes unauthenticated. */
+  /** The bearer, a token; absent for a request GitHub takes unauthenticated. */
   readonly token?: Redacted.Redacted
   /** A JSON body, for a POST or a PATCH. */
   readonly body?: Schema.JsonObject
@@ -102,19 +101,6 @@ export const read = <S extends Schema.Decoder<unknown>>(schema: S, answer: Answe
     Effect.catchTag("SchemaError", (error) =>
       Effect.die(
         `GitHub's answer to ${answer.method} ${answer.path} isn't shaped as its documentation says: ${error.message}`,
-      ),
-    ),
-  )
-
-/**
- * `read`, for an answer that holds secrets, such as a token or a private key: an answer of another
- * shape is a defect that leaves out what differs, since saying so could show a secret.
- */
-export const readSecrets = <S extends Schema.Decoder<unknown>>(schema: S, answer: Answer) =>
-  Schema.decodeEffect(Schema.fromJsonString(schema))(answer.body).pipe(
-    Effect.catchTag("SchemaError", () =>
-      Effect.die(
-        `GitHub's answer to ${answer.method} ${answer.path} isn't shaped as its documentation says; what differs is left out, as the answer holds secrets`,
       ),
     ),
   )

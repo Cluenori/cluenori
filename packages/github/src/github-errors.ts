@@ -4,8 +4,8 @@ import { WorkflowFile } from "./workflow-file.ts"
 
 /**
  * GitHub refused: the token is wrong or expired (401), lacks access (403), or the repository isn't
- * visible to it (404, for the repository); a GitHub App isn't installed where asked (404); or, with
- * status 0 and nothing sent, the app's private key can't sign (`reason` "InvalidSigningKey").
+ * visible to it (404, for the repository); or, with status 0 and nothing sent, the host's function
+ * gave no token, such as for a GitHub App that isn't installed where asked.
  * `reason` is GitHub's message, or says what was refused. Sending again won't help.
  */
 export class GitHubRefused extends Schema.TaggedError<GitHubRefused>()("GitHubRefused", {

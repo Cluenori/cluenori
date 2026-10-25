@@ -10,7 +10,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@cluenori/rs256-jwt": "workspace:*",
+    "@bagatka/github-app": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

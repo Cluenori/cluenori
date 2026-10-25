@@ -611,8 +611,8 @@ export class CluenoriApi extends HttpApi.make("cluenori").add(FeaturesGroup) {}
   only after a person saves it (`product/modules/releases/src/notes.ts`). Tests fake it with
   `LanguageModel.make` (`product/modules/releases/test/in-object.ts`).
 - **JSON Web Tokens are signed by the client that sends them:** `@bagatka/apns` and
-  `@bagatka/app-store-connect` sign Apple's from a `.p8` key; `@cluenori/rs256-jwt` signs a GitHub
-  App's with its RSA key.
+  `@bagatka/app-store-connect` sign Apple's from a `.p8` key, and `@bagatka/github-app` a GitHub
+  App's with its RSA key, each with `@bagatka/jwt`.
   A journey fakes them with Miniflare's `outboundService`, in a Vitest project of its own, so the
   other journeys' requests aren't affected.
 - Canonical examples: `product/engines/notifications` (`@bagatka/apns`), its tests, and

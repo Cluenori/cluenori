@@ -1,4 +1,5 @@
-import type { GitHubRefused, GitHubUnavailable, IssuedToken, Repository } from "@cluenori/github"
+import type { IssuedToken } from "@bagatka/github-app"
+import type { GitHubRefused, GitHubUnavailable, Repository } from "@cluenori/github"
 import { GitHub } from "@cluenori/github"
 import { DateTime, Duration, Effect, Layer } from "effect"
 

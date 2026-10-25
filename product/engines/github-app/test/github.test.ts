@@ -21,6 +21,8 @@ const someProjects: Access = { _tag: "Projects", projects: [ProjectKey.make("not
 const deployment = "https://example.cluenori.dev"
 const reached = Repository.make("octo-org/notes-api")
 const elsewhere = Repository.make("someone/else")
+// A repository GitHub rate-limits the app on, asking it to wait two minutes.
+const limited = Repository.make("octo-org/rate-limited")
 
 // An RSA key, as GitHub generates for an app, in PKCS #8 PEM.
 const privateKeyPem = Effect.gen(function* () {
@@ -53,13 +55,13 @@ const fakeGitHub = (pem: string, asked: Array<string>) =>
       Effect.gen(function* () {
         const path = url.pathname
         asked.push(`${request.method} ${path}`)
-        const json = (status: number, body: unknown) =>
+        const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
           jsonText(body).pipe(
             Effect.orDie,
             Effect.map((text) =>
               HttpClientResponse.fromWeb(
                 request,
-                new Response(text, { status, headers: { "content-type": "application/json" } }),
+                new Response(text, { status, headers: { "content-type": "application/json", ...headers } }),
               ),
             ),
           )
@@ -85,10 +87,16 @@ const fakeGitHub = (pem: string, asked: Array<string>) =>
         if (request.method === "GET" && path === "/app/installations") {
           return yield* json(200, [installation])
         }
+        if (request.method === "GET" && path === `/repos/${limited}/installation`) {
+          return yield* json(429, { message: "API rate limit exceeded" }, { "retry-after": "120" })
+        }
         if (request.method === "GET" && path === `/repos/${reached}/installation`) {
           return yield* json(200, installation)
         }
         if (request.method === "POST" && path === "/app/installations/77/access_tokens") {
+          if (request.body._tag === "Uint8Array") {
+            asked.push(`  with ${new TextDecoder().decode(request.body.body)}`)
+          }
           return yield* json(201, {
             token: "ghs_installationtoken",
             expires_at: DateTime.formatIso(DateTime.makeUnsafe(start + hour)),
@@ -231,14 +239,22 @@ describe("GitHub's connection", () => {
           yield* connection.finishConnecting(ManifestCode.make("good-code"), stateOf(form.action))
           const issued = yield* connection.tokenFor(reached)
           const uninstalled = yield* connection.tokenFor(elsewhere).pipe(Effect.flip)
+          const rateLimited = yield* connection.tokenFor(limited).pipe(Effect.flip)
           yield* connection.disconnect(owner, everything)
           const forgotten = yield* connection.tokenFor(reached).pipe(Effect.flip)
 
           assert.include(unconnected.reason, "isn't connected to GitHub")
           assert.strictEqual(Redacted.value(issued.token), "ghs_installationtoken")
           assert.include(uninstalled.reason, "install it")
+          assert.strictEqual(rateLimited._tag, "GitHubUnavailable")
+          assert.deepStrictEqual(
+            rateLimited._tag === "GitHubUnavailable" ? rateLimited.retryAfter : undefined,
+            DateTime.makeUnsafe(start + 120_000),
+          )
           assert.include(forgotten.reason, "isn't connected to GitHub")
           assert.include(asked, "POST /app/installations/77/access_tokens")
+          // The token reaches the repository asked about, not every one the installation does.
+          assert.include(asked, `  with {"repositories":["notes-api"]}`)
         }),
       )
     }),

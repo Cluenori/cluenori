@@ -16,7 +16,7 @@
       "@bagatka/apns": "0.1.0",
       "@bagatka/app-store-connect": "0.1.0",
       "@bagatka/bun-workspace-rules": "0.1.0",
-      "@bagatka/jwt": "0.1.0",
+      "@bagatka/github-app": "0.1.0",
       "@bagatka/otlp-protobuf": "0.1.0",
       "@bagatka/qr-code": "0.1.0",
       "@bagatka/quantile-sketch": "0.1.0",

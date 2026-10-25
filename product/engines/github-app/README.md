@@ -41,7 +41,7 @@ yield* github.dispatchWorkflow(repository, workflow, "main", { release, environm
     it; installed on an account whose repositories no component links, it does nothing.
   - A token acts on the repository asked about, through the installation that reaches it; it is
     reused until 5 minutes before it expires, in the workspace and in each project.
-- **Integrations:** GitHub, through `@cluenori/github`.
+- **Integrations:** GitHub, through `@bagatka/github-app` and `@cluenori/github`.
 
 ## Does not own
 
@@ -59,8 +59,9 @@ return, `/api/github/connected`, itself.
 
 ## Depends on
 
-- `@cluenori/github`: the app's tokens, the manifest flow, and the client.
-- `@cluenori/rs256-jwt`: the app's JSON Web Tokens, with its private key.
+- `@bagatka/github-app`: the manifest flow, the app's installations, and its tokens, each limited
+  to the repository asked about.
+- `@cluenori/github`: the client a project acts with, on those tokens.
 - `@cluenori/members`: `Access`, to tell an owner.
 - Foundation's `ActivityLog`, and `Crypto` for states and digests.
 

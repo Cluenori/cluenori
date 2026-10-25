@@ -1,3 +1,4 @@
+import type { Repository } from "@bagatka/github-app"
 import { Context, DateTime, Effect, Layer, Option, Order } from "effect"
 import type { Redacted } from "effect"
 import { HttpClient } from "effect/http"
@@ -19,7 +20,6 @@ import type { GitHubUnavailable } from "./github-errors.ts"
 import { GitHubRefused, WorkflowNotFound, WorkflowRejected } from "./github-errors.ts"
 import type { Answer, Question } from "./github-rest.ts"
 import { ask, failure, read, reasonOf } from "./github-rest.ts"
-import type { Repository } from "./repository.ts"
 import type { WorkflowFile } from "./workflow-file.ts"
 import type { WorkflowRunStatus } from "./workflow-run-status.ts"
 
@@ -249,7 +249,7 @@ export class GitHub extends Context.Service<
 >()("@cluenori/github/github") {
   /**
    * GitHub's API with the token `tokenFor` gives for each call's repository, asked on every call,
-   * such as a GitHub App's installation token (`GitHubApp.tokenFor`, mapped to its token). A
+   * such as a GitHub App's installation token (`@bagatka/github-app`'s `GitHubApp.tokenFor`, mapped to its token). A
    * refusal or unavailability of `tokenFor` is the call's. On the `HttpClient` the host provides,
    * which follows redirects, as `fetch` does, for a repository that was renamed or moved.
    */

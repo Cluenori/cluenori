@@ -10,10 +10,10 @@
     "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
   },
   "dependencies": {
+    "@bagatka/github-app": "catalog:",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github": "workspace:*",
     "@cluenori/members": "workspace:*",
-    "@cluenori/rs256-jwt": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
