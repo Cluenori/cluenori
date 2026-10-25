@@ -40,12 +40,12 @@ apps/worker/openapi.json: is out of date with the API definition. Run `bun run g
 
 ## Does not own
 
-- **How dependency rules are checked:** `@cluenori/workspace-rules`.
+- **How dependency rules are checked:** `@bagatka/bun-workspace-rules`.
 - **Cluenori's own command:** `apps/cli`.
 
 ## Depends on
 
-- `@cluenori/workspace-rules`, to check the dependency rules.
+- `@bagatka/bun-workspace-rules`, to check the dependency rules.
 - `@cluenori/worker`, for the API definitions the OpenAPI documents are generated from.
 - `@cluenori/openapi-swift`, for the Swift clients generated from them.
 - `effect/cli` for commands, and `@effect/platform-bun` for the file system and child processes.

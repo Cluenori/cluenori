@@ -94,7 +94,7 @@ packages/feature-keys/
   test/*.test.ts
 ```
 
-Canonical example: `packages/workspace-rules`.
+Canonical example: `product/foundation`.
 
 - **One entry.** `exports` names only `src/index.ts`. Nothing else is reachable from outside; a deep
   import doesn't resolve. The one possible exception, an `./api` entry for API definitions, is an
@@ -661,7 +661,7 @@ describe("FeatureKey", () => {
 - **Tests outside workerd** run under `TZ=Pacific/Chatham` and `LANG=tr_TR.UTF-8`, which
   `bun run test` sets (entry 2).
 - **Canonical examples:** a journey, `tests/journeys/test/deployment-journey.test.ts`; package
-  tests, `packages/workspace-rules/test/check-workspace.test.ts`; tests inside a Durable Object,
+  tests outside workerd, `tools/test/mutation-score.test.ts`; tests inside a Durable Object,
   `product/foundation/test/activity-log.test.ts`.
 - **Time** is controlled with `TestClock`; durations come from settings, which tests make short.
   Code that runs inside a Durable Object gets its own `TestClock`

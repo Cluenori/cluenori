@@ -1,4 +1,4 @@
-import type { PackageRule } from "@cluenori/workspace-rules"
+import type { PackageRule } from "@bagatka/bun-workspace-rules"
 
 const forTests = ["@effect/vitest", "vitest"]
 
@@ -123,7 +123,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     name: "@cluenori/tools",
     contract: false,
     mayUse: ["packages/*", "apps/worker"],
-    mayInstall: ["effect", "@effect/platform-bun"],
+    mayInstall: ["effect", "@effect/platform-bun", "@bagatka/bun-workspace-rules"],
     mayInstallForDevelopment: forTests,
   },
   {

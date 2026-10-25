@@ -6,9 +6,9 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@bagatka/bun-workspace-rules": "catalog:",
     "@cluenori/openapi-swift": "workspace:*",
     "@cluenori/worker": "workspace:*",
-    "@cluenori/workspace-rules": "workspace:*",
     "@effect/platform-bun": "catalog:",
     "effect": "catalog:"
   },
