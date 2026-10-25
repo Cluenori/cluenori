@@ -4,7 +4,7 @@ const forTests = ["@effect/vitest", "vitest"]
 
 // bagatka/kit's packages from npm, the general capabilities that were first written here
 // (AGENTS.md, "General packages"), each at its exact version in the catalog.
-const toolkit = ["@bagatka/quantile-sketch", "@bagatka/scrub"]
+const toolkit = ["@bagatka/qr-code", "@bagatka/quantile-sketch", "@bagatka/scrub"]
 
 // Product packages run inside a project's Durable Object, so their tests do too: in workerd, on the
 // Durable Object's SQLite.
@@ -91,7 +91,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     contract: false,
     mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*", "apps/worker"],
     // Effect's React binding: the dashboard reads the API through atoms.
-    mayInstall: ["effect", "@effect/atom-react", ...forTheBrowser],
+    mayInstall: ["effect", "@effect/atom-react", ...toolkit, ...forTheBrowser],
     mayInstallForDevelopment: [
       // React Compiler, its Rust port, memoizes the views at build time.
       "oxc-transform-react",

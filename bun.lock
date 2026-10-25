@@ -40,6 +40,7 @@
     "apps/dashboard": {
       "name": "@cluenori/dashboard",
       "dependencies": {
+        "@bagatka/qr-code": "catalog:",
         "@base-ui/react": "catalog:",
         "@cluenori/analytics": "workspace:*",
         "@cluenori/foundation": "workspace:*",
@@ -49,7 +50,6 @@
         "@cluenori/members": "workspace:*",
         "@cluenori/phones": "workspace:*",
         "@cluenori/projects": "workspace:*",
-        "@cluenori/qr-code": "workspace:*",
         "@cluenori/releases": "workspace:*",
         "@cluenori/signals": "workspace:*",
         "@cluenori/webauthn": "workspace:*",
@@ -181,16 +181,6 @@
     },
     "packages/otlp": {
       "name": "@cluenori/otlp",
-      "dependencies": {
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@effect/vitest": "catalog:",
-        "vitest": "catalog:",
-      },
-    },
-    "packages/qr-code": {
-      "name": "@cluenori/qr-code",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -482,6 +472,7 @@
     },
   },
   "catalog": {
+    "@bagatka/qr-code": "0.1.0",
     "@bagatka/quantile-sketch": "0.1.0",
     "@bagatka/scrub": "0.1.1",
     "@base-ui/react": "1.9.0",
@@ -606,6 +597,8 @@
 
     "@babel/types": ["@babel/types@8.0.8", "", { "dependencies": { "@babel/helper-string-parser": "^8.0.8", "@babel/helper-validator-identifier": "^8.0.6" } }, "sha512-iXSSZAKQWmaeAwGtFw10v9fg5hUiUs0L+w+Z2K11kym3pDNK+SF0VcAQPsEFvWcTSZ7LMgClMXDBvTbH0IlICg=="],
 
+    "@bagatka/qr-code": ["@bagatka/qr-code@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-Mi7wENLieSnEwt4dw5wC0wCb2OzPfGptbn2yJFEVGSTSpfNG2YduXg8pL8rTFsU3All2dfNiLoboBzhOCyg7QQ=="],
+
     "@bagatka/quantile-sketch": ["@bagatka/quantile-sketch@0.1.0", "", { "peerDependencies": { "effect": "~4.0.6" } }, "sha512-WAKfKI+ekFZiruczMAFXthNKfqmyK338yWfS798SEq93cvzt15IZCXrbB56gAGd+6YX/UVC7wQhx2NVVN5+rLA=="],
 
     "@bagatka/scrub": ["@bagatka/scrub@0.1.1", "", {}, "sha512-vSqirW5nMy1gU1loKHZ/+tw0n8Pj77hFYJGLXxPwwMgIMQ8zF6dEPPkcj6RofeB486lMPRSWO+uV3NS5a1q0sw=="],
@@ -669,8 +662,6 @@
     "@cluenori/phones": ["@cluenori/phones@workspace:product/engines/phones"],
 
     "@cluenori/projects": ["@cluenori/projects@workspace:product/engines/projects"],
-
-    "@cluenori/qr-code": ["@cluenori/qr-code@workspace:packages/qr-code"],
 
     "@cluenori/releases": ["@cluenori/releases@workspace:product/modules/releases"],
 

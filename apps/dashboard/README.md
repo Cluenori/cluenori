@@ -230,7 +230,7 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
 - **How people read numbers and times,** `src/lib/format.ts`: in the viewer's locale and time zone,
   passed to `Intl` explicitly.
 - **Adding a phone,** `src/pages/phones-page.tsx`: the pairing link as a QR code
-  (`src/views/qr-code.tsx`, from `@cluenori/qr-code`), counted down to its expiry, and the phones
+  (`src/views/qr-code.tsx`, from `@bagatka/qr-code`), counted down to its expiry, and the phones
   asked for every 3 seconds while it shows, so the page says which phone paired.
 - **Passkeys in the browser,** `src/passkeys.ts`: the API's options for
   `navigator.credentials`, and what it returns, as the API takes it; a cancelled or impossible
@@ -253,7 +253,7 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
   `@cluenori/phones`, `@cluenori/members`, `@cluenori/github-app`, `@cluenori/manifest`, and
   `@cluenori/releases` and `@cluenori/analytics`, whose verdict rules the releases and analytics pages
   also say.
-- `@cluenori/qr-code`, to draw a pairing link as a QR code. Their packages are
+- `@bagatka/qr-code`, to draw a pairing link as a QR code. Their packages are
   side-effect free and keep schemas apart from server code, so only the definitions reach the
   bundle.
 - `effect`: its HTTP API client derived from that definition, Schema, and `effect/reactivity`'s

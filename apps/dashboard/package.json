@@ -9,6 +9,7 @@
     "browsers": "playwright install --only-shell chromium"
   },
   "dependencies": {
+    "@bagatka/qr-code": "catalog:",
     "@base-ui/react": "catalog:",
     "@cluenori/analytics": "workspace:*",
     "@cluenori/foundation": "workspace:*",
@@ -18,7 +19,6 @@
     "@cluenori/members": "workspace:*",
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
-    "@cluenori/qr-code": "workspace:*",
     "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/webauthn": "workspace:*",
