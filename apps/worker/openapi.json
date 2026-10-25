@@ -2112,7 +2112,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
+              "pattern": "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$"
             },
             "required": false
           }
@@ -3510,7 +3510,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Promotion_1"
+                  "$ref": "#/components/schemas/Promotion"
                 }
               }
             }
@@ -3626,7 +3626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Promotion_2"
+                  "$ref": "#/components/schemas/Promotion"
                 }
               }
             }
@@ -7192,76 +7192,6 @@
         ],
         "additionalProperties": false
       },
-      "Promotion_2": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "component": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "release": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "environment": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "repository": {
-            "type": "string"
-          },
-          "workflow": {
-            "$ref": "#/components/schemas/WorkflowFile"
-          },
-          "runner": {
-            "$ref": "#/components/schemas/Runner"
-          },
-          "appStore": {
-            "$ref": "#/components/schemas/AppStoreTarget"
-          },
-          "submission": {
-            "$ref": "#/components/schemas/AppStoreSubmission"
-          },
-          "startedBy": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-          },
-          "startedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "state": {
-            "$ref": "#/components/schemas/PromotionState"
-          },
-          "run": {
-            "$ref": "#/components/schemas/PromotionRun"
-          },
-          "endedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "storeVersionId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "component",
-          "release",
-          "environment",
-          "startedAt",
-          "state"
-        ],
-        "additionalProperties": false
-      },
       "PromoteLatestTo": {
         "type": "object",
         "properties": {
@@ -7287,76 +7217,6 @@
         },
         "required": [
           "environment"
-        ],
-        "additionalProperties": false
-      },
-      "Promotion_1": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "component": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "release": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "environment": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "repository": {
-            "type": "string"
-          },
-          "workflow": {
-            "$ref": "#/components/schemas/WorkflowFile"
-          },
-          "runner": {
-            "$ref": "#/components/schemas/Runner"
-          },
-          "appStore": {
-            "$ref": "#/components/schemas/AppStoreTarget"
-          },
-          "submission": {
-            "$ref": "#/components/schemas/AppStoreSubmission"
-          },
-          "startedBy": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500,
-            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
-          },
-          "startedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "state": {
-            "$ref": "#/components/schemas/PromotionState"
-          },
-          "run": {
-            "$ref": "#/components/schemas/PromotionRun"
-          },
-          "endedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "storeVersionId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "component",
-          "release",
-          "environment",
-          "startedAt",
-          "state"
         ],
         "additionalProperties": false
       },

@@ -637,7 +637,7 @@ conflict.
   GitHub App, which an owner connects from the web (`product/engines/github-app`);
   only the environments a project calls production alert, and Today counts only them.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
-- **Stack:** Effect 4.0.5, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
+- **Stack:** Effect 4.0.6, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository
   programs, Vitest 5 with `@effect/vitest` and `@cloudflare/vitest-plugin`, Oxlint and Oxfmt, Nix.
   Production code runs in workerd, never in Bun.
