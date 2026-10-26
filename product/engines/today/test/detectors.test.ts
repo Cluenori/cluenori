@@ -76,12 +76,21 @@ const incident = (id: string, openedAt: number, acknowledgedAt?: number) =>
 
 const quiet: ProjectState = {
   project: notes,
-  incidents: { open: [], resolved: [] } satisfies IncidentList,
+  incidents: { open: [], resolved: [], quiet: [] } satisfies IncidentList,
   errors: { groups: [], occurrences: 0 },
   operations: { lastDay: table([row("GET /api/notes", 80)], now), usual: table([row("GET /api/notes", 80)]) },
   components: 1,
   now,
 }
+
+// An operation that usually ran every 31 minutes, quiet since `lastRanAt`.
+const quietOperation = (operation: string, lastRanAt: number) => ({
+  component: ComponentKey.make("notes-api"),
+  environment: EnvironmentKey.make("production"),
+  operation: EnvelopeName.make(operation),
+  usualGapMs: 31 * minute,
+  lastRanAt: at(lastRanAt),
+})
 
 // A promotion of notes-ios to production, needing a member as `state` says.
 const promotion = (
@@ -108,6 +117,8 @@ const tags = (items: ReadonlyArray<TodayItem>) =>
         return `incident ${item.incident.id.slice(-1)}`
       case "promotion":
         return `promotion ${item.state}`
+      case "quiet":
+        return `quiet ${item.operation}`
       case "error":
       case "slower":
       case "silent":
@@ -186,6 +197,10 @@ describe("sortToday", () => {
         incidents: {
           open: [incident("a", now - hour, now - minute), incident("b", now - 2 * hour), incident("c", now - minute)],
           resolved: [],
+          quiet: [
+            quietOperation("GET /api/sync", now - 3 * hour),
+            quietOperation("POST /jobs/cleanup", now - 9 * hour),
+          ],
         },
         errors: {
           groups: [
@@ -207,7 +222,10 @@ describe("sortToday", () => {
       "incident a",
       "error notes",
       "slower notes",
-      // After slower operations, the promotion that ended or started latest first.
+      // Quiet operations, guesses, after slower ones: the longest quiet first.
+      "quiet POST /jobs/cleanup",
+      "quiet GET /api/sync",
+      // Then the promotion that ended or started latest first.
       "promotion failed",
       "promotion waiting",
       "promotion approved",

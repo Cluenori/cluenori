@@ -28,6 +28,50 @@ export const isFailing = (counted: { readonly count: number; readonly errors: nu
 // its history alerted about an endpoint people call every half hour, and every alert must be real.
 // Stopped incidents opened before stay readable; none open now.
 
+// ---- Quiet: a guess, never an incident ---------------------------------------------------------
+
+/**
+ * The windows how often an operation runs is guessed from, back from now, each with the most minutes
+ * it may have run in to be looked at: two days for one that runs every 15 minutes or less often, and
+ * the last 6 hours for one that runs every 5 to 15 minutes. Busier operations cost a row a minute,
+ * and run too often to have a rhythm worth telling.
+ */
+export const rhythmWindows = [
+  { window: Duration.days(2), atMost: 200 },
+  { window: Duration.hours(6), atMost: 72 },
+] as const
+
+// A rhythm needs this many runs, at least this far apart, most within a quarter of the usual gap.
+const rhythmRuns = 6
+const shortestGap = Duration.toMillis(Duration.minutes(5))
+const regularShare = 0.8
+
+// Telemetry arrives a minute or two after it happens; a late run gets this much more.
+const arrivalGrace = Duration.toMillis(Duration.minutes(5))
+
+/**
+ * The gap an operation usually runs at, guessed from the starts of the minutes it ran in, oldest
+ * first: the median gap between them, when it ran at least 6 times, at least 5 minutes apart, and 80%
+ * of its gaps are within a quarter of the median. Undefined when it has no rhythm. A guess: an
+ * endpoint an app calls every half hour has one too, so it only ever says "quiet", never "stopped".
+ */
+export const usualGapOf = (minutes: ReadonlyArray<number>): number | undefined => {
+  if (minutes.length < rhythmRuns) {
+    return undefined
+  }
+  const gaps = minutes.slice(1).map((minute, index) => minute - (minutes[index] ?? minute))
+  const sorted = gaps.toSorted((left, right) => left - right)
+  const median = sorted[Math.floor(sorted.length / 2)] ?? 0
+  if (median < shortestGap) {
+    return undefined
+  }
+  const regular = gaps.filter((gap) => Math.abs(gap - median) <= median / 4).length
+  return regular >= regularShare * gaps.length ? median : undefined
+}
+
+/** When an operation that last ran at `lastRanAt` and usually every `gapMs` is quiet: two gaps later, and a little. */
+export const quietAt = (lastRanAt: number, gapMs: number) => lastRanAt + 2 * gapMs + arrivalGrace
+
 // ---- Down -------------------------------------------------------------------------------------
 
 /** How many failed checks in a row open a down incident. */

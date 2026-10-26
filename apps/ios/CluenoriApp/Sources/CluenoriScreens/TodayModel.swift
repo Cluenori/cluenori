@@ -32,6 +32,9 @@ public struct TodayRow: Identifiable, Equatable, Sendable {
         case error(title: String, occurrences: Int, firstSeen: Date, lastSeen: Date, isNew: Bool, ongoing: Bool)
         /// An operation whose p95 over the last day is well over its usual.
         case slower(operation: String, p95Ms: Double, usualP95Ms: Double)
+        /// An operation that usually ran about every `usualGapMs`, as Cluenori guessed from its
+        /// history, and hasn't since `lastRanAt`: a hint, never an alert; it may be fine.
+        case quiet(operation: String, usualGapMs: Double, lastRanAt: Date)
         /// A promotion to production that needs a member: approved in App Store review and waiting to
         /// be released, waiting for its environment's approval on GitHub, or ended without its release
         /// getting there. `since` is when it ended, or, while it hasn't, when it started.
@@ -47,6 +50,7 @@ public struct TodayRow: Identifiable, Equatable, Sendable {
         case incident(acknowledged: Bool)
         case error
         case slower
+        case quiet
         case promotion
         case silent
         case unknown
@@ -66,6 +70,7 @@ public struct TodayRow: Identifiable, Equatable, Sendable {
         case .incident(_, _, _, let acknowledged): .incident(acknowledged: acknowledged)
         case .error: .error
         case .slower: .slower
+        case .quiet: .quiet
         case .promotion: .promotion
         case .silent: .silent
         case .unknown: .unknown
@@ -271,6 +276,21 @@ public final class TodayModel {
                 projectKey: item.project,
                 project: names[item.project] ?? item.project,
                 evidence: .slower(operation: item.operation, p95Ms: item.p95Ms, usualP95Ms: item.usualP95Ms),
+                route: .operation(
+                    OperationRef(
+                        project: item.project,
+                        component: item.component,
+                        environment: item.environment,
+                        name: item.operation
+                    )
+                )
+            )
+        case .quiet(let item):
+            TodayRow(
+                id: "quiet \(item.project) \(item.component) \(item.environment ?? "") \(item.operation)",
+                projectKey: item.project,
+                project: names[item.project] ?? item.project,
+                evidence: .quiet(operation: item.operation, usualGapMs: item.usualGapMs, lastRanAt: item.lastRanAt),
                 route: .operation(
                     OperationRef(
                         project: item.project,

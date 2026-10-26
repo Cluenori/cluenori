@@ -27,7 +27,7 @@ import { errorRule, operationKeyOf, slowerOperations, slowerRule, stepMillis } f
 import { DateTime } from "effect"
 
 import { componentColor } from "@/lib/colors"
-import { ago, axisTime, count, dayOf, duration, share, viewerTimeZone } from "@/lib/format"
+import { ago, axisTime, count, dayOf, duration, lasting, share, viewerTimeZone } from "@/lib/format"
 import type { PeriodKey, ProjectPulse, TodayItem, TodayList } from "@/project-data"
 import { periodMillis, periods } from "@/project-data"
 import type { Route } from "@/router"
@@ -392,6 +392,13 @@ export type NeedsYou = {
   readonly to: Route
 }
 
+/**
+ * What a quiet operation's hint says, worded as the guess it is: "Usually runs about every 31
+ * minutes; nothing for 3 hours. Maybe fine: Cluenori guessed this from its history."
+ */
+export const quietWords = (quiet: { readonly usualGapMs: number; readonly lastRanAt: DateTime.Utc }, now: number) =>
+  `Usually runs about every ${lasting(quiet.usualGapMs)}; nothing for ${lasting(now - DateTime.toEpochMillis(quiet.lastRanAt))}. Maybe fine: Cluenori guessed this from its history`
+
 // One of Today's items as a row; its times are measured from when Today looked.
 const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
   switch (item._tag) {
@@ -436,6 +443,23 @@ const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
         project: item.project,
         title: item.operation,
         detail: `p95 ${duration(item.p95Ms)} over the last day, usually ${duration(item.usualP95Ms)}; ${item.component}`,
+        to: {
+          page: "operation",
+          project: item.project,
+          component: item.component,
+          ...(item.environment === undefined ? {} : { environment: item.environment }),
+          operation: item.operation,
+        },
+      }
+    case "quiet":
+      return {
+        key: `quiet ${item.project} ${item.component} ${item.environment ?? ""} ${item.operation}`,
+        kind: "Quiet, a guess",
+        tone: "warning",
+        project: item.project,
+        title: item.operation,
+        detail: `${quietWords(item, now)}; ${item.component}`,
+        when: ago(DateTime.toEpochMillis(item.lastRanAt), now),
         to: {
           page: "operation",
           project: item.project,

@@ -81,3 +81,17 @@ export const printable = (text: string) =>
     const code = character.codePointAt(0) ?? 0
     return isActed(code) ? `\\u${code.toString(16).padStart(4, "0")}` : character
   }).join("")
+
+const plural = (amount: number, unit: string) => `${amount} ${unit}${amount === 1 ? "" : "s"}`
+
+/** A span of time in whole units, rounded down: `1 minute` at least, `30 minutes`, `2 hours`, `3 days`. */
+export const span = (value: number) => {
+  const minutes = Math.max(1, Math.floor(value / 60_000))
+  if (minutes < 120) {
+    return plural(minutes, "minute")
+  }
+  if (minutes < 48 * 60) {
+    return plural(Math.floor(minutes / 60), "hour")
+  }
+  return plural(Math.floor(minutes / 1440), "day")
+}

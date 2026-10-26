@@ -17,9 +17,9 @@ export type IncidentId = typeof IncidentId.Type
  * - `down`: a monitor's URL failed two checks in a row.
  * - `failing`: an operation's error rate over the last 15 minutes is at least 2% and three times
  *   its usual, the 7 days before, with at least five failures.
- * - `stopped`: an operation that runs on a schedule, learned from the minutes it ran in over the 2
- *   days before, or the 6 hours for one that runs every 5 to 15 minutes, missed twice its usual
- *   gap.
+ * - `stopped`: an operation whose schedule was guessed from how it ran missed twice its usual gap.
+ *   Only incidents opened before 26 October 2026 say it: a guess is never an incident now, and a
+ *   quiet operation is listed apart, as a hint (`QuietOperation`).
  */
 export const Detector = Schema.Literals(["down", "failing", "stopped"])
 export type Detector = typeof Detector.Type
@@ -78,14 +78,32 @@ export class Incident extends Schema.Class<Incident>("Incident")({
 }) {}
 
 /**
+ * An operation that is quiet: it usually ran about every `usualGapMs`, as guessed from the minutes it
+ * ran in over the last two days, and hasn't for twice that and five minutes more, since `lastRanAt`.
+ * A guess, never an incident and never an alert: an endpoint an app happens to call every half hour
+ * has a rhythm too, and it may be fine.
+ */
+export const QuietOperation = Schema.Struct({
+  component: ComponentKey,
+  /** Absent when the component didn't say. */
+  environment: Schema.optionalKey(EnvironmentKey),
+  operation: EnvelopeName,
+  usualGapMs: Milliseconds,
+  lastRanAt: Instant,
+}).annotate({ identifier: "QuietOperation" })
+export type QuietOperation = typeof QuietOperation.Type
+
+/**
  * The project's incidents: the open ones, newest first, and up to 50 resolved in the last 7 days,
  * the latest resolved first. `checkedAt` is when the detectors last looked, absent before their
- * first look: a time long ago means they stopped.
+ * first look: a time long ago means they stopped. Beside them, and never one of them, the operations
+ * quiet now, the longest quiet first: guesses to show as hints.
  */
 export const IncidentList = Schema.Struct({
   open: Schema.Array(Incident),
   resolved: Schema.Array(Incident),
   checkedAt: Schema.optionalKey(Instant),
+  quiet: Schema.Array(QuietOperation),
 }).annotate({ identifier: "IncidentList" })
 export type IncidentList = typeof IncidentList.Type
 

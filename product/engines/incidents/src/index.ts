@@ -14,6 +14,7 @@ export {
   IncidentNotFound,
   IncidentRelease,
   IncidentUpdate,
+  QuietOperation,
 } from "./incident.ts"
 export {
   IncidentAcknowledged,

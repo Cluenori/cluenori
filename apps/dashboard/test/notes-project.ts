@@ -1349,6 +1349,17 @@ const incidentsAt = (now: number, acknowledgedAt?: DateTime.Utc): IncidentList =
     }),
   ],
   checkedAt: DateTime.makeUnsafe(now),
+  // The sync endpoint the app calls about every half hour hasn't been called for three hours: a
+  // guess, shown as a hint.
+  quiet: [
+    {
+      component: api,
+      environment: EnvironmentKey.make("production"),
+      operation: EnvelopeName.make("GET /api/sync"),
+      usualGapMs: 30 * minute,
+      lastRanAt: DateTime.makeUnsafe(now - 3 * hour),
+    },
+  ],
 })
 
 // Each incident's life and the release that ran when it opened: the export failed in the latest
@@ -1458,6 +1469,14 @@ const TodayAnswer = Schema.Struct({
         p95Ms: Schema.Finite,
         usualP95Ms: Schema.Finite,
       }),
+      Schema.TaggedStruct("quiet", {
+        project: ProjectKey,
+        component: ComponentKey,
+        environment: Schema.optionalKey(EnvironmentKey),
+        operation: EnvelopeName,
+        usualGapMs: Schema.Finite,
+        lastRanAt: Instant,
+      }),
       Schema.TaggedStruct("promotion", {
         project: ProjectKey,
         component: ComponentKey,
@@ -1492,7 +1511,9 @@ type TodayItem = TodayList["items"][number]
 // Today's order: incidents not acknowledged, errors happening now, then new ones, slower operations,
 // releases that need a member, then projects that sent nothing.
 const todayRank = (item: TodayItem) =>
-  ({ incident: 0, error: item._tag === "error" && item.ongoing ? 1 : 2, slower: 3, promotion: 4, silent: 5 })[item._tag]
+  ({ incident: 0, error: item._tag === "error" && item.ongoing ? 1 : 2, slower: 3, quiet: 4, promotion: 5, silent: 6 })[
+    item._tag
+  ]
 
 // What Today says of a promotion: one that waits for a member, or ended without its release getting
 // there, the latest to each of the project's production environments.
@@ -1606,6 +1627,7 @@ const todayAt = (
             },
           ]
     }),
+    ...incidentsAt(now).quiet.map((quiet) => ({ _tag: "quiet" as const, project: notes, ...quiet })),
     ...promotionItemsOf(promotions, productionEnvironments),
   ]
   return sameAsThisOne({
@@ -1631,7 +1653,7 @@ const nothingYet = (call: ApiCall) =>
       return yield* reply(LoadSeries, { step, points: [] })
     }
     if (call.method === "GET" && area === "incidents") {
-      return yield* reply(IncidentList, { open: [], resolved: [] })
+      return yield* reply(IncidentList, { open: [], resolved: [], quiet: [] })
     }
     if (call.method === "GET" && area === "monitors") {
       return yield* reply(MonitorList, { monitors: [] })

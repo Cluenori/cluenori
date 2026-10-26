@@ -23,7 +23,7 @@ export class IncidentsGroup extends HttpApiGroup.make("incidents")
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(
       OpenApi.Description,
-      "The project's open incidents, newest first, and up to 50 resolved in the last 7 days. Detectors look every minute: a monitor down two checks in a row, an operation failing at least 2% and three times its usual over 15 minutes, and a scheduled operation that missed twice its usual gap. `checkedAt` says when they last looked.",
+      "The project's open incidents, newest first, and up to 50 resolved in the last 7 days. Detectors look every minute: a monitor down two checks in a row, and an operation failing at least 2% and three times its usual over 15 minutes. `checkedAt` says when they last looked. Beside them, never incidents, the operations quiet now: those that usually ran regularly, as guessed from their history, and haven't for twice their usual gap.",
     ),
   )
   .add(

@@ -118,5 +118,20 @@ export const migrateIncidents = Migrator.make({})({
       yield* sql`ALTER TABLE incidents_monitor_checks ADD COLUMN ms REAL`
       yield* sql`ALTER TABLE incidents_monitor_checks ADD COLUMN since INTEGER`
     }),
+    // How often operations usually run, guessed hourly from the minutes they ran in, with when each
+    // last ran, Unix ms, and whether a check found it quiet (detectors.ts, "Quiet"): hints, never
+    // incidents.
+    "0004_rhythms": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE incidents_rhythms (
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        gap_ms REAL NOT NULL,
+        last_ran_at INTEGER NOT NULL,
+        quiet INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (component, environment, operation)
+      ) WITHOUT ROWID`
+    }),
   }),
 })

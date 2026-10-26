@@ -10,7 +10,7 @@ let operationsAnswer = #"""
 let loadAnswer =
     #"{"step":"5m","points":[{"start":"2026-10-21T12:00:00.000Z","count":120,"errors":3,"p50Ms":150,"p80Ms":260,"p95Ms":590,"p99Ms":900}]}"#
 let errorsAnswer = #"{"groups":[],"occurrences":0}"#
-let incidentsAnswer = #"{"open":[],"resolved":[]}"#
+let incidentsAnswer = #"{"open":[],"resolved":[],"quiet":[]}"#
 
 func logsAnswer(ids: ClosedRange<Int>, next: Int?) -> String {
     let lines = ids.reversed().map { id in

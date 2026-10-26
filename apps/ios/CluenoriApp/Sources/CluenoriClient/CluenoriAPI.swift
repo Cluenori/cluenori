@@ -607,9 +607,10 @@ public nonisolated struct CluenoriAPI: Sendable {
     }
 
     /// The project's open incidents, newest first, and up to 50 resolved in the last 7 days.
-    /// Detectors look every minute: a monitor down two checks in a row, an operation failing at
-    /// least 2% and three times its usual over 15 minutes, and a scheduled operation that missed
-    /// twice its usual gap. `checkedAt` says when they last looked.
+    /// Detectors look every minute: a monitor down two checks in a row, and an operation failing at
+    /// least 2% and three times its usual over 15 minutes. `checkedAt` says when they last looked.
+    /// Beside them, never incidents, the operations quiet now: those that usually ran regularly, as
+    /// guessed from their history, and haven't for twice their usual gap.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
     @concurrent
@@ -4486,17 +4487,25 @@ public nonisolated struct IncidentList: Codable, Hashable, Sendable {
     public let `open`: [Incident]
     public let resolved: [Incident]
     public let checkedAt: Date?
+    public let quiet: [QuietOperation]
 
-    public init(`open`: [Incident], resolved: [Incident], checkedAt: Date? = nil) {
+    public init(
+        `open`: [Incident],
+        resolved: [Incident],
+        checkedAt: Date? = nil,
+        quiet: [QuietOperation],
+    ) {
         self.`open` = `open`
         self.resolved = resolved
         self.checkedAt = checkedAt
+        self.quiet = quiet
     }
 
     private enum `JSON keys`: String, CodingKey {
         case `open` = "open"
         case resolved = "resolved"
         case checkedAt = "checkedAt"
+        case quiet = "quiet"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4504,6 +4513,7 @@ public nonisolated struct IncidentList: Codable, Hashable, Sendable {
         self.`open` = try container.`value at`(.`open`)
         self.resolved = try container.`value at`(.resolved)
         self.checkedAt = try container.`value if present at`(.checkedAt)
+        self.quiet = try container.`value at`(.quiet)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4511,6 +4521,7 @@ public nonisolated struct IncidentList: Codable, Hashable, Sendable {
         try container.encode(self.`open`, forKey: .`open`)
         try container.encode(self.resolved, forKey: .resolved)
         try container.encodeIfPresent(self.checkedAt, forKey: .checkedAt)
+        try container.encode(self.quiet, forKey: .quiet)
     }
 }
 
@@ -8159,6 +8170,113 @@ public nonisolated struct PushUnavailable: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct QuietItem: Codable, Hashable, Sendable {
+    public let project: String
+    public let component: String
+    public let environment: String?
+    public let operation: String
+    public let usualGapMs: Double
+    public let lastRanAt: Date
+
+    public init(
+        project: String,
+        component: String,
+        environment: String? = nil,
+        operation: String,
+        usualGapMs: Double,
+        lastRanAt: Date,
+    ) {
+        self.project = project
+        self.component = component
+        self.environment = environment
+        self.operation = operation
+        self.usualGapMs = usualGapMs
+        self.lastRanAt = lastRanAt
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case project = "project"
+        case component = "component"
+        case environment = "environment"
+        case operation = "operation"
+        case usualGapMs = "usualGapMs"
+        case lastRanAt = "lastRanAt"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "quiet" else {
+            throw container.`corruption at`(._tag, "_tag isn't quiet.")
+        }
+        self.project = try container.`value at`(.project)
+        self.component = try container.`value at`(.component)
+        self.environment = try container.`value if present at`(.environment)
+        self.operation = try container.`value at`(.operation)
+        self.usualGapMs = try container.`value at`(.usualGapMs)
+        self.lastRanAt = try container.`value at`(.lastRanAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("quiet", forKey: ._tag)
+        try container.encode(self.project, forKey: .project)
+        try container.encode(self.component, forKey: .component)
+        try container.encodeIfPresent(self.environment, forKey: .environment)
+        try container.encode(self.operation, forKey: .operation)
+        try container.encode(self.usualGapMs, forKey: .usualGapMs)
+        try container.encode(self.lastRanAt, forKey: .lastRanAt)
+    }
+}
+
+public nonisolated struct QuietOperation: Codable, Hashable, Sendable {
+    public let component: String
+    public let environment: String?
+    public let operation: String
+    public let usualGapMs: Double
+    public let lastRanAt: Date
+
+    public init(
+        component: String,
+        environment: String? = nil,
+        operation: String,
+        usualGapMs: Double,
+        lastRanAt: Date,
+    ) {
+        self.component = component
+        self.environment = environment
+        self.operation = operation
+        self.usualGapMs = usualGapMs
+        self.lastRanAt = lastRanAt
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case component = "component"
+        case environment = "environment"
+        case operation = "operation"
+        case usualGapMs = "usualGapMs"
+        case lastRanAt = "lastRanAt"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.component = try container.`value at`(.component)
+        self.environment = try container.`value if present at`(.environment)
+        self.operation = try container.`value at`(.operation)
+        self.usualGapMs = try container.`value at`(.usualGapMs)
+        self.lastRanAt = try container.`value at`(.lastRanAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.component, forKey: .component)
+        try container.encodeIfPresent(self.environment, forKey: .environment)
+        try container.encode(self.operation, forKey: .operation)
+        try container.encode(self.usualGapMs, forKey: .usualGapMs)
+        try container.encode(self.lastRanAt, forKey: .lastRanAt)
+    }
+}
+
 public nonisolated struct ReadyTimes: Codable, Hashable, Sendable {
     public let launches: Int
     public let p50Ms: Double
@@ -9727,6 +9845,7 @@ public nonisolated enum TodayItem: Codable, Hashable, Sendable {
     case incident(IncidentItem)
     case error(ErrorItem)
     case slower(SlowerItem)
+    case quiet(QuietItem)
     case promotion(PromotionItem)
     case silent(SilentItem)
     case unknown(String)
@@ -9741,6 +9860,7 @@ public nonisolated enum TodayItem: Codable, Hashable, Sendable {
         case "incident": self = .incident(try IncidentItem(from: decoder))
         case "error": self = .error(try ErrorItem(from: decoder))
         case "slower": self = .slower(try SlowerItem(from: decoder))
+        case "quiet": self = .quiet(try QuietItem(from: decoder))
         case "promotion": self = .promotion(try PromotionItem(from: decoder))
         case "silent": self = .silent(try SilentItem(from: decoder))
         default: self = .unknown(kind)
@@ -9752,6 +9872,7 @@ public nonisolated enum TodayItem: Codable, Hashable, Sendable {
         case .incident(let value): try value.encode(to: encoder)
         case .error(let value): try value.encode(to: encoder)
         case .slower(let value): try value.encode(to: encoder)
+        case .quiet(let value): try value.encode(to: encoder)
         case .promotion(let value): try value.encode(to: encoder)
         case .silent(let value): try value.encode(to: encoder)
         case .unknown(let kind):

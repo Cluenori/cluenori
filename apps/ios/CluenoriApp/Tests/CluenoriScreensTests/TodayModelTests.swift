@@ -215,7 +215,7 @@ struct IncidentsModelTests {
           "evidence":{"_tag":"down","monitor":"019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f54",
             "url":"https://notes.example/health","failures":3,"problem":"HTTP 503"},
           "openedAt":"2026-10-21T12:56:00.000Z"}],
-        "resolved":[]}
+        "resolved":[],"quiet":[]}
         """#
     let acknowledged = #"""
         {"id":"019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f53","component":"notes-api",

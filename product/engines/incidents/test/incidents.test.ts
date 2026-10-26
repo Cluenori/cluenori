@@ -197,7 +197,7 @@ describe("Incidents", () => {
     ),
   )
 
-  it.effect("never takes an operation that runs regularly for a job, however long it pauses", () =>
+  it.effect("never takes an operation that runs regularly for a job, but hints that it is quiet", () =>
     inProject(
       "regular-not-a-job",
       start,
@@ -210,9 +210,27 @@ describe("Incidents", () => {
           ),
         )
 
-        const checks = [yield* checkAt(start), yield* checkAt(start + 2 * hour), yield* checkAt(start + day)]
+        const incidents = yield* Incidents
+        const log = yield* ActivityLog
+        const onTime = yield* checkAt(start)
+        const quietOnTime = (yield* incidents.incidents).quiet
+        // Two gaps after its last call and five minutes more, it is quiet: a hint, not an incident.
+        const later = yield* checkAt(start + 2 * hour)
+        const quiet = (yield* incidents.incidents).quiet
+        // Called again, it is no longer quiet.
+        yield* record(api, [counts("GET /api/verification/latest", start + 2 * hour + minute, 1)])
+        const calledAgain = yield* checkAt(start + 2 * hour + 2 * minute)
+        const quietAfter = (yield* incidents.incidents).quiet
 
-        assert.deepStrictEqual(checks, [[], [], []])
+        assert.deepStrictEqual([onTime, later, calledAgain], [[], [], []])
+        assert.deepStrictEqual(quietOnTime, [])
+        assert.deepStrictEqual(
+          quiet.map((hint) => [hint.operation, hint.usualGapMs, DateTime.toEpochMillis(hint.lastRanAt)]),
+          [["GET /api/verification/latest", 31 * minute, start - 31 * minute]],
+        )
+        assert.deepStrictEqual(quietAfter, [])
+        // Nothing about it is activity, so nothing about it can reach a phone.
+        assert.deepStrictEqual(yield* log.latest, [])
       }),
     ),
   )

@@ -135,6 +135,12 @@ struct LineWords: View {
             Text(
                 "\(Text(verbatim: operation)) slower", bundle: #bundle,
                 comment: "An operation slower than its usual. The variable is the operation.")
+        case .quiet(let operation, _, _):
+            Text(
+                "\(Text(verbatim: operation)) quiet, a guess", bundle: #bundle,
+                comment:
+                    "An operation that usually runs regularly hasn't, as Cluenori guessed. The variable is the operation."
+            )
         case .silent(let lastDataAt):
             if let lastDataAt {
                 Text(

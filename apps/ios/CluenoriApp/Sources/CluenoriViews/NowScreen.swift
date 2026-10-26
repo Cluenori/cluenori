@@ -185,6 +185,10 @@ struct ItemKind: View {
             }
         case .slower:
             Text("Slower", bundle: #bundle, comment: "An item's kind: an operation got slower than its usual.")
+        case .quiet:
+            Text(
+                "Quiet, a guess", bundle: #bundle,
+                comment: "An item's kind: an operation that usually runs regularly hasn't, as Cluenori guessed.")
         case .promotion:
             Text("Release", bundle: #bundle, comment: "An item's kind: a release that needs you.")
         case .silent:
@@ -203,7 +207,7 @@ struct ItemTitle: View {
         switch evidence {
         case .incident(let title, _, _, _), .error(let title, _, _, _, _, _):
             Text(verbatim: title)
-        case .slower(let operation, _, _):
+        case .slower(let operation, _, _), .quiet(let operation, _, _):
             Text(verbatim: operation)
         case .promotion(let release, _, let environment, let state, _):
             PromotionNeedTitle(release: release, environment: environment, state: state)
@@ -288,6 +292,8 @@ struct ItemDetail: View {
                 bundle: #bundle,
                 comment: "An operation's p95 over the last day, and its usual. Both are durations."
             )
+        case .quiet(_, let usualGapMs, let lastRanAt):
+            QuietWords(usualGapMs: usualGapMs, lastRanAt: lastRanAt).text
         case .promotion(_, let component, _, let state, _):
             PromotionNeedDetail(component: component, state: state)
         case .silent(let lastDataAt):
@@ -345,6 +351,8 @@ struct ItemSince: View {
             agoText(ongoing ? lastSeen : isNew ? firstSeen : lastSeen)
         case .promotion(_, _, _, _, let since):
             agoText(since)
+        case .quiet(_, _, let lastRanAt):
+            agoText(lastRanAt)
         case .slower, .silent, .unknown:
             EmptyView()
         }
@@ -558,5 +566,26 @@ extension View {
     /// Runs `action` whenever the app comes back to the foreground.
     func refreshWhenActive(_ action: @escaping () async -> Void) -> some View {
         modifier(RefreshWhenActive(action: action))
+    }
+}
+
+/// What a quiet operation's hint says, worded as the guess it is: `Usually runs about every 31 min;
+/// nothing for 3 hr. Maybe fine: Cluenori guessed this from its history.`
+struct QuietWords {
+    let usualGapMs: Double
+    let lastRanAt: Date
+    var now: Date = .now
+
+    var text: Text {
+        let style = Duration.UnitsFormatStyle.units(
+            allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 1)
+        let gap = Duration.milliseconds(usualGapMs)
+        let quiet = Duration.seconds(max(60, now.timeIntervalSince(lastRanAt)))
+        return Text(
+            "Usually runs about every \(gap, format: style); nothing for \(quiet, format: style). Maybe fine: Cluenori guessed this from its history.",
+            bundle: #bundle,
+            comment:
+                "A hint, never an alert: an operation that usually runs regularly hasn't. The variables are durations."
+        )
     }
 }

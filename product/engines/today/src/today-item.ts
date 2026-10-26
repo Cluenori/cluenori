@@ -44,6 +44,21 @@ export const SlowerItem = Schema.TaggedStruct("slower", {
 }).annotate({ identifier: "SlowerItem" })
 
 /**
+ * An operation that is quiet: it usually ran about every `usualGapMs`, as Incidents guessed from its
+ * history, and hasn't for twice that, since `lastRanAt` (Incidents' `QuietOperation`). A hint, never
+ * an alert: it may be fine.
+ */
+export const QuietItem = Schema.TaggedStruct("quiet", {
+  project: ProjectKey,
+  component: ComponentKey,
+  /** Absent when the component didn't say. */
+  environment: Schema.optionalKey(EnvironmentKey),
+  operation: EnvelopeName,
+  usualGapMs: Milliseconds,
+  lastRanAt: Instant,
+}).annotate({ identifier: "QuietItem" })
+
+/**
  * A project with components that sent no operation in the last day. `lastDataAt` is the end of the
  * last minute or hour anything was counted in the 7 days before; absent when nothing was.
  */
@@ -84,7 +99,14 @@ export const PromotionItem = Schema.TaggedStruct("promotion", {
 export type PromotionItem = typeof PromotionItem.Type
 
 /** One thing that needs attention now, of one project, with its evidence; its tag says what. */
-export const TodayItem = Schema.Union([IncidentItem, ErrorItem, SlowerItem, PromotionItem, SilentItem]).annotate({
+export const TodayItem = Schema.Union([
+  IncidentItem,
+  ErrorItem,
+  SlowerItem,
+  QuietItem,
+  PromotionItem,
+  SilentItem,
+]).annotate({
   identifier: "TodayItem",
 })
 export type TodayItem = typeof TodayItem.Type
@@ -92,7 +114,7 @@ export type TodayItem = typeof TodayItem.Type
 /**
  * What needs attention now across the workspace's projects, the most urgent first: open incidents
  * not acknowledged, errors happening now, acknowledged incidents, new errors, slower operations,
- * promotions that need a member, then projects that sent nothing; and how each project is going
+ * quiet operations, promotions that need a member, then projects that sent nothing; and how each project is going
  * now. A project that didn't answer is in `unanswered`, its items and pulse missing: never read as
  * nothing to do.
  */

@@ -26,15 +26,18 @@ import {
   downAfter,
   failingWindow,
   isFailing,
+  quietAt,
   reopenWithin,
   resolveAfter,
+  rhythmWindows,
   titleOf,
+  usualGapOf,
   usualWindow,
   worseTimes,
 } from "./detectors.ts"
 import type { Evidence, IncidentChange, IncidentDetail, IncidentRelease, IncidentUpdate } from "./incident.ts"
 import { Detector, Evidence as EvidenceSchema, Incident, IncidentId, IncidentNotFound } from "./incident.ts"
-import type { IncidentList } from "./incident.ts"
+import type { IncidentList, QuietOperation } from "./incident.ts"
 import {
   IncidentAcknowledged,
   IncidentOpened,
@@ -68,8 +71,9 @@ const hour = Duration.toMillis(Duration.hours(1))
 const resolvedListed = 50
 const resolvedShown = Duration.toMillis(Duration.days(7))
 
-// A Durable Object's SQLite binds at most 100 values in one statement; a baseline has 6.
+// A Durable Object's SQLite binds at most 100 values in one statement; a baseline has 6, a rhythm 5.
 const baselinesAtOnce = Math.floor(100 / 6)
+const rhythmsAtOnce = Math.floor(100 / 5)
 
 // How many monitors are fetched at once.
 const checksAtOnce = 10
@@ -175,6 +179,16 @@ const BaselineRow = Schema.Struct({
 })
 type BaselineRow = typeof BaselineRow.Type
 
+const RhythmRow = Schema.Struct({
+  component: ComponentKey,
+  environment: EnvironmentColumn,
+  operation: EnvelopeName,
+  gapMs: Schema.Finite,
+  lastRanAt: Schema.Int,
+  quiet: Schema.Int,
+})
+type RhythmRow = typeof RhythmRow.Type
+
 // The activity of each change a check makes.
 const changeEntries = {
   opened: IncidentOpened,
@@ -274,7 +288,7 @@ export class Incidents extends Context.Service<
      * fetches every monitor, ten at a time, each within 10 seconds, with no trace headers; runs the
      * detectors on the counts; and opens, reopens, worsens and resolves incidents, with their
      * activity, in one commit by `incidents.check`. Once an hour it first relearns each operation's
-     * usual error rate and schedule. A change to an acknowledged incident is returned too, with its
+     * usual error rate and guesses how often each runs, for quiet hints. A change to an acknowledged incident is returned too, with its
      * `acknowledgedAt`, so whoever tells people stays quiet. Meant to run every minute; run sooner,
      * it fetches the monitors again, and changes nothing twice.
      */
@@ -450,6 +464,14 @@ export class Incidents extends Context.Service<
           SELECT component, environment, operation, usual_rate AS "usualRate" FROM incidents_baselines`,
       })
 
+      const findRhythms = SqlSchema.findAll({
+        Request: Schema.Void,
+        Result: RhythmRow,
+        execute: () => sql`
+          SELECT component, environment, operation, gap_ms AS "gapMs", last_ran_at AS "lastRanAt", quiet
+          FROM incidents_rhythms`,
+      })
+
       const findState = SqlSchema.findOneOption({
         Request: Schema.Void,
         Result: StateRow,
@@ -470,6 +492,36 @@ export class Incidents extends Context.Service<
           operation: row.operation,
           usual_rate: row.count === 0 ? 0 : row.errors / row.count,
         }))
+        // How often each sparse operation usually runs, a guess: the two days first, so a rhythm
+        // guessed there stands over one from the 6 hours.
+        const guessed = new Map<
+          string,
+          {
+            readonly component: ComponentKey
+            readonly environment: string
+            readonly operation: EnvelopeName
+            readonly gap_ms: number
+            readonly last_ran_at: number
+          }
+        >()
+        for (const { window, atMost } of rhythmWindows) {
+          const ran = yield* signals.minutesRan({ period: periodOf(now - Duration.toMillis(window), now) }, atMost)
+          for (const entry of ran) {
+            const minutes = entry.minutes.map(DateTime.toEpochMillis)
+            const gap = usualGapOf(minutes)
+            const last = minutes.at(-1)
+            if (gap !== undefined && last !== undefined && !guessed.has(operationKeyOf(entry))) {
+              guessed.set(operationKeyOf(entry), {
+                component: entry.component,
+                environment: entry.environment ?? "",
+                operation: entry.operation,
+                gap_ms: gap,
+                last_ran_at: last,
+              })
+            }
+          }
+        }
+        const rhythms = [...guessed.values()]
         yield* sql
           .withTransaction(
             Effect.gen(function* () {
@@ -477,11 +529,40 @@ export class Incidents extends Context.Service<
               for (let start = 0; start < rows.length; start += baselinesAtOnce) {
                 yield* sql`INSERT INTO incidents_baselines ${sql.insert(rows.slice(start, start + baselinesAtOnce))}`
               }
+              yield* sql`DELETE FROM incidents_rhythms`
+              for (let start = 0; start < rhythms.length; start += rhythmsAtOnce) {
+                yield* sql`INSERT INTO incidents_rhythms ${sql.insert(rhythms.slice(start, start + rhythmsAtOnce))}`
+              }
               yield* sql`INSERT INTO incidents_state (id, learned_at) VALUES (1, ${now})
               ON CONFLICT (id) DO UPDATE SET learned_at = excluded.learned_at`
             }),
           )
           .pipe(Effect.orDie)
+      })
+
+      // Whether each operation past its quiet time ran since: then when it last did, else that it is
+      // quiet. Writes only these hints, never an incident or activity.
+      const confirmQuiet = Effect.fn("Incidents.confirmQuiet")(function* (now: number) {
+        const rhythms = yield* findRhythms(undefined).pipe(Effect.orDie)
+        for (const row of rhythms) {
+          if (now < quietAt(row.lastRanAt, row.gapMs)) {
+            continue
+          }
+          const since = yield* signals.minutesRan(
+            {
+              period: periodOf(row.lastRanAt + 60_000, now),
+              component: row.component,
+              operation: row.operation,
+              ...(row.environment === "" ? {} : { environment: row.environment }),
+            },
+            Number.MAX_SAFE_INTEGER,
+          )
+          const latest = since.flatMap((ran) => ran.minutes.map(DateTime.toEpochMillis)).at(-1)
+          yield* sql`UPDATE incidents_rhythms
+            SET last_ran_at = ${latest ?? row.lastRanAt}, quiet = ${latest === undefined ? 1 : 0}
+            WHERE component = ${row.component} AND environment = ${row.environment}
+              AND operation = ${row.operation}`.pipe(Effect.orDie)
+        }
       })
 
       // ---- Detectors: what each sees now ------------------------------------------------------
@@ -801,6 +882,7 @@ export class Incidents extends Context.Service<
             Effect.gen(function* () {
               const baselines = yield* findBaselines(undefined).pipe(Effect.orDie)
               const firings = [...(yield* downNow(now, fetched)), ...(yield* failingNow(now, baselines))]
+              yield* confirmQuiet(now)
               const open = yield* findOpen(undefined).pipe(Effect.orDie)
               const changes = yield* settle(now, open, firings, settings)
               yield* sql`INSERT INTO incidents_state (id, checked_at) VALUES (1, ${now})
@@ -819,10 +901,21 @@ export class Incidents extends Context.Service<
         const resolved = yield* findResolved(iso(now - resolvedShown)).pipe(Effect.orDie)
         const state = yield* findState(undefined).pipe(Effect.orDie)
         const checkedAt = Option.match(state, { onNone: () => null, onSome: (row) => row.checkedAt })
+        const rhythms = yield* findRhythms(undefined).pipe(Effect.orDie)
         const list: IncidentList = {
           open: open.map(incidentOf),
           resolved: resolved.map(incidentOf),
           ...(checkedAt === null ? {} : { checkedAt: DateTime.makeUnsafe(checkedAt) }),
+          quiet: rhythms
+            .filter((row) => row.quiet === 1 && now >= quietAt(row.lastRanAt, row.gapMs))
+            .toSorted((left, right) => left.lastRanAt - right.lastRanAt)
+            .map((row): QuietOperation => ({
+              component: row.component,
+              ...(row.environment === "" ? {} : { environment: row.environment }),
+              operation: row.operation,
+              usualGapMs: row.gapMs,
+              lastRanAt: DateTime.makeUnsafe(row.lastRanAt),
+            })),
         }
         return list
       }).pipe(Effect.withSpan("Incidents.incidents"))

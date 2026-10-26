@@ -197,7 +197,7 @@ extension TodayRow.Kind {
         switch self {
         case .incident: Palette.red
         case .error: Palette.pink
-        case .slower: Palette.yellow
+        case .slower, .quiet: Palette.yellow
         case .promotion: Palette.purple
         case .silent, .unknown: Palette.secondary
         }

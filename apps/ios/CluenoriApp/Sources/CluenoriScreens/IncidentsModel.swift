@@ -70,7 +70,7 @@ public final class IncidentsModel {
                 incidents.show(
                     IncidentList(
                         open: list.open.map(replaced), resolved: list.resolved.map(replaced),
-                        checkedAt: list.checkedAt))
+                        checkedAt: list.checkedAt, quiet: list.quiet))
             }
         } catch .unauthorized {
             keyRejected()

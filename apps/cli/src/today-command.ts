@@ -5,7 +5,7 @@ import { Command } from "effect/cli"
 import { apiClient, reachFailures } from "./api-client.ts"
 import { apiTarget } from "./api-settings.ts"
 import { local } from "./question.ts"
-import { count, milliseconds, utcMinute } from "./terminal-text.ts"
+import { count, milliseconds, span, utcMinute } from "./terminal-text.ts"
 
 // What kind of error item it is: new, happening now, or both.
 const errorKind = (item: { readonly isNew: boolean; readonly ongoing: boolean }) => {
@@ -66,6 +66,11 @@ const describe = (item: TodayItem): readonly [string, string] => {
       return [
         "Slower",
         `${item.operation}: p95 ${milliseconds(item.p95Ms)} over the last day, usually ${milliseconds(item.usualP95Ms)}`,
+      ]
+    case "quiet":
+      return [
+        "Quiet, a guess",
+        `${item.operation}: usually runs about every ${span(item.usualGapMs)}, none since ${utcMinute(item.lastRanAt)}; maybe fine`,
       ]
     case "promotion":
       return [

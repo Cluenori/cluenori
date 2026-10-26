@@ -2791,7 +2791,7 @@
             }
           }
         },
-        "description": "The project's open incidents, newest first, and up to 50 resolved in the last 7 days. Detectors look every minute: a monitor down two checks in a row, an operation failing at least 2% and three times its usual over 15 minutes, and a scheduled operation that missed twice its usual gap. `checkedAt` says when they last looked."
+        "description": "The project's open incidents, newest first, and up to 50 resolved in the last 7 days. Detectors look every minute: a monitor down two checks in a row, and an operation failing at least 2% and three times its usual over 15 minutes. `checkedAt` says when they last looked. Beside them, never incidents, the operations quiet now: those that usually ran regularly, as guessed from their history, and haven't for twice their usual gap."
       }
     },
     "/api/projects/{project}/incidents/{incident}": {
@@ -9734,6 +9734,9 @@
             "$ref": "#/components/schemas/SlowerItem"
           },
           {
+            "$ref": "#/components/schemas/QuietItem"
+          },
+          {
             "$ref": "#/components/schemas/PromotionItem"
           },
           {
@@ -9826,6 +9829,57 @@
           "rejected",
           "lost"
         ]
+      },
+      "QuietItem": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "quiet"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "usualGapMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "lastRanAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "_tag",
+          "project",
+          "component",
+          "operation",
+          "usualGapMs",
+          "lastRanAt"
+        ],
+        "additionalProperties": false
       },
       "SlowerItem": {
         "type": "object",
@@ -10697,11 +10751,57 @@
           "checkedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "quiet": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuietOperation"
+            }
           }
         },
         "required": [
           "open",
-          "resolved"
+          "resolved",
+          "quiet"
+        ],
+        "additionalProperties": false
+      },
+      "QuietOperation": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "usualGapMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "lastRanAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "component",
+          "operation",
+          "usualGapMs",
+          "lastRanAt"
         ],
         "additionalProperties": false
       },

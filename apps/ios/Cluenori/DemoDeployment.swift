@@ -712,7 +712,10 @@
             case ("GET", "\(project)/versions"):
                 return ok(ComponentVersions(versions: versions(now)))
             case ("GET", "\(project)/incidents"):
-                return ok(IncidentList(open: [down(now)], resolved: [recovered(now)], checkedAt: now))
+                return ok(
+                    IncidentList(
+                        open: [down(now)], resolved: [recovered(now)], checkedAt: now,
+                        quiet: [quietSync(now)]))
             case ("POST", "\(project)/incidents/\(downId)/acknowledge"):
                 return ok(down(now, acknowledgedAt: now))
             case ("GET", "\(project)/incidents/\(downId)"):
@@ -917,6 +920,13 @@
                 acknowledgedAt: now.addingTimeInterval(-26 * hour + 3 * minute))
         }
 
+        // A sync the app calls about every half hour, quiet for three hours: a guess, shown as a hint.
+        private static func quietSync(_ now: Date) -> QuietOperation {
+            QuietOperation(
+                component: "notes-api", environment: "production", operation: "GET /api/sync",
+                usualGapMs: 31 * 60_000, lastRanAt: now.addingTimeInterval(-3 * hour))
+        }
+
         private static func today(_ now: Date) -> TodayList {
             let errors = errors(now)
             return TodayList(
@@ -928,6 +938,11 @@
                         SlowerItem(
                             project: "atlas", component: "atlas-api", environment: "prod", operation: "GET /api/search",
                             p95Ms: 640, usualP95Ms: 210)),
+                    .quiet(
+                        QuietItem(
+                            project: "notes", component: quietSync(now).component,
+                            environment: quietSync(now).environment, operation: quietSync(now).operation,
+                            usualGapMs: quietSync(now).usualGapMs, lastRanAt: quietSync(now).lastRanAt)),
                     .promotion(
                         PromotionItem(
                             project: "notes", component: "notes-ios", environment: "production", release: "1.2.0+12",

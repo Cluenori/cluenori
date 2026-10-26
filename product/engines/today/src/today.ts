@@ -29,7 +29,7 @@ export class Today extends Context.Service<
     /**
      * The project's items at the clock's time, in no order, in the environments it calls production:
      * its open incidents, its errors new or happening now, its operations slower than over the 7
-     * days before, and the project itself when it has components but sent nothing in the last day.
+     * days before, its operations quiet as guessed from their history, and the project itself when it has components but sent nothing in the last day.
      * Reads only: the incidents, the errors of the last day in each production environment, and the
      * operations of the last day and of the 7 days before. Modules' items come from their own
      * detectors, which the host composes beside these.
@@ -106,6 +106,7 @@ export class Today extends Context.Service<
             ...all,
             open: all.open.filter((incident) => production(incident.environment)),
             resolved: all.resolved.filter((incident) => production(incident.environment)),
+            quiet: all.quiet.filter((quiet) => production(quiet.environment)),
           },
           errors: { groups, occurrences: groups.reduce((total, group) => total + group.occurrences, 0) },
           operations: {
