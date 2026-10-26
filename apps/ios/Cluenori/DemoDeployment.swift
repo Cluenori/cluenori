@@ -9,8 +9,9 @@
     /// place of the Keychain's pairing, keeps nothing, and opens the link `-CluenoriDemoOpen` names;
     /// with `-CluenoriDemoStep <environment>` too, a component's link opens the promote sheet of its
     /// next step there; `-CluenoriDemoScroll <points>` scrolls the screen, Now or the link's, down
-    /// that far, to show its lower part; `-CluenoriDemoFailure YES` makes the API's last promotion to prod one that
-    /// failed. Debug builds alone have it: Release builds, which TestFlight gets, don't.
+    /// that far, to show its lower part; `-CluenoriDemoMoment <minutes>` opens the moment that many
+    /// minutes ago on the charts of an operation's link or of the operations';
+    /// `-CluenoriDemoFailure YES` makes the API's last promotion to prod one that failed. Debug builds alone have it: Release builds, which TestFlight gets, don't.
     ///
     /// ```
     /// xcrun simctl launch booted <bundle ID> -CluenoriDemo YES \
@@ -30,6 +31,20 @@
                 .flatMap(Route.init)
             if let route {
                 pairing.navigation.open(route)
+            }
+            let minutes = UserDefaults.standard.double(forKey: "CluenoriDemoMoment")
+            if minutes > 0, let models = pairing.models, let route = route.map(models.resolved) {
+                let at = Date.now.addingTimeInterval(-minutes * 60)
+                let period = pairing.navigation.period
+                if case .operation(let operation) = route {
+                    let model = models.operation(operation, period: period)
+                    await model.refresh()
+                    model.moment = model.load.value.flatMap { Moment(at: at, in: $0) }
+                } else if case .operations(let telemetry) = route {
+                    let model = models.operations(telemetry, period: period)
+                    await model.refresh()
+                    model.moment = model.load.value.flatMap { Moment(at: at, in: $0) }
+                }
             }
             let scroll = UserDefaults.standard.double(forKey: "CluenoriDemoScroll")
             if scroll > 0 {
@@ -521,6 +536,97 @@
 
     /// The made-up deployment's feed, Registrations: notes names a registration `user.registered`,
     /// atlas `signup_completed`; three today, two yesterday.
+    /// The notes API's requests kept, slowest and failed, in the period asked about, and the trace
+    /// of each: the feed, slow on a search, and a note that failed to save.
+    private nonisolated enum DemoPerformance {
+        private static let minute: TimeInterval = 60
+
+        static func answer(_ method: String, _ path: String, query: [String: String]) -> (Int, Data)? {
+            let now = Date.now
+            let project = "/api/projects/notes"
+            if method == "GET", path == "\(project)/kept-traces" {
+                let from = query["from"].flatMap { try? Date($0, strategy: .iso8601) } ?? .distantPast
+                let to = query["to"].flatMap { try? Date($0, strategy: .iso8601) } ?? .distantFuture
+                let shown = requests(now).filter {
+                    $0.start >= from && $0.start < to
+                        && (query["operation"] == nil || $0.operation == query["operation"])
+                }
+                return DemoAnswers.ok(
+                    KeptTraces(
+                        covered: Period(from: from, to: to),
+                        slowest: shown.sorted { $0.durationMs > $1.durationMs },
+                        failed: shown.filter(\.failed).sorted { $0.start > $1.start }))
+            }
+            if method == "GET", path.hasPrefix("\(project)/traces/"),
+                let request = requests(now).first(where: { path.hasSuffix($0.trace) })
+            {
+                return DemoAnswers.ok(trace(request))
+            }
+            return nil
+        }
+
+        private static func requests(_ now: Date) -> [KeptTraceRow] {
+            let made: [(String, String, TimeInterval, Double, Int)] = [
+                ("4b1e9c07d2a3f58e6c1b0a9d7e2f4c38", "GET /api/feed", 12, 1_840, 200),
+                ("9a2c5e18b7d4f03a6e9c1b2d8f7a5e46", "GET /api/feed", 47, 1_310, 200),
+                ("c3d8a1f6e2b9407d5a8c3e1f6b2d9a07", "POST /api/notes", 26, 2_950, 500),
+                ("e7f2b4a9c1d8063e5b7a2c9f4d1e8b53", "GET /api/feed", 130, 980, 200),
+            ]
+            return made.map { trace, operation, minutesAgo, durationMs, status in
+                KeptTraceRow(
+                    trace: trace, operation: operation, environment: "prod", release: "2026.10.20-a1b2c3d",
+                    start: now.addingTimeInterval(-minutesAgo * minute), durationMs: durationMs, failed: status >= 500,
+                    status: status, component: "notes-api")
+            }
+        }
+
+        // A request's trace: its server span, a query, and, for the feed, a call to search.
+        private static func trace(_ request: KeptTraceRow) -> TraceView {
+            let start = request.start
+            func span(
+                _ id: String, _ depth: Int, _ name: String, _ kind: SpanKind, _ offsetMs: Double, _ durationMs: Double,
+                failed: Bool = false, _ attributes: [String: JSONValue] = [:]
+            ) -> TraceSpan {
+                TraceSpan(
+                    span: id, parent: depth == 0 ? nil : "a1a1a1a1a1a1a1a1", depth: depth, name: name, kind: kind,
+                    component: "notes-api", start: start.addingTimeInterval(offsetMs / 1_000), durationMs: durationMs,
+                    failed: failed, attributes: attributes, events: [])
+            }
+            let total = request.durationMs
+            let root = span(
+                "a1a1a1a1a1a1a1a1", 0, request.operation, .server, 0, total, failed: request.failed,
+                [
+                    "http.route": .string(String(request.operation.split(separator: " ").last ?? "")),
+                    "http.response.status_code": .number(Double(request.status ?? 200)),
+                ])
+            let steps =
+                request.operation == "GET /api/feed"
+                ? [
+                    span(
+                        "b2b2b2b2b2b2b2b2", 1, "SELECT notes", .client, 8, 46, ["db.system.name": .string("postgresql")]
+                    ),
+                    span("c3c3c3c3c3c3c3c3", 1, "POST search", .client, 60, total - 140),
+                    span("d4d4d4d4d4d4d4d4", 1, "render feed", .internal, total - 70, 60),
+                ]
+                : [
+                    span(
+                        "b2b2b2b2b2b2b2b2", 1, "INSERT notes", .client, 20, total - 60, failed: true,
+                        ["db.system.name": .string("postgresql")])
+                ]
+            return TraceView(
+                trace: request.trace, searched: Period(from: start, to: start.addingTimeInterval(60)),
+                spans: [root] + steps,
+                logs: request.failed
+                    ? [
+                        TraceLog(
+                            time: start.addingTimeInterval((total - 30) / 1_000), level: .error, category: "Notes.Save",
+                            message: "Saving note 51c2 timed out", span: "a1a1a1a1a1a1a1a1", attributes: [:],
+                            component: "notes-api")
+                    ] : [],
+                files: SearchedFiles(read: 2, unread: 0))
+        }
+    }
+
     private nonisolated enum DemoFeeds {
         private static let id = "0199f7a2-8000-7000-8000-000000000001"
         private static let minute: TimeInterval = 60
@@ -582,7 +688,8 @@
             let query = Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { _, last in last })
             let (status, body) =
                 DemoAnalytics.answer(method, path, query: query, body: request.httpBody)
-                ?? DemoFeeds.answer(method, path) ?? answer(method, path)
+                ?? DemoFeeds.answer(method, path) ?? DemoPerformance.answer(method, path, query: query)
+                ?? answer(method, path)
             let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
             return (body, response)
         }
@@ -992,7 +1099,8 @@
                     start: Date(timeIntervalSince1970: at), count: count, errors: index % 41 == 0 ? 6 : count / 300,
                     p50Ms: 48, p80Ms: 96, p95Ms: 180 + Double(index * 13 % 40), p99Ms: 420)
             }
-            return LoadSeries(step: .`5m`, points: points)
+            return LoadSeries(
+                covered: Period(from: Date(timeIntervalSince1970: start), to: now), step: .`5m`, points: points)
         }
 
         private static let operations = OperationTable(

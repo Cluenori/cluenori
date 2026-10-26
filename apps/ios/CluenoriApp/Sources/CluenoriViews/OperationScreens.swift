@@ -4,7 +4,9 @@ import Foundation
 import SwiftUI
 
 /// Every operation of a project in one environment over the period, or of one of its releases over
-/// its span, the slowest first by the percentile chosen.
+/// its span (`concept/Experience.md`, "Lists, groups and items"): what the period holds in a line,
+/// their load, where a tap opens that moment and the requests kept from it, then every operation,
+/// the slowest first by the percentile chosen.
 struct OperationsScreen: View {
     @Bindable var operations: OperationsModel
     let environments: EnvironmentChoice
@@ -19,6 +21,33 @@ struct OperationsScreen: View {
                 route: .operations(of: operations.telemetry),
                 navigation: navigation
             )
+            if let table = operations.table.value, !table.rows.isEmpty {
+                Section {
+                    Text(
+                        "\(table.count, format: .number) requests across \(table.rows.count, format: .number) operations",
+                        bundle: #bundle,
+                        comment: "What a period holds of a project's operations. The variables are counts."
+                    )
+                    .font(.headline)
+                    FailedShare(count: table.count, failed: table.errors)
+                        .font(.subheadline)
+                    if let series = operations.load.value {
+                        LoadChart(
+                            points: series.points, step: series.step, moment: operations.moment,
+                            onPick: { date in operations.moment = Moment(at: date, in: series) }
+                        )
+                        .padding(.vertical, 8)
+                    }
+                } footer: {
+                    Text("Tap a moment to open it.", bundle: #bundle, comment: "How a chart opens a moment.")
+                }
+            }
+            if let moment = operations.moment, let series = operations.load.value {
+                MomentSection(
+                    moment: moment, series: series, requests: operations.requests(in: moment),
+                    project: operations.telemetry.project, showOperation: true,
+                    close: { operations.moment = nil })
+            }
             if let table = operations.table.value {
                 ForEach(operations.order.sorted(table.rows), id: \.self) { row in
                     NavigationLink(
@@ -75,8 +104,8 @@ struct OperationsScreen: View {
                 .pickerStyle(.menu)
             }
         }
-        .refreshable { await operations.table.load() }
-        .task { await operations.table.load() }
+        .refreshable { await operations.refresh() }
+        .task { await operations.refresh() }
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: operations.table.problem, receivedAt: operations.table.receivedAt)
         }
@@ -127,8 +156,11 @@ struct OperationRowView: View {
     }
 }
 
-/// One operation in its environment, over the period and every release, or over one release's span:
-/// its load, its p50, p95 and p99 over time, and its percentiles.
+/// One operation and its requests, in its environment, over the period and every release, or over
+/// one release's span (`concept/Experience.md`, "Lists, groups and items"): what the period holds of
+/// it, or that it holds none and when it last ran; its load and its p50, p95 and p99 over time,
+/// where a tap opens that moment and the requests kept from it; its percentiles; then its failed and
+/// slowest requests, each opening its trace.
 struct OperationScreen: View {
     let operation: OperationModel
     let environments: EnvironmentChoice
@@ -144,19 +176,35 @@ struct OperationScreen: View {
                 navigation: navigation
             )
             Section {
+                if let row = operation.table.value?.rows.first {
+                    Text(
+                        "\(row.count, format: .number) requests, p95 \(Duration.milliseconds(row.p95Ms), format: DurationText.style(row.p95Ms))",
+                        bundle: #bundle,
+                        comment: "What a period holds of an operation. The variables are a count and a duration."
+                    )
+                    .font(.headline)
+                }
                 if let series = operation.load.value {
-                    LoadChart(points: series.points, step: series.step)
-                        .padding(.vertical, 8)
+                    LoadChart(
+                        points: series.points, step: series.step, moment: operation.moment,
+                        onPick: { date in operation.moment = Moment(at: date, in: series) }
+                    )
+                    .padding(.vertical, 8)
                 } else {
                     AnswerPlaceholder(problem: operation.load.problem)
                 }
             } header: {
                 Text("Load", bundle: #bundle, comment: "Section of an operation's runs over time.")
+            } footer: {
+                Text("Tap a moment to open it.", bundle: #bundle, comment: "How a chart opens a moment.")
             }
             Section {
                 if let series = operation.load.value {
-                    LatencyChart(points: series.points)
-                        .padding(.vertical, 8)
+                    LatencyChart(
+                        points: series.points, moment: operation.moment,
+                        onPick: { date in operation.moment = Moment(at: date, in: series) }
+                    )
+                    .padding(.vertical, 8)
                 }
                 if let table = operation.table.value, table.rows.isEmpty {
                     if operation.release != nil {
@@ -166,6 +214,16 @@ struct OperationScreen: View {
                             comment: "An operation that didn't run in the release a screen is narrowed to."
                         )
                         .foregroundStyle(.secondary)
+                    } else if let lastSeen = table.lastSeen {
+                        // The operation is known whatever the period; only its requests are the period's.
+                        Text(
+                            "None in \(periodPhrase(navigation.period)). Last ran \(lastSeen, format: .relative(presentation: .named)).",
+                            bundle: #bundle,
+                            comment:
+                                "An operation none of whose requests are in the period, and when it last ran. The variables are a period and a time."
+                        )
+                        .foregroundStyle(.secondary)
+                        LookFurtherBack(period: $navigation.period)
                     } else {
                         Text(
                             "It didn't run in \(periodPhrase(navigation.period)).",
@@ -188,6 +246,38 @@ struct OperationScreen: View {
                 }
             } header: {
                 Text("Latency", bundle: #bundle, comment: "Section of how long an operation took.")
+            }
+            if let moment = operation.moment, let series = operation.load.value {
+                MomentSection(
+                    moment: moment, series: series, requests: operation.requests(in: moment),
+                    project: operation.operation.project, showOperation: false,
+                    close: { operation.moment = nil })
+            }
+            if let kept = operation.kept.value {
+                if !kept.failed.isEmpty {
+                    Section {
+                        ForEach(kept.failed, id: \.self) { row in
+                            RequestRow(row: row, project: operation.operation.project, showOperation: false)
+                        }
+                    } header: {
+                        Text("Failed requests", bundle: #bundle, comment: "Section of an operation's failed requests.")
+                    }
+                }
+                Section {
+                    if kept.slowest.isEmpty {
+                        Text(
+                            "No request of this period is kept. Of each hour, the five slowest are kept 14 days.",
+                            bundle: #bundle,
+                            comment: "An operation with no slow request kept in the period."
+                        )
+                        .foregroundStyle(.secondary)
+                    }
+                    ForEach(kept.slowest, id: \.self) { row in
+                        RequestRow(row: row, project: operation.operation.project, showOperation: false)
+                    }
+                } header: {
+                    Text("Slowest requests", bundle: #bundle, comment: "Section of an operation's slowest requests.")
+                }
             }
         }
         .navigationTitle(operation.operation.name)
@@ -241,5 +331,106 @@ struct Percentile: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A request, as a row that opens its trace: when it started, its operation when the list is of
+/// several, how long it took, and its status, red when it failed.
+struct RequestRow: View {
+    let row: KeptTraceRow
+    let project: String
+    let showOperation: Bool
+
+    var body: some View {
+        NavigationLink(value: Route.trace(TraceRef(project: project, id: row.trace, around: row.start))) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if showOperation {
+                        Text(row.operation)
+                            .lineLimit(2)
+                    }
+                    Text(row.start, format: .dateTime.month(.abbreviated).day().hour().minute().second())
+                        .font(showOperation ? .subheadline : .body)
+                        .foregroundStyle(showOperation ? .secondary : .primary)
+                        .monospacedDigit()
+                }
+                Spacer(minLength: 12)
+                VStack(alignment: .trailing, spacing: 2) {
+                    DurationText(milliseconds: row.durationMs)
+                        .font(.body.weight(.semibold))
+                    if let status = row.status {
+                        Text(verbatim: "\(status)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(row.failed ? .red : .secondary)
+                    } else if row.failed {
+                        Text("failed", bundle: #bundle, comment: "A request that failed, with no HTTP status.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// The moment a chart opened, marked on it: how many ran then, how many failed, and how long they
+/// took, then the requests kept from it.
+struct MomentSection: View {
+    let moment: Moment
+    let series: LoadSeries
+    let requests: Answer<KeptTraces>
+    let project: String
+    let showOperation: Bool
+    let close: () -> Void
+
+    var body: some View {
+        Section {
+            if let point = moment.point(in: series) {
+                PercentilesGrid(
+                    p50Ms: point.p50Ms, p80Ms: point.p80Ms, p95Ms: point.p95Ms, p99Ms: point.p99Ms, count: point.count,
+                    errors: point.errors)
+            } else {
+                Text(
+                    "Nothing was reported then. The sender may have been silent.",
+                    bundle: #bundle,
+                    comment: "A moment of a chart with nothing counted."
+                )
+                .foregroundStyle(.secondary)
+            }
+            if let kept = requests.value {
+                if kept.requests.isEmpty {
+                    Text(
+                        "No request of this moment is kept.",
+                        bundle: #bundle,
+                        comment: "A moment of a chart none of whose requests are kept."
+                    )
+                    .foregroundStyle(.secondary)
+                }
+                ForEach(kept.requests, id: \.self) { row in
+                    RequestRow(row: row, project: project, showOperation: showOperation)
+                }
+            } else {
+                AnswerPlaceholder(problem: requests.problem)
+            }
+        } header: {
+            HStack {
+                Text(
+                    "\(moment.from, format: .dateTime.month(.abbreviated).day().hour().minute())–\(moment.to, format: .dateTime.hour().minute())",
+                    bundle: #bundle,
+                    comment: "The moment a chart opened, from when to when."
+                )
+                Spacer()
+                Button(action: { close() }) {
+                    Label {
+                        Text("Close", bundle: #bundle, comment: "Closes the moment a chart opened.")
+                    } icon: {
+                        Image(systemName: "xmark")
+                    }
+                    .labelStyle(.iconOnly)
+                }
+            }
+        }
+        .task(id: moment) { await requests.load() }
     }
 }

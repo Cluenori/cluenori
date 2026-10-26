@@ -115,6 +115,13 @@ public final class DeploymentModels {
         }
     }
 
+    /// One request and its trace, whenever it happened.
+    public func trace(_ trace: TraceRef) -> TraceModel {
+        model("trace \(trace.project) \(trace.id)") {
+            TraceModel(trace: trace, api: api, context: context)
+        }
+    }
+
     /// Every error of a project in an environment over `period`, or of one of its releases over its
     /// span.
     public func errors(_ telemetry: Telemetry, period: PeriodKey) -> ErrorsModel {

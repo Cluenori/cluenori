@@ -30,6 +30,20 @@ public struct OperationRef: Hashable, Sendable {
     }
 }
 
+/// One request of a project, as its screen opens it: by its trace's ID, with when it started when a
+/// link knows it, which says which archive files to read first.
+public struct TraceRef: Hashable, Sendable {
+    public let project: String
+    public let id: String
+    public let around: Date?
+
+    public init(project: String, id: String, around: Date? = nil) {
+        self.project = project
+        self.id = id
+        self.around = around
+    }
+}
+
 /// A release of a project's component, as its screen opens it, and as the project's operations,
 /// errors, and logs can be narrowed to it.
 public struct ReleaseRef: Hashable, Sendable {
@@ -144,6 +158,8 @@ public enum Route: Hashable, Sendable {
     case delivery(project: String)
     case operations(of: Telemetry)
     case operation(OperationRef)
+    /// One request and its trace, by its ID, whenever it happened.
+    case trace(TraceRef)
     case errors(of: Telemetry)
     case error(of: Telemetry, id: String)
     case logs(of: Telemetry)
@@ -189,6 +205,7 @@ public enum Route: Hashable, Sendable {
         case .operations(let telemetry), .errors(let telemetry), .error(let telemetry, _), .logs(let telemetry):
             telemetry.project
         case .operation(let operation): operation.project
+        case .trace(let trace): trace.project
         case .release(let release), .notes(let release): release.project
         }
     }
@@ -268,6 +285,9 @@ public enum Route: Hashable, Sendable {
         case .operation(let operation):
             Self.chain(of: operation.telemetry) + [.operations(of: operation.telemetry), self]
         case .error(let telemetry, _): Self.chain(of: telemetry) + [.errors(of: telemetry), self]
+        // A request comes from its project's operations, in the environment chosen for it.
+        case .trace(let trace):
+            Self.chain(of: .project(trace.project)) + [.operations(of: .project(trace.project)), self]
         case .analytics(let analytics): [.project(analytics.project), self]
         case .features(let analytics): [.project(analytics.project), .analytics(analytics), self]
         // A release's app health comes from its component's analytics, in its environment.
@@ -310,7 +330,9 @@ public enum Route: Hashable, Sendable {
     /// The screen a link names, `cluenori://projects/notes/errors/4f1c9a2e7b3d5068`; nil for any
     /// other link: `cluenori://feeds` and `cluenori://feeds/<ID>`; `cluenori://projects/<key>`, and
     /// under it `/tech`, `/incidents`,
-    /// `/incidents/<id>`, `/delivery`, `/operations`, `/errors`, `/errors/<id>`, `/logs`,
+    /// `/incidents/<id>`, `/delivery`, `/operations`, and one, `/operations/<name>?component=<key>`,
+    /// its name as path segments, `/traces/<trace ID>`, which takes
+    /// `?around=<ISO 8601>`, `/errors`, `/errors/<id>`, `/logs`,
     /// `/releases`, `/notes-style`, `/components/<component>` and its `/releases`, `/version-policy`
     /// and `/sdk-keys`, and `/releases/<component>/<release>`, under which `/operations`, `/errors`,
     /// `/errors/<id>`, and `/logs` are the release's alone, and `/notes` its notes; `/analytics` and
@@ -364,6 +386,23 @@ public enum Route: Hashable, Sendable {
                     ReleaseRef(project: project, component: parts[3], environment: environment, version: parts[4]))
             default: return nil
             }
+            return
+        }
+        if parts.count >= 3, parts[1] == "operations" {
+            // The name is the rest of the path as it is, its empty and trailing segments kept:
+            // `POST /api/profile/` is another operation than `POST /api/profile`.
+            let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? ""
+            guard let component = query("component"),
+                let encoded = path.split(separator: "/", maxSplits: 3, omittingEmptySubsequences: false).last,
+                let name = String(encoded).removingPercentEncoding
+            else { return nil }
+            self = .operation(
+                OperationRef(project: project, component: component, environment: environment, name: name))
+            return
+        }
+        if parts.count == 3, parts[1] == "traces" {
+            let around = query("around").flatMap { try? Date($0, strategy: .iso8601) }
+            self = .trace(TraceRef(project: project, id: parts[2], around: around))
             return
         }
         if parts.count == 2, parts[1] == "people" {

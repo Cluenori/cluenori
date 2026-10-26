@@ -79,7 +79,8 @@ struct RouteScreen: View {
         // A project's tech follows the period in place; a project's summary is over the last day.
         // Analytics look over their own period of UTC days, which their screens follow in place.
         // A feed is live, over its last 90 days.
-        case .feeds, .feed, .project, .tech, .incidents, .incident, .delivery, .component, .release,
+        // A request is one thing, whenever it happened.
+        case .feeds, .feed, .project, .tech, .incidents, .incident, .delivery, .component, .release, .trace,
             .operations(.release),
             .errors(.release), .error(.release, _), .logs(.release), .notes, .notesStyle, .analytics, .features,
             .appHealth, .feature, .person, .personByID, .versionPolicy, .sdkKeys:
@@ -153,6 +154,8 @@ private struct ProjectRouteScreen: View {
                 environments: environments,
                 navigation: navigation
             )
+        case .trace(let trace):
+            TraceScreen(trace: models.trace(trace))
         case .errors(let telemetry):
             ErrorsScreen(
                 errors: models.errors(telemetry, period: navigation.period), environments: environments,

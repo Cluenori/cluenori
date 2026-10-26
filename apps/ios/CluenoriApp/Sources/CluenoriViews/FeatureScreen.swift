@@ -71,22 +71,6 @@ struct FeatureScreen: View {
     }
 }
 
-/// Shares a brief an agent reads to look further, through the API and the CLI: copied, or sent to
-/// the agent's app.
-struct AskAnAgent: View {
-    let brief: String
-
-    var body: some View {
-        ShareLink(item: brief) {
-            Label {
-                Text("Ask an agent", bundle: #bundle, comment: "Shares a brief for an agent to look further.")
-            } icon: {
-                Image(systemName: "sparkles")
-            }
-        }
-    }
-}
-
 /// The answer a feature's screen starts with: everyone who used it, yesterday's people against a
 /// week before, and, when its services named it, the last 7 days' operations and errors.
 struct FeatureNumbers: View {

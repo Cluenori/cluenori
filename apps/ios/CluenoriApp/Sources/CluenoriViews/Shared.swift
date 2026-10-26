@@ -440,3 +440,26 @@ extension View {
         }
     }
 }
+
+/// Hands a thing's brief to an agent: shared to any app, or copied from its menu. Every item's
+/// screen offers it (concept/Experience.md, "Who looks at what").
+struct AskAnAgent: View {
+    let brief: String
+
+    var body: some View {
+        ShareLink(item: brief) {
+            Label {
+                Text("Ask an agent", bundle: #bundle, comment: "Shares a brief for an agent to look further.")
+            } icon: {
+                Image(systemName: "sparkles")
+            }
+        }
+        .contextMenu {
+            Button {
+                copyToPasteboard(brief)
+            } label: {
+                Text("Copy the brief", bundle: #bundle, comment: "Copies what an agent needs to look further.")
+            }
+        }
+    }
+}
