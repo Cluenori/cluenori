@@ -30,7 +30,7 @@ struct PairedRoot: View {
 
     var body: some View {
         NavigationStack(path: $navigation.path) {
-            NowScreen(today: models.today, pairing: pairing)
+            NowScreen(today: models.today, feeds: models.feeds, pairing: pairing)
                 .navigationDestination(for: Route.self) { route in
                     RouteScreen(route: route, models: models, navigation: navigation)
                 }
@@ -56,7 +56,11 @@ struct RouteScreen: View {
             .id(Identity(route: shown, period: Self.looksOverPeriod(shown) ? navigation.period : nil))
             // The project's environments, which choose the one shown; the first screen of a project
             // asks for them, and a link may show another project in this one's place.
-            .task(id: route.project) { await models.environments(route.project).loadOnce() }
+            .task(id: route.project) {
+                if let project = route.project {
+                    await models.environments(project).loadOnce()
+                }
+            }
     }
 
     private struct Identity: Hashable {
@@ -74,7 +78,9 @@ struct RouteScreen: View {
         case .operation(let operation): operation.release == nil
         // A project's tech follows the period in place; a project's summary is over the last day.
         // Analytics look over their own period of UTC days, which their screens follow in place.
-        case .project, .tech, .incidents, .incident, .delivery, .component, .release, .operations(.release),
+        // A feed is live, over its last 90 days.
+        case .feeds, .feed, .project, .tech, .incidents, .incident, .delivery, .component, .release,
+            .operations(.release),
             .errors(.release), .error(.release, _), .logs(.release), .notes, .notesStyle, .analytics, .features,
             .appHealth, .person, .versionPolicy, .sdkKeys:
             false
@@ -82,15 +88,39 @@ struct RouteScreen: View {
     }
 }
 
-/// The screen of a route whose environment is resolved.
+/// The screen of a route whose environment is resolved: the deployment's own, or a project's.
 private struct Screen: View {
     let route: Route
     let models: DeploymentModels
     let navigation: Navigation
 
     var body: some View {
-        let environments = models.environments(route.project)
         switch route {
+        case .feeds:
+            FeedsScreen(feeds: models.feeds, name: models.name(of:))
+        case .feed(let id):
+            FeedScreen(feed: models.feed(id), name: models.name(of:))
+        default:
+            if let project = route.project {
+                ProjectRouteScreen(
+                    route: route, environments: models.environments(project), models: models, navigation: navigation)
+            }
+        }
+    }
+}
+
+/// The screen of a project's route, with the project's environments.
+private struct ProjectRouteScreen: View {
+    let route: Route
+    let environments: EnvironmentChoice
+    let models: DeploymentModels
+    let navigation: Navigation
+
+    var body: some View {
+        switch route {
+        // The deployment's own: `Screen` shows them.
+        case .feeds, .feed:
+            EmptyView()
         case .project(let key):
             ProjectScreen(
                 key: key,

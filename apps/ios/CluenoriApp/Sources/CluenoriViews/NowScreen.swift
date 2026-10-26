@@ -5,14 +5,15 @@ import SwiftUI
 
 /// Now, the app's root: what needs you across every project, the most urgent first, each opening the
 /// item itself; then each project with its status, a line of what's going on, its load over the last
-/// 24 hours and its daily people. Refreshed by pulling down and whenever the app comes back, with
-/// what was seen last shown at once.
+/// 24 hours and its daily people; and the feeds, when there are any. Refreshed by pulling down and
+/// whenever the app comes back, with what was seen last shown at once.
 struct NowScreen: View {
     let today: TodayModel
+    let feeds: FeedsModel
     let pairing: PairingModel
 
     var body: some View {
-        NowContent(today: today)
+        NowContent(today: today, feeds: feeds.feeds.value?.feeds ?? [])
             .navigationTitle(Text("Now", bundle: #bundle, comment: "Title of the app's first screen."))
             .navigationSubtitle(ifAny: today.rows.map { NowSummary(rows: $0).text })
             .toolbar {
@@ -20,9 +21,9 @@ struct NowScreen: View {
                     PhoneMenu(pairing: pairing)
                 }
             }
-            .refreshable { await today.load() }
-            .task { await today.load() }
-            .refreshWhenActive { await today.load() }
+            .refreshable { await load() }
+            .task { await load() }
+            .refreshWhenActive { await load() }
             .safeAreaInset(edge: .bottom) {
                 NowBanner(today: today, pairing: pairing)
             }
@@ -31,6 +32,12 @@ struct NowScreen: View {
                     AlertsCard(alerts: alerts)
                 }
             }
+    }
+
+    private func load() async {
+        async let today: Void = today.load()
+        async let feeds: Void = feeds.load()
+        _ = await (today, feeds)
     }
 }
 
@@ -60,12 +67,22 @@ struct NowSummary {
 
 struct NowContent: View {
     let today: TodayModel
+    /// The feeds, by name; none hides their section.
+    var feeds: [FeedSummary] = []
 
     var body: some View {
         if let rows = today.rows, let projects = today.projects {
             PanelScreen {
                 NeedsYouSection(rows: rows, lookedAt: today.lookedAt, unanswered: today.unanswered)
                 ProjectsSection(projects: projects)
+                if !feeds.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        PanelTitle(
+                            title: Text("Feeds", bundle: #bundle, comment: "Title of the feeds on Now."),
+                            trailing: Text("In production", bundle: #bundle, comment: "What Now's feeds cover."))
+                        FeedsPanel(feeds: feeds, name: { today.project($0)?.name ?? $0 })
+                    }
+                }
             }
         } else if today.problem != nil {
             ContentUnavailableView {

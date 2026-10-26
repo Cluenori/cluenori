@@ -635,7 +635,9 @@ conflict.
   taking an app's build through App Store review, the first actions; and keeps release notes, which
   the project's language model (Workers AI) drafts. GitHub is reached through the workspace's own
   GitHub App, which an owner connects from the web (`product/engines/github-app`);
-  only the environments a project calls production alert, and Today counts only them.
+  only the environments a project calls production alert, and Today counts only them. Feeds
+  (`product/engines/feeds`) list the events an owner chose across projects, each project naming
+  them its own way, live on the web and the phone, and alert phones at most once a minute.
   `concept/` holds the product, `ARCHITECTURE.md` the structure, `PATTERNS.md` the code standards.
 - **Stack:** Effect 4.0.6, TypeScript 7.0.2 with `@effect/tsgo` (Effect's diagnostics in the
   compiler), Cloudflare Workers with Wrangler 4, Bun 1.4 as package manager and runner of repository

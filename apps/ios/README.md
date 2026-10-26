@@ -8,7 +8,11 @@ or understand, and one level deeper shows more, never everything at once (`conce
 - **Now**, the root: what needs you across every project, the most urgent first (Today's items:
   incidents, new and ongoing errors, slower operations, releases waiting for you, silent
   projects), each opening the item itself; then each project with its status, a line of what's
-  going on, its load over the last 24 hours, and its daily people against a week before.
+  going on, its load over the last 24 hours, and its daily people against a week before; and the
+  feeds, when there are any.
+- **Feeds** and **a feed** (`cluenori://feeds/<ID>`), live: how many arrived in the last 24 hours
+  and 7 days and from which projects, then the entries, newest first, by day, asked for again each
+  minute, each opening its person. A feed's alert opens its feed. Owners make feeds on the web.
 - **A project**, in production: its daily and monthly people against a week before, its load over
   the last 24 hours with its errors, what needs you there, and a door to each part, with a line of
   what's inside:
@@ -46,7 +50,8 @@ component's promote sheet, `-CluenoriDemoScroll <points>` scrolls the screen, an
 `-CluenoriDemoFailure YES` fails the API's last promotion to prod, for screenshots with
 `xcrun simctl io booted screenshot`. Now shows three made-up projects: notes, with its monitor
 down, a new error and a build App Store review approved; atlas, with a slower operation; and kiln,
-an API without apps. Its notes-ios sends analytics from production and beta, and
+an API without apps; and a feed, Registrations, of notes's and atlas's
+(`cluenori://feeds/0199f7a2-8000-7000-8000-000000000001`). Its notes-ios sends analytics from production and beta, and
 person `user-1842`; its other environments, such as `?environment=prod`, show analytics' empty
 state.
 

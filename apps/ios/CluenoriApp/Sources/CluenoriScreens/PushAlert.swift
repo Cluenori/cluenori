@@ -30,8 +30,10 @@ public nonisolated struct PushAlert: Equatable, Sendable {
     /// The ID the alarm for it rings under: the incident's, so a later push about the incident
     /// stops it; a test's own.
     public let alert: UUID
-    /// Absent for a test.
+    /// Absent for a test and a feed's.
     public let incident: Incident?
+    /// The feed whose entries it tells of, by its ID; absent for others.
+    public let feed: String?
 
     /// An alarm this late is told without ringing: it would ring about the past.
     public static let ringsWithin: TimeInterval = 10 * 60
@@ -53,6 +55,7 @@ public nonisolated struct PushAlert: Equatable, Sendable {
         } else {
             incident = nil
         }
+        feed = part["feed"] as? String
     }
 
     /// Whether its alarm rings at `now`: an alarm less than 10 minutes old.
@@ -60,9 +63,12 @@ public nonisolated struct PushAlert: Equatable, Sendable {
         level == .alarm && now.timeIntervalSince(at) < Self.ringsWithin
     }
 
-    /// The screen tapping it opens: the incident's.
+    /// The screen tapping it opens: the incident's, or the feed's.
     public var route: Route? {
-        incident.map { .incident(project: $0.project, id: $0.id) }
+        if let incident {
+            return .incident(project: incident.project, id: incident.id)
+        }
+        return feed.map { .feed(id: $0) }
     }
 
     private static let instant = Date.ISO8601FormatStyle(includingFractionalSeconds: true)

@@ -118,7 +118,7 @@ public final class Answer<Value: Codable & Equatable & Sendable> {
             case .unreachable:
                 problem = .unreachable
             case .projectNotFound, .componentNotFound, .errorGroupNotFound, .incidentNotFound, .monitorNotFound,
-                .releaseNotFound, .personNotFound:
+                .releaseNotFound, .personNotFound, .feedNotFound:
                 problem = .missing
             default:
                 problem = .unreadable

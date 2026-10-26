@@ -434,6 +434,57 @@
         }
     }
 
+    /// The made-up deployment's feed, Registrations: notes names a registration `user.registered`,
+    /// atlas `signup_completed`; three today, two yesterday.
+    private nonisolated enum DemoFeeds {
+        private static let id = "0199f7a2-8000-7000-8000-000000000001"
+        private static let minute: TimeInterval = 60
+
+        static func answer(_ method: String, _ path: String) -> (Int, Data)? {
+            let now = Date.now
+            switch (method, path) {
+            case ("GET", "/api/feeds"):
+                return DemoAnswers.ok(FeedList(feeds: [summary(now)]))
+            case ("GET", "/api/feeds/\(id)"):
+                return DemoAnswers.ok(FeedEntries(summary: summary(now), entries: entries(now)))
+            default:
+                return nil
+            }
+        }
+
+        private static func summary(_ now: Date) -> FeedSummary {
+            FeedSummary(
+                feed: Feed(
+                    id: id, name: "Registrations", level: .timeSensitive,
+                    sources: [
+                        FeedSource(project: "notes", event: "user.registered"),
+                        FeedSource(project: "atlas", event: "signup_completed"),
+                    ]),
+                lastDay: 3, lastWeek: 5,
+                byProject: [
+                    FeedProjectCount(project: "notes", lastWeek: 3), FeedProjectCount(project: "atlas", lastWeek: 2),
+                ],
+                latest: now.addingTimeInterval(-4 * minute))
+        }
+
+        private static func entries(_ now: Date) -> [FeedEntry] {
+            let made: [(Int, String, TimeInterval, String?, String)] = [
+                (5, "notes", 4, "user-1842", "DE"),
+                (4, "atlas", 38, nil, "JP"),
+                (3, "notes", 95, "user-1907", "PL"),
+                (2, "atlas", 26 * 60, "a-311", "US"),
+                (1, "notes", 29 * 60, "user-1650", "GB"),
+            ]
+            return made.map { id, project, minutesAgo, user, country in
+                FeedEntry(
+                    id: id, project: project, event: project == "notes" ? "user.registered" : "signup_completed",
+                    at: now.addingTimeInterval(-minutesAgo * minute),
+                    component: "\(project)-ios", environment: "production",
+                    release: project == "notes" ? "1.1.0+9" : "3.2.0+41", country: country, user: user)
+            }
+        }
+    }
+
     /// The made-up deployment's answers: the notes project, with an API deployed dev then prod, a
     /// worker that ships with it, and an iOS app through TestFlight to the App Store, its monitor down,
     /// a new error, and a build App Store review approved; and, on Now alone, atlas, with a slower
@@ -445,7 +496,8 @@
             let items = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
             let query = Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { _, last in last })
             let (status, body) =
-                DemoAnalytics.answer(method, path, query: query, body: request.httpBody) ?? answer(method, path)
+                DemoAnalytics.answer(method, path, query: query, body: request.httpBody)
+                ?? DemoFeeds.answer(method, path) ?? answer(method, path)
             let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
             return (body, response)
         }

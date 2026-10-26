@@ -8,6 +8,7 @@ import Foundation
 public final class DeploymentModels {
     public let today: TodayModel
     public let alerts: AlertsModel
+    public let feeds: FeedsModel
 
     private let api: CluenoriAPI
     private let context: AnswerContext
@@ -28,6 +29,7 @@ public final class DeploymentModels {
         self.api = api
         self.context = context
         today = TodayModel(api: api, context: context)
+        feeds = FeedsModel(api: api, context: context)
         member = Answer(context, .init(key: "me") { () async throws(APIError) in try await api.me() })
         alerts = AlertsModel(api: api, phone: phone, system: alertSystem, keyRejected: context.keyRejected)
     }
@@ -73,7 +75,7 @@ public final class DeploymentModels {
     /// The screen `route` names, in the environment chosen for its project when it names none: what
     /// its screen shows, and the models it is made with.
     public func resolved(_ route: Route) -> Route {
-        guard let environment = environments(route.project).chosen else { return route }
+        guard let project = route.project, let environment = environments(project).chosen else { return route }
         return route.choosing(environment)
     }
 
@@ -188,6 +190,11 @@ public final class DeploymentModels {
         analytics(
             AnalyticsRef(project: release.project, component: release.component, environment: release.environment),
             period: period)
+    }
+
+    /// One feed, live, by its ID.
+    public func feed(_ id: String) -> FeedModel {
+        model("feed \(id)") { FeedModel(id: id, api: api, context: context) }
     }
 
     /// One person of a project, by the app's own user ID for them.

@@ -121,11 +121,15 @@ nonisolated public struct AnalyticsRef: Hashable, Sendable {
     }
 }
 
-/// A screen of the paired deployment, which navigation opens by value, over Now. A project's
-/// screen leads to its doors: its app analytics, its tech, and its delivery. A screen of a
-/// project's telemetry names its environment, or, without one, shows the one chosen for the
-/// project.
+/// A screen of the paired deployment, which navigation opens by value, over Now: the deployment's
+/// feeds, or a project's screen. A project's screen leads to its doors: its app analytics, its tech,
+/// and its delivery. A screen of a project's telemetry names its environment, or, without one, shows
+/// the one chosen for the project.
 public enum Route: Hashable, Sendable {
+    /// The deployment's feeds: live lists of chosen events across projects.
+    case feeds
+    /// One feed, live, by its ID.
+    case feed(id: String)
     /// A project's summary: its people and load in production, what needs you there, and its doors.
     case project(String)
     /// A project's tech: its latest operations, errors, logs and incidents, each leading to all of
@@ -167,9 +171,10 @@ public enum Route: Hashable, Sendable {
     /// One component's SDK keys, which its app's builds carry.
     case sdkKeys(project: String, component: String)
 
-    /// The project the screen is of.
-    public var project: String {
+    /// The project the screen is of; nil for the deployment's own, the feeds.
+    public var project: String? {
         switch self {
+        case .feeds, .feed: nil
         case .project(let key), .tech(let key, _), .incidents(let key), .incident(let key, _), .delivery(let key),
             .releases(let key, _), .notesStyle(let key), .component(let key, _), .componentReleases(let key, _),
             .person(let key, _), .versionPolicy(let key, _), .sdkKeys(let key, _):
@@ -222,7 +227,8 @@ public enum Route: Hashable, Sendable {
     /// The same screen in `environment` when it is a project's screen that names none; any other as
     /// it is.
     func choosing(_ environment: String) -> Route {
-        switch self {
+        guard let project else { return self }
+        return switch self {
         case .tech(_, nil), .releases(_, nil), .operations(.project(_, nil)), .errors(.project(_, nil)),
             .error(.project(_, nil), _), .logs(.project(_, nil)):
             showing(environment, in: project)
@@ -237,7 +243,8 @@ public enum Route: Hashable, Sendable {
     /// analytics; a screen narrowed to a release comes from the release's.
     public var chain: [Route] {
         switch self {
-        case .project: [self]
+        case .feeds, .project: [self]
+        case .feed: [.feeds, self]
         case .tech(let key, _), .delivery(let key): [.project(key), self]
         case .incidents(let key): [.project(key), .tech(project: key), self]
         case .incident(let key, _): [.project(key), .tech(project: key), .incidents(project: key), self]
@@ -287,7 +294,8 @@ public enum Route: Hashable, Sendable {
     }
 
     /// The screen a link names, `cluenori://projects/notes/errors/4f1c9a2e7b3d5068`; nil for any
-    /// other link: `cluenori://projects/<key>`, and under it `/tech`, `/incidents`,
+    /// other link: `cluenori://feeds` and `cluenori://feeds/<ID>`; `cluenori://projects/<key>`, and
+    /// under it `/tech`, `/incidents`,
     /// `/incidents/<id>`, `/delivery`, `/operations`, `/errors`, `/errors/<id>`, `/logs`,
     /// `/releases`, `/notes-style`, `/components/<component>` and its `/releases`, `/version-policy`
     /// and `/sdk-keys`, and `/releases/<component>/<release>`, under which `/operations`, `/errors`,
@@ -298,8 +306,17 @@ public enum Route: Hashable, Sendable {
     /// release's, the one its component says it runs in; the project's own screen, in production,
     /// takes none.
     public init?(_ url: URL) {
-        guard url.scheme == "cluenori", url.host() == "projects" else { return nil }
+        guard url.scheme == "cluenori" else { return nil }
         let parts = url.pathComponents.filter { $0 != "/" }
+        if url.host() == "feeds" {
+            switch parts.count {
+            case 0: self = .feeds
+            case 1: self = .feed(id: parts[0])
+            default: return nil
+            }
+            return
+        }
+        guard url.host() == "projects" else { return nil }
         guard let project = parts.first else { return nil }
         let named = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .first { $0.name == "environment" }?.value
