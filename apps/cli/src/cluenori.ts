@@ -2,6 +2,7 @@ import { Command } from "effect/cli"
 
 import { feature, person } from "./analytics-commands.ts"
 import { error, errors, logMessages, logs, trace } from "./errors-commands.ts"
+import { feed, feeds } from "./feeds-commands.ts"
 import { acknowledge, incidents, monitor, monitors } from "./incidents-commands.ts"
 import { member, members } from "./members-commands.ts"
 import { notes, notesStyle } from "./notes-commands.ts"
@@ -43,6 +44,8 @@ export const cluenori = Command.make("cluenori").pipe(
     trace,
     feature,
     person,
+    feeds,
+    feed,
     incidents,
     acknowledge,
     monitors,

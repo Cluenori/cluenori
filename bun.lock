@@ -18,6 +18,7 @@
     "apps/cli": {
       "name": "@cluenori/cli",
       "dependencies": {
+        "@cluenori/feeds": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/github": "workspace:*",
         "@cluenori/github-app": "workspace:*",
