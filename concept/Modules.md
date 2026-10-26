@@ -6,8 +6,8 @@ This tab lists every module that Cluenori can have, with the phase that ships it
 
 Cluenori is a tree of levels, the same on the web and on the phone (decided on 2026-10-23, in place of a sidebar with every module by name):
 
-- **Now,** the root: what needs me across every project (incidents, new errors, operations slower than their own usual, releases waiting), each row opening the item itself; then each project, with its status, its daily people and their trend, and a small line of its load.
-- **A project:** its daily and monthly people against last week, its load over the last 24 hours with its errors drawn over it, what needs me there, and its doors: Product (its features, each with its usage, funnel, health, flag and releases inside it), Tech (requests, errors, logs and incidents, each a summary, then a list, then one item), Releases, and later People.
+- **Now,** the root: every project, those that need me first, each with one line for each product that has news ("Errors: 1 happening now", "Performance: GET /api/feed slower"), opening the one thing it is about or the product, and the steady ones in one quiet row; then the feeds (decided on 2026-10-26, in place of a list of everything that needs me).
+- **A project:** a row for each product, the most urgent first, with its line and the things behind it, each leading into the product; the products with nothing to say last, still a way in (decided on 2026-10-26, in place of its people, its load and three doors). The sidebar still has the doors: Product (its features, each with its usage, funnel, health, flag and releases inside it), Tech (requests, errors, logs and incidents, each a summary, then a list, then one item, and the production setting), Releases, and later People.
 
 Each level shows only the summary that I need to act or to understand, and one level deeper shows more. A module from the table below goes behind the door where it fits when it is built.
 

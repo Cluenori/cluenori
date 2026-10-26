@@ -16,7 +16,8 @@ import { ErrorGroupId, SpanId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
-import { ago, axisTime, dayOf, duration, share } from "@/lib/format"
+import { ago, axisTime, change, compact, dayOf, duration, share } from "@/lib/format"
+import { productLinesOf, projectLinesOf, projectsNowOf } from "@/product-lines"
 import type { TodayList } from "@/project-data"
 import {
   appEnvironmentsOf,
@@ -31,7 +32,6 @@ import {
   needsYouOf,
   operationSpanOf,
   peopleOf,
-  projectStateOf,
 } from "@/project-facts"
 
 const minute = 60_000
@@ -187,8 +187,9 @@ describe("columnTimesOf", () => {
 })
 
 // An incident of an operation failing, in `environment`, or in none.
-const incident = (id: string, environment: EnvironmentKey | undefined) =>
+const incident = (id: string, environment: EnvironmentKey | undefined, acknowledgedAt?: DateTime.Utc) =>
   new Incident({
+    ...(acknowledgedAt === undefined ? {} : { acknowledgedAt }),
     id: IncidentId.make(id),
     component: api,
     ...(environment === undefined ? {} : { environment }),
@@ -389,20 +390,166 @@ describe("a release that needs a member", () => {
   })
 })
 
-describe("projectStateOf", () => {
-  const items = needsYouOf({ ...answered, items: [...answered.items, promotion("approved")] })
+// Each line of a project's, as its product, its tone and its words.
+const linesOf = (answer: TodayList, of: ProjectKey = project) =>
+  productLinesOf(answer, of).map((line) => [line.product, line.tone, line.words])
 
-  it("colors a project as what needs the founder most there, and counts it all", () => {
-    const notes = items.filter((item) => item.project === project)
-    assert.deepStrictEqual(projectStateOf(notes, true), {
-      tone: "failure",
-      line: "1 incident · 2 errors · 1 slower operation · 1 release",
-    })
-    assert.deepStrictEqual(projectStateOf([], true), { tone: "fine", line: "Nothing needs you" })
+// Its apps' daily people on the latest whole UTC day, and a week before when given.
+const peopleNow = (latest: number, weekBefore?: number) => ({
+  latest: usageDay(1, latest),
+  ...(weekBefore === undefined ? {} : { weekBefore: usageDay(8, weekBefore) }),
+})
+
+// Today with no items and this pulse of Notes's.
+const pulsed = (pulse: NonNullable<TodayList["pulses"]>[number]): TodayList => ({ ...today([]), pulses: [pulse] })
+
+describe("productLinesOf", () => {
+  it("says each product's news about a project, in Today's order, each leading to its one thing or its page", () => {
+    const lines = productLinesOf({ ...answered, items: [...answered.items, promotion("approved")] }, project)
+    assert.deepStrictEqual(
+      lines.map((line) => [line.product, line.tone, line.words, line.items.length]),
+      [
+        ["uptime", "failure", "Failing: POST /api/export", 1],
+        ["errors", "failure", "1 happening now · 1 new", 2],
+        ["performance", "warning", "GET /api/feed slower", 1],
+        ["releases", "release", "2.5.0+318 passed App Store review", 1],
+      ],
+    )
+    // One thing behind a line: its page. Several: the product's page of the project.
+    assert.deepStrictEqual(lines[0]?.to, lines[0]?.items[0]?.to)
+    assert.deepStrictEqual(lines[1]?.to, { page: "errors", project })
+    assert.deepStrictEqual(lines[2]?.to, lines[2]?.items[0]?.to)
   })
 
-  it("says a project that didn't answer is unknown, never fine", () => {
-    assert.strictEqual(projectStateOf([], false).tone, "unknown")
+  it("puts the product with Today's most urgent thing first, whatever the products' order", () => {
+    const acknowledged = incident("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64", production, at(now - minute))
+    const errorNow = answered.items[1]
+    const slower = answered.items[3]
+    assert.isDefined(errorNow)
+    assert.isDefined(slower)
+    // An error both new and happening now counts once, as happening now.
+    const newAndNow = { ...errorNow, isNew: true }
+    assert.deepStrictEqual(linesOf(today([newAndNow, { _tag: "incident", project, incident: acknowledged }])), [
+      ["errors", "failure", "1 happening now"],
+      ["uptime", "warning", "Failing: POST /api/export, acknowledged"],
+    ])
+    // Today puts a slower operation before a promotion that failed, red as the promotion is.
+    assert.deepStrictEqual(
+      linesOf(today([slower, promotion("failed")])).map(([product, tone]) => [product, tone]),
+      [
+        ["performance", "warning"],
+        ["releases", "failure"],
+        ["uptime", "steady"],
+        ["errors", "steady"],
+      ],
+    )
+  })
+
+  it("says what has no news too, and that a project went silent, never that it is steady", () => {
+    assert.deepStrictEqual(linesOf(answered, landing), [
+      ["performance", "warning", `Nothing reported in the last day, last ${ago(now - 3 * 24 * hour, now)}`],
+      ["uptime", "steady", "No open incidents"],
+      ["errors", "steady", "Nothing new"],
+    ])
+  })
+
+  it("says the load and the people a pulse counts, and a fall in people of a tenth or more", () => {
+    const load = [{ start: at(now - hour), count: 1200, errors: 3 }]
+    const analytics = (latest: number, weekBefore?: number) =>
+      productLinesOf(pulsed({ project, load: [], people: peopleNow(latest, weekBefore) }), project)
+        .filter((line) => line.product === "analytics")
+        .map((line) => [line.tone, line.words])
+    // In whole percent from the counts, half away from zero, as the phone says it: 181 against 200
+    // is down 10%, though 181 / 200 − 1 is a hair over −0.095.
+    assert.deepStrictEqual(analytics(46, 50), [["steady", `Steady · 46 daily people, ${change(-0.08)} vs last week`]])
+    assert.deepStrictEqual(analytics(45, 50), [["warning", `Down · 45 daily people, ${change(-0.1)} vs last week`]])
+    assert.deepStrictEqual(analytics(181, 200), [["warning", `Down · 181 daily people, ${change(-0.1)} vs last week`]])
+    assert.deepStrictEqual(analytics(182, 200), [
+      ["steady", `Steady · 182 daily people, ${change(-0.09)} vs last week`],
+    ])
+    // A rise is said, and asks nothing of the founder.
+    assert.deepStrictEqual(analytics(112, 100), [["steady", `Up · 112 daily people, ${change(0.12)} vs last week`]])
+    assert.deepStrictEqual(analytics(1), [["steady", "1 daily person"]])
+    assert.deepStrictEqual(
+      linesOf(pulsed({ project, load })).find(([product]) => product === "performance"),
+      ["performance", "steady", `Steady · ${compact(1200)} operations in 24 h, ${share(3, 1200)} failed`],
+    )
+    // Without people or load, Analytics and Performance have nothing to say.
+    assert.deepStrictEqual(
+      linesOf(pulsed({ project, load: [] })).map(([product]) => product),
+      ["uptime", "errors"],
+    )
+  })
+
+  it("says what runs in production for Releases, never what runs in staging", () => {
+    const releasesOf = (environments: ReadonlyArray<{ environment: EnvironmentKey; release: string }>) =>
+      productLinesOf(today([]), project, {
+        delivery: {
+          components: [
+            {
+              component: api,
+              environments: environments.map(({ environment, release }) => ({
+                environment,
+                current: {
+                  summary: {
+                    component: api,
+                    environment,
+                    release: ReleaseVersion.make(release),
+                    verdict: "tooEarly" as const,
+                    slower: 0,
+                    failingMore: 0,
+                    newErrors: 0,
+                  },
+                  since: at(now - hour),
+                },
+              })),
+            },
+          ],
+        },
+        production: [production],
+      }).find((line) => line.product === "releases")?.words
+    assert.strictEqual(releasesOf([{ environment: staging, release: "1.0.0+1" }]), "Nothing in production yet")
+    assert.strictEqual(
+      releasesOf([
+        { environment: production, release: "0.9.0+1" },
+        { environment: staging, release: "1.0.0+1" },
+      ]),
+      "notes-api 0.9.0+1 in production",
+    )
+  })
+
+  it("lists projects with news from Today's items first, then news from the pulse alone, then the rest", () => {
+    const pulses = [
+      { project, load: [], people: peopleNow(46, 50) },
+      { project: landing, load: [], people: peopleNow(20, 40) },
+    ]
+    const listed = (items: TodayList["items"]) =>
+      projectsNowOf({ ...today(items), pulses }, [
+        { key: project, name: "Notes" },
+        { key: landing, name: "Landing" },
+      ]).map((lines) => lines.project.key)
+    // Landing's people halved: it comes first, though Notes is first in the workspace.
+    assert.deepStrictEqual(listed([]), [landing, project])
+    // An item of Notes's comes before a fall in Landing's people.
+    const slower = answered.items[3]
+    assert.isDefined(slower)
+    assert.deepStrictEqual(listed([slower]), [project, landing])
+  })
+
+  it("has no line for a project that didn't answer: unknown on its page, never steady", () => {
+    const silent = today([], [project])
+    assert.deepStrictEqual(productLinesOf(silent, project), [])
+    assert.deepStrictEqual(
+      projectLinesOf(silent, project, undefined).map((line) => [line.product, line.tone]),
+      [
+        ["uptime", "unknown"],
+        ["errors", "unknown"],
+        ["performance", "unknown"],
+        ["releases", "unknown"],
+        ["analytics", "unknown"],
+        ["logs", "quiet"],
+      ],
+    )
   })
 })
 

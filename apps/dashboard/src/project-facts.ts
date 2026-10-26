@@ -7,14 +7,7 @@
 import type { CalendarDay, EnvironmentKey, Period, ProjectKey } from "@cluenori/foundation"
 import type { Incident } from "@cluenori/incidents"
 import type { ProjectSettings } from "@cluenori/projects"
-import type {
-  Delivery,
-  ReleaseChanges,
-  ReleaseCommit,
-  ReleaseSource,
-  ReleaseSummary,
-  StoreBuild,
-} from "@cluenori/releases"
+import type { ReleaseChanges, ReleaseCommit, ReleaseSource, ReleaseSummary, StoreBuild } from "@cluenori/releases"
 import type {
   Compared,
   OperationRow,
@@ -393,16 +386,12 @@ export const evidenceWords = (evidence: Incident["evidence"], now: number) => {
   }
 }
 
-/** What a row of Needs you counts as on its project's line. */
-export type NeedsYouGroup = "incident" | "error" | "slower" | "silent" | "release"
-
 /**
  * One thing that needs the founder now, as Now and a project's page show it: what kind of thing, of
  * which project, what it is, a line of evidence, when, and the page that shows it.
  */
 export type NeedsYou = {
   readonly key: string
-  readonly group: NeedsYouGroup
   /** The kind of thing, in a word or two: "Down", "New error", "Slower", "Release". */
   readonly kind: string
   /** Red for what fails now, yellow for what to look at, purple for a release waiting for a member. */
@@ -423,7 +412,6 @@ const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
       const acknowledged = incident.acknowledgedAt !== undefined
       return {
         key: `incident ${incident.id}`,
-        group: "incident",
         kind: detectorWords[incident.evidence._tag],
         tone: acknowledged ? "warning" : "failure",
         project: item.project,
@@ -438,7 +426,6 @@ const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
       const firstSeen = ago(DateTime.toEpochMillis(error.firstSeen), now)
       return {
         key: `error ${item.project} ${error.id}`,
-        group: "error",
         kind: item.ongoing ? "Happening now" : "New error",
         tone: item.ongoing ? "failure" : "warning",
         project: item.project,
@@ -456,7 +443,6 @@ const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
     case "slower":
       return {
         key: `slower ${item.project} ${item.component} ${item.environment ?? ""} ${item.operation}`,
-        group: "slower",
         kind: "Slower",
         tone: "warning",
         project: item.project,
@@ -474,7 +460,6 @@ const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
       const last = item.lastDataAt === undefined ? undefined : ago(DateTime.toEpochMillis(item.lastDataAt), now)
       return {
         key: `silent ${item.project}`,
-        group: "silent",
         kind: "Silent",
         tone: "warning",
         project: item.project,
@@ -488,7 +473,6 @@ const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
       const ended = item.endedAt === undefined ? undefined : DateTime.toEpochMillis(item.endedAt)
       return {
         key: `promotion ${item.promotion}`,
-        group: "release",
         kind: "Release",
         // One waiting for a member is a release's purple; one that ended without getting there failed.
         tone: item.state === "approved" || item.state === "waiting" ? "release" : "failure",
@@ -545,58 +529,6 @@ export const promotionWords = (
 export const needsYouOf = (today: TodayList): ReadonlyArray<NeedsYou> => {
   const now = DateTime.toEpochMillis(today.at)
   return today.items.map((item) => todayRowOf(item, now))
-}
-
-const groupWords: Readonly<Record<NeedsYouGroup, (value: number) => string>> = {
-  incident: (value) => counted(value, "incident", "incidents"),
-  error: (value) => counted(value, "error", "errors"),
-  slower: (value) => counted(value, "slower operation", "slower operations"),
-  release: (value) => counted(value, "release", "releases"),
-  silent: () => "nothing sent in a day",
-}
-
-/**
- * What a few rows of Needs you count, in a line: "1 incident · 2 errors · 1 release"; undefined for
- * none.
- */
-export const needsYouCountsOf = (items: ReadonlyArray<NeedsYou>) => {
-  const counts = (["incident", "error", "slower", "release", "silent"] as const).flatMap((group) => {
-    const found = items.filter((item) => item.group === group).length
-    return found === 0 ? [] : [groupWords[group](found)]
-  })
-  return counts.length === 0 ? undefined : counts.join(" · ")
-}
-
-/** How a project is, on Now: its dot's color, and what needs the founder there, in a line. */
-export type ProjectState = { readonly tone: NeedsYou["tone"] | "fine" | "unknown"; readonly line: string }
-
-/**
- * How a project is from what needs the founder there, the most urgent first: its color, and what
- * it counts. A project Today couldn't ask is unknown, never fine.
- */
-export const projectStateOf = (items: ReadonlyArray<NeedsYou>, answered: boolean): ProjectState => {
-  const first = items[0]
-  if (!answered) {
-    return { tone: "unknown", line: "Didn't answer, so what needs you there is unknown" }
-  }
-  return first === undefined
-    ? { tone: "fine", line: "Nothing needs you" }
-    : { tone: first.tone, line: needsYouCountsOf(items) ?? "" }
-}
-
-/**
- * Each component's release in the last environment its releases reach, usually production, in a
- * line: "notes-api 2.4.0+312 in production · notes-ios 1.8.2+412 in production"; undefined when
- * none has reached one. Components that ship with another are said by it.
- */
-export const releasedLineOf = (delivery: Delivery) => {
-  const released = delivery.components.flatMap((component) => {
-    const reached = component.environments.findLast((environment) => environment.current !== undefined)
-    return component.shipsWith !== undefined || reached?.current === undefined
-      ? []
-      : [`${component.component} ${reached.current.summary.release} in ${reached.environment}`]
-  })
-  return released.length === 0 ? undefined : released.join(" · ")
 }
 
 // ---- A project's pulse: its last day, and its people ------------------------------------------------

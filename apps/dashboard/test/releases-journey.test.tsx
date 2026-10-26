@@ -26,14 +26,14 @@ const releasesAsked = (area: string) =>
     .map((call) => call.query.get("release"))
 
 describe("releases journey", () => {
-  it.effect("leads from the project's Releases door to the release that got worse, and what did", () =>
+  it.effect("leads from the project's line for Releases to the release that got worse, and what did", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
       window.history.pushState(null, "", "/projects/notes")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      // The project's door to Releases says what runs in production.
-      const door = screen.getByRole("navigation", { name: "Notes's areas" }).getByRole("link", { name: /^Releases/ })
+      // The project's line for Releases says what runs in production.
+      const door = screen.getByRole("region", { name: "Products" }).getByRole("link", { name: /^Releases/ })
       yield* Effect.promise(() => expect.element(door).toMatchTextContent(/notes-api \S+ in production/))
       yield* expectAccessible()
       yield* Effect.promise(() => door.click())

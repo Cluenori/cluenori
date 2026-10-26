@@ -10,15 +10,21 @@ import { answerApi, apiCalls } from "./fake-api.ts"
 import { exportTrace, notesApi } from "./notes-project.ts"
 
 describe("errors journey", () => {
-  it.effect("leads from Now's error happening now to its stack, and to its trace", () =>
+  it.effect("leads from Now's line for Errors to the error happening now, its stack, and its trace", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
       window.history.pushState(null, "", "/")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      // Now names the error happening now right after the incident, one click from its page.
-      const needsYou = screen.getByRole("region", { name: "Needs you" })
-      const happening = needsYou.getByRole("link", { name: /^Happening now · Notes.*NpgsqlException/ })
+      // Now's line for Errors says one is happening now; Notes's page names it, one click from its page.
+      const projects = screen.getByRole("region", { name: "Projects" })
+      yield* Effect.promise(() =>
+        expect.element(projects.getByRole("link", { name: /^Errors.*1 happening now · 1 new/ })).toBeVisible(),
+      )
+      yield* Effect.promise(() => projects.getByRole("link", { name: /^Notes/ }).click())
+      const happening = screen
+        .getByRole("region", { name: "Products" })
+        .getByRole("link", { name: /^Happening now · NpgsqlException/ })
       yield* Effect.promise(() => expect.element(happening).toBeVisible())
       yield* expectAccessible()
       yield* Effect.promise(() => happening.click())

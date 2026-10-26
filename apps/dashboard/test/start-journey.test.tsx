@@ -30,9 +30,9 @@ describe("start journey", () => {
 
       yield* Effect.promise(() => token.fill(notesToken))
       yield* Effect.promise(() => screen.getByRole("button", { name: "Sign in with the token" }).click())
-      // The start is Now: what needs the founder across every project, and the projects.
+      // The start is Now: every project, with what needs the founder there.
       yield* Effect.promise(() => expect.element(screen.getByRole("heading", { level: 1, name: "Now" })).toBeVisible())
-      yield* Effect.promise(() => expect.element(screen.getByRole("region", { name: "Needs you" })).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByRole("region", { name: "Projects" })).toBeVisible())
     }),
   )
 

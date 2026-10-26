@@ -1,8 +1,8 @@
 # @cluenori/dashboard
 
-The web app over the public API, a tree of levels, the same as the iPhone app's: Now, what needs the
-founder across every project and how each is; a project, its people, its last day and what needs the
-founder there, with three doors, Product, Tech and Releases; and each door's pages below it. Each
+The web app over the public API, a tree of levels, the same as the iPhone app's: Now, every project
+with a line for each product that has news; a project, a row for each product, leading into it; and
+in the sidebar, each project's three doors, Product, Tech and Releases, and their pages. Each
 level shows a summary to act on or understand, and one level deeper shows more. The Worker serves it,
 and a browser signs in with a passkey, or with the deployment's API token, an owner's way in. Owners
 invite members to some projects there.
@@ -119,7 +119,13 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
   never zero; "now" is the time an answer covers up to. What only the releases pages say, about
   promotions, deploy targets and versions, is `src/release-facts.ts`, which loads with them, not with
   the first load.
-- **Needs you,** on Now and a project's page (`needsYouOf`, `src/views/needs-you-list.tsx`): Today's
+- **Each product's line,** on Now and a project's page (`src/product-lines.ts`,
+  `src/views/product-lines.tsx`): what each product says of a project from Today's answer alone
+  (Foundation, "Its line for Now and the project"), its tone, the things behind it and where it
+  leads, the most urgent product first. Now shows the lines with news and folds the steady ones into
+  one row; the project's page shows every product, the things behind a line under it, and the
+  products with nothing to say last. A project that didn't answer has no line, and says so.
+- **What needs the founder,** the things behind the lines (`needsYouOf`): Today's
   items, in Today's order and in the environments each project calls production, each said in
   words with its kind, project, what it is, a line of evidence and when, one click from what it is
   about (an incident's operation, or the project's monitors for one that is Down; the error; the
@@ -129,7 +135,7 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
   its environment. A project Today couldn't ask is said to be unknown, never fine. Today is read
   through the API's definition alone (`TodayList` in `src/project-data.ts`), as the dashboard doesn't
   depend on the Today engine's package.
-- **A project's pulse,** on Now and a project's page, from Today's answer (`dayLoadOf`, `peopleOf`):
+- **A project's pulse,** in the lines for Performance and Analytics and the load beside them, from Today's answer (`dayLoadOf`, `peopleOf`):
   its load by the hour over the last 24 hours, an hour not listed unknown, never none; and its apps'
   daily and monthly people on the latest whole UTC day, beside the same day a week before, all in the
   environments it calls production. A day not counted is unknown, and so is a change from a week
@@ -222,7 +228,7 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
   API's own schemas and cleared after asking, are on the Analytics page, for every component: the API
   doesn't say which are apps.
 - **What a color means,** `src/lib/colors.ts`: each component keeps one color everywhere; red is
-  failure, yellow a warning; in Needs you, purple is a release waiting for a member.
+  failure, yellow a warning; in a line, purple is a release waiting for a member.
 - **The panel** every question is answered in, `src/views/panel.tsx`, an answer's three states,
   `src/views/loaded.tsx`, and the charts: `bar-rows.tsx` for counts over time, a row each;
   `load-bars.tsx` for one count over time with what failed on top, as a summary draws it;
