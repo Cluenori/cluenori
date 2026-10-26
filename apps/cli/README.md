@@ -94,6 +94,8 @@ Write its notes for each of the app's languages: ./cluenori notes notes notes-io
 
 ## Decisions and constraints
 
+- **What it trusts:** the person running it, their saved configuration, and the checkout's programs,
+  including Wrangler. Command input and API answers are decoded through their Schemas.
 - **Runs from the repository's root,** as the entry scripts and the root `package.json` scripts do.
 - **Runs in Bun and is never deployed.** Programs it starts run attached to this terminal, in its
   process group, so Wrangler can prompt and Ctrl+C reaches it.
