@@ -2183,6 +2183,14 @@
             "required": false
           },
           {
+            "name": "message",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
             "name": "before",
             "in": "query",
             "schema": {
@@ -2232,7 +2240,266 @@
             }
           }
         },
-        "description": "Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace, or error. Kept 90 days. Records below warning are in the archive, which the traces endpoint reads for one trace."
+        "description": "Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace, error, or log message. Kept 90 days. Records below warning are in the archive, which the traces endpoint reads for one trace."
+      }
+    },
+    "/api/projects/{project}/logs/messages": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.logMessages",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/IndexedLevel"
+            },
+            "required": false
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "LogMessageTable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogMessageTable"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "The log messages of a period, those with the most lines first, at most 100: warnings and errors that are the same message (one logger and template, or the same text but for its values), each with how many of its lines are at `level` and have `search` in them, and when it was first and last seen. Each message's ID opens it with the log message endpoint, and its lines with the logs endpoint's `message`. Kept 90 days; a message 15 months after it was last seen."
+      }
+    },
+    "/api/projects/{project}/logs/messages/{message}": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.logMessage",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "message",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "allOf": [
+                {
+                  "pattern": "^\\P{Cc}*$"
+                }
+              ]
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "LogMessageDetail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogMessageDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | LogMessageNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LogMessageNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "One log message, found whatever the period: what it is, when it was first and last seen, how many of its lines the period holds, and the errors those lines are occurrences of. Its lines are the logs endpoint's, with `message`."
       }
     },
     "/api/projects/{project}/logs/counts": {
@@ -2322,6 +2589,14 @@
           },
           {
             "name": "error",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "message",
             "in": "query",
             "schema": {
               "type": "string"
@@ -10435,8 +10710,138 @@
         "enum": [
           "level",
           "component",
-          "error"
+          "error",
+          "message"
         ]
+      },
+      "LogMessageNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "LogMessageNotFound"
+            ]
+          },
+          "logMessage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "_tag",
+          "logMessage"
+        ],
+        "additionalProperties": false
+      },
+      "LogMessageDetail": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/LogMessage"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorGroup"
+            }
+          }
+        },
+        "required": [
+          "message",
+          "errors"
+        ],
+        "additionalProperties": false
+      },
+      "LogMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "level": {
+            "$ref": "#/components/schemas/LogLevel"
+          },
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "firstRelease": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastComponent": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastEnvironment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastRelease": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "id",
+          "level",
+          "title",
+          "category",
+          "lines",
+          "firstSeen",
+          "lastSeen",
+          "lastComponent"
+        ],
+        "additionalProperties": false
+      },
+      "LogMessageTable": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogMessage"
+            }
+          },
+          "unshown": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "messages",
+          "unshown",
+          "lines"
+        ],
+        "additionalProperties": false
       },
       "LogPage": {
         "type": "object",
@@ -10472,6 +10877,11 @@
           "component": {
             "type": "string",
             "maxLength": 40
+          },
+          "messageId": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
           },
           "time": {
             "type": "string",
@@ -10516,6 +10926,7 @@
         "required": [
           "id",
           "component",
+          "messageId",
           "time",
           "level",
           "category",

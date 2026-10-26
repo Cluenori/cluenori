@@ -1,5 +1,6 @@
 import { ComponentKey, EnvelopeName, ProjectKey, TraceId } from "@cluenori/foundation"
 import { ComponentName, ProjectName } from "@cluenori/projects"
+import { LogMessageId } from "@cluenori/signals"
 import { assert, layer } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
@@ -111,6 +112,32 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it)
       assert.deepStrictEqual(
         warnings.lines.map((line) => line.message),
         ["Notifier is slow"],
+      )
+
+      // As log messages: the error's occurrence is a line of one, which names its error and opens
+      // its lines; the warning is a message of its own.
+      const messages = yield* client.signals.logMessages({ params: { project }, query: period })
+      const ofOccurrence = messages.messages.find((message) => message.id === occurrence?.messageId)
+      assert.isDefined(ofOccurrence)
+      assert.deepStrictEqual(
+        messages.messages.map((message) => message.level).toSorted((left, right) => left.localeCompare(right)),
+        ["error", "warn"],
+      )
+      const message = yield* client.signals.logMessage({
+        params: { project, message: ofOccurrence?.id ?? LogMessageId.make(1) },
+        query: period,
+      })
+      assert.deepStrictEqual(
+        message.errors.map((group) => group.id),
+        [timeout.id],
+      )
+      const itsLines = yield* client.signals.logs({
+        params: { project },
+        query: { ...period, message: message.message.id },
+      })
+      assert.deepStrictEqual(
+        itsLines.lines.map((line) => line.id),
+        [occurrence?.id],
       )
 
       // The trace, from the archive: its spans as a tree, and its logs at every level.

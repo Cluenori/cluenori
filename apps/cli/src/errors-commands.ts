@@ -1,6 +1,6 @@
 import { Instant, ProjectKey, TraceId } from "@cluenori/foundation"
 import type { LogLine, TraceLog, TraceView } from "@cluenori/signals"
-import { ErrorGroupId, IndexedLevel } from "@cluenori/signals"
+import { ErrorGroupId, IndexedLevel, LogMessageId } from "@cluenori/signals"
 import { Console, DateTime, Effect, Option, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 
@@ -10,6 +10,9 @@ import { filters, headline, local, optionalKey, parsed, questionOf } from "./que
 import { columns, count, milliseconds, utcClock, utcMinute, utcSecond } from "./terminal-text.ts"
 
 const kept = "warnings and errors are kept 90 days"
+
+// A log message's ID, as typed: a whole number from 1.
+const MessageId = Schema.FiniteFromString.pipe(Schema.decodeTo(LogMessageId))
 
 const encodeJsonText = Schema.encodeEffect(Schema.fromJsonString(Schema.Json))
 
@@ -131,6 +134,10 @@ export const logs = Command.make(
     ),
     trace: Flag.String("trace").pipe(Flag.optional, Flag.withDescription("Only this trace's lines, by its ID.")),
     error: Flag.String("error").pipe(Flag.optional, Flag.withDescription("Only this error's ID.")),
+    message: Flag.String("message").pipe(
+      Flag.optional,
+      Flag.withDescription("Only this log message's lines, by its ID from ./cluenori log-messages."),
+    ),
     before: Flag.Int("before").pipe(
       Flag.optional,
       Flag.withDescription("Continue with older lines, from the last answer."),
@@ -141,6 +148,7 @@ export const logs = Command.make(
       const { project, query, target } = yield* questionOf(input)
       const trace = yield* optionalKey(TraceId, input.trace, "a trace ID")
       const errorId = yield* optionalKey(ErrorGroupId, input.error, "an error's ID")
+      const messageId = yield* optionalKey(MessageId, input.message, "a log message's ID")
       const level = yield* parsed(IndexedLevel, input.level, "a level")
       const client = yield* apiClient(target)
       const page = yield* client.signals
@@ -153,6 +161,7 @@ export const logs = Command.make(
             ...Option.match(input.category, { onNone: () => ({}), onSome: (category) => ({ category }) }),
             ...Option.match(trace, { onNone: () => ({}), onSome: (value) => ({ trace: value }) }),
             ...Option.match(errorId, { onNone: () => ({}), onSome: (value) => ({ error: value }) }),
+            ...Option.match(messageId, { onNone: () => ({}), onSome: (value) => ({ message: value }) }),
             ...Option.match(input.before, { onNone: () => ({}), onSome: (before) => ({ before }) }),
           },
         })
@@ -171,7 +180,72 @@ export const logs = Command.make(
         yield* Console.log(`\nOlder ones: add --before ${page.next}`)
       }
     }),
-).pipe(Command.withDescription("Warnings and errors, newest first, filtered by level, text, logger, trace, or error."))
+).pipe(
+  Command.withDescription(
+    "Warnings and errors, newest first, filtered by level, text, logger, trace, error, or log message.",
+  ),
+)
+
+/** `cluenori log-messages <project>`. */
+export const logMessages = Command.make(
+  "log-messages",
+  {
+    ...filters,
+    level: Flag.Literals("level", ["warn", "error", "fatal"]).pipe(
+      Flag.withDefault("warn"),
+      Flag.withDescription("The lowest level of the lines counted."),
+    ),
+    search: Flag.String("search").pipe(
+      Flag.optional,
+      Flag.withDescription("Count only lines with this text in the message or the exception."),
+    ),
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const { project, query, target } = yield* questionOf(input)
+      const level = yield* parsed(IndexedLevel, input.level, "a level")
+      const client = yield* apiClient(target)
+      const table = yield* client.signals
+        .logMessages({
+          params: { project },
+          query: {
+            ...query,
+            level,
+            ...Option.match(input.search, { onNone: () => ({}), onSome: (search) => ({ search }) }),
+          },
+        })
+        .pipe(
+          Effect.catchTags({
+            ...reachFailures(target),
+            ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
+          }),
+        )
+      yield* Console.log(`${headline(project, target, table.covered, kept)}\n`)
+      if (table.messages.length === 0) {
+        return yield* Console.log("No warnings or errors match.")
+      }
+      const lines = columns([
+        ["Level", "Message", "Logger", "Lines", "Last seen", "ID"],
+        ...table.messages.map((message) => [
+          message.level.toUpperCase(),
+          message.title,
+          message.category,
+          count(message.lines),
+          utcMinute(message.lastSeen),
+          `${message.id}`,
+        ]),
+      ])
+      yield* Console.log(lines.join("\n"))
+      yield* Console.log(
+        `\n${count(table.lines)} ${table.lines === 1 ? "line" : "lines"} in ${count(table.messages.length + table.unshown)} ${table.messages.length + table.unshown === 1 ? "message" : "messages"}${table.unshown > 0 ? `, the ${count(table.messages.length)} with the most shown` : ""}.`,
+      )
+      yield* Console.log(`See one's lines: ./cluenori logs ${project} --message <ID>`)
+    }),
+).pipe(
+  Command.withDescription(
+    "Warnings and errors as log messages, the most lines first: lines that are the same message but for their values.",
+  ),
+)
 
 const logLine = (log: TraceLog) =>
   [

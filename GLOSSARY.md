@@ -86,6 +86,8 @@ its exact rule.
 | Covered period | The part of an asked-for period that counts answer for: no earlier than they are kept, no later than now | `covered` | — |
 | Archive | Every export Cluenori received, scrubbed, kept 90 days: the source every view is derived from | `ArchiveStore`, `@cluenori/signals` | lake (the planned SQL over it), backup, logs |
 | Error group | Errors that are the same error: one exception type and stack top, or one logger and message template | `ErrorGroup`, `ErrorGroupId` | issue (a record people track), exception, crash |
+| Log message | Warnings or errors that are the same message: one level (warning or error), one logger, and one message template, or the same text but for its numbers, IDs and quoted values; what Logs lists, each opening its lines | `LogMessage`, `LogMessageId`, `@cluenori/signals` | pattern (Modules' planned clustering), message (a line's own text, `LogLine.message`), log group |
+| Log line | One warning or error kept, by its ID, 90 days: what Logs' item is | `LogLine`, `@cluenori/signals` | record (OTLP's word, for every level), entry, event |
 | Culprit | Where an error group happens: the top frame of its stack, or its logger | `culprit` | cause, source |
 
 ## Words that already mean a product concept

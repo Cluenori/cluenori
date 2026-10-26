@@ -10,7 +10,7 @@ import {
   ReleaseVersion,
   TraceId,
 } from "@cluenori/foundation"
-import { AppUserId, ErrorGroupId } from "@cluenori/signals"
+import { AppUserId, ErrorGroupId, LogMessageId } from "@cluenori/signals"
 import { DateTime, Option, Schema } from "effect"
 import type { ComponentProps, MouseEvent } from "react"
 import { useSyncExternalStore } from "react"
@@ -57,7 +57,9 @@ export type GitHubReturn =
  * request to its trace; a moment opened from a chart is marked on the page (`?at=<ISO 8601>`),
  * never a filter; the errors page leads to one error and its occurrences over the period,
  * and each occurrence to its own page, by its ID, with no filters, since it is one thing
- * (`/projects/notes/errors/<error>/<line>`, `concept/Experience.md`); the
+ * (`/projects/notes/errors/<error>/<line>`, `concept/Experience.md`); the logs page leads the same
+ * way to one log message and its lines over the period (`/projects/notes/logs/messages/<message>`),
+ * and each line to its own page, by its ID alone (`/projects/notes/logs/lines/<line>`); the
  * releases page leads to one release, by its component and version, and its environment when it has
  * one (`/projects/notes/releases/notes-api/2.4.0+312?environment=production`); a trace is a page of
  * its own, by its ID, with the time it happened when a link knows it (`?around=<ISO 8601>`), keeping
@@ -82,6 +84,8 @@ export type Route =
   | ({ readonly page: "error"; readonly project: ProjectKey; readonly error: ErrorGroupId } & Filters)
   | { readonly page: "occurrence"; readonly project: ProjectKey; readonly error: ErrorGroupId; readonly line: number }
   | ({ readonly page: "logs"; readonly project: ProjectKey } & Filters)
+  | ({ readonly page: "logMessage"; readonly project: ProjectKey; readonly message: LogMessageId } & Filters)
+  | { readonly page: "logLine"; readonly project: ProjectKey; readonly line: number }
   | {
       readonly page: "releases"
       readonly project: ProjectKey
@@ -216,6 +220,10 @@ export const hrefOf = (route: Route): string => {
       return withQuery(`${projectPath(route.project)}/errors/${route.error}`, route)
     case "occurrence":
       return `${projectPath(route.project)}/errors/${route.error}/${route.line}`
+    case "logMessage":
+      return withQuery(`${projectPath(route.project)}/logs/messages/${route.message}`, route)
+    case "logLine":
+      return `${projectPath(route.project)}/logs/lines/${route.line}`
     case "release": {
       const { component: _, release: __, ...query } = route
       return withQuery(
@@ -280,6 +288,7 @@ const projectKey = (text: string) => keyOf(ProjectKey, text)
 // A warning's or error's ID, as the API numbers them: a whole number from 1.
 const LineId = Schema.FiniteFromString.pipe(Schema.decodeTo(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))))
 const componentKey = (text: string | undefined) => keyOf(ComponentKey, text)
+const MessageId = Schema.FiniteFromString.pipe(Schema.decodeTo(LogMessageId))
 
 // The deployment's own pages, which are no project's: the first part of their addresses.
 const deploymentPages: ReadonlySet<string> = new Set([
@@ -340,10 +349,11 @@ export const routeOf = (path: string, search: string): Route => {
   const isAppRelease = page === "analytics" && id === "releases" && rest.length === 2
   const isOccurrence = page === "errors" && rest.length === 1
   const isAnalyticsItem = page === "analytics" && (id === "features" || id === "people") && rest.length === 1
+  const isLogItem = page === "logs" && (id === "messages" || id === "lines") && rest.length === 1
   if (
     Option.isNone(project) ||
     mistyped ||
-    (rest.length > 0 && !isOperation && !isRelease && !isAppRelease && !isOccurrence && !isAnalyticsItem)
+    (rest.length > 0 && !isOperation && !isRelease && !isAppRelease && !isOccurrence && !isAnalyticsItem && !isLogItem)
   ) {
     return { page: "missing" }
   }
@@ -367,6 +377,14 @@ export const routeOf = (path: string, search: string): Route => {
   const ofMoment = Option.isSome(at) ? { at: at.value } : {}
   if (page === "logs" && id === undefined) {
     return { page, ...filters }
+  }
+  if (isLogItem) {
+    if (id === "messages") {
+      const message = keyOf(MessageId, rest[0])
+      return Option.isSome(message) ? { page: "logMessage", ...filters, message: message.value } : { page: "missing" }
+    }
+    const line = keyOf(LineId, rest[0])
+    return Option.isSome(line) ? { page: "logLine", project: project.value, line: line.value } : { page: "missing" }
   }
   // Every operation is Performance's list; `/operations`, its old address, opens it too.
   if ((page === "performance" || page === "operations") && id === undefined) {
@@ -458,6 +476,8 @@ export const doorOf = (route: Route): Door | undefined => {
     case "error":
     case "occurrence":
     case "logs":
+    case "logMessage":
+    case "logLine":
     case "trace":
       return "tech"
     case "analytics":
@@ -495,6 +515,8 @@ const pageNames: Readonly<Record<Exclude<Route["page"], "now" | "project" | "mis
   error: "Error",
   occurrence: "Occurrence",
   logs: "Logs",
+  logMessage: "Message",
+  logLine: "Line",
   trace: "Request",
   analytics: "Product",
   appReleases: "App health",
@@ -529,9 +551,9 @@ const doorPageOf = (door: Door, project: ProjectKey): Route => {
 const doorNames: Readonly<Record<Door, string>> = { tech: "Tech", product: "Product", releases: "Releases" }
 
 // The steps between a door, or Now, and a page further down: a feed is one of Feeds, an operation
-// and a trace are Performance's, an error one of Errors, an occurrence one of its error's, a release's
-// app health one of App health's; each keeps the page's filters, which an occurrence has none of,
-// but not the moment it opened.
+// and a trace are Performance's, an error one of Errors, an occurrence one of its error's, a log
+// message and a log line ones of Logs, a release's app health one of App health's; each keeps the
+// page's filters, which an occurrence and a line have none of, but not the moment it opened.
 const betweenOf = (route: Route): ReadonlyArray<TrailStep> => {
   if (route.page === "operation") {
     const { operation: _, at: __, ...filters } = route
@@ -550,6 +572,13 @@ const betweenOf = (route: Route): ReadonlyArray<TrailStep> => {
       { label: pageNames.errors, to: { page: "errors", project: route.project } },
       { label: pageNames.error, to: { page: "error", project: route.project, error: route.error } },
     ]
+  }
+  if (route.page === "logMessage") {
+    const { message: _, ...filters } = route
+    return [{ label: pageNames.logs, to: { ...filters, page: "logs" } }]
+  }
+  if (route.page === "logLine") {
+    return [{ label: pageNames.logs, to: { page: "logs", project: route.project } }]
   }
   if (route.page === "feed") {
     return [{ label: pageNames.feeds, to: { page: "feeds" } }]

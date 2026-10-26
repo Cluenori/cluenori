@@ -8,7 +8,8 @@ const failureWords: Readonly<Record<string, string>> = {
   Unauthorized: "You're signed out. Sign in again to see this.",
   ProjectNotFound: "There is no such project here; the link may be from another deployment.",
   ErrorGroupNotFound: "Cluenori has no such error: it may have been forgotten, 15 months after it was last seen.",
-  LogLineNotFound: "This occurrence is no longer kept: warnings and errors are kept 90 days.",
+  LogLineNotFound: "This line is no longer kept: warnings and errors are kept 90 days.",
+  LogMessageNotFound: "Cluenori has no such log message: it may have been forgotten, 15 months after it was last seen.",
   ComponentNotFound: "The project has no such component any more; reload the page to see its components.",
   ArchiveUnavailable: "The archive didn't answer. Try again in a moment.",
   PersonNotFound:

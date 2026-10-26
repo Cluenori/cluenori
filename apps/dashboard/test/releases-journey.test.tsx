@@ -317,12 +317,25 @@ describe("releases journey", () => {
       assert.strictEqual(window.location.search, "?component=notes-api&environment=production")
       yield* Effect.promise(() => expect.poll(() => releasesAsked("errors").at(-1)).toBeNull())
 
-      // Its logs: a line opens in place, with a link back to the release it was written in.
+      // Its logs: a message opens in place to its lines, and a line, by its ID, links back to the
+      // release it was written in.
       open(`/projects/notes/releases/notes-api/${worse}?environment=production`)
+      const beforeLogs = apiCalls().length
       yield* Effect.promise(() => screen.getByRole("link", { name: "Open in Logs" }).click())
       yield* Effect.promise(() => expect.element(screen.getByRole("heading", { level: 1, name: "Logs" })).toBeVisible())
       yield* Effect.promise(() => screen.getByRole("button", { name: /Retrying the export/ }).click())
-      assert.deepStrictEqual([...new Set(releasesAsked("logs"))], [worse])
+      yield* Effect.promise(() => screen.getByRole("link", { name: /Retrying the export, attempt 2 of 3/ }).click())
+      assert.deepStrictEqual(
+        [
+          ...new Set(
+            apiCalls()
+              .slice(beforeLogs)
+              .filter((call) => call.path[2] === "logs" && call.query.has("from"))
+              .map((call) => call.query.get("release")),
+          ),
+        ],
+        [worse],
+      )
       yield* Effect.promise(() => screen.getByRole("link", { name: `Release ${worse}` }).click())
       yield* Effect.promise(() => expect.element(screen.getByRole("heading", { level: 1, name: worse })).toBeVisible())
 

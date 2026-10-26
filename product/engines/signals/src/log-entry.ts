@@ -50,10 +50,21 @@ export const LogEntry = Schema.Struct({
 })
 export type LogEntry = typeof LogEntry.Type
 
-/** A stored log record, with the component that sent it. `id` orders records as they were stored. */
+/**
+ * A log message's ID: a number from 1, larger for each message the project sees for the first
+ * time, not always the next one; the same message has another ID in another project.
+ */
+export const LogMessageId = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.brand("LogMessageId"))
+export type LogMessageId = typeof LogMessageId.Type
+
+/**
+ * A stored log record, with the component that sent it and the log message it is a line of. `id`
+ * orders records as they were stored.
+ */
 export const LogLine = Schema.Struct({
   id: Schema.Int,
   component: ComponentKey,
+  messageId: LogMessageId,
   ...LogEntry.fields,
 }).annotate({ identifier: "LogLine" })
 export type LogLine = typeof LogLine.Type

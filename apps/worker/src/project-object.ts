@@ -331,6 +331,24 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       }),
     new ProjectNotFound({ project }),
   ),
+  logMessages: served(
+    projectCalls.logMessages,
+    (query) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.logMessages(query)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  logMessage: served(
+    projectCalls.logMessage,
+    ({ id, query }) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.logMessage(id, query)
+      }),
+    new ProjectNotFound({ project }),
+  ),
   logCounts: served(
     projectCalls.logCounts,
     (query) =>

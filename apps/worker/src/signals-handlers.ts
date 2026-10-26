@@ -4,6 +4,8 @@ import type {
   LogCountFilters,
   LogCountQuery,
   LogFilters,
+  LogMessageFilters,
+  LogMessageQuery,
   LogQuery,
   OperationFilters,
   OperationQuery,
@@ -17,7 +19,9 @@ import { MemberProjects } from "./member-projects.ts"
 import { projectCalls } from "./project-calls.ts"
 
 // The filters every question shares: the period, and optionally one environment, component, or release.
-const queryOf = (filters: typeof LogFilters.Type | typeof LogCountFilters.Type): ErrorQuery => ({
+const queryOf = (
+  filters: typeof LogFilters.Type | typeof LogCountFilters.Type | typeof LogMessageFilters.Type,
+): ErrorQuery => ({
   period: new Period({ from: filters.from, to: filters.to }),
   ...(filters.environment === undefined ? {} : { environment: filters.environment }),
   ...(filters.component === undefined ? {} : { component: filters.component }),
@@ -35,6 +39,13 @@ const logCountQueryOf = (filters: typeof LogCountFilters.Type): LogCountQuery =>
   by: filters.by,
   ...(filters.level === undefined ? {} : { minimumLevel: filters.level }),
   ...(filters.error === undefined ? {} : { error: filters.error }),
+  ...(filters.message === undefined ? {} : { message: filters.message }),
+})
+
+const logMessageQueryOf = (filters: typeof LogMessageFilters.Type): LogMessageQuery => ({
+  ...queryOf(filters),
+  ...(filters.level === undefined ? {} : { minimumLevel: filters.level }),
+  ...(filters.search === undefined ? {} : { search: filters.search }),
 })
 
 const logQueryOf = (filters: typeof LogFilters.Type): LogQuery => ({
@@ -44,6 +55,7 @@ const logQueryOf = (filters: typeof LogFilters.Type): LogQuery => ({
   ...(filters.category === undefined ? {} : { category: filters.category }),
   ...(filters.trace === undefined ? {} : { trace: filters.trace }),
   ...(filters.error === undefined ? {} : { error: filters.error }),
+  ...(filters.message === undefined ? {} : { message: filters.message }),
   ...(filters.before === undefined ? {} : { before: filters.before }),
 })
 
@@ -103,6 +115,23 @@ export const SignalsHandlers = HttpApiBuilder.group(CluenoriApi, "signals", (han
         const member = yield* CurrentMember
         const projects = yield* MemberProjects
         return yield* projects.call(member, params.project, projectCalls.logs, logQueryOf(query))
+      }),
+    )
+    .handle("logMessages", ({ params, query }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.logMessages, logMessageQueryOf(query))
+      }),
+    )
+    .handle("logMessage", ({ params, query }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.logMessage, {
+          id: params.message,
+          query: queryOf(query),
+        })
       }),
     )
     .handle("logCounts", ({ params, query }) =>

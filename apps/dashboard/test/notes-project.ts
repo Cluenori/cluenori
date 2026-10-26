@@ -82,6 +82,10 @@ import {
   ErrorTable,
   KeptTraces,
   LogCounts,
+  LogMessageDetail,
+  LogMessageId,
+  LogMessageNotFound,
+  LogMessageTable,
   LogPage,
   LoadSeries,
   SeriesStep as SeriesStepSchema,
@@ -237,6 +241,7 @@ const Asked = Schema.Struct({
   search: Schema.optionalKey(Schema.String),
   by: Schema.optionalKey(Schema.String),
   release: Schema.optionalKey(Schema.String),
+  message: Schema.optionalKey(Schema.String),
 })
 type Asked = typeof Asked.Type
 
@@ -426,7 +431,11 @@ const stack = [
 ].join("\n")
 
 // Each line written by the API's latest release, in production.
-const line = (id: number, at: number, fields: Partial<LogLine> & Pick<LogLine, "level" | "message">): LogLine => ({
+const line = (
+  id: number,
+  at: number,
+  fields: Partial<LogLine> & Pick<LogLine, "level" | "message" | "messageId">,
+): LogLine => ({
   id,
   component: api,
   time: DateTime.makeUnsafe(at),
@@ -443,12 +452,22 @@ const linesOf = (period: Period): ReadonlyArray<LogLine> => {
     line(3, to - 2 * minute, {
       level: "error",
       message: "Export 51c2 failed after 3 attempts",
+      messageId: LogMessageId.make(1),
       trace: exportTrace,
       error: ongoing,
       exception: { type: "Npgsql.NpgsqlException", message: "Failed to connect to 10.0.0.5:5432", stack },
     }),
-    line(2, to - 20 * minute, { level: "warn", message: "Retrying the export, attempt 2 of 3" }),
-    line(1, to - 50 * minute, { level: "error", message: "The export took longer than 30 seconds", error: fresh }),
+    line(2, to - 20 * minute, {
+      level: "warn",
+      message: "Retrying the export, attempt 2 of 3",
+      messageId: LogMessageId.make(2),
+    }),
+    line(1, to - 50 * minute, {
+      level: "error",
+      message: "The export took longer than 30 seconds",
+      messageId: LogMessageId.make(3),
+      error: fresh,
+    }),
   ]
 }
 
@@ -470,8 +489,66 @@ const logs = ({ asked, period }: Question) => {
         (asked.release === undefined || entry.release === asked.release) &&
         (asked.environment === undefined || entry.environment === asked.environment) &&
         (!errorsOnly || entry.level !== "warn") &&
+        (asked.message === undefined || `${entry.messageId}` === asked.message) &&
         (search === undefined || entry.message.toLowerCase().includes(search)),
     ),
+  })
+}
+
+// How many lines each message had in the period: more of the export's failures than of the others.
+const messageLines: Readonly<Record<number, number>> = { 1: 42, 2: 18, 3: 7 }
+
+// Each line is a message of its own, named by its template, seen first three days before it.
+const titles: Readonly<Record<number, string>> = {
+  1: "Export {ExportId} failed after {Attempts} attempts",
+  2: "Retrying the export, attempt {Attempt} of {Attempts}",
+  3: "The export took longer than {Seconds} seconds",
+}
+
+const linesOfMessage = (entry: LogLine) => messageLines[entry.messageId] ?? 1
+
+const messageOf = (entry: LogLine, lines: number) => ({
+  id: entry.messageId,
+  level: entry.level,
+  title: titles[entry.messageId] ?? entry.message,
+  category: entry.category,
+  lines,
+  firstSeen: DateTime.makeUnsafe(DateTime.toEpochMillis(entry.time) - 3 * day),
+  lastSeen: entry.time,
+  lastComponent: entry.component,
+  ...(entry.environment === undefined ? {} : { lastEnvironment: entry.environment }),
+  ...(entry.release === undefined ? {} : { lastRelease: entry.release }),
+})
+
+const logMessages = ({ asked, period }: Question) => {
+  const errorsOnly = asked.level === "error"
+  const search = asked.search?.toLowerCase()
+  const shown = linesOf(period).filter(
+    (entry) =>
+      ofLatestApiRelease(asked) &&
+      ofProduction(asked) &&
+      asked.component !== ios &&
+      (!errorsOnly || entry.level !== "warn") &&
+      (search === undefined || entry.message.toLowerCase().includes(search)),
+  )
+  const messages = shown.map((entry) => messageOf(entry, linesOfMessage(entry)))
+  return reply(LogMessageTable, {
+    covered: period,
+    messages: messages.toSorted((left, right) => right.lines - left.lines),
+    unshown: 0,
+    lines: messages.reduce((sum, message) => sum + message.lines, 0),
+  })
+}
+
+const logMessage = ({ asked, period }: Question, id: string) => {
+  const entry = linesOf(period).find((each) => `${each.messageId}` === id)
+  if (entry === undefined) {
+    return reply(LogMessageNotFound, new LogMessageNotFound({ logMessage: LogMessageId.make(Number(id)) }), 404)
+  }
+  const inScope = ofLatestApiRelease(asked) && ofProduction(asked) && asked.component !== ios
+  return reply(LogMessageDetail, {
+    message: messageOf(entry, inScope ? (messageLines[entry.messageId] ?? 1) : 0),
+    errors: inScope ? groupsOf(period).filter((group) => group.id === entry.error) : [],
   })
 }
 
@@ -489,7 +566,8 @@ const logCounts = ({ asked, period }: Question) =>
     const byLevel = [...(errorsOnly ? [] : [series("warn", 3)]), series("error", 5)]
     const byComponent = [series(api, 5)]
     const byError = [series(ongoing, 5), series(fresh, 11)]
-    const kept = { level: byLevel, component: byComponent, error: byError }[asked.by ?? "level"]
+    const byMessage = [series("1", 5), series("2", 3), series("3", 11)]
+    const kept = { level: byLevel, component: byComponent, error: byError, message: byMessage }[asked.by ?? "level"]
     if (kept === undefined) {
       return yield* Effect.die(`The fake API counts logs by level, component, or error, not ${asked.by}.`)
     }
@@ -2249,6 +2327,9 @@ export const notesApi = ({
         return yield* id === undefined ? errors(question) : error(question, id)
       }
       if (area === "logs") {
+        if (id === "messages") {
+          return yield* more === undefined ? logMessages(question) : logMessage(question, more)
+        }
         return yield* id === "counts" && more === undefined ? logCounts(question) : logs(question)
       }
       if (area === "releases" && id === undefined) {

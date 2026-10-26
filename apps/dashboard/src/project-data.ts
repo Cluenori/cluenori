@@ -31,7 +31,7 @@ import type {
   SemanticVersion,
   VersionPolicyTo,
 } from "@cluenori/releases"
-import type { AppUserId, ErrorGroupId, IndexedLevel, LogCountsBy, SeriesStep } from "@cluenori/signals"
+import type { AppUserId, ErrorGroupId, IndexedLevel, LogCountsBy, LogMessageId, SeriesStep } from "@cluenori/signals"
 import type { CluenoriApi } from "@cluenori/worker"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime, Duration, Effect, Option, Redacted } from "effect"
@@ -436,7 +436,14 @@ export const logLineAtom = Atom.family((key: { readonly project: ProjectKey; rea
  * of one component, environment, release, or error group, when the key names it.
  */
 export const logCountsAtom = Atom.family(
-  (key: Scope & { readonly by: LogCountsBy; readonly level?: IndexedLevel; readonly error?: ErrorGroupId }) =>
+  (
+    key: Scope & {
+      readonly by: LogCountsBy
+      readonly level?: IndexedLevel
+      readonly error?: ErrorGroupId
+      readonly message?: LogMessageId
+    },
+  ) =>
     kept(
       CluenoriClient.runtime.atom((get) =>
         Effect.gen(function* () {
@@ -454,6 +461,7 @@ export const logCountsAtom = Atom.family(
               ...(key.release === undefined ? {} : { release: key.release }),
               ...(key.level === undefined ? {} : { level: key.level }),
               ...(key.error === undefined ? {} : { error: key.error }),
+              ...(key.message === undefined ? {} : { message: key.message }),
             },
           })
         }),
@@ -466,7 +474,14 @@ export const logCountsAtom = Atom.family(
  * environment, or release when the key names it: `before` continues from an earlier page's `next`.
  */
 export const logsAtom = Atom.family(
-  (key: Scope & { readonly level?: IndexedLevel; readonly search?: string; readonly before?: number }) =>
+  (
+    key: Scope & {
+      readonly level?: IndexedLevel
+      readonly search?: string
+      readonly message?: LogMessageId
+      readonly before?: number
+    },
+  ) =>
     kept(
       CluenoriClient.runtime.atom((get) =>
         Effect.gen(function* () {
@@ -481,12 +496,53 @@ export const logsAtom = Atom.family(
               ...(key.release === undefined ? {} : { release: key.release }),
               ...(key.level === undefined ? {} : { level: key.level }),
               ...(key.search === undefined ? {} : { search: key.search }),
+              ...(key.message === undefined ? {} : { message: key.message }),
               ...(key.before === undefined ? {} : { before: key.before }),
             },
           })
         }),
       ),
     ),
+)
+
+/**
+ * The period's log messages, those with the most lines first, of one component, environment, or
+ * release when the key names it: each counting its lines at `level` and with `search`.
+ */
+export const logMessagesAtom = Atom.family((key: Scope & { readonly level?: IndexedLevel; readonly search?: string }) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastOf(periodMillis[get(periodAtom)])
+        return yield* client.signals.logMessages({
+          params: { project: key.project },
+          query: {
+            ...period,
+            ...filtersOf(key),
+            ...(key.level === undefined ? {} : { level: key.level }),
+            ...(key.search === undefined ? {} : { search: key.search }),
+          },
+        })
+      }),
+    ),
+  ),
+)
+
+/** One log message, whatever the period, with how many of its lines the period holds, and its errors. */
+export const logMessageAtom = Atom.family((key: Scope & { readonly message: LogMessageId }) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastOf(periodMillis[get(periodAtom)])
+        return yield* client.signals.logMessage({
+          params: { project: key.project, message: key.message },
+          query: { ...period, ...filtersOf(key) },
+        })
+      }),
+    ),
+  ),
 )
 
 /**

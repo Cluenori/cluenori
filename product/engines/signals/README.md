@@ -48,7 +48,13 @@ const before = yield* signals.operations({ period, release: rows[1].release })
 const ran = yield* signals.minutesRan({ period }, 200) // busier operations are left out
 // [{ operation: "cleanup.run", minutes: [10:00, 11:00, 12:00, ...] }]
 
-// Warnings and errors over time, a series per level, component, or error group.
+// Warnings and errors as log messages: lines that are the same message, the most lines first.
+const { messages } = yield* signals.logMessages({ period, search: "export" })
+// [{ id: 12, level: "warn", title: "Export {ExportId} retried", category: "Notes.Exports", lines: 41, ... }]
+const message = yield* signals.logMessage(messages[0].id, { period }) // whatever the period, with its errors
+const its = yield* signals.logs({ period, message: messages[0].id }) // its lines, newest first
+
+// Warnings and errors over time, a series per level, component, error group, or log message.
 const counts = yield* signals.logCounts({ period, step: "1h", by: "error" })
 // series: [{ key: "159dae307f199986", total: 41, points: [{ start, count: 3 }, ...] }, ...]
 ```
@@ -80,7 +86,8 @@ const person = yield* apps.person({ _tag: "ByUser", user: AppUserId.make("8c1fâ€
 An export that isn't one fails with `OtlpInvalid`. When the archive can't take an export,
 `record*` fails with `ArchiveUnavailable`, having stored nothing, and the exporter is told to send it
 again. An error ID the project never had, or forgot 15 months after it was last seen, fails with
-`ErrorGroupNotFound`; a line older than 90 days, or one it never had, with `LogLineNotFound`.
+`ErrorGroupNotFound`; a log message, with `LogMessageNotFound`; a line older than 90 days, or one it
+never had, with `LogLineNotFound`.
 
 ## Owns
 
@@ -91,7 +98,9 @@ again. An error ID the project never had, or forgot 15 months after it was last 
   environment and hour, the five slowest and the five slowest failed); a log record's level; which records are indexed
   (warnings and up); which errors are the same error (exception type and the top five frames of
   the app's own code in its stack, those with a source location, and, when it was thrown outside
-  that code, its message without numbers and IDs; or logger and message template); and how each
+  that code, its message without numbers and IDs; or logger and message template); which warnings
+  and errors are the same log message (warning or error, logger, and template, or message without
+  numbers, IDs and quoted text); and how each
   question's period is cut to what is kept.
 - **Data,** in each project's database:
   - operations counted by name, environment and release (`''` unknown, as for every count from
@@ -107,7 +116,8 @@ again. An error ID the project never had, or forgot 15 months after it was last 
   - warnings and errors, each with its release and the feature it names in `cluenori.feature`
     (`signals_logs`, 90 days), and error groups
     (`signals_error_groups`, 15 months after last seen), each with the release it was first and
-    last seen in;
+    last seen in; and log messages, each line naming its own (`signals_log_messages`, 15 months
+    after last seen);
   - which archive file holds each export, by time (`signals_archive`), and the last hour's export
     digests (`signals_batches`).
 - **The archive's layout:** `<workspace>/<project>/<signal>/<day>/<component>/<digest>.otlp`, OTLP

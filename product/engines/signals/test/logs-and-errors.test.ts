@@ -15,13 +15,15 @@ import {
   ErrorGroupNotFound,
   ErrorGroupId,
   LogLineNotFound,
+  LogMessageId,
+  LogMessageNotFound,
   readLogs,
   readTraces,
   Signals,
 } from "../src/index.ts"
 import { dotnetLogs } from "./fixtures/dotnet-logs.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
-import { dropAppTables, dropFeatureSignals, inProject, WebCrypto } from "./in-object.ts"
+import { dropAppTables, dropFeatureSignals, dropLogMessages, inProject, WebCrypto } from "./in-object.ts"
 
 // The fixtures' records happened from 2026-10-19T22:49:43.314Z; the tests ask a minute later.
 const capturedAt = 1792442983314
@@ -314,6 +316,7 @@ describe("Signals' warnings and errors", () => {
               attributes: { ...entry.attributes, "cluenori.feature": entry.level === "warn" ? feature : 7 },
             })),
           })
+          yield* dropLogMessages
           yield* dropFeatureSignals
           yield* sql`ALTER TABLE signals_operations DROP COLUMN last_seen`
           yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 11`
@@ -388,6 +391,7 @@ describe("Signals' warnings and errors", () => {
           const sql = yield* SqlClient.SqlClient
           yield* signals.recordLogs(api, { ...read, entries: read.entries.map((entry) => ({ ...entry, release })) })
           yield* dropFeatureSignals
+          yield* dropLogMessages
           yield* sql`DROP INDEX signals_logs_release`
           yield* sql`ALTER TABLE signals_logs DROP COLUMN release`
           yield* dropAppTables
@@ -567,6 +571,181 @@ describe("Signals' warnings and errors", () => {
       }
       // Nothing is kept from four months ago, and the answer says so.
       assert.deepStrictEqual(counted.longAgo, { step: "1d", series: [] })
+    }),
+  )
+
+  it.effect("groups warnings and errors into log messages by level, logger and template, the most lines first", () =>
+    Effect.gen(function* () {
+      const at = (index: number, entry: Omit<LogEntry, "time" | "attributes">): LogEntry => ({
+        ...entry,
+        time: DateTime.makeUnsafe(capturedAt + index),
+        attributes: {},
+      })
+      const entries = [
+        // The same message but for its numbers: one message of five lines.
+        ...Array.from({ length: 5 }, (_, index) => warning(index)),
+        // Its text, but an error: another message.
+        at(10, { level: "error", category: "Notes.Sync", message: "Sync 7 was slow" }),
+        // Its text, from another logger: another message, seen after it.
+        at(11, { level: "warn", category: "Notes.Api", message: "Sync 1 was slow" }),
+        // Different text, one template: one message, named by its template.
+        at(12, {
+          level: "warn",
+          category: "Notes.Exports",
+          message: "Export 51c2 failed",
+          template: "Export {Id} failed",
+        }),
+        at(13, {
+          level: "warn",
+          category: "Notes.Exports",
+          message: "Export 9f9f failed",
+          template: "Export {Id} failed",
+        }),
+      ]
+      const found = yield* inProject(
+        "log-messages",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordLogs(api, logExportOf("a", entries))
+          const table = yield* signals.logMessages({ period: lastHour })
+          const errorsOnly = yield* signals.logMessages({ period: lastHour, minimumLevel: "error" })
+          const searched = yield* signals.logMessages({ period: lastHour, search: "sync 3" })
+          const [sync] = table.messages
+          const id = sync?.id ?? LogMessageId.make(1)
+          const lines = yield* signals.logs({ period: lastHour, message: id })
+          const counted = yield* signals.logCounts({ period: lastHour, step: "1h", by: "message" })
+          const ofOne = yield* signals.logCounts({ period: lastHour, step: "1h", by: "level", message: id })
+          return { table, errorsOnly, searched, lines, counted, ofOne }
+        }),
+      )
+
+      assert.deepStrictEqual(
+        found.table.messages.map((message) => [message.title, message.category, message.level, message.lines]),
+        [
+          // Named by its latest line.
+          ["Sync 4 was slow", "Notes.Sync", "warn", 5],
+          ["Export {Id} failed", "Notes.Exports", "warn", 2],
+          ["Sync 1 was slow", "Notes.Api", "warn", 1],
+          ["Sync 7 was slow", "Notes.Sync", "error", 1],
+        ],
+      )
+      assert.strictEqual(found.table.lines, 9)
+      assert.strictEqual(found.table.unshown, 0)
+      // Its first and last seen are its first and last lines'.
+      const [sync] = found.table.messages
+      assert.strictEqual(DateTime.toEpochMillis(sync?.firstSeen ?? DateTime.makeUnsafe(0)), capturedAt)
+      assert.strictEqual(DateTime.toEpochMillis(sync?.lastSeen ?? DateTime.makeUnsafe(0)), capturedAt + 4)
+      // A level or a search counts only the lines that match it.
+      assert.deepStrictEqual(
+        found.errorsOnly.messages.map((message) => message.title),
+        ["Sync 7 was slow"],
+      )
+      assert.deepStrictEqual(
+        found.searched.messages.map((message) => [message.title, message.lines]),
+        [["Sync 4 was slow", 1]],
+      )
+      // Its lines, and its counts, are its own.
+      assert.deepStrictEqual(
+        found.lines.lines.map((line) => line.message),
+        ["Sync 4 was slow", "Sync 3 was slow", "Sync 2 was slow", "Sync 1 was slow", "Sync 0 was slow"],
+      )
+      assert.isTrue(found.lines.lines.every((line) => line.messageId === sync?.id))
+      assert.sameDeepMembers(
+        found.counted.series.map((series) => [series.key, series.total]),
+        found.table.messages.map((message) => [`${message.id}`, message.lines]),
+      )
+      assert.deepStrictEqual(
+        found.ofOne.series.map((series) => [series.key, series.total]),
+        [["warn", 5]],
+      )
+    }),
+  )
+
+  it.effect("finds a log message whatever the period, with the errors its lines are occurrences of", () =>
+    Effect.gen(function* () {
+      const { export: read } = yield* readAt(now, fixtureLogs)
+      const later = now + 3 * 86_400_000
+      const lastDay = new Period({ from: DateTime.makeUnsafe(later - 86_400_000), to: DateTime.makeUnsafe(later) })
+      const { detail, id } = yield* inProject(
+        "log-message",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordLogs(api, read)
+          const table = yield* signals.logMessages({ period: lastHour })
+          const notify = table.messages.find((message) => message.title.startsWith("Export {ExportId} could not"))
+          const found = notify === undefined ? LogMessageId.make(1) : notify.id
+          return { detail: yield* signals.logMessage(found, { period: lastHour }), id: found }
+        }),
+      )
+      const { outside, unknown } = yield* inProject(
+        "log-message",
+        later,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          return {
+            outside: yield* signals.logMessage(id, { period: lastDay }),
+            unknown: yield* signals.logMessage(LogMessageId.make(999), { period: lastDay }).pipe(Effect.flip),
+          }
+        }),
+      )
+      const forgotten = yield* inProject(
+        "log-message",
+        now + 456 * 86_400_000,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          return yield* signals.logMessage(id, { period: lastDay }).pipe(Effect.flip)
+        }),
+      )
+
+      assert.strictEqual(detail.message.level, "error")
+      assert.deepStrictEqual(
+        detail.errors.map((group) => [group.title, group.occurrences]),
+        [["TimeoutException: Notification service did not answer", detail.message.lines]],
+      )
+      assert.strictEqual(outside.message.lines, 0)
+      assert.deepStrictEqual(outside.errors, [])
+      assert.strictEqual(outside.message.title, detail.message.title)
+      assert.deepStrictEqual(unknown, new LogMessageNotFound({ logMessage: LogMessageId.make(999) }))
+      assert.deepStrictEqual(forgotten, new LogMessageNotFound({ logMessage: id }))
+    }),
+  )
+
+  it.effect("numbers the messages of warnings and errors kept before messages were, as ingest does", () =>
+    Effect.gen(function* () {
+      const { export: read } = yield* readAt(now, fixtureLogs)
+      const before = yield* inProject(
+        "messages-before",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          const sql = yield* SqlClient.SqlClient
+          yield* signals.recordLogs(api, read)
+          const table = yield* signals.logMessages({ period: lastHour })
+          // A database as it was before: its warnings and errors stored, then messages taken away.
+          yield* dropLogMessages
+          yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 13`
+          return table
+        }).pipe(Effect.orDie),
+      )
+      const after = yield* inProject(
+        "messages-before",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          const table = yield* signals.logMessages({ period: lastHour })
+          const lines = yield* signals.logs({ period: lastHour })
+          return { table, lines }
+        }),
+      )
+
+      const named = (table: typeof before) =>
+        table.messages.map((message) => [message.title, message.level, message.lines])
+      assert.sameDeepMembers(named(after.table), named(before))
+      assert.isAbove(before.messages.length, 1)
+      const ids = new Set(after.table.messages.map((message) => message.id))
+      assert.isTrue(after.lines.lines.every((line) => ids.has(line.messageId)))
     }),
   )
 

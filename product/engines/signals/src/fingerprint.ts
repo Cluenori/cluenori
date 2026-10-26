@@ -107,3 +107,36 @@ export const errorShapeOf = (record: {
     culprit: record.category,
   }
 }
+
+/** What makes warnings or errors the same log message, and how to name it to a person. */
+export interface MessageShape {
+  /** Kept as the message's key: lines with the same one are the same message. */
+  readonly fingerprint: string
+  readonly title: string
+}
+
+// A message's key is kept as text, so it is bounded: its first 1,000 characters.
+// Not handled: messages whose keys agree in their first 1,000 characters are one message; telling
+// them apart would take hashing the key, which the migration that numbered the stored lines can't.
+const longestKey = 1_000
+
+/**
+ * How a warning or error is grouped as a log message: by whether it is a warning or an error, its
+ * logger, and its message template, or its message without the values in it (numbers, IDs, quoted
+ * text). Its exception doesn't count: that is what its error group is for.
+ */
+export const messageShapeOf = (record: {
+  readonly level: "warn" | "error" | "fatal"
+  readonly category: string
+  readonly message: string
+  readonly template?: string
+}): MessageShape => ({
+  fingerprint: [
+    record.level === "warn" ? "warning" : "error",
+    record.category,
+    record.template ?? normalizedMessage(record.message.slice(0, longestKey)),
+  ]
+    .join("\n")
+    .slice(0, longestKey),
+  title: shortened(firstLine(record.template ?? record.message)),
+})

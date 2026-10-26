@@ -102,23 +102,69 @@ describe("errors journey", () => {
     }),
   )
 
-  it.effect("finds a log line by what it says, and asks again only when the search is submitted", () =>
+  it.effect("finds a log message by what its lines say, and leads from it to one line, with no period", () =>
     Effect.gen(function* () {
       answerApi(notesApi())
       window.history.pushState(null, "", "/projects/notes/logs")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      yield* Effect.promise(() => expect.element(screen.getByText("Retrying the export, attempt 2 of 3")).toBeVisible())
-      const search = screen.getByPlaceholder("Search messages and exceptions, then press Enter")
+      // The list is of messages, named by their templates, the most lines first.
+      const retrying = screen.getByRole("button", { name: /Retrying the export, attempt/ })
+      yield* Effect.promise(() => expect.element(retrying).toBeVisible())
+      yield* expectAccessible()
+      const search = screen.getByPlaceholder("Search what the lines say, then press Enter")
       yield* Effect.promise(() => search.fill("longer"))
-      yield* Effect.promise(() => expect.element(screen.getByText("Retrying the export, attempt 2 of 3")).toBeVisible())
+      yield* Effect.promise(() => expect.element(retrying).toBeVisible())
       yield* Effect.promise(() => userEvent.keyboard("{Enter}"))
+      yield* Effect.promise(() => expect.element(retrying).not.toBeInTheDocument())
+      const longer = screen.getByRole("button", { name: /The export took longer than/ })
+      yield* Effect.promise(() => expect.element(longer).toBeVisible())
+
+      // A message opens in place to its latest lines, and on to its own page.
+      yield* Effect.promise(() => longer.click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "All 7 lines" }).click())
+      assert.match(window.location.pathname, /^\/projects\/notes\/logs\/messages\/3$/)
+      yield* Effect.promise(() => expect.element(screen.getByText("7 in the last 24 hours")).toBeVisible())
+      // Its lines are occurrences of an error, which it names.
       yield* Effect.promise(() =>
-        expect.element(screen.getByText("Retrying the export, attempt 2 of 3")).not.toBeInTheDocument(),
+        expect.element(screen.getByRole("region", { name: "Errors" }).getByText(/TimeoutException/)).toBeVisible(),
+      )
+      yield* expectAccessible()
+
+      // A line is an item: its own address, no period, a brief for an agent.
+      yield* Effect.promise(() =>
+        screen
+          .getByRole("region", { name: "Latest lines" })
+          .getByRole("link", { name: /The export took longer than 30 seconds/ })
+          .click(),
+      )
+      assert.match(window.location.pathname, /^\/projects\/notes\/logs\/lines\/1$/)
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("heading", { level: 1, name: "Error" })).toBeVisible(),
+      )
+      yield* Effect.promise(() => expect.element(screen.getByRole("group", { name: "Period" })).not.toBeInTheDocument())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("button", { name: "Copy for an agent" })).toBeVisible(),
       )
       yield* Effect.promise(() =>
-        expect.element(screen.getByText("The export took longer than 30 seconds")).toBeVisible(),
+        expect
+          .element(screen.getByRole("link", { name: "Every line of its message" }))
+          .toHaveAttribute("href", "/projects/notes/logs/messages/3"),
       )
+      yield* expectAccessible()
+    }),
+  )
+
+  it.effect("says when a message was last seen when the period holds none of its lines", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi())
+      window.history.pushState(null, "", "/projects/notes/logs/messages/2?environment=staging")
+      const screen = yield* Effect.promise(() => render(<App />))
+
+      yield* Effect.promise(() =>
+        expect.element(screen.getByText(/^None in the last 24 hours\. Last seen/)).toBeVisible(),
+      )
+      yield* Effect.promise(() => expect.element(screen.getByRole("button", { name: /^Show the last/ })).toBeVisible())
       yield* expectAccessible()
     }),
   )
@@ -134,7 +180,9 @@ describe("errors journey", () => {
 
       yield* Effect.promise(() => screen.getByRole("link", { name: "Tech", exact: true }).first().click())
       yield* Effect.promise(() => screen.getByRole("link", { name: "All logs" }).click())
-      yield* Effect.promise(() => expect.element(screen.getByText("Retrying the export, attempt 2 of 3")).toBeVisible())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("button", { name: /Retrying the export, attempt/ })).toBeVisible(),
+      )
       yield* Effect.sleep("1 second")
       const before = apiCalls().length
       // Back to the project by the trail above the page.

@@ -92,7 +92,8 @@ export {
 export { ErrorGroupShape, ExportSignal, LogExport, MetricsExport, TraceExport } from "./exports.ts"
 export { featureAttribute } from "./feature-attribute.ts"
 export { FeatureOperationCounts, FeatureOperationDay, FeatureQuery } from "./feature-queries.ts"
-export { ErrorGroupId, LogEntry, LogException, LogLevel, LogLine, SpanId } from "./log-entry.ts"
+export { ErrorGroupId, LogEntry, LogException, LogLevel, LogLine, LogMessageId, SpanId } from "./log-entry.ts"
+export { LogMessage, LogMessageDetail, LogMessageNotFound, LogMessageQuery, LogMessageTable } from "./log-messages.ts"
 export type { ReadLogs } from "./read-logs.ts"
 export { logRetention, readLogs } from "./read-logs.ts"
 export { readMetrics } from "./read-metrics.ts"
@@ -120,6 +121,7 @@ export { hourlyRetention } from "./operation-store.ts"
 export {
   LogCountFilters,
   LogFilters,
+  LogMessageFilters,
   OperationFilters,
   SeriesFilters,
   SignalsGroup,

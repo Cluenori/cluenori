@@ -22,7 +22,8 @@ import type {
 import type { ExportSignal, LogExport, MetricsExport, TraceExport } from "./exports.ts"
 import { featureCounts } from "./feature-counts.ts"
 import type { FeatureOperationDay, FeatureQuery } from "./feature-queries.ts"
-import type { ErrorGroupId, LogLine } from "./log-entry.ts"
+import type { ErrorGroupId, LogLine, LogMessageId } from "./log-entry.ts"
+import type { LogMessageDetail, LogMessageNotFound, LogMessageQuery, LogMessageTable } from "./log-messages.ts"
 import { logStore } from "./log-store.ts"
 import { BatchDigest } from "./operation-counts.ts"
 import type {
@@ -140,6 +141,18 @@ export class Signals extends Context.Service<
     readonly logLine: (id: number) => Effect.Effect<LogLine, LogLineNotFound>
     /** A page of warnings and errors, newest first. Reads only. */
     readonly logs: (query: LogQuery) => Effect.Effect<LogPage>
+    /**
+     * The log messages of the query's period, those with the most matching lines first: warnings
+     * and errors that are the same message, each with how many of its lines matched. Reads every
+     * matching line of the period once.
+     */
+    readonly logMessages: (query: LogMessageQuery) => Effect.Effect<LogMessageTable>
+    /**
+     * One log message, whatever the query's period, with how many of its lines the period holds and
+     * the errors they are occurrences of. Fails only for a message the project never had, or forgot
+     * 15 months after it was last seen. Reads only.
+     */
+    readonly logMessage: (id: LogMessageId, query: ErrorQuery) => Effect.Effect<LogMessageDetail, LogMessageNotFound>
     /**
      * Warnings and errors counted over time, a series by level, component, or error group: one
      * indexed read of the period's warnings and errors. Kept 90 days.
@@ -296,6 +309,16 @@ export class Signals extends Context.Service<
           return yield* logs.logs(query, now)
         })
 
+        const logMessages = Effect.fn("Signals.logMessages")(function* (query: LogMessageQuery) {
+          const now = yield* nowMillis
+          return yield* logs.messages(query, now)
+        })
+
+        const logMessage = Effect.fn("Signals.logMessage")(function* (id: LogMessageId, query: ErrorQuery) {
+          const now = yield* nowMillis
+          return yield* logs.message(id, query, now)
+        })
+
         const logCounts = Effect.fn("Signals.logCounts")(function* (query: LogCountQuery) {
           const now = yield* nowMillis
           return yield* logs.logCounts(query, now)
@@ -341,6 +364,8 @@ export class Signals extends Context.Service<
           error,
           logLine,
           logs: searchLogs,
+          logMessages,
+          logMessage,
           logCounts,
           trace,
         })

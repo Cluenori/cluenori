@@ -16,22 +16,28 @@ import type {
 import { ErrorGroupNotFound, levelsFrom, LogLineNotFound } from "./error-groups.ts"
 import type { ErrorGroupShape } from "./exports.ts"
 import { featureAttribute, featureIn } from "./feature-attribute.ts"
+import { messageShapeOf } from "./fingerprint.ts"
 import type { LogLine } from "./log-entry.ts"
-import { ErrorGroupId, LogEntry } from "./log-entry.ts"
+import { ErrorGroupId, LogEntry, LogMessageId } from "./log-entry.ts"
+import type { LogMessage, LogMessageDetail, LogMessageQuery, LogMessageTable } from "./log-messages.ts"
+import { LogMessageNotFound } from "./log-messages.ts"
 import { stepMillis } from "./operation-queries.ts"
 import { logRetention } from "./read-logs.ts"
+import { upsertMessage } from "./signals-migrations.ts"
 
 // Error groups outlive their occurrences, so an error that comes back after months is known again.
 const groupRetention = Duration.days(455)
 
 const pageSize = 100
+// A period's log messages: the 100 with the most lines.
+const mostMessages = 100
 const latestOccurrences = 10
 // Counts by error group come for the most frequent groups only.
 const mostSeries = 100
 
 const EntryJson = Schema.fromJsonString(LogEntry)
 
-const LineRow = Schema.Struct({ id: Schema.Int, component: ComponentKey, entry: EntryJson })
+const LineRow = Schema.Struct({ id: Schema.Int, component: ComponentKey, message: LogMessageId, entry: EntryJson })
 
 const GroupRow = Schema.Struct({
   id: ErrorGroupId,
@@ -63,7 +69,46 @@ const likePattern = (text: string) => `%${text.replace(/[!%_]/g, (character) => 
 
 const CountRow = Schema.Struct({ start: Schema.Int, key: Schema.String, count: Schema.Int })
 
-const lineOf = (row: typeof LineRow.Type): LogLine => ({ id: row.id, component: row.component, ...row.entry })
+const lineOf = (row: typeof LineRow.Type): LogLine => ({
+  id: row.id,
+  component: row.component,
+  messageId: row.message,
+  ...row.entry,
+})
+
+const MessageRow = Schema.Struct({
+  id: LogMessageId,
+  level: Schema.Literals(["warn", "error", "fatal"]),
+  title: Schema.String,
+  category: Schema.String,
+  firstSeen: Schema.Int,
+  firstRelease: Schema.Union([Schema.Literal(""), ReleaseVersion]),
+  lastSeen: Schema.Int,
+  lastComponent: ComponentKey,
+  lastEnvironment: Schema.Union([Schema.Literal(""), EnvironmentKey]),
+  lastRelease: Schema.Union([Schema.Literal(""), ReleaseVersion]),
+  lines: Schema.Int,
+})
+type MessageRow = typeof MessageRow.Type
+
+const messageOf = (row: MessageRow): LogMessage => ({
+  id: row.id,
+  level: row.level,
+  title: row.title,
+  category: row.category,
+  lines: row.lines,
+  firstSeen: DateTime.makeUnsafe(row.firstSeen),
+  ...(row.firstRelease === "" ? {} : { firstRelease: row.firstRelease }),
+  lastSeen: DateTime.makeUnsafe(row.lastSeen),
+  lastComponent: row.lastComponent,
+  ...(row.lastEnvironment === "" ? {} : { lastEnvironment: row.lastEnvironment }),
+  ...(row.lastRelease === "" ? {} : { lastRelease: row.lastRelease }),
+})
+
+// What a message's row is read as, its lines counted by the query that selects it.
+const messageColumns = `m.id, m.level, m.title, m.category, m.first_seen AS "firstSeen",
+  m.first_release AS "firstRelease", m.last_seen AS "lastSeen", m.last_component AS "lastComponent",
+  m.last_environment AS "lastEnvironment", m.last_release AS "lastRelease"`
 
 const groupOf = (row: GroupRow): ErrorGroup => ({
   id: row.id,
@@ -87,17 +132,39 @@ export const logStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
   const encodeEntry = Schema.encodeEffect(EntryJson)
 
-  // Adds a batch's warnings and errors, and creates or updates their error groups. A group's title
-  // and culprit follow its latest occurrence, so they improve with the code that derives them.
+  const findMessageId = SqlSchema.findAll({
+    Request: Schema.String,
+    Result: Schema.Struct({ id: LogMessageId }),
+    execute: (key) => sql`SELECT id FROM signals_log_messages WHERE key = ${key}`,
+  })
+
+  // Adds a batch's warnings and errors, and creates or updates their log messages and error groups.
+  // A message's or group's title follows its latest line, so it improves with the code that derives it.
   const add = Effect.fn("LogStore.add")(function* (
     component: ComponentKey,
     entries: ReadonlyArray<LogEntry>,
     groups: ReadonlyArray<ErrorGroupShape>,
   ) {
     for (const entry of entries) {
+      if (entry.level !== "warn" && entry.level !== "error" && entry.level !== "fatal") {
+        return yield* Effect.die(`A ${entry.level} line came to be kept with warnings and errors`)
+      }
       const time = DateTime.toEpochMillis(entry.time)
       const json = yield* encodeEntry(entry)
       const text = [entry.message, entry.exception?.type ?? "", entry.exception?.message ?? ""].join("\n")
+      const shape = messageShapeOf({ ...entry, level: entry.level })
+      yield* upsertMessage(sql, shape, {
+        time,
+        level: entry.level,
+        category: entry.category,
+        component,
+        environment: entry.environment ?? "",
+        release: entry.release ?? "",
+      })
+      const [message] = yield* findMessageId(shape.fingerprint)
+      if (message === undefined) {
+        return yield* Effect.die(`The log message of a line wasn't kept`)
+      }
       yield* sql`INSERT INTO signals_logs ${sql.insert({
         time,
         component,
@@ -108,6 +175,7 @@ export const logStore = Effect.gen(function* () {
         error: entry.error ?? null,
         trace: entry.trace ?? null,
         feature: featureIn(entry.attributes[featureAttribute]) ?? "",
+        message: message.id,
         text,
         entry: json,
       })}`
@@ -152,10 +220,11 @@ export const logStore = Effect.gen(function* () {
     }
   })
 
-  // Removes warnings and errors older than 90 days, and groups unseen for 15 months.
+  // Removes warnings and errors older than 90 days, and groups and messages unseen for 15 months.
   const cleanUp = Effect.fn("LogStore.cleanUp")(function* (now: number) {
     yield* sql`DELETE FROM signals_logs WHERE time < ${now - Duration.toMillis(logRetention)}`
     yield* sql`DELETE FROM signals_error_groups WHERE last_seen < ${now - Duration.toMillis(groupRetention)}`
+    yield* sql`DELETE FROM signals_log_messages WHERE last_seen < ${now - Duration.toMillis(groupRetention)}`
   })
 
   const filtersOf = (
@@ -180,7 +249,7 @@ export const logStore = Effect.gen(function* () {
   const findGroups = (
     covered: { readonly from: number; readonly to: number },
     query: ErrorQuery,
-    only?: ErrorGroupId,
+    only?: { readonly error?: ErrorGroupId; readonly message?: LogMessageId },
   ) =>
     SqlSchema.findAll({
       Request: Schema.Void,
@@ -191,7 +260,11 @@ export const logStore = Effect.gen(function* () {
           g.last_component AS "lastComponent", g.last_environment AS "lastEnvironment",
           g.last_release AS "lastRelease", count(*) AS occurrences
         FROM signals_logs l JOIN signals_error_groups g ON g.id = l.error
-        WHERE ${sql.and([...filtersOf(covered, query), ...(only === undefined ? [] : [sql`l.error = ${only}`])])}
+        WHERE ${sql.and([
+          ...filtersOf(covered, query),
+          ...(only?.error === undefined ? [] : [sql`l.error = ${only.error}`]),
+          ...(only?.message === undefined ? [] : [sql`l.message = ${only.message}`]),
+        ])}
         GROUP BY g.id
         ORDER BY occurrences DESC, g.last_seen DESC`,
     })(undefined)
@@ -216,7 +289,7 @@ export const logStore = Effect.gen(function* () {
       Request: Schema.Void,
       Result: LineRow,
       execute: () => sql`
-        SELECT l.id, l.component, l.entry FROM signals_logs l
+        SELECT l.id, l.component, l.message, l.entry FROM signals_logs l
         WHERE ${sql.and([
           ...filtersOf(covered, query),
           sql`l.level IN ${sql.in(levelsFrom[query.minimumLevel ?? "warn"])}`,
@@ -224,6 +297,7 @@ export const logStore = Effect.gen(function* () {
           ...(query.category === undefined ? [] : [sql`l.category = ${query.category}`]),
           ...(query.trace === undefined ? [] : [sql`l.trace = ${query.trace}`]),
           ...(query.error === undefined ? [] : [sql`l.error = ${query.error}`]),
+          ...(query.message === undefined ? [] : [sql`l.message = ${query.message}`]),
           ...(query.before === undefined ? [] : [sql`l.id < ${query.before}`]),
         ])}
         ORDER BY l.id DESC
@@ -252,7 +326,7 @@ export const logStore = Effect.gen(function* () {
       const none: ErrorDetail = { group: groupOf(known), latest: [] }
       return none
     }
-    const [row] = yield* findGroups(covered.value, query, id).pipe(Effect.orDie)
+    const [row] = yield* findGroups(covered.value, query, { error: id }).pipe(Effect.orDie)
     const lineRows = yield* findLines(
       covered.value,
       { ...query, minimumLevel: "error", error: id },
@@ -267,7 +341,7 @@ export const logStore = Effect.gen(function* () {
     Request: Schema.Struct({ id: Schema.Int, keptFrom: Schema.Int }),
     Result: LineRow,
     execute: ({ id, keptFrom }) =>
-      sql`SELECT id, component, entry FROM signals_logs WHERE id = ${id} AND time >= ${keptFrom}`,
+      sql`SELECT id, component, message, entry FROM signals_logs WHERE id = ${id} AND time >= ${keptFrom}`,
   })
 
   // One warning or error by its ID, whenever it happened, while it is kept.
@@ -297,7 +371,12 @@ export const logStore = Effect.gen(function* () {
   })
 
   // What each kind of series is keyed by.
-  const keyOf = { level: sql`l.level`, component: sql`l.component`, error: sql`l.error` } as const
+  const keyOf = {
+    level: sql`l.level`,
+    component: sql`l.component`,
+    error: sql`l.error`,
+    message: sql`CAST(l.message AS TEXT)`,
+  } as const
 
   const findCounts = (covered: { readonly from: number; readonly to: number }, query: LogCountQuery) => {
     const width = stepMillis[query.step]
@@ -311,6 +390,7 @@ export const logStore = Effect.gen(function* () {
           ...filtersOf(covered, query),
           sql`l.level IN ${sql.in(levelsFrom[query.minimumLevel ?? "warn"])}`,
           ...(query.error === undefined ? [] : [sql`l.error = ${query.error}`]),
+          ...(query.message === undefined ? [] : [sql`l.message = ${query.message}`]),
           ...(query.by === "error" ? [sql`l.error IS NOT NULL`] : []),
         ])}
         GROUP BY start, key`,
@@ -344,5 +424,82 @@ export const logStore = Effect.gen(function* () {
     return counts
   })
 
-  return { add, cleanUp, error, errors, line, logCounts, logs }
+  const lineFilters = (covered: { readonly from: number; readonly to: number }, query: LogMessageQuery) => [
+    ...filtersOf(covered, query),
+    sql`l.level IN ${sql.in(levelsFrom[query.minimumLevel ?? "warn"])}`,
+    ...(query.search === undefined ? [] : [sql`l.text LIKE ${likePattern(query.search)} ESCAPE '!'`]),
+  ]
+
+  const findMessages = (covered: { readonly from: number; readonly to: number }, query: LogMessageQuery) =>
+    SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: MessageRow,
+      execute: () => sql`
+        SELECT ${sql.literal(messageColumns)}, count(*) AS lines
+        FROM signals_logs l JOIN signals_log_messages m ON m.id = l.message
+        WHERE ${sql.and(lineFilters(covered, query))}
+        GROUP BY m.id
+        ORDER BY lines DESC, m.last_seen DESC`,
+    })(undefined)
+
+  // Every message with matching lines is counted, so the table says how many it leaves out.
+  const messages = Effect.fn("LogStore.messages")(function* (query: LogMessageQuery, now: number) {
+    const covered = coveredOf(query.period, now)
+    if (Option.isNone(covered)) {
+      const empty: LogMessageTable = { messages: [], unshown: 0, lines: 0 }
+      return empty
+    }
+    const rows = yield* findMessages(covered.value, query).pipe(Effect.orDie)
+    const table: LogMessageTable = {
+      covered: periodOf(covered.value),
+      messages: rows.slice(0, mostMessages).map(messageOf),
+      unshown: Math.max(0, rows.length - mostMessages),
+      lines: rows.reduce((total, row) => total + row.lines, 0),
+    }
+    return table
+  })
+
+  // A message is kept 15 months after it was last seen, whether or not cleanup has run since.
+  const findMessage = SqlSchema.findAll({
+    Request: Schema.Struct({ id: LogMessageId, keptFrom: Schema.Int }),
+    Result: MessageRow,
+    execute: ({ id, keptFrom }) => sql`
+      SELECT ${sql.literal(messageColumns)}, 0 AS lines
+      FROM signals_log_messages m WHERE m.id = ${id} AND m.last_seen >= ${keptFrom}`,
+  })
+
+  const countMessageLines = (
+    covered: { readonly from: number; readonly to: number },
+    query: ErrorQuery,
+    id: LogMessageId,
+  ) =>
+    SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: Schema.Struct({ lines: Schema.Int }),
+      execute: () => sql`
+        SELECT count(*) AS lines FROM signals_logs l
+        WHERE ${sql.and([...filtersOf(covered, query), sql`l.message = ${id}`])}`,
+    })(undefined)
+
+  // The message is found by its ID whatever the period: only its lines are the period's.
+  const message = Effect.fn("LogStore.message")(function* (id: LogMessageId, query: ErrorQuery, now: number) {
+    const [known] = yield* findMessage({ id, keptFrom: now - Duration.toMillis(groupRetention) }).pipe(Effect.orDie)
+    if (known === undefined) {
+      return yield* new LogMessageNotFound({ logMessage: id })
+    }
+    const covered = coveredOf(query.period, now)
+    if (Option.isNone(covered)) {
+      const none: LogMessageDetail = { message: messageOf(known), errors: [] }
+      return none
+    }
+    const [counted] = yield* countMessageLines(covered.value, query, id).pipe(Effect.orDie)
+    const groups = yield* findGroups(covered.value, query, { message: id }).pipe(Effect.orDie)
+    const detail: LogMessageDetail = {
+      message: messageOf({ ...known, lines: counted?.lines ?? 0 }),
+      errors: groups.map(groupOf),
+    }
+    return detail
+  })
+
+  return { add, cleanUp, error, errors, line, logCounts, logs, message, messages }
 })

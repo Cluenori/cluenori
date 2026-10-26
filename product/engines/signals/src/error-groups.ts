@@ -10,7 +10,7 @@ import {
 import { Schema } from "effect"
 
 import type { LogLevel } from "./log-entry.ts"
-import { ErrorGroupId, LogLine } from "./log-entry.ts"
+import { ErrorGroupId, LogLine, LogMessageId } from "./log-entry.ts"
 import { SeriesStep } from "./operation-queries.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -103,6 +103,7 @@ export const LogQuery = Schema.Struct({
   release: Schema.optionalKey(ReleaseVersion),
   trace: Schema.optionalKey(TraceId),
   error: Schema.optionalKey(ErrorGroupId),
+  message: Schema.optionalKey(LogMessageId),
   before: Schema.optionalKey(Schema.Int),
 })
 export type LogQuery = typeof LogQuery.Type
@@ -118,8 +119,10 @@ export const LogPage = Schema.Struct({
 }).annotate({ identifier: "LogPage" })
 export type LogPage = typeof LogPage.Type
 
-/** What warnings and errors are counted by: their level, their component, or their error group. */
-export const LogCountsBy = Schema.Literals(["level", "component", "error"]).annotate({ identifier: "LogCountsBy" })
+/** What warnings and errors are counted by: their level, their component, their error group, or their log message. */
+export const LogCountsBy = Schema.Literals(["level", "component", "error", "message"]).annotate({
+  identifier: "LogCountsBy",
+})
 export type LogCountsBy = typeof LogCountsBy.Type
 
 /**
@@ -137,6 +140,7 @@ export const LogCountQuery = Schema.Struct({
   release: Schema.optionalKey(ReleaseVersion),
   feature: Schema.optionalKey(FeatureKey),
   error: Schema.optionalKey(ErrorGroupId),
+  message: Schema.optionalKey(LogMessageId),
 })
 export type LogCountQuery = typeof LogCountQuery.Type
 
@@ -145,8 +149,8 @@ export const LogCountPoint = Schema.Struct({ start: Instant, count: Count }).ann
 export type LogCountPoint = typeof LogCountPoint.Type
 
 /**
- * One value's counts: a level (`warn`, `error`, or `fatal`), a component's key, or an error group's
- * ID, as `by` says; with its total, and a point for each step that had any, oldest first.
+ * One value's counts: a level (`warn`, `error`, or `fatal`), a component's key, an error group's
+ * ID, or a log message's ID as text, as `by` says; with its total, and a point for each step that had any, oldest first.
  */
 export const LogCountSeries = Schema.Struct({
   key: Schema.String,

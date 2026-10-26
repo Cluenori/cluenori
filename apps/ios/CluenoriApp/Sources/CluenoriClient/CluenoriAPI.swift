@@ -457,9 +457,9 @@ public nonisolated struct CluenoriAPI: Sendable {
         return try Self.decoded(from: `the answer`)
     }
 
-    /// Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace, or
-    /// error. Kept 90 days. Records below warning are in the archive, which the traces endpoint
-    /// reads for one trace.
+    /// Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace,
+    /// error, or log message. Kept 90 days. Records below warning are in the archive, which the
+    /// traces endpoint reads for one trace.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
     @concurrent
@@ -475,6 +475,7 @@ public nonisolated struct CluenoriAPI: Sendable {
         category: String? = nil,
         trace: String? = nil,
         error: String? = nil,
+        message: String? = nil,
         before: String? = nil,
     ) async throws(APIError) -> LogPage {
         var `query items`: [(String, String)] = []
@@ -488,8 +489,67 @@ public nonisolated struct CluenoriAPI: Sendable {
         if let category { `query items`.append(("category", Self.text(category))) }
         if let trace { `query items`.append(("trace", Self.text(trace))) }
         if let error { `query items`.append(("error", Self.text(error))) }
+        if let message { `query items`.append(("message", Self.text(message))) }
         if let before { `query items`.append(("before", Self.text(before))) }
         let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/logs", query: `query items`)
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// The log messages of a period, those with the most lines first, at most 100: warnings and
+    /// errors that are the same message (one logger and template, or the same text but for its
+    /// values), each with how many of its lines are at `level` and have `search` in them, and when
+    /// it was first and last seen. Each message's ID opens it with the log message endpoint, and
+    /// its lines with the logs endpoint's `message`. Kept 90 days; a message 15 months after it was
+    /// last seen.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func logMessages(
+        project: String,
+        from: Date,
+        to: Date,
+        environment: String? = nil,
+        component: String? = nil,
+        release: String? = nil,
+        level: IndexedLevel? = nil,
+        search: String? = nil,
+    ) async throws(APIError) -> LogMessageTable {
+        var `query items`: [(String, String)] = []
+        `query items`.append(("from", Self.text(from)))
+        `query items`.append(("to", Self.text(to)))
+        if let environment { `query items`.append(("environment", Self.text(environment))) }
+        if let component { `query items`.append(("component", Self.text(component))) }
+        if let release { `query items`.append(("release", Self.text(release))) }
+        if let level { `query items`.append(("level", Self.text(level))) }
+        if let search { `query items`.append(("search", Self.text(search))) }
+        let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/logs/messages", query: `query items`)
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// One log message, found whatever the period: what it is, when it was first and last seen, how
+    /// many of its lines the period holds, and the errors those lines are occurrences of. Its lines
+    /// are the logs endpoint's, with `message`.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.logMessageNotFound`, or as any call can.
+    @concurrent
+    public func logMessage(
+        project: String,
+        message: String,
+        from: Date,
+        to: Date,
+        environment: String? = nil,
+        component: String? = nil,
+        release: String? = nil,
+        operation: String? = nil,
+    ) async throws(APIError) -> LogMessageDetail {
+        var `query items`: [(String, String)] = []
+        `query items`.append(("from", Self.text(from)))
+        `query items`.append(("to", Self.text(to)))
+        if let environment { `query items`.append(("environment", Self.text(environment))) }
+        if let component { `query items`.append(("component", Self.text(component))) }
+        if let release { `query items`.append(("release", Self.text(release))) }
+        if let operation { `query items`.append(("operation", Self.text(operation))) }
+        let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/logs/messages/\(Self.segment(Self.text(message)))", query: `query items`)
         return try Self.decoded(from: `the answer`)
     }
 
@@ -511,6 +571,7 @@ public nonisolated struct CluenoriAPI: Sendable {
         release: String? = nil,
         level: IndexedLevel? = nil,
         error: String? = nil,
+        message: String? = nil,
     ) async throws(APIError) -> LogCounts {
         var `query items`: [(String, String)] = []
         `query items`.append(("from", Self.text(from)))
@@ -522,6 +583,7 @@ public nonisolated struct CluenoriAPI: Sendable {
         if let release { `query items`.append(("release", Self.text(release))) }
         if let level { `query items`.append(("level", Self.text(level))) }
         if let error { `query items`.append(("error", Self.text(error))) }
+        if let message { `query items`.append(("message", Self.text(message))) }
         let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/logs/counts", query: `query items`)
         return try Self.decoded(from: `the answer`)
     }
@@ -1204,6 +1266,7 @@ public nonisolated enum APIError: Error, Sendable {
     case incidentNotFound(IncidentNotFound)
     case inviteRejected(InviteRejected)
     case logLineNotFound(LogLineNotFound)
+    case logMessageNotFound(LogMessageNotFound)
     case memberExists(MemberExists)
     case memberNotFound(MemberNotFound)
     case monitorExists(MonitorExists)
@@ -5112,6 +5175,7 @@ public nonisolated struct LogCountsBy: RawRepresentable, Codable, Hashable, Send
     public static let level = LogCountsBy(rawValue: "level")
     public static let component = LogCountsBy(rawValue: "component")
     public static let error = LogCountsBy(rawValue: "error")
+    public static let message = LogCountsBy(rawValue: "message")
 }
 
 public nonisolated struct LogException: Codable, Hashable, Sendable {
@@ -5165,6 +5229,7 @@ public nonisolated struct LogLevel: RawRepresentable, Codable, Hashable, Sendabl
 public nonisolated struct LogLine: Codable, Hashable, Sendable {
     public let id: Int
     public let component: String
+    public let messageId: Int
     public let time: Date
     public let level: LogLevel
     public let category: String
@@ -5181,6 +5246,7 @@ public nonisolated struct LogLine: Codable, Hashable, Sendable {
     public init(
         id: Int,
         component: String,
+        messageId: Int,
         time: Date,
         level: LogLevel,
         category: String,
@@ -5196,6 +5262,7 @@ public nonisolated struct LogLine: Codable, Hashable, Sendable {
     ) {
         self.id = id
         self.component = component
+        self.messageId = messageId
         self.time = time
         self.level = level
         self.category = category
@@ -5213,6 +5280,7 @@ public nonisolated struct LogLine: Codable, Hashable, Sendable {
     private enum `JSON keys`: String, CodingKey {
         case id = "id"
         case component = "component"
+        case messageId = "messageId"
         case time = "time"
         case level = "level"
         case category = "category"
@@ -5231,6 +5299,7 @@ public nonisolated struct LogLine: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: `JSON keys`.self)
         self.id = try container.`value at`(.id)
         self.component = try container.`value at`(.component)
+        self.messageId = try container.`value at`(.messageId)
         self.time = try container.`value at`(.time)
         self.level = try container.`value at`(.level)
         self.category = try container.`value at`(.category)
@@ -5249,6 +5318,7 @@ public nonisolated struct LogLine: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode(self.id, forKey: .id)
         try container.encode(self.component, forKey: .component)
+        try container.encode(self.messageId, forKey: .messageId)
         try container.encode(self.time, forKey: .time)
         try container.encode(self.level, forKey: .level)
         try container.encode(self.category, forKey: .category)
@@ -5288,6 +5358,181 @@ public nonisolated struct LogLineNotFound: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode("LogLineNotFound", forKey: ._tag)
         try container.encode(self.line, forKey: .line)
+    }
+}
+
+public nonisolated struct LogMessage: Codable, Hashable, Sendable {
+    public let id: Int
+    public let level: LogLevel
+    public let title: String
+    public let category: String
+    public let lines: Int
+    public let firstSeen: Date
+    public let firstRelease: String?
+    public let lastSeen: Date
+    public let lastComponent: String
+    public let lastEnvironment: String?
+    public let lastRelease: String?
+
+    public init(
+        id: Int,
+        level: LogLevel,
+        title: String,
+        category: String,
+        lines: Int,
+        firstSeen: Date,
+        firstRelease: String? = nil,
+        lastSeen: Date,
+        lastComponent: String,
+        lastEnvironment: String? = nil,
+        lastRelease: String? = nil,
+    ) {
+        self.id = id
+        self.level = level
+        self.title = title
+        self.category = category
+        self.lines = lines
+        self.firstSeen = firstSeen
+        self.firstRelease = firstRelease
+        self.lastSeen = lastSeen
+        self.lastComponent = lastComponent
+        self.lastEnvironment = lastEnvironment
+        self.lastRelease = lastRelease
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case id = "id"
+        case level = "level"
+        case title = "title"
+        case category = "category"
+        case lines = "lines"
+        case firstSeen = "firstSeen"
+        case firstRelease = "firstRelease"
+        case lastSeen = "lastSeen"
+        case lastComponent = "lastComponent"
+        case lastEnvironment = "lastEnvironment"
+        case lastRelease = "lastRelease"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.id = try container.`value at`(.id)
+        self.level = try container.`value at`(.level)
+        self.title = try container.`value at`(.title)
+        self.category = try container.`value at`(.category)
+        self.lines = try container.`value at`(.lines)
+        self.firstSeen = try container.`value at`(.firstSeen)
+        self.firstRelease = try container.`value if present at`(.firstRelease)
+        self.lastSeen = try container.`value at`(.lastSeen)
+        self.lastComponent = try container.`value at`(.lastComponent)
+        self.lastEnvironment = try container.`value if present at`(.lastEnvironment)
+        self.lastRelease = try container.`value if present at`(.lastRelease)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.level, forKey: .level)
+        try container.encode(self.title, forKey: .title)
+        try container.encode(self.category, forKey: .category)
+        try container.encode(self.lines, forKey: .lines)
+        try container.encode(self.firstSeen, forKey: .firstSeen)
+        try container.encodeIfPresent(self.firstRelease, forKey: .firstRelease)
+        try container.encode(self.lastSeen, forKey: .lastSeen)
+        try container.encode(self.lastComponent, forKey: .lastComponent)
+        try container.encodeIfPresent(self.lastEnvironment, forKey: .lastEnvironment)
+        try container.encodeIfPresent(self.lastRelease, forKey: .lastRelease)
+    }
+}
+
+public nonisolated struct LogMessageDetail: Codable, Hashable, Sendable {
+    public let message: LogMessage
+    public let errors: [ErrorGroup]
+
+    public init(message: LogMessage, errors: [ErrorGroup]) {
+        self.message = message
+        self.errors = errors
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case message = "message"
+        case errors = "errors"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.message = try container.`value at`(.message)
+        self.errors = try container.`value at`(.errors)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.message, forKey: .message)
+        try container.encode(self.errors, forKey: .errors)
+    }
+}
+
+public nonisolated struct LogMessageNotFound: Codable, Hashable, Sendable {
+    public let logMessage: Int
+
+    public init(logMessage: Int) {
+        self.logMessage = logMessage
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case logMessage = "logMessage"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "LogMessageNotFound" else {
+            throw container.`corruption at`(._tag, "_tag isn't LogMessageNotFound.")
+        }
+        self.logMessage = try container.`value at`(.logMessage)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("LogMessageNotFound", forKey: ._tag)
+        try container.encode(self.logMessage, forKey: .logMessage)
+    }
+}
+
+public nonisolated struct LogMessageTable: Codable, Hashable, Sendable {
+    public let covered: Period?
+    public let messages: [LogMessage]
+    public let unshown: Int
+    public let lines: Int
+
+    public init(covered: Period? = nil, messages: [LogMessage], unshown: Int, lines: Int) {
+        self.covered = covered
+        self.messages = messages
+        self.unshown = unshown
+        self.lines = lines
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case covered = "covered"
+        case messages = "messages"
+        case unshown = "unshown"
+        case lines = "lines"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.covered = try container.`value if present at`(.covered)
+        self.messages = try container.`value at`(.messages)
+        self.unshown = try container.`value at`(.unshown)
+        self.lines = try container.`value at`(.lines)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encodeIfPresent(self.covered, forKey: .covered)
+        try container.encode(self.messages, forKey: .messages)
+        try container.encode(self.unshown, forKey: .unshown)
+        try container.encode(self.lines, forKey: .lines)
     }
 }
 
@@ -9947,6 +10192,7 @@ nonisolated extension CluenoriAPI {
             case "IncidentNotFound": return .incidentNotFound(try jsonDecoder().decode(IncidentNotFound.self, from: data))
             case "InviteRejected": return .inviteRejected(try jsonDecoder().decode(InviteRejected.self, from: data))
             case "LogLineNotFound": return .logLineNotFound(try jsonDecoder().decode(LogLineNotFound.self, from: data))
+            case "LogMessageNotFound": return .logMessageNotFound(try jsonDecoder().decode(LogMessageNotFound.self, from: data))
             case "MemberExists": return .memberExists(try jsonDecoder().decode(MemberExists.self, from: data))
             case "MemberNotFound": return .memberNotFound(try jsonDecoder().decode(MemberNotFound.self, from: data))
             case "MonitorExists": return .monitorExists(try jsonDecoder().decode(MonitorExists.self, from: data))

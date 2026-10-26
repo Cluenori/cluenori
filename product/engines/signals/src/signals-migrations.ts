@@ -1,5 +1,8 @@
-import { Effect } from "effect"
-import { Migrator, SqlClient } from "effect/sql"
+import { Effect, Schema } from "effect"
+import { Migrator, SqlClient, SqlSchema } from "effect/sql"
+
+import type { MessageShape } from "./fingerprint.ts"
+import { messageShapeOf } from "./fingerprint.ts"
 
 /** Creates and updates the engine's tables in a project's database. */
 export const migrateSignals = Migrator.make({})({
@@ -352,5 +355,102 @@ export const migrateSignals = Migrator.make({})({
           WHERE newest.operation = signals_operations.id`
       }
     }),
+    // Log messages: warnings and errors that are the same message, numbered from 1 as the project
+    // first sees each, by their key (`messageShapeOf`), kept 15 months after they were last seen.
+    // Each line kept names its message; those kept before are numbered here, oldest first, with
+    // the same key ingest makes, so a message seen before and after has one ID.
+    "0013_log_messages": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE signals_log_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT NOT NULL UNIQUE,
+        level TEXT NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        first_seen INTEGER NOT NULL,
+        first_release TEXT NOT NULL,
+        last_seen INTEGER NOT NULL,
+        last_component TEXT NOT NULL,
+        last_environment TEXT NOT NULL,
+        last_release TEXT NOT NULL
+      )`
+      yield* sql`ALTER TABLE signals_logs ADD COLUMN message INTEGER NOT NULL DEFAULT 0`
+      const Row = Schema.Struct({
+        id: Schema.Int,
+        time: Schema.Int,
+        component: Schema.String,
+        environment: Schema.String,
+        release: Schema.String,
+        level: Schema.Literals(["warn", "error", "fatal"]),
+        category: Schema.String,
+        message: Schema.String,
+        template: Schema.NullOr(Schema.String),
+      })
+      const page = SqlSchema.findAll({
+        Request: Schema.Int,
+        Result: Row,
+        execute: (after) => sql`
+          SELECT id, time, component, environment, release, level, category,
+            coalesce(json_extract(entry, '$.message'), '') AS message,
+            json_extract(entry, '$.template') AS template
+          FROM signals_logs WHERE id > ${after} ORDER BY id LIMIT 500`,
+      })
+      let after = 0
+      for (;;) {
+        const rows = yield* page(after)
+        const last = rows.at(-1)
+        if (last === undefined) {
+          break
+        }
+        for (const row of rows) {
+          const { template, ...said } = row
+          const shape = messageShapeOf({ ...said, ...(template === null ? {} : { template }) })
+          yield* upsertMessage(sql, shape, row)
+          yield* sql`UPDATE signals_logs SET message = (SELECT id FROM signals_log_messages WHERE key = ${shape.fingerprint})
+            WHERE id = ${row.id}`
+        }
+        after = last.id
+      }
+      yield* sql`CREATE INDEX signals_logs_message ON signals_logs (message, time)`
+    }),
   }),
 })
+
+/**
+ * Creates the log message of `shape`, or updates it with a line: its first and last seen, and what
+ * follows its latest line (its level, title, and where it was last seen). Lines may arrive out of
+ * order, so each is compared with what is kept.
+ */
+export const upsertMessage = (
+  sql: SqlClient.SqlClient,
+  shape: MessageShape,
+  line: {
+    readonly time: number
+    readonly level: string
+    readonly category: string
+    readonly component: string
+    readonly environment: string
+    readonly release: string
+  },
+) => sql`
+  INSERT INTO signals_log_messages ${sql.insert({
+    key: shape.fingerprint,
+    level: line.level,
+    title: shape.title,
+    category: line.category,
+    first_seen: line.time,
+    first_release: line.release,
+    last_seen: line.time,
+    last_component: line.component,
+    last_environment: line.environment,
+    last_release: line.release,
+  })}
+  ON CONFLICT (key) DO UPDATE SET
+    first_release = CASE WHEN excluded.first_seen < first_seen THEN excluded.first_release ELSE first_release END,
+    first_seen = min(first_seen, excluded.first_seen),
+    level = CASE WHEN excluded.last_seen >= last_seen THEN excluded.level ELSE level END,
+    title = CASE WHEN excluded.last_seen >= last_seen THEN excluded.title ELSE title END,
+    last_component = CASE WHEN excluded.last_seen >= last_seen THEN excluded.last_component ELSE last_component END,
+    last_environment = CASE WHEN excluded.last_seen >= last_seen THEN excluded.last_environment ELSE last_environment END,
+    last_release = CASE WHEN excluded.last_seen >= last_seen THEN excluded.last_release ELSE last_release END,
+    last_seen = max(last_seen, excluded.last_seen)`

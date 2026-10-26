@@ -47,6 +47,8 @@ const errorsPage = import("@/pages/errors-page")
 const ErrorsPage = lazy(() => errorsPage.then((module) => ({ default: module.ErrorsPage })))
 const logsPage = import("@/pages/logs-page")
 const LogsPage = lazy(() => logsPage.then((module) => ({ default: module.LogsPage })))
+const LogMessagePage = lazy(() => logsPage.then((module) => ({ default: module.LogMessagePage })))
+const LogLinePage = lazy(() => logsPage.then((module) => ({ default: module.LogLinePage })))
 const incidentsPage = import("@/pages/incidents-page")
 const IncidentsPage = lazy(() => incidentsPage.then((module) => ({ default: module.IncidentsPage })))
 const operationPage = import("@/pages/operation-page")
@@ -232,6 +234,28 @@ function PageOf({ route, projects }: { readonly route: Route; readonly projects:
             </Suspense>
           )}
         </WithEnvironments>
+      )
+    case "logMessage":
+      return (
+        <WithEnvironments project={route.project} named={route.environment}>
+          {(environments) => (
+            <Suspense fallback={opening}>
+              <LogMessagePage
+                key={route.message}
+                project={route.project}
+                message={route.message}
+                environments={environments}
+                {...filterProps(route)}
+              />
+            </Suspense>
+          )}
+        </WithEnvironments>
+      )
+    case "logLine":
+      return (
+        <Suspense fallback={opening}>
+          <LogLinePage key={route.line} project={route.project} line={route.line} />
+        </Suspense>
       )
     case "releases":
       return (

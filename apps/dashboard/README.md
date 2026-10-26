@@ -65,7 +65,12 @@ open from. Above every page but Now, its trail: each level above it, one click a
                                                  a click opening a moment; its slowest and failed requests
       /projects/notes/errors                     errors over time by component, and every error group
         /projects/notes/errors/<id>              one error: its exception chain, every frame, its operation, its log record
-      /projects/notes/logs                       warnings and errors over time, and every line, searchable
+      /projects/notes/logs                       warnings and errors over time, and every log message, searchable,
+                                                 each opening in place to its latest lines
+        /projects/notes/logs/messages/<id>       one log message over the period: when first and last seen, its
+                                                 lines over time, its errors, its lines
+        /projects/notes/logs/lines/<id>          one log line by its ID, no period: its exception, operation,
+                                                 what it was sent with, and a brief for an agent
       /projects/notes/incidents                  every open incident, those resolved in the last 7 days, and the monitors,
                                                  each with its last check
       /projects/notes/traces/<trace id>[?around=<ISO 8601>]

@@ -52,6 +52,11 @@ import {
   LogLine,
   LogLineNotFound,
   LogPage,
+  LogMessageDetail,
+  LogMessageId,
+  LogMessageNotFound,
+  LogMessageQuery,
+  LogMessageTable,
   LogQuery,
   MetricsExport,
   OperationQuery,
@@ -90,6 +95,8 @@ export type EngineCallName =
   | "error"
   | "logLine"
   | "logs"
+  | "logMessages"
+  | "logMessage"
   | "logCounts"
   | "trace"
   | "incidents"
@@ -215,6 +222,13 @@ export const projectCalls = {
   ),
   logLine: projectCall("logLine", Schema.Int, LogLine, Schema.Union([ProjectNotFound, LogLineNotFound])),
   logs: projectCall("logs", LogQuery, LogPage, ProjectNotFound),
+  logMessages: projectCall("logMessages", LogMessageQuery, LogMessageTable, ProjectNotFound),
+  logMessage: projectCall(
+    "logMessage",
+    Schema.Struct({ id: LogMessageId, query: ErrorQuery }),
+    LogMessageDetail,
+    Schema.Union([ProjectNotFound, LogMessageNotFound]),
+  ),
   logCounts: projectCall("logCounts", LogCountQuery, LogCounts, ProjectNotFound),
   trace: projectCall(
     "trace",

@@ -104,3 +104,11 @@ export const dropFeatureSignals = Effect.gen(function* () {
   yield* sql`DROP INDEX IF EXISTS signals_app_feature_days_feature`
   yield* sql`DROP INDEX IF EXISTS signals_app_feature_days_person`
 })
+
+/** Removes what migration 0013 made, log messages, so a test can build a database from before it. */
+export const dropLogMessages = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`DROP INDEX signals_logs_message`
+  yield* sql`ALTER TABLE signals_logs DROP COLUMN message`
+  yield* sql`DROP TABLE signals_log_messages`
+})

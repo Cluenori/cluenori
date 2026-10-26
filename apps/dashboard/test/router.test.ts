@@ -7,7 +7,7 @@ import {
   ProjectKey,
   ReleaseVersion,
 } from "@cluenori/foundation"
-import { AppUserId } from "@cluenori/signals"
+import { AppUserId, LogMessageId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
@@ -165,6 +165,40 @@ describe("routeOf", () => {
     for (const line of ["0", "1.5", "first", "-3"]) {
       assert.deepStrictEqual(routeOf(`/projects/folio/errors/4f1c9a2e7b3d5068/${line}`, ""), { page: "missing" })
     }
+  })
+
+  it("reads a log message with the list's filters, and a log line by its ID alone, both under Logs", () => {
+    const message = routeOf("/projects/folio/logs/messages/12", "?environment=production")
+    assert.deepStrictEqual(message, {
+      page: "logMessage",
+      project: ProjectKey.make("folio"),
+      environment: EnvironmentKey.make("production"),
+      message: LogMessageId.make(12),
+    })
+    assert.deepStrictEqual(readBack(message), message)
+    const line = routeOf("/projects/folio/logs/lines/412", "?release=2.4.0%2B312")
+    assert.deepStrictEqual(line, { page: "logLine", project: ProjectKey.make("folio"), line: 412 })
+    assert.deepStrictEqual(readBack(line), line)
+    assert.deepStrictEqual(
+      trailOf(message, () => "Folio").map((step) => [step.label, step.to?.page]),
+      [
+        ["Now", "now"],
+        ["Folio", "project"],
+        ["Tech", "tech"],
+        ["Logs", "logs"],
+        ["Message", undefined],
+      ],
+    )
+    assert.deepStrictEqual(
+      trailOf(line, () => "Folio").map((step) => step.label),
+      ["Now", "Folio", "Tech", "Logs", "Line"],
+    )
+    for (const id of ["0", "1.5", "first", "-3"]) {
+      assert.deepStrictEqual(routeOf(`/projects/folio/logs/messages/${id}`, ""), { page: "missing" })
+      assert.deepStrictEqual(routeOf(`/projects/folio/logs/lines/${id}`, ""), { page: "missing" })
+    }
+    assert.deepStrictEqual(routeOf("/projects/folio/logs/lines", ""), { page: "missing" })
+    assert.deepStrictEqual(routeOf("/projects/folio/logs/12", ""), { page: "missing" })
   })
 
   it("opens a page that says so for an address with a key that isn't one", () => {

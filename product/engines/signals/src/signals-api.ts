@@ -22,7 +22,8 @@ import {
   LogLineNotFound,
   LogPage,
 } from "./error-groups.ts"
-import { ErrorGroupId, LogLine } from "./log-entry.ts"
+import { ErrorGroupId, LogLine, LogMessageId } from "./log-entry.ts"
+import { LogMessageDetail, LogMessageNotFound, LogMessageTable } from "./log-messages.ts"
 import { OperationTable, KeptTraces, LoadSeries, SeriesStep } from "./operation-queries.ts"
 import { TraceView } from "./trace-view.ts"
 
@@ -50,6 +51,9 @@ export const OperationFilters = Schema.Struct(operationFilters).check(fromBefore
 /** The filters of a series, with how wide each point is. */
 export const SeriesFilters = Schema.Struct({ ...operationFilters, step: SeriesStep }).check(fromBeforeTo)
 
+// A log message's ID, as an address or a query names it.
+const MessageParam = Schema.FiniteFromString.pipe(Schema.decodeTo(LogMessageId))
+
 /** The filters of a search of warnings and errors; `before` continues an earlier answer's page. */
 export const LogFilters = Schema.Struct({
   ...filters,
@@ -58,7 +62,15 @@ export const LogFilters = Schema.Struct({
   category: Schema.optionalKey(Schema.String),
   trace: Schema.optionalKey(TraceId),
   error: Schema.optionalKey(ErrorGroupId),
+  message: Schema.optionalKey(MessageParam),
   before: Schema.optionalKey(Schema.Int),
+}).check(fromBeforeTo)
+
+/** The filters of a period's log messages: the lines counted are those at `level` and with `search`. */
+export const LogMessageFilters = Schema.Struct({
+  ...filters,
+  level: Schema.optionalKey(IndexedLevel),
+  search: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))),
 }).check(fromBeforeTo)
 
 /** The filters of counts of warnings and errors over time: how wide each point is, and what each series is. */
@@ -68,6 +80,7 @@ export const LogCountFilters = Schema.Struct({
   by: LogCountsBy,
   level: Schema.optionalKey(IndexedLevel),
   error: Schema.optionalKey(ErrorGroupId),
+  message: Schema.optionalKey(MessageParam),
 }).check(fromBeforeTo)
 
 /**
@@ -151,7 +164,29 @@ export class SignalsGroup extends HttpApiGroup.make("signals")
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(
       OpenApi.Description,
-      "Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace, or error. Kept 90 days. Records below warning are in the archive, which the traces endpoint reads for one trace.",
+      "Warnings and errors, newest first, 100 at a time: filtered by level, text, logger, trace, error, or log message. Kept 90 days. Records below warning are in the archive, which the traces endpoint reads for one trace.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("logMessages", "/projects/:project/logs/messages", {
+      params: { project: ProjectKey },
+      query: LogMessageFilters,
+      success: LogMessageTable,
+      error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
+    }).annotate(
+      OpenApi.Description,
+      "The log messages of a period, those with the most lines first, at most 100: warnings and errors that are the same message (one logger and template, or the same text but for its values), each with how many of its lines are at `level` and have `search` in them, and when it was first and last seen. Each message's ID opens it with the log message endpoint, and its lines with the logs endpoint's `message`. Kept 90 days; a message 15 months after it was last seen.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("logMessage", "/projects/:project/logs/messages/:message", {
+      params: { project: ProjectKey, message: MessageParam },
+      query: OperationFilters,
+      success: LogMessageDetail,
+      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), LogMessageNotFound.pipe(HttpApiSchema.status(404))],
+    }).annotate(
+      OpenApi.Description,
+      "One log message, found whatever the period: what it is, when it was first and last seen, how many of its lines the period holds, and the errors those lines are occurrences of. Its lines are the logs endpoint's, with `message`.",
     ),
   )
   .add(
