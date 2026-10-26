@@ -714,10 +714,13 @@ describe("Incidents", () => {
         yield* projects.create(member, ProjectName.make("Notes"))
         yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
         // 10 card reads at 820 ms, and 20 syncs with 4 failed: 20%, too few for the failing detector.
-        yield* record(api, [taking(counts("GET /api/card", start - minute, 10), 820)])
+        yield* record(api, [release(taking(counts("GET /api/card", start - minute, 10), 820), "1.2.3")])
         yield* record(api, [counts("POST /api/sync", start - minute, 20, 4)])
-        // An export of 4 slow runs: too few to judge.
+        // An export of 4 slow runs: too few to judge. A split of 3 slow runs in each of two
+        // environments: none judged, though 6 in all.
         yield* record(api, [taking(counts("POST /api/export", start - minute, 4), 9000)])
+        yield* record(api, [taking(counts("POST /api/split", start - minute, 3), 1000)])
+        yield* record(api, [dev(taking(counts("POST /api/split", start - minute, 3), 1000))])
         const slow = yield* incidents.addMonitor(member, {
           component: api,
           condition: { _tag: "p95Above", subject: operation("GET /api/card"), ms: 500, minutes: 15 },
@@ -733,6 +736,17 @@ describe("Incidents", () => {
           condition: { _tag: "p95Above", subject: operation("POST /api/export"), ms: 500, minutes: 15 },
           level: "alarm",
         })
+        // Another of the same operation's p95, set higher: both fire, each its own incident.
+        yield* incidents.addMonitor(member, {
+          component: api,
+          condition: { _tag: "p95Above", subject: operation("GET /api/card"), ms: 600, minutes: 15 },
+          level: "alarm",
+        })
+        const split = yield* incidents.addMonitor(member, {
+          component: api,
+          condition: { _tag: "p95Above", subject: operation("POST /api/split"), ms: 500, minutes: 15 },
+          level: "alarm",
+        })
         // Not above: the same numbers, set higher.
         yield* incidents.addMonitor(member, {
           component: api,
@@ -744,7 +758,13 @@ describe("Incidents", () => {
           change,
           title.replace(/p95 \d+ ms/, "p95 ~ ms"),
         ])
-        const p95 = (yield* incidents.monitors).monitors.find((state) => state.monitor.id === slow.id)?.measured?.value
+        const states = (yield* incidents.monitors).monitors
+        const p95 = states.find((state) => state.monitor.id === slow.id)?.measured?.value
+        const unjudged = states.find((state) => state.monitor.id === split.id)?.measured
+        const slowIncident = (yield* incidents.incidents).open.find((incident) =>
+          incident.title.endsWith("above 500 ms"),
+        )
+        const ran = slowIncident === undefined ? [] : (yield* incidents.incident(slowIncident.id)).releases
         yield* incidents.removeMonitor(member, slow.id)
         const list = yield* incidents.incidents
 
@@ -752,13 +772,19 @@ describe("Incidents", () => {
           fired.toSorted(([, left], [, right]) => String(left).localeCompare(String(right))),
           [
             ["opened", "GET /api/card p95 ~ ms, above 500 ms"],
+            ["opened", "GET /api/card p95 ~ ms, above 600 ms"],
             ["opened", "POST /api/sync: 20% failed, above 5%"],
           ],
         )
         assert.isTrue(p95 !== undefined && Math.abs(p95 - 820) <= 820 * 0.02)
+        assert.isTrue(unjudged !== undefined && unjudged.value === undefined)
+        // A monitor of every environment: the release that ran in each.
+        assert.deepStrictEqual(ran, [
+          { environment: EnvironmentKey.make("production"), release: ReleaseVersion.make("1.2.3") },
+        ])
         assert.deepStrictEqual(
-          list.open.map((incident) => incident.title),
-          ["POST /api/sync: 20% failed, above 5%"],
+          list.open.map((incident) => incident.title.replace(/p95 \d+ ms/, "p95 ~ ms")).toSorted(),
+          ["GET /api/card p95 ~ ms, above 600 ms", "POST /api/sync: 20% failed, above 5%"],
         )
         assert.deepStrictEqual(
           list.resolved.map((incident) => incident.subject),

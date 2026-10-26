@@ -42,11 +42,13 @@ export const IncidentResolved = Schema.TaggedStruct("incident.resolved", { ...in
 
 /**
  * Someone is on it: the incident tells no one more. Its title is absent on entries from before
- * October 2026.
+ * October 2026, its detector on those from before November 2026.
  */
 export const IncidentAcknowledged = Schema.TaggedStruct("incident.acknowledged", {
   incident: IncidentId,
   title: Schema.optionalKey(Schema.String),
+  /** What opened it; absent on entries from before November 2026. */
+  detector: Schema.optionalKey(Detector),
   ...placeFields,
 })
 

@@ -137,6 +137,7 @@ export const migrateIncidents = Migrator.make({})({
     // any, and for a URL's), with its alerts' level. Every monitor until now fetched a URL and rang
     // as an alarm, so each becomes `noAnswer` of its URL at `alarm`. What a monitor of counts last
     // measured, one row each, in `incidents_monitor_measures`: `value` NULL when it couldn't measure.
+    // Open incidents are unique by monitor for detector `monitor`.
     "0005_monitors": Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
       yield* sql`CREATE TABLE incidents_monitors_any (
@@ -154,6 +155,12 @@ export const migrateIncidents = Migrator.make({})({
         FROM incidents_monitors`
       yield* sql`DROP TABLE incidents_monitors`
       yield* sql`ALTER TABLE incidents_monitors_any RENAME TO incidents_monitors`
+      // One open incident for each monitor, however many watch the same subject; one for each
+      // detector and subject otherwise, as before.
+      yield* sql`DROP INDEX incidents_open`
+      yield* sql`CREATE UNIQUE INDEX incidents_open ON incidents_incidents (detector, component, environment,
+        CASE detector WHEN 'monitor' THEN json_extract(evidence, '$.monitor') ELSE subject END)
+        WHERE resolved_at IS NULL`
       yield* sql`CREATE TABLE incidents_monitor_measures (
         monitor TEXT PRIMARY KEY,
         at INTEGER NOT NULL,

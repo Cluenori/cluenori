@@ -288,11 +288,14 @@ public enum UptimeBriefs {
     }
 
     /// A monitor's URL as a brief names it: without its user, password, query or fragment, where
-    /// tokens go, so a brief handed to an agent carries none; `?…` says a query was left out. Other
-    /// secrets in a URL's path are not recognized, and stay.
+    /// tokens go, so a brief handed to an agent carries none; `?…` says a query was left out. A URL
+    /// that doesn't parse, which may hide them anywhere, is left out whole. Other secrets in a URL's
+    /// path are not recognized, and stay.
     public static func briefURL(_ url: String) -> String {
-        guard let parts = URLComponents(string: url), let scheme = parts.scheme, let host = parts.host else {
-            return url
+        guard let parts = URLComponents(string: url), let scheme = parts.scheme, let host = parts.host,
+            parts.port.map({ (0...65_535).contains($0) }) ?? true
+        else {
+            return "(a URL that doesn't parse)"
         }
         let port = parts.port.map { ":\($0)" } ?? ""
         let left = parts.query != nil || parts.fragment != nil ? "?…" : ""

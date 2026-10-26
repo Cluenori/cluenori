@@ -13,7 +13,7 @@ import { DateTime, Duration, Option, Schema } from "effect"
 
 /**
  * How an alert reaches a phone, Incidents' `AlertLevel`: `alarm` for Failing and as a monitor says;
- * `timeSensitive` for any reopened incident and as a monitor says; `quiet` for an incident that
+ * `timeSensitive` for any reopened incident but a monitor's, and as a monitor says; `quiet` for an incident that
  * recovered, or that someone is on, and as a monitor says.
  */
 export { AlertLevel }
@@ -154,6 +154,8 @@ export const alertOf = (entry: Envelope, projectName: string, now: number): Opti
   // Stopped incidents came from schedules guessed from how operations ran, and every alert must be
   // real: none opens now, and none from before tells anyone anything, however late it is delivered
   // or however it ends. A job someone declared is a monitor's, detector `monitor`.
+  // Not handled: an acknowledgment of a stopped incident from before November 2026, which doesn't
+  // say its detector, still comes as a quiet "Acknowledged"; any queued then was delivered long ago.
   if (activity.production === false || ("detector" in activity && activity.detector === "stopped")) {
     return Option.none()
   }
@@ -181,8 +183,14 @@ export const alertOf = (entry: Envelope, projectName: string, now: number): Opti
         ? Option.none()
         : fired(activity.detector, activity.level ?? detectorLevels[activity.detector], activity.title, ", worse")
     case "incident.reopened":
-      // Back so soon is worth breaking through a Focus, but a quiet monitor stays quiet.
-      return fired(activity.detector, activity.level === "quiet" ? "quiet" : "timeSensitive", activity.title, " again")
+      // A monitor's comes back at the level its owner chose. Any other detector's, back so soon, is
+      // worth breaking through a Focus, as Down and Failing always came.
+      return fired(
+        activity.detector,
+        activity.detector === "monitor" ? (activity.level ?? detectorLevels.monitor) : "timeSensitive",
+        activity.title,
+        " again",
+      )
     case "incident.resolved":
       return activity.acknowledged === true ? Option.none() : alertAs("quiet", "Recovered", activity.title)
     case "incident.acknowledged":

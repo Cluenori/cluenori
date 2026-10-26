@@ -255,7 +255,9 @@ describe("Notifications", () => {
               activityOf(IncidentResolved.make({ ...fields, acknowledged: true })),
               // A stopped incident from when schedules were guessed ends: no one hears of it.
               activityOf(IncidentResolved.make({ ...fields, detector: "stopped", title: "cleanup.run stopped" })),
-              activityOf(IncidentAcknowledged.make({ incident, title: fields.title })),
+              // Nor of someone acknowledging one.
+              activityOf(IncidentAcknowledged.make({ incident, title: "cleanup.run stopped", detector: "stopped" })),
+              activityOf(IncidentAcknowledged.make({ incident, title: fields.title, detector: "down" })),
               // An incident in an environment the project doesn't call production, and one in one it does.
               activityOf(
                 IncidentOpened.make({ ...fields, environment: EnvironmentKey.make("dev"), production: false }),
@@ -329,6 +331,13 @@ describe("Notifications", () => {
               activityOf(
                 IncidentReopened.make({ ...job, title: "POST /api/sync: 12% failed, above 5%", level: "quiet" }),
               ),
+              // Back as its owner chose: an alarm rings again.
+              activityOf(
+                IncidentReopened.make({ ...job, title: "GET /api/card p95 820 ms, above 500 ms", level: "alarm" }),
+                start + 19 * minute,
+              ),
+              // A URL's, down again, comes time-sensitive as Down always has, whatever its monitor's level.
+              activityOf(IncidentReopened.make({ ...fields, level: "alarm" }), start + 19 * minute),
               // A URL's monitor someone made quiet.
               activityOf(IncidentOpened.make({ ...fields, level: "quiet" }), start + 19 * minute),
               // A guessed stopped incident says nothing, whatever level an entry claims.
@@ -349,6 +358,8 @@ describe("Notifications", () => {
           ["Notes · GET /api/card p95 820 ms, above 500 ms", "alarm", ""],
           ["Notes · POST /api/sync: 12% failed, above 5%", "quiet", ""],
           ["Notes · POST /api/sync: 12% failed, above 5% again", "quiet", ""],
+          ["Notes · GET /api/card p95 820 ms, above 500 ms again", "alarm", ""],
+          ["Notes · Down again", "timeSensitive", fields.title],
           ["Notes · Down", "quiet", fields.title],
         ])
       }),

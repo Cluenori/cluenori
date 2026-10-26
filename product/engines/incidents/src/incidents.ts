@@ -795,13 +795,14 @@ export class Incidents extends Context.Service<
             return {
               count: table.rows.reduce((total, row) => total + row.count, 0),
               errors: table.rows.reduce((total, row) => total + row.errors, 0),
-              p95Ms: judged.reduce((highest, row) => Math.max(highest, row.p95Ms), 0),
+              // None when no environment ran 5 times: unknown, never 0.
+              p95Ms: judged.length === 0 ? undefined : Math.max(...judged.map((row) => row.p95Ms)),
             }
           }
           case "event": {
             const atMost = condition._tag === "moreThan" ? condition.count + 1 : 1
             const count = yield* apps.eventCount({ period, ...place, event: subject.event }, atMost)
-            return { count, errors: 0, p95Ms: 0 }
+            return { count, errors: 0, p95Ms: undefined }
           }
           case "error":
           case "message": {
@@ -812,7 +813,11 @@ export class Incidents extends Context.Service<
               ...place,
               ...(subject._tag === "error" ? { error: subject.error } : { message: subject.message }),
             })
-            return { count: counts.series.reduce((total, series) => total + series.total, 0), errors: 0, p95Ms: 0 }
+            return {
+              count: counts.series.reduce((total, series) => total + series.total, 0),
+              errors: 0,
+              p95Ms: undefined,
+            }
           }
         }
       })
@@ -1137,6 +1142,7 @@ export class Incidents extends Context.Service<
               payload: IncidentAcknowledged.make({
                 incident: incident.id,
                 title: incident.title,
+                detector: incident.evidence._tag,
                 ...placeOf(incident.environment, settings),
               }),
             },
@@ -1217,8 +1223,10 @@ export class Incidents extends Context.Service<
         const latest = new Map<string, { readonly ran: IncidentRelease; readonly at: number }>()
         for (const ran of table.rows) {
           const place = ran.environment ?? ""
-          // A failing or stopped incident without an environment is about operations that named none.
-          if (row.detector !== "down" && place !== row.environment) {
+          // A down incident, or a monitor's that names no environment, is about every environment;
+          // a failing or stopped one without an environment is about operations that named none.
+          const everyEnvironment = row.detector === "down" || (row.detector === "monitor" && row.environment === "")
+          if (!everyEnvironment && place !== row.environment) {
             continue
           }
           // When it last ran before the incident opened: its last step of the counts, by the minute

@@ -9,7 +9,7 @@ import { apiClient, reachFailures, refuse } from "./api-client.ts"
 import type { ApiTarget } from "./api-settings.ts"
 import { apiTarget } from "./api-settings.ts"
 import { local, parsed } from "./question.ts"
-import { columns, count, milliseconds, span, uptime, utcMinute } from "./terminal-text.ts"
+import { columns, count, milliseconds, minutesWords, span, uptime, utcMinute } from "./terminal-text.ts"
 
 const projectArgument = Argument.String("project").pipe(Argument.withDescription("The project's key."))
 
@@ -38,13 +38,13 @@ const conditionWords = (condition: MonitorCondition) => {
     case "noAnswer":
       return `${name}: doesn't answer two checks in a row`
     case "nothingFor":
-      return `${name}: nothing for ${span(condition.minutes * 60_000)}`
+      return `${name}: nothing for ${minutesWords(condition.minutes)}`
     case "moreThan":
-      return `${name}: more than ${count(condition.count)} in ${span(condition.minutes * 60_000)}`
+      return `${name}: more than ${count(condition.count)} in ${minutesWords(condition.minutes)}`
     case "p95Above":
-      return `${name}: p95 above ${milliseconds(condition.ms)} over ${span(condition.minutes * 60_000)}`
+      return `${name}: p95 above ${milliseconds(condition.ms)} over ${minutesWords(condition.minutes)}`
     case "errorRateAbove":
-      return `${name}: more than ${condition.percent}% failed over ${span(condition.minutes * 60_000)}`
+      return `${name}: more than ${condition.percent}% failed over ${minutesWords(condition.minutes)}`
   }
 }
 

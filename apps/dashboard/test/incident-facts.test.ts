@@ -80,8 +80,32 @@ describe("uptimeAnswerOf", () => {
 })
 
 describe("monitorBriefOf", () => {
-  it("hands an agent a monitor's URL without the token in its query", () => {
+  it("hands an agent a monitor's URL without the token in its query, or none of one that doesn't parse", () => {
     const state = monitor("1", [counted("2026-10-21", 10, 0)])
+    const briefOf = (url: string) =>
+      monitorBriefOf(
+        ProjectKey.make("notes"),
+        {
+          state: {
+            ...state,
+            monitor: new Monitor({
+              id: state.monitor.id,
+              component: state.monitor.component,
+              addedAt: state.monitor.addedAt,
+              condition: { _tag: "noAnswer", subject: { _tag: "url", url: MonitorUrl.make(url) } },
+              level: "alarm",
+            }),
+          },
+          recent: [],
+          failures: [],
+          incidents: [],
+        },
+        now,
+      )
+    // A port no URL has: it doesn't parse, and nothing of it is handed on.
+    const unparsed = briefOf("https://ops:pw@notes.example:999999/health?token=s3cret")
+    assert.include(unparsed, "(a URL that doesn't parse), of notes-api")
+    assert.notInclude(unparsed, "s3cret")
     const secret: MonitorState = {
       ...state,
       monitor: new Monitor({

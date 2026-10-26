@@ -134,12 +134,19 @@ check starts no trace in the service it checks; then reads each monitor of count
 - **Learned hourly, looked every minute.** Usual error rates come from a week of counts once an
   hour, so each minute reads only the last 15 minutes.
 - **A check costs one object wake-up a minute per project,** a small share of what the paid plan
-  includes. A monitor of counts adds one indexed read of counts Signals already keeps (an event's
-  through a partial index on its timeline), so at most 30 reads a minute, and overwrites its one
-  `incidents_monitor_measures` row: no new per-minute storage.
+  includes. A monitor of counts adds about two indexed reads of counts Signals already keeps (an
+  event's through a partial index on its timeline, and when it last arrived), and overwrites its one
+  `incidents_monitor_measures` row: measured, a check with 30 monitors ran about 100 statements,
+  14 with one. One that fires reads its error's or log message's title too. No new per-minute
+  storage.
+- **An event's count is the people's timelines',** each person's latest 1,000 signals: a person
+  past that in a window counts only their latest, so "more than N" can count low; "nothing for N"
+  never fires while one arrived, as Signals keeps when each event last arrived.
+- **Two monitors of one subject are two incidents,** one open for each monitor.
 - **A monitor is set up, never guessed; a guess is a hint.** Notifications send nothing for a
-  `stopped` incident, all of which were guesses; a monitor's incident (detector `monitor`) carries
-  the level its owner chose. A quiet hint offers "Monitor this", which declares it.
+  `stopped` incident, all of which were guesses, nor for acknowledging one (`incident.acknowledged`
+  names its detector); a monitor's incident (detector `monitor`) carries the level its owner chose,
+  when it opens and when it reopens. Down and Failing reopen time-sensitive, as before. A quiet hint offers "Monitor this", which declares it.
 - **Any member who sees the project may add or remove its monitors,** as they may acknowledge its
   incidents (the API's `MemberProjects`); not owner-only.
 - **Existing URL monitors became `noAnswer` monitors at `alarm`** (migration `0005_monitors`), so

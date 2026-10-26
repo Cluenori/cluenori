@@ -85,6 +85,14 @@ export const printable = (text: string) =>
 const plural = (amount: number, unit: string) => `${amount} ${unit}${amount === 1 ? "" : "s"}`
 
 /** A span of time in whole units, rounded down: `1 minute` at least, `30 minutes`, `2 hours`, `3 days`. */
+/** A window someone set, exactly: `150 minutes`, `2 hours`, `1 day`; hours or days only when whole. */
+export const minutesWords = (minutes: number) => {
+  if (minutes % 1440 === 0) {
+    return plural(minutes / 1440, "day")
+  }
+  return minutes % 60 === 0 ? plural(minutes / 60, "hour") : plural(minutes, "minute")
+}
+
 export const span = (value: number) => {
   const minutes = Math.max(1, Math.floor(value / 60_000))
   if (minutes < 120) {

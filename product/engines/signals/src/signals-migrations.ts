@@ -422,6 +422,15 @@ export const migrateSignals = Migrator.make({})({
       yield* sql`CREATE INDEX signals_app_timeline_events
         ON signals_app_timeline (json_extract(entry, '$.signal.name'), at)
         WHERE json_extract(entry, '$.signal._tag') = 'event'`
+      // When each event last arrived, by its own time, in each component and environment: a person's
+      // timeline keeps only their latest signals, so this says one came even after it is trimmed.
+      yield* sql`CREATE TABLE signals_app_event_last (
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        name TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (component, environment, name)
+      ) WITHOUT ROWID`
     }),
   }),
 })

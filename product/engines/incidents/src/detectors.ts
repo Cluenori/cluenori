@@ -91,11 +91,12 @@ const runsJudged = 5
 
 /**
  * What a monitor of counts measures from what it read over its window: how many ran or came; the
- * p95 in ms or the error rate in percent, undefined when its operation ran fewer than 5 times.
+ * p95 in ms or the error rate in percent, undefined when its operation ran fewer than 5 times; the
+ * p95 also when no environment it was read in had 5 runs (`p95Ms` undefined).
  */
 export const measuredOf = (
   condition: CountCondition,
-  read: { readonly count: number; readonly errors: number; readonly p95Ms: number },
+  read: { readonly count: number; readonly errors: number; readonly p95Ms: number | undefined },
 ): number | undefined => {
   switch (condition._tag) {
     case "nothingFor":

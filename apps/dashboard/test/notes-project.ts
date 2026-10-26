@@ -1434,24 +1434,27 @@ const monitorStateAt = (now: number): MonitorState => ({
   firing: false,
 })
 
+// The cleanup ran twice in its last hour.
+const cleanupStateAt = (now: number): MonitorState => ({
+  monitor: cleanupMonitor,
+  days: [],
+  measured: { at: DateTime.makeUnsafe(now - minute), value: 2 },
+  firing: false,
+})
+
 const monitors = Effect.gen(function* () {
   const now = yield* Clock.currentTimeMillis
   return yield* reply(MonitorList, {
-    monitors: [
-      monitorStateAt(now),
-      {
-        monitor: cleanupMonitor,
-        days: [],
-        measured: { at: DateTime.makeUnsafe(now - minute), value: 2 },
-        firing: false,
-      },
-    ],
+    monitors: [monitorStateAt(now), cleanupStateAt(now)],
   })
 })
 
 const monitorDetail = (id: string) =>
   Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis
+    if (id === cleanupMonitor.id) {
+      return yield* reply(MonitorDetail, { state: cleanupStateAt(now), recent: [], failures: [], incidents: [] })
+    }
     if (id !== healthMonitor.id) {
       return yield* reply(MonitorNotFound, new MonitorNotFound({ monitor: MonitorId.make(id) }), 404)
     }

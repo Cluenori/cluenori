@@ -162,6 +162,10 @@ struct UptimeModelTests {
 
         #expect(brief.contains("https://notes.example/health?…, of notes-api"))
         #expect(!brief.contains("s3cret") && !brief.contains("pw@"))
+        // A port no URL has: nothing of it is handed on.
+        #expect(
+            UptimeBriefs.briefURL("https://ops:pw@notes.example:999999/health?token=s3cret")
+                == "(a URL that doesn't parse)")
         #expect(brief.contains("Up 99.99% over the last 7 days"))
     }
 

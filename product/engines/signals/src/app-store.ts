@@ -453,6 +453,11 @@ export const appStore = Effect.gen(function* () {
         INSERT INTO signals_app_timeline ${sql.insert({ person, at: entry.at, signal: entry.signal.id, entry: json })}
         ON CONFLICT DO NOTHING`
       trimmed.add(person)
+      if (entry.signal._tag === "event") {
+        yield* sql`
+          INSERT INTO signals_app_event_last ${sql.insert({ component, environment, name: entry.signal.name, at: entry.at })}
+          ON CONFLICT (component, environment, name) DO UPDATE SET at = max(at, excluded.at)`
+      }
     }
     // Each person keeps their latest 1,000 signals; signals at the same moment as the 1,000th stay too.
     for (const person of trimmed) {
@@ -478,9 +483,23 @@ export const appStore = Effect.gen(function* () {
             AND json_extract(entry, '$.component') = ${query.component}
             ${query.environment === undefined ? sql`` : sql`AND json_extract(entry, '$.environment') = ${query.environment}`}
           LIMIT ${Math.max(0, Math.floor(atMost))})`,
-    })(undefined).pipe(Effect.orDie)
-    return row.count
-  })
+    })(undefined)
+    if (row.count > 0) {
+      return row.count
+    }
+    // None in the timelines, which keep each person's latest signals only: one that arrived in the
+    // period and was trimmed since still counts.
+    const last = yield* SqlSchema.findOne({
+      Request: Schema.Void,
+      Result: Schema.Struct({ arrived: Count }),
+      execute: () => sql`
+        SELECT count(*) AS arrived FROM signals_app_event_last
+        WHERE component = ${query.component} AND name = ${query.event}
+          ${query.environment === undefined ? sql`` : sql`AND environment = ${query.environment}`}
+          AND at >= ${DateTime.toEpochMillis(query.period.from)} AND at < ${DateTime.toEpochMillis(query.period.to)}`,
+    })(undefined)
+    return Math.min(Math.max(0, Math.floor(atMost)), last.arrived > 0 ? 1 : 0)
+  }, Effect.orDie)
 
   /** Removes what is older than it is kept. Runs inside the caller's transaction. */
   const cleanUp = Effect.fn("AppStore.cleanUp")(function* (now: number) {
@@ -495,6 +514,7 @@ export const appStore = Effect.gen(function* () {
     }
     yield* sql`DELETE FROM signals_app_releases WHERE last_seen < ${now - Duration.toMillis(appDayRetention)}`
     yield* sql`DELETE FROM signals_app_timeline WHERE at < ${now - Duration.toMillis(appDayRetention)}`
+    yield* sql`DELETE FROM signals_app_event_last WHERE at < ${now - Duration.toMillis(appDayRetention)}`
     yield* sql`DELETE FROM signals_app_sessions WHERE seen_at < ${now - Duration.toMillis(sessionRetention)}`
     yield* sql`DELETE FROM signals_app_seen WHERE signal < ${firstIdAt(now - Duration.toMillis(seenRetention))}`
   })

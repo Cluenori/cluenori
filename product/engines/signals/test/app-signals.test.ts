@@ -424,6 +424,16 @@ describe("AppSignals", () => {
           ),
         ]
         assert.deepStrictEqual(counted, [3, 5, 2, 4, 0])
+
+        // The first person's 1,000 later signals trim their registrations from their timeline: they
+        // count no more, but one still arrived in the hour, never none.
+        for (let batch = 0; batch < 4; batch += 1) {
+          yield* record(batchOf(installationOf(1), events(now - 20 * 60_000, "card.flipped", 250)))
+        }
+        assert.strictEqual(
+          yield* apps.eventCount({ period: lastHour, component: ios, environment: production, event: registered }, 100),
+          1,
+        )
       }),
     ),
   )

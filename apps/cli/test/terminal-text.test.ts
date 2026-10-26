@@ -5,6 +5,7 @@ import {
   columns,
   count,
   milliseconds,
+  minutesWords,
   printable,
   share,
   uptime,
@@ -82,5 +83,18 @@ describe("terminal text", () => {
       ],
     )
     assert.deepStrictEqual(columns([]), [])
+  })
+
+  it("says a window someone set exactly, in hours or days only when whole", () => {
+    assert.deepStrictEqual([1, 59, 90, 150, 120, 1440, 2880, 1500].map(minutesWords), [
+      "1 minute",
+      "59 minutes",
+      "90 minutes",
+      "150 minutes",
+      "2 hours",
+      "1 day",
+      "2 days",
+      "25 hours",
+    ])
   })
 })

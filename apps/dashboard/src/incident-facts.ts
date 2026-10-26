@@ -82,13 +82,14 @@ export const measuredWords = (condition: MonitorCondition, value: number | undef
 
 /**
  * A monitor's URL as a brief names it: without its user, password, query or fragment, where tokens
- * go, so a brief handed to an agent carries none; `?…` says a query was left out. The URL fetched is
- * unchanged. Other secrets in a URL's path are not recognized, and stay.
+ * go, so a brief handed to an agent carries none; `?…` says a query was left out. A URL that doesn't
+ * parse, which may hide them anywhere, is left out whole. The URL fetched is unchanged. Other secrets
+ * in a URL's path are not recognized, and stay.
  */
 export const briefUrlOf = (url: string) => {
   const parsed = URL.parse(url)
   if (parsed === null) {
-    return url
+    return "(a URL that doesn't parse)"
   }
   return `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search === "" && parsed.hash === "" ? "" : "?…"}`
 }
