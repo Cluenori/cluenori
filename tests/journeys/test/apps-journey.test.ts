@@ -1,7 +1,9 @@
 import {
   ComponentKey,
   EnvelopeName,
+  calendarDayOf,
   EnvironmentKey,
+  FeatureKey,
   InstallationId,
   ProjectKey,
   ReleaseVersion,
@@ -21,6 +23,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient, HttpApiMiddleware } from "effect/http-api"
 
 import { baseUrl, CluenoriClient } from "./cluenori-client.ts"
+import { logExport, traceExport } from "./trace-export.ts"
 
 const ios = ComponentKey.make("notes-ios")
 const mac = ComponentKey.make("notes-mac")
@@ -95,6 +98,24 @@ const postBatch = Effect.fn("postBatch")(function* (body: string, authorization?
   )
   const response = yield* http.execute(
     authorization === undefined ? request : HttpClientRequest.setHeader(request, "authorization", authorization),
+  )
+  return response.status
+})
+
+// A batch whose events the app marked with `feature`, the one the person was in.
+const marked = (batch: AppBatch, feature: FeatureKey): AppBatch => ({
+  ...batch,
+  signals: batch.signals.map((signal) => (signal._tag === "event" ? { ...signal, feature } : signal)),
+})
+
+// An OTLP export POSTed with a component's ingest key.
+const sendTo = Effect.fn("sendTo")(function* (path: string, ingestKey: string, body: Uint8Array) {
+  const http = yield* HttpClient.HttpClient
+  const response = yield* http.execute(
+    HttpClientRequest.post(`${baseUrl}/otlp/v1/${path}`).pipe(
+      HttpClientRequest.bearerToken(ingestKey),
+      HttpClientRequest.bodyUint8Array(body, "application/x-protobuf"),
+    ),
   )
   return response.status
 })
@@ -303,6 +324,112 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("apps", (it) => {
           .pipe(Effect.flip)
         assert.strictEqual(revoked._tag, "SdkKeyRejected")
       }),
+  )
+
+  it.effect("a feature's story joins how the apps used it and what the services did for it", () =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const started = yield* DateTime.now
+      const now = DateTime.toEpochMillis(started)
+      const { project, iosKey } = yield* projectWithApps("apps-features")
+      const { ingestKey } = yield* client.projects.addComponent({
+        params: { project },
+        payload: { key: ComponentKey.make("notes-api"), name: ComponentName.make("Notes API") },
+      })
+      const share = FeatureKey.make("notes.share")
+      const edit = FeatureKey.make("notes.edit")
+
+      // The app marks its event with the feature the person was in: share for one, edit for another.
+      const ingest = yield* ingestClient(iosKey)
+      const phone = InstallationId.make(uuidAt(now - 86_400_000, 1))
+      const other = InstallationId.make(uuidAt(now - 86_400_000, 2))
+      yield* ingest.appIngest.sendBatch({ payload: marked(batchOf(now - 60_000, phone, "u-7", 1), share) })
+      yield* ingest.appIngest.sendBatch({ payload: marked(batchOf(now - 50_000, other, "u-8", 2), edit) })
+
+      // The service names the feature its requests ran for, one failing, with a warning and an error.
+      const api = { name: "notes-api", environment: "production" }
+      const start = now - 40_000
+      const traces = traceExport(api, [
+        { name: "POST /api/notes/{id}/share", kind: "server", startMillis: start, durationMillis: 80, feature: share },
+        {
+          name: "POST /api/notes/{id}/share",
+          kind: "server",
+          startMillis: start + 1000,
+          durationMillis: 520,
+          failed: true,
+          feature: share,
+        },
+        { name: "GET /api/notes", kind: "server", startMillis: start + 2000, durationMillis: 40 },
+      ])
+      const logs = logExport(api, [
+        {
+          timeMillis: start + 1100,
+          severity: 13,
+          category: "Notes.Sharing",
+          message: "Notifier is slow",
+          feature: share,
+        },
+        {
+          timeMillis: start + 1500,
+          severity: 17,
+          category: "Notes.Sharing",
+          message: "Share failed",
+          feature: share,
+          exception: { type: "TimeoutException", message: "Notification service did not answer", stack: "at Notify()" },
+        },
+        { timeMillis: start + 2100, severity: 17, category: "Notes.Lists", message: "List failed" },
+      ])
+      assert.deepStrictEqual(
+        [yield* sendTo("traces", ingestKey, traces), yield* sendTo("logs", ingestKey, logs)],
+        [200, 200],
+      )
+
+      // Its story: who used it, and only what the service named it for.
+      const story = yield* client.analytics.feature({ params: { project, feature: share }, query: {} })
+      const today = calendarDayOf(started)
+      assert.deepStrictEqual(
+        story.use.days.map((day) => [day.day, day.people, day.events]),
+        [[today, 1, 1]],
+      )
+      assert.deepStrictEqual(
+        story.use.latestPeople.map((person) => person.users),
+        [[AppUserId.make("u-7")]],
+      )
+      assert.deepStrictEqual(
+        story.operations.map((day) => [day.day, day.component, day.operation, day.count, day.errors]),
+        [[today, "notes-api", "POST /api/notes/{id}/share", 2, 1]],
+      )
+      assert.deepStrictEqual(
+        story.logs.days.map((day) => [day.day, day.warnings, day.errors]),
+        [[today, 1, 1]],
+      )
+      assert.deepStrictEqual(
+        story.logs.errors.map((error) => error.title),
+        ["TimeoutException: Notification service did not answer"],
+      )
+
+      // A feature only the app marked has no services' part; one nothing names isn't there.
+      const appOnly = yield* client.analytics.feature({
+        params: { project, feature: edit },
+        query: { environment: production },
+      })
+      assert.deepStrictEqual([appOnly.use.people, appOnly.operations.length, appOnly.logs.days.length], [1, 0, 0])
+      const nothing = yield* client.analytics
+        .feature({ params: { project, feature: FeatureKey.make("notes.nothing") }, query: {} })
+        .pipe(Effect.flip)
+      assert.strictEqual(nothing._tag, "FeatureNotFound")
+
+      // The person's page lists the features they used.
+      const person = yield* client.analytics.personByUser({
+        params: { project },
+        query: { user: AppUserId.make("u-7") },
+      })
+      // Both last used today: in either order, the screen they saw under no feature and the event in share.
+      assert.deepStrictEqual(
+        person.features.map((each) => `${each.feature ?? "(no feature)"} ${each.days} ${each.events}`).toSorted(),
+        ["(no feature) 1 0", "notes.share 1 1"],
+      )
+    }),
   )
 
   it.effect("an installation that sends too much in a minute is asked to send later", () =>

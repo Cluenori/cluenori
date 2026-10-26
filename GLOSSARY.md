@@ -19,6 +19,7 @@ its exact rule.
 |---|---|---|---|
 | Scope key | A permanent key that places a record: workspace, project, component, environment (`notes-ios`) | `WorkspaceKey`, `ProjectKey`, `ComponentKey`, `EnvironmentKey` | slug, handle, ID |
 | Feature key | A capability of a project, dotted: `editor.export` | `FeatureKey` | feature ID, tag |
+| Feature story | One feature over everything kept of it: who used it each day, and the operations, warnings and errors its services sent naming it in `cluenori.feature` | `FeatureStory` | feature report, feature detail |
 | Release version | The version that names a release within its component: `2.4.0+312` | `ReleaseVersion` | build (it includes one), tag |
 | Origin | The component and release a trace started in, from baggage | `originComponent`, `originRelease` on the envelope | caller, client |
 | Envelope | The one shape of every signal and activity entry | `Envelope` | event (that is one kind), message, record |

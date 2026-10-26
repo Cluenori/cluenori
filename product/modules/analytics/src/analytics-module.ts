@@ -6,6 +6,7 @@ import {
   AppRetention,
   AppSignals,
   AppUsage,
+  FeatureQuery,
   FeatureUseTable,
   PersonLookup,
   PersonNotFound,
@@ -16,6 +17,8 @@ import { Effect, Schema } from "effect"
 import { AnalyticsGroup } from "./analytics-api.ts"
 import { appHealthOf } from "./app-health-query.ts"
 import { AppHealthList } from "./app-health.ts"
+import { featureStoryOf } from "./feature-story-query.ts"
+import { FeatureNotFound, FeatureStory } from "./feature-story.ts"
 
 const usage = Effect.fn("Analytics.usage")(function* (query: AppQuery) {
   const apps = yield* AppSignals
@@ -53,7 +56,12 @@ export const analyticsModule = defineModule({
     appHealth: moduleQuery({ input: AppReleaseQuery, success: AppHealthList, error: Schema.Never, run: appHealthOf }),
     /** Each feature's people, events, screens and memory, and those of no feature. Reads only. */
     featureUse: moduleQuery({ input: AppQuery, success: FeatureUseTable, error: Schema.Never, run: featureUse }),
-    /** One person, by their ID or a user ID: installations, days and timeline. Fails with `PersonNotFound`. Reads only. */
+    /**
+     * One feature's story over everything kept of it: its use by day, its people, its releases, and its
+     * services' warnings, errors and operations by day. Fails with `FeatureNotFound`. Reads only.
+     */
+    feature: moduleQuery({ input: FeatureQuery, success: FeatureStory, error: FeatureNotFound, run: featureStoryOf }),
+    /** One person, by their ID or a user ID: installations, days, features and timeline. Fails with `PersonNotFound`. Reads only. */
     person: moduleQuery({ input: PersonLookup, success: AppPerson, error: PersonNotFound, run: person }),
   },
   api: AnalyticsGroup,

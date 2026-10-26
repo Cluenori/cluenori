@@ -52,6 +52,8 @@ export interface ExportedSpan {
   readonly trace?: string
   readonly parent?: number
   readonly status?: number
+  /** The feature it ran for, in `cluenori.feature`, as the Cluenori helpers copy it from baggage. */
+  readonly feature?: string
 }
 
 const kinds = { server: 2, client: 3 } as const
@@ -80,6 +82,7 @@ export const traceExport = (
       ...(span.status === undefined
         ? []
         : bytesField(9, [...textField(1, "http.response.status_code"), ...bytesField(2, varintField(3, span.status))])),
+      ...(span.feature === undefined ? [] : keyValue(9, "cluenori.feature", span.feature)),
       ...(span.failed === true ? bytesField(15, varintField(3, 2)) : []),
     ])
   })
@@ -100,6 +103,8 @@ export interface ExportedLog {
   readonly message: string
   readonly trace?: string
   readonly exception?: { readonly type: string; readonly message: string; readonly stack: string }
+  /** The feature it was logged for, in `cluenori.feature`. */
+  readonly feature?: string
 }
 
 /** A log export of one service, as a .NET service sends one. */
@@ -123,6 +128,7 @@ export const logExport = (
                 ...keyValue(6, "exception.message", log.exception.message),
                 ...keyValue(6, "exception.stacktrace", log.exception.stack),
               ]),
+          ...(log.feature === undefined ? [] : keyValue(6, "cluenori.feature", log.feature)),
           ...(log.trace === undefined ? [] : bytesField(9, hexBytes(log.trace))),
         ]),
       ),

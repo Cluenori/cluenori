@@ -5416,7 +5416,7 @@
             }
           }
         },
-        "description": "One person of the project, by the ID Cluenori gave them: the app's user IDs linked to them, when they were first and last seen, their installations (component, release, device, country), the days they were active with their sessions, the latest 90, and their timeline: the latest 1,000 sessions, launches, screens, events and MetricKit reports, newest first."
+        "description": "One person of the project, by the ID Cluenori gave them: the app's user IDs linked to them, when they were first and last seen, their installations (component, release, device, country), the days they were active with their sessions, the latest 90, the features they used over 15 months with their days, events and screens, the last used first, at most 50, and their timeline: the latest 1,000 sessions, launches, screens, events and MetricKit reports, newest first."
       }
     },
     "/api/projects/{project}/people": {
@@ -5493,6 +5493,91 @@
         },
         "description": "The person the app's own user ID `user` is linked to, as the person route answers: what did this user do. 404 when the apps never sent it."
       }
+    },
+    "/api/projects/{project}/features/{feature}": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "operationId": "analytics.feature",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "feature",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "FeatureStory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureStory"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | FeatureNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FeatureNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "One feature's story, by its key exactly, over everything kept of it, with no period, in one environment or every one: how the apps used it, each UTC day's people, events and screens (15 months), everyone who used it, the 20 who used it last, its releases and the app's memory in it; and what its services sent naming it in `cluenori.feature`: each UTC day's warnings and errors and its 10 most frequent errors (90 days), and each day's operations by component and operation, with how many failed (15 months). A part nothing named the feature in is empty; 404 when nothing kept names it."
+      }
     }
   },
   "components": {
@@ -5516,18 +5601,23 @@
         ],
         "additionalProperties": false
       },
-      "PersonNotFound": {
+      "FeatureNotFound": {
         "type": "object",
         "properties": {
           "_tag": {
             "type": "string",
             "enum": [
-              "PersonNotFound"
+              "FeatureNotFound"
             ]
+          },
+          "feature": {
+            "type": "string",
+            "maxLength": 100
           }
         },
         "required": [
-          "_tag"
+          "_tag",
+          "feature"
         ],
         "additionalProperties": false
       },
@@ -5548,6 +5638,403 @@
         "required": [
           "_tag",
           "project"
+        ],
+        "additionalProperties": false
+      },
+      "FeatureStory": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "use": {
+            "$ref": "#/components/schemas/FeatureUseLife"
+          },
+          "logs": {
+            "$ref": "#/components/schemas/FeatureLogs"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeatureOperationDay"
+            }
+          }
+        },
+        "required": [
+          "feature",
+          "asOf",
+          "use",
+          "logs",
+          "operations"
+        ],
+        "additionalProperties": false
+      },
+      "FeatureOperationDay": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "$ref": "#/components/schemas/CalendarDay"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "day",
+          "component",
+          "operation",
+          "count",
+          "errors"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarDay": {
+        "type": "string",
+        "allOf": [
+          {
+            "format": "date"
+          }
+        ]
+      },
+      "FeatureLogs": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeatureLogDay"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorGroup"
+            }
+          }
+        },
+        "required": [
+          "days",
+          "errors"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ErrorKind"
+          },
+          "title": {
+            "type": "string"
+          },
+          "culprit": {
+            "type": "string"
+          },
+          "occurrences": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "firstRelease": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastComponent": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastEnvironment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastRelease": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "culprit",
+          "occurrences",
+          "firstSeen",
+          "lastSeen",
+          "lastComponent"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorKind": {
+        "type": "string",
+        "enum": [
+          "exception",
+          "log"
+        ]
+      },
+      "FeatureLogDay": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "$ref": "#/components/schemas/CalendarDay"
+          },
+          "warnings": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "day",
+          "warnings",
+          "errors"
+        ],
+        "additionalProperties": false
+      },
+      "Period": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "FeatureUseLife": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeatureUseDay"
+            }
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "latestPeople": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeaturePerson"
+            }
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeatureRelease"
+            }
+          },
+          "memory": {
+            "$ref": "#/components/schemas/MemoryUse"
+          }
+        },
+        "required": [
+          "days",
+          "people",
+          "latestPeople",
+          "releases"
+        ],
+        "additionalProperties": false
+      },
+      "MemoryUse": {
+        "type": "object",
+        "properties": {
+          "samples": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "peakP95Bytes": {
+            "type": "number",
+            "minimum": 0
+          },
+          "footprintP95Bytes": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "samples",
+          "peakP95Bytes",
+          "footprintP95Bytes"
+        ],
+        "additionalProperties": false
+      },
+      "FeatureRelease": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "firstDay": {
+            "$ref": "#/components/schemas/CalendarDay"
+          },
+          "lastDay": {
+            "$ref": "#/components/schemas/CalendarDay"
+          }
+        },
+        "required": [
+          "component",
+          "environment",
+          "release",
+          "people",
+          "firstDay",
+          "lastDay"
+        ],
+        "additionalProperties": false
+      },
+      "FeaturePerson": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppUserId"
+            }
+          },
+          "days": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "events": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lastDay": {
+            "$ref": "#/components/schemas/CalendarDay"
+          }
+        },
+        "required": [
+          "person",
+          "users",
+          "days",
+          "events",
+          "lastDay"
+        ],
+        "additionalProperties": false
+      },
+      "AppUserId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "FeatureUseDay": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "$ref": "#/components/schemas/CalendarDay"
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "events": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "screens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "day",
+          "people",
+          "events",
+          "screens"
+        ],
+        "additionalProperties": false
+      },
+      "PersonNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "PersonNotFound"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
         ],
         "additionalProperties": false
       },
@@ -5583,6 +6070,12 @@
               "$ref": "#/components/schemas/PersonDay"
             }
           },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonFeature"
+            }
+          },
           "timeline": {
             "type": "array",
             "items": {
@@ -5597,6 +6090,7 @@
           "lastSeen",
           "installations",
           "days",
+          "features",
           "timeline"
         ],
         "additionalProperties": false
@@ -5750,11 +6244,6 @@
           "name"
         ],
         "additionalProperties": false
-      },
-      "AppUserId": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 128
       },
       "ScreenShown": {
         "type": "object",
@@ -5937,6 +6426,40 @@
         ],
         "additionalProperties": false
       },
+      "PersonFeature": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "days": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "events": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "screens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lastDay": {
+            "$ref": "#/components/schemas/CalendarDay"
+          }
+        },
+        "required": [
+          "days",
+          "events",
+          "screens",
+          "lastDay"
+        ],
+        "additionalProperties": false
+      },
       "PersonDay": {
         "type": "object",
         "properties": {
@@ -5959,14 +6482,6 @@
           "foregroundMs"
         ],
         "additionalProperties": false
-      },
-      "CalendarDay": {
-        "type": "string",
-        "allOf": [
-          {
-            "format": "date"
-          }
-        ]
       },
       "AppInstallation": {
         "type": "object",
@@ -6137,30 +6652,6 @@
           "people",
           "events",
           "screens"
-        ],
-        "additionalProperties": false
-      },
-      "MemoryUse": {
-        "type": "object",
-        "properties": {
-          "samples": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "peakP95Bytes": {
-            "type": "number",
-            "minimum": 0
-          },
-          "footprintP95Bytes": {
-            "type": "number",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "samples",
-          "peakP95Bytes",
-          "footprintP95Bytes"
         ],
         "additionalProperties": false
       },
@@ -6595,24 +7086,6 @@
           "installations",
           "sessions",
           "foregroundMs"
-        ],
-        "additionalProperties": false
-      },
-      "Period": {
-        "type": "object",
-        "properties": {
-          "from": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "to": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "from",
-          "to"
         ],
         "additionalProperties": false
       },
@@ -8082,70 +8555,6 @@
           "problem"
         ],
         "additionalProperties": false
-      },
-      "ErrorGroup": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/ErrorKind"
-          },
-          "title": {
-            "type": "string"
-          },
-          "culprit": {
-            "type": "string"
-          },
-          "occurrences": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "firstSeen": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "firstRelease": {
-            "type": "string",
-            "maxLength": 64
-          },
-          "lastSeen": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lastComponent": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "lastEnvironment": {
-            "type": "string",
-            "maxLength": 40
-          },
-          "lastRelease": {
-            "type": "string",
-            "maxLength": 64
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "culprit",
-          "occurrences",
-          "firstSeen",
-          "lastSeen",
-          "lastComponent"
-        ],
-        "additionalProperties": false
-      },
-      "ErrorKind": {
-        "type": "string",
-        "enum": [
-          "exception",
-          "log"
-        ]
       },
       "ComparedOperation": {
         "type": "object",

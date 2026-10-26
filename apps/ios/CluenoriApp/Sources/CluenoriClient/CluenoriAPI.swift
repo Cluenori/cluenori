@@ -1138,8 +1138,10 @@ public nonisolated struct CluenoriAPI: Sendable {
 
     /// One person of the project, by the ID Cluenori gave them: the app's user IDs linked to them,
     /// when they were first and last seen, their installations (component, release, device,
-    /// country), the days they were active with their sessions, the latest 90, and their timeline:
-    /// the latest 1,000 sessions, launches, screens, events and MetricKit reports, newest first.
+    /// country), the days they were active with their sessions, the latest 90, the features they
+    /// used over 15 months with their days, events and screens, the last used first, at most 50,
+    /// and their timeline: the latest 1,000 sessions, launches, screens, events and MetricKit
+    /// reports, newest first.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, `.personNotFound`, or as any call can.
     @concurrent
@@ -1159,6 +1161,27 @@ public nonisolated struct CluenoriAPI: Sendable {
         let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/people", query: `query items`)
         return try Self.decoded(from: `the answer`)
     }
+
+    /// One feature's story, by its key exactly, over everything kept of it, with no period, in one
+    /// environment or every one: how the apps used it, each UTC day's people, events and screens
+    /// (15 months), everyone who used it, the 20 who used it last, its releases and the app's
+    /// memory in it; and what its services sent naming it in `cluenori.feature`: each UTC day's
+    /// warnings and errors and its 10 most frequent errors (90 days), and each day's operations by
+    /// component and operation, with how many failed (15 months). A part nothing named the feature
+    /// in is empty; 404 when nothing kept names it.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.featureNotFound`, or as any call can.
+    @concurrent
+    public func feature(
+        project: String,
+        feature: String,
+        environment: String? = nil,
+    ) async throws(APIError) -> FeatureStory {
+        var `query items`: [(String, String)] = []
+        if let environment { `query items`.append(("environment", Self.text(environment))) }
+        let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/features/\(Self.segment(Self.text(feature)))", query: `query items`)
+        return try Self.decoded(from: `the answer`)
+    }
 }
 
 /// Why a call failed: an error the API answered with, no answer at all, or one this client can't read.
@@ -1168,6 +1191,7 @@ public nonisolated enum APIError: Error, Sendable {
     case componentNotFound(ComponentNotFound)
     case draftUnavailable(DraftUnavailable)
     case errorGroupNotFound(ErrorGroupNotFound)
+    case featureNotFound(FeatureNotFound)
     case feedNotFound(FeedNotFound)
     case gitHubAlreadyConnected(GitHubAlreadyConnected)
     case incidentNotFound(IncidentNotFound)
@@ -1623,6 +1647,7 @@ public nonisolated struct AppPerson: Codable, Hashable, Sendable {
     public let lastSeen: Date
     public let installations: [AppInstallation]
     public let days: [PersonDay]
+    public let features: [PersonFeature]
     public let timeline: [TimelineEntry]
 
     public init(
@@ -1632,6 +1657,7 @@ public nonisolated struct AppPerson: Codable, Hashable, Sendable {
         lastSeen: Date,
         installations: [AppInstallation],
         days: [PersonDay],
+        features: [PersonFeature],
         timeline: [TimelineEntry],
     ) {
         self.person = person
@@ -1640,6 +1666,7 @@ public nonisolated struct AppPerson: Codable, Hashable, Sendable {
         self.lastSeen = lastSeen
         self.installations = installations
         self.days = days
+        self.features = features
         self.timeline = timeline
     }
 
@@ -1650,6 +1677,7 @@ public nonisolated struct AppPerson: Codable, Hashable, Sendable {
         case lastSeen = "lastSeen"
         case installations = "installations"
         case days = "days"
+        case features = "features"
         case timeline = "timeline"
     }
 
@@ -1661,6 +1689,7 @@ public nonisolated struct AppPerson: Codable, Hashable, Sendable {
         self.lastSeen = try container.`value at`(.lastSeen)
         self.installations = try container.`value at`(.installations)
         self.days = try container.`value at`(.days)
+        self.features = try container.`value at`(.features)
         self.timeline = try container.`value at`(.timeline)
     }
 
@@ -1672,6 +1701,7 @@ public nonisolated struct AppPerson: Codable, Hashable, Sendable {
         try container.encode(self.lastSeen, forKey: .lastSeen)
         try container.encode(self.installations, forKey: .installations)
         try container.encode(self.days, forKey: .days)
+        try container.encode(self.features, forKey: .features)
         try container.encode(self.timeline, forKey: .timeline)
     }
 }
@@ -3184,6 +3214,283 @@ public nonisolated struct FailingEvidence: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct FeatureLogDay: Codable, Hashable, Sendable {
+    public let day: String
+    public let warnings: Int
+    public let errors: Int
+
+    public init(day: String, warnings: Int, errors: Int) {
+        self.day = day
+        self.warnings = warnings
+        self.errors = errors
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case day = "day"
+        case warnings = "warnings"
+        case errors = "errors"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.day = try container.`value at`(.day)
+        self.warnings = try container.`value at`(.warnings)
+        self.errors = try container.`value at`(.errors)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.day, forKey: .day)
+        try container.encode(self.warnings, forKey: .warnings)
+        try container.encode(self.errors, forKey: .errors)
+    }
+}
+
+public nonisolated struct FeatureLogs: Codable, Hashable, Sendable {
+    public let covered: Period?
+    public let days: [FeatureLogDay]
+    public let errors: [ErrorGroup]
+
+    public init(covered: Period? = nil, days: [FeatureLogDay], errors: [ErrorGroup]) {
+        self.covered = covered
+        self.days = days
+        self.errors = errors
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case covered = "covered"
+        case days = "days"
+        case errors = "errors"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.covered = try container.`value if present at`(.covered)
+        self.days = try container.`value at`(.days)
+        self.errors = try container.`value at`(.errors)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encodeIfPresent(self.covered, forKey: .covered)
+        try container.encode(self.days, forKey: .days)
+        try container.encode(self.errors, forKey: .errors)
+    }
+}
+
+public nonisolated struct FeatureNotFound: Codable, Hashable, Sendable {
+    public let feature: String
+
+    public init(feature: String) {
+        self.feature = feature
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case feature = "feature"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "FeatureNotFound" else {
+            throw container.`corruption at`(._tag, "_tag isn't FeatureNotFound.")
+        }
+        self.feature = try container.`value at`(.feature)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("FeatureNotFound", forKey: ._tag)
+        try container.encode(self.feature, forKey: .feature)
+    }
+}
+
+public nonisolated struct FeatureOperationDay: Codable, Hashable, Sendable {
+    public let day: String
+    public let component: String
+    public let operation: String
+    public let count: Int
+    public let errors: Int
+
+    public init(day: String, component: String, operation: String, count: Int, errors: Int) {
+        self.day = day
+        self.component = component
+        self.operation = operation
+        self.count = count
+        self.errors = errors
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case day = "day"
+        case component = "component"
+        case operation = "operation"
+        case count = "count"
+        case errors = "errors"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.day = try container.`value at`(.day)
+        self.component = try container.`value at`(.component)
+        self.operation = try container.`value at`(.operation)
+        self.count = try container.`value at`(.count)
+        self.errors = try container.`value at`(.errors)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.day, forKey: .day)
+        try container.encode(self.component, forKey: .component)
+        try container.encode(self.operation, forKey: .operation)
+        try container.encode(self.count, forKey: .count)
+        try container.encode(self.errors, forKey: .errors)
+    }
+}
+
+public nonisolated struct FeaturePerson: Codable, Hashable, Sendable {
+    public let person: String
+    public let users: [String]
+    public let days: Int
+    public let events: Int
+    public let lastDay: String
+
+    public init(person: String, users: [String], days: Int, events: Int, lastDay: String) {
+        self.person = person
+        self.users = users
+        self.days = days
+        self.events = events
+        self.lastDay = lastDay
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case person = "person"
+        case users = "users"
+        case days = "days"
+        case events = "events"
+        case lastDay = "lastDay"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.person = try container.`value at`(.person)
+        self.users = try container.`value at`(.users)
+        self.days = try container.`value at`(.days)
+        self.events = try container.`value at`(.events)
+        self.lastDay = try container.`value at`(.lastDay)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.person, forKey: .person)
+        try container.encode(self.users, forKey: .users)
+        try container.encode(self.days, forKey: .days)
+        try container.encode(self.events, forKey: .events)
+        try container.encode(self.lastDay, forKey: .lastDay)
+    }
+}
+
+public nonisolated struct FeatureRelease: Codable, Hashable, Sendable {
+    public let component: String
+    public let environment: String
+    public let release: String
+    public let people: Int
+    public let firstDay: String
+    public let lastDay: String
+
+    public init(
+        component: String,
+        environment: String,
+        release: String,
+        people: Int,
+        firstDay: String,
+        lastDay: String,
+    ) {
+        self.component = component
+        self.environment = environment
+        self.release = release
+        self.people = people
+        self.firstDay = firstDay
+        self.lastDay = lastDay
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case component = "component"
+        case environment = "environment"
+        case release = "release"
+        case people = "people"
+        case firstDay = "firstDay"
+        case lastDay = "lastDay"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.component = try container.`value at`(.component)
+        self.environment = try container.`value at`(.environment)
+        self.release = try container.`value at`(.release)
+        self.people = try container.`value at`(.people)
+        self.firstDay = try container.`value at`(.firstDay)
+        self.lastDay = try container.`value at`(.lastDay)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.component, forKey: .component)
+        try container.encode(self.environment, forKey: .environment)
+        try container.encode(self.release, forKey: .release)
+        try container.encode(self.people, forKey: .people)
+        try container.encode(self.firstDay, forKey: .firstDay)
+        try container.encode(self.lastDay, forKey: .lastDay)
+    }
+}
+
+public nonisolated struct FeatureStory: Codable, Hashable, Sendable {
+    public let feature: String
+    public let asOf: Date
+    public let use: FeatureUseLife
+    public let logs: FeatureLogs
+    public let operations: [FeatureOperationDay]
+
+    public init(
+        feature: String,
+        asOf: Date,
+        use: FeatureUseLife,
+        logs: FeatureLogs,
+        operations: [FeatureOperationDay],
+    ) {
+        self.feature = feature
+        self.asOf = asOf
+        self.use = use
+        self.logs = logs
+        self.operations = operations
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case feature = "feature"
+        case asOf = "asOf"
+        case use = "use"
+        case logs = "logs"
+        case operations = "operations"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.feature = try container.`value at`(.feature)
+        self.asOf = try container.`value at`(.asOf)
+        self.use = try container.`value at`(.use)
+        self.logs = try container.`value at`(.logs)
+        self.operations = try container.`value at`(.operations)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.feature, forKey: .feature)
+        try container.encode(self.asOf, forKey: .asOf)
+        try container.encode(self.use, forKey: .use)
+        try container.encode(self.logs, forKey: .logs)
+        try container.encode(self.operations, forKey: .operations)
+    }
+}
+
 public nonisolated struct FeatureUse: Codable, Hashable, Sendable {
     public let feature: String?
     public let people: Int
@@ -3228,6 +3535,91 @@ public nonisolated struct FeatureUse: Codable, Hashable, Sendable {
         try container.encode(self.people, forKey: .people)
         try container.encode(self.events, forKey: .events)
         try container.encode(self.screens, forKey: .screens)
+        try container.encodeIfPresent(self.memory, forKey: .memory)
+    }
+}
+
+public nonisolated struct FeatureUseDay: Codable, Hashable, Sendable {
+    public let day: String
+    public let people: Int
+    public let events: Int
+    public let screens: Int
+
+    public init(day: String, people: Int, events: Int, screens: Int) {
+        self.day = day
+        self.people = people
+        self.events = events
+        self.screens = screens
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case day = "day"
+        case people = "people"
+        case events = "events"
+        case screens = "screens"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.day = try container.`value at`(.day)
+        self.people = try container.`value at`(.people)
+        self.events = try container.`value at`(.events)
+        self.screens = try container.`value at`(.screens)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.day, forKey: .day)
+        try container.encode(self.people, forKey: .people)
+        try container.encode(self.events, forKey: .events)
+        try container.encode(self.screens, forKey: .screens)
+    }
+}
+
+public nonisolated struct FeatureUseLife: Codable, Hashable, Sendable {
+    public let days: [FeatureUseDay]
+    public let people: Int
+    public let latestPeople: [FeaturePerson]
+    public let releases: [FeatureRelease]
+    public let memory: MemoryUse?
+
+    public init(
+        days: [FeatureUseDay],
+        people: Int,
+        latestPeople: [FeaturePerson],
+        releases: [FeatureRelease],
+        memory: MemoryUse? = nil,
+    ) {
+        self.days = days
+        self.people = people
+        self.latestPeople = latestPeople
+        self.releases = releases
+        self.memory = memory
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case days = "days"
+        case people = "people"
+        case latestPeople = "latestPeople"
+        case releases = "releases"
+        case memory = "memory"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.days = try container.`value at`(.days)
+        self.people = try container.`value at`(.people)
+        self.latestPeople = try container.`value at`(.latestPeople)
+        self.releases = try container.`value at`(.releases)
+        self.memory = try container.`value if present at`(.memory)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.days, forKey: .days)
+        try container.encode(self.people, forKey: .people)
+        try container.encode(self.latestPeople, forKey: .latestPeople)
+        try container.encode(self.releases, forKey: .releases)
         try container.encodeIfPresent(self.memory, forKey: .memory)
     }
 }
@@ -5771,6 +6163,48 @@ public nonisolated struct PersonDay: Codable, Hashable, Sendable {
         try container.encode(self.day, forKey: .day)
         try container.encode(self.sessions, forKey: .sessions)
         try container.encode(self.foregroundMs, forKey: .foregroundMs)
+    }
+}
+
+public nonisolated struct PersonFeature: Codable, Hashable, Sendable {
+    public let feature: String?
+    public let days: Int
+    public let events: Int
+    public let screens: Int
+    public let lastDay: String
+
+    public init(feature: String? = nil, days: Int, events: Int, screens: Int, lastDay: String) {
+        self.feature = feature
+        self.days = days
+        self.events = events
+        self.screens = screens
+        self.lastDay = lastDay
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case feature = "feature"
+        case days = "days"
+        case events = "events"
+        case screens = "screens"
+        case lastDay = "lastDay"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.feature = try container.`value if present at`(.feature)
+        self.days = try container.`value at`(.days)
+        self.events = try container.`value at`(.events)
+        self.screens = try container.`value at`(.screens)
+        self.lastDay = try container.`value at`(.lastDay)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encodeIfPresent(self.feature, forKey: .feature)
+        try container.encode(self.days, forKey: .days)
+        try container.encode(self.events, forKey: .events)
+        try container.encode(self.screens, forKey: .screens)
+        try container.encode(self.lastDay, forKey: .lastDay)
     }
 }
 
@@ -9307,6 +9741,7 @@ nonisolated extension CluenoriAPI {
             case "ComponentNotFound": return .componentNotFound(try jsonDecoder().decode(ComponentNotFound.self, from: data))
             case "DraftUnavailable": return .draftUnavailable(try jsonDecoder().decode(DraftUnavailable.self, from: data))
             case "ErrorGroupNotFound": return .errorGroupNotFound(try jsonDecoder().decode(ErrorGroupNotFound.self, from: data))
+            case "FeatureNotFound": return .featureNotFound(try jsonDecoder().decode(FeatureNotFound.self, from: data))
             case "FeedNotFound": return .feedNotFound(try jsonDecoder().decode(FeedNotFound.self, from: data))
             case "GitHubAlreadyConnected": return .gitHubAlreadyConnected(try jsonDecoder().decode(GitHubAlreadyConnected.self, from: data))
             case "IncidentNotFound": return .incidentNotFound(try jsonDecoder().decode(IncidentNotFound.self, from: data))

@@ -1,10 +1,19 @@
-import { ComponentKey, EnvironmentKey, Instant, PersonId, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import {
+  ComponentKey,
+  EnvironmentKey,
+  FeatureKey,
+  Instant,
+  PersonId,
+  ProjectKey,
+  ReleaseVersion,
+} from "@cluenori/foundation"
 import { ProjectNotFound } from "@cluenori/projects"
 import { AppPerson, AppRetention, AppUsage, AppUserId, FeatureUseTable, PersonNotFound } from "@cluenori/signals"
 import { DateTime, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
 import { AppHealthList } from "./app-health.ts"
+import { FeatureNotFound, FeatureStory } from "./feature-story.ts"
 
 const aPeriod = Schema.makeFilter(
   (query: { readonly from: DateTime.Utc; readonly to: DateTime.Utc }) => DateTime.isLessThan(query.from, query.to),
@@ -81,7 +90,7 @@ export class AnalyticsGroup extends HttpApiGroup.make("analytics")
       error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), PersonNotFound.pipe(HttpApiSchema.status(404))],
     }).annotate(
       OpenApi.Description,
-      "One person of the project, by the ID Cluenori gave them: the app's user IDs linked to them, when they were first and last seen, their installations (component, release, device, country), the days they were active with their sessions, the latest 90, and their timeline: the latest 1,000 sessions, launches, screens, events and MetricKit reports, newest first.",
+      "One person of the project, by the ID Cluenori gave them: the app's user IDs linked to them, when they were first and last seen, their installations (component, release, device, country), the days they were active with their sessions, the latest 90, the features they used over 15 months with their days, events and screens, the last used first, at most 50, and their timeline: the latest 1,000 sessions, launches, screens, events and MetricKit reports, newest first.",
     ),
   )
   .add(
@@ -93,5 +102,16 @@ export class AnalyticsGroup extends HttpApiGroup.make("analytics")
     }).annotate(
       OpenApi.Description,
       "The person the app's own user ID `user` is linked to, as the person route answers: what did this user do. 404 when the apps never sent it.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("feature", "/projects/:project/features/:feature", {
+      params: { project: ProjectKey, feature: FeatureKey },
+      query: { environment: Schema.optionalKey(EnvironmentKey) },
+      success: FeatureStory,
+      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), FeatureNotFound.pipe(HttpApiSchema.status(404))],
+    }).annotate(
+      OpenApi.Description,
+      "One feature's story, by its key exactly, over everything kept of it, with no period, in one environment or every one: how the apps used it, each UTC day's people, events and screens (15 months), everyone who used it, the 20 who used it last, its releases and the app's memory in it; and what its services sent naming it in `cluenori.feature`: each UTC day's warnings and errors and its 10 most frequent errors (90 days), and each day's operations by component and operation, with how many failed (15 months). A part nothing named the feature in is empty; 404 when nothing kept names it.",
     ),
   ) {}

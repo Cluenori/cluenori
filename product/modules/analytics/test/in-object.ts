@@ -1,5 +1,5 @@
 import { ProjectKey, WorkspaceKey } from "@cluenori/foundation"
-import { AppBatchStore, AppSignals } from "@cluenori/signals"
+import { AppBatchStore, AppSignals, ArchiveStore, Signals } from "@cluenori/signals"
 import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
@@ -9,18 +9,25 @@ import { TestClock } from "effect/testing"
 
 /**
  * Runs `program` inside the Durable Object of project `project` at the time `now` (Unix ms), with the
- * apps' signals built on its storage as the host builds them. Tests use projects of their own.
+ * apps' and services' signals built on its storage as the host builds them. Tests use projects of
+ * their own.
  */
-export const inProject = <A, E>(project: string, now: number, program: Effect.Effect<A, E, AppSignals>) =>
+export const inProject = <A, E>(project: string, now: number, program: Effect.Effect<A, E, AppSignals | Signals>) =>
   Effect.promise(() =>
     runInDurableObject(env.PROJECT.getByName(project), (_instance, state) =>
       Effect.runPromise(
         TestClock.setTime(now).pipe(
           Effect.andThen(program),
           Effect.provide(
-            AppSignals.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }).pipe(
-              Layer.provide(AppBatchStore.layerMemory()),
-              Layer.provide(BrowserCrypto.layer),
+            Layer.mergeAll(
+              AppSignals.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }).pipe(
+                Layer.provide(AppBatchStore.layerMemory()),
+                Layer.provide(BrowserCrypto.layer),
+              ),
+              Signals.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }).pipe(
+                Layer.provide(ArchiveStore.layerMemory),
+              ),
+            ).pipe(
               Layer.provide(SqliteClient.layer({ storage: state.storage })),
               Layer.provideMerge(TestClock.layer()),
             ),
