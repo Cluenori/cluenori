@@ -132,6 +132,8 @@ describe("testedPaths", () => {
           'export type { Row } from "../src/rows.ts"',
           'import { linesOf, type Line } from "../src/lines.ts"',
           'import Links, { type Link } from "../src/links.ts"',
+          'import { type Target, } from "../src/targets.ts"',
+          'import {} from "../src/empty.ts"',
         ].join("\n"),
       ],
       ["src/options.ts", ""],
@@ -139,8 +141,13 @@ describe("testedPaths", () => {
       ["src/rows.ts", ""],
       ["src/lines.ts", ""],
       ["src/links.ts", ""],
+      ["src/empty.ts", ""],
     ])
-    assert.deepStrictEqual([...testedPaths(texts, ["test/links.test.ts"])].toSorted(), ["src/lines.ts", "src/links.ts"])
+    assert.deepStrictEqual([...testedPaths(texts, ["test/links.test.ts"])].toSorted(), [
+      "src/empty.ts",
+      "src/lines.ts",
+      "src/links.ts",
+    ])
   })
 
   it("follows a test's helpers, and stops at files it doesn't have", () => {
@@ -152,6 +159,31 @@ describe("testedPaths", () => {
     assert.deepStrictEqual([...testedPaths(texts, ["test/phones.test.ts"])].toSorted(), [
       "src/phones.ts",
       "test/in-workspace.ts",
+    ])
+  })
+
+  it("resolves nested and current-folder paths without mistaking a file outside the package for its own", () => {
+    const texts = new Map([
+      [
+        "test/nested/links.test.ts",
+        [
+          'import "../../src/./links.ts"',
+          'import "../../../src/outside.ts"',
+          'import "../../../../src/outside.ts"',
+          'import "../../../other/../src/outside.ts"',
+          'import "./helper.ts"',
+        ].join("\n"),
+      ],
+      ["test/nested/helper.ts", 'export * from "../../src/links.ts"'],
+      ["src/links.ts", 'import "./nested/../target.ts"'],
+      ["src/target.ts", ""],
+      ["src/outside.ts", 'import "./wrong.ts"'],
+      ["src/wrong.ts", ""],
+    ])
+    assert.deepStrictEqual([...testedPaths(texts, ["test/nested/links.test.ts"])].toSorted(), [
+      "src/links.ts",
+      "src/target.ts",
+      "test/nested/helper.ts",
     ])
   })
 })
