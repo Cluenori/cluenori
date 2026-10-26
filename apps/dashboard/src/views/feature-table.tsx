@@ -1,6 +1,9 @@
+import type { FeatureKey } from "@cluenori/foundation"
 import type { FeatureUse } from "@cluenori/signals"
 
 import { bytes, count, share } from "@/lib/format"
+import type { Route } from "@/router"
+import { Link } from "@/router"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/views/ui/table"
 
 /** What a feature row is called: its key, or "(no feature)" for what the app marked with none. */
@@ -9,18 +12,22 @@ export const featureName = (row: FeatureUse) => row.feature ?? "(no feature)"
 /**
  * Features by use: each one's key, the people who did anything in it with a bar of their share of
  * the period's people, its events and screens, and the app's peak memory there (p95) where it was
- * measured. The row without a key is what the app marked with no feature.
+ * measured. The row without a key is what the app marked with no feature; each other row opens the
+ * feature's own page when `linkOf` says where.
  */
 export function FeatureTable({
   rows,
   people,
   color,
+  linkOf,
 }: {
   readonly rows: ReadonlyArray<FeatureUse>
   /** Everyone active in the period, which each feature's people are a share of; absent when unknown. */
   readonly people: number | undefined
   /** The color of the component the features are of, or of the apps. */
   readonly color: string
+  /** The page of a feature, which its name opens. */
+  readonly linkOf?: (feature: FeatureKey) => Route
 }) {
   const most = Math.max(1, ...rows.map((row) => row.people))
   return (
@@ -47,9 +54,15 @@ export function FeatureTable({
               scope="row"
               className="h-auto py-2.5 pr-4 pl-5 text-[15px] font-normal whitespace-normal text-foreground"
             >
-              <span className={row.feature === undefined ? "text-muted-foreground" : "font-mono"}>
-                {featureName(row)}
-              </span>
+              {row.feature !== undefined && linkOf !== undefined ? (
+                <Link to={linkOf(row.feature)} className="font-mono underline-offset-4 hover:underline">
+                  {row.feature}
+                </Link>
+              ) : (
+                <span className={row.feature === undefined ? "text-muted-foreground" : "font-mono"}>
+                  {featureName(row)}
+                </span>
+              )}
               {/* On a phone the counts the columns hide follow the name. */}
               <span className="block font-mono text-[13px] text-muted-foreground sm:hidden">
                 {count(row.events)} events, {count(row.screens)} screens

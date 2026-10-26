@@ -3,7 +3,9 @@ import {
   ComponentKey,
   EnvelopeName,
   EnvironmentKey,
+  FeatureKey,
   Instant,
+  PersonId,
   ProjectKey,
   ReleaseVersion,
   TraceId,
@@ -100,7 +102,16 @@ export type Route =
       readonly release: ReleaseVersion
       readonly environment?: EnvironmentKey
     }
-  | { readonly page: "person"; readonly project: ProjectKey; readonly user: AppUserId }
+  | {
+      readonly page: "feature"
+      readonly project: ProjectKey
+      readonly feature: FeatureKey
+      readonly environment?: EnvironmentKey
+    }
+  | ({ readonly page: "person"; readonly project: ProjectKey } & (
+      | { readonly person: PersonId }
+      | { readonly user: AppUserId }
+    ))
   | {
       readonly page: "trace"
       readonly project: ProjectKey
@@ -219,8 +230,12 @@ export const hrefOf = (route: Route): string => {
         query,
       )
     }
+    case "feature":
+      return withQuery(`${projectPath(route.project)}/analytics/features/${route.feature}`, route)
     case "person":
-      return `${projectPath(route.project)}/analytics/people?user=${encodeURIComponent(route.user)}`
+      return "person" in route
+        ? `${projectPath(route.project)}/analytics/people/${route.person}`
+        : `${projectPath(route.project)}/analytics/people?user=${encodeURIComponent(route.user)}`
     case "trace":
       return withQuery(`${projectPath(route.project)}/traces/${route.trace}`, route)
     case "feeds":
@@ -315,10 +330,11 @@ export const routeOf = (path: string, search: string): Route => {
   const isRelease = page === "releases" && rest.length === 1
   const isAppRelease = page === "analytics" && id === "releases" && rest.length === 2
   const isOccurrence = page === "errors" && rest.length === 1
+  const isAnalyticsItem = page === "analytics" && (id === "features" || id === "people") && rest.length === 1
   if (
     Option.isNone(project) ||
     mistyped ||
-    (rest.length > 0 && !isOperation && !isRelease && !isAppRelease && !isOccurrence)
+    (rest.length > 0 && !isOperation && !isRelease && !isAppRelease && !isOccurrence && !isAnalyticsItem)
   ) {
     return { page: "missing" }
   }
@@ -438,6 +454,7 @@ export const doorOf = (route: Route): Door | undefined => {
     case "appReleases":
     case "appRelease":
     case "features":
+    case "feature":
     case "person":
       return "product"
     case "releases":
@@ -474,6 +491,7 @@ const pageNames: Readonly<Record<Exclude<Route["page"], "now" | "project" | "mis
   appReleases: "App health",
   appRelease: "Release",
   features: "Features",
+  feature: "Feature",
   person: "Person",
   releases: "Releases",
   release: "Release",
@@ -526,6 +544,10 @@ const betweenOf = (route: Route): ReadonlyArray<TrailStep> => {
     const { release: _, ...shown } = route
     return [{ label: pageNames.appReleases, to: { ...shown, page: "appReleases" } }]
   }
+  if (route.page === "feature") {
+    const { feature: _, ...shown } = route
+    return [{ label: pageNames.features, to: { ...shown, page: "features" } }]
+  }
   return []
 }
 
@@ -554,8 +576,9 @@ export const trailOf = (route: Route, projectName: (project: ProjectKey) => stri
   return [now, project, ...doorStep, ...betweenOf(route), here]
 }
 
-// The analytics pages: the summary, its releases' app health and one release's, every feature, and
-// one person, by the app's user ID. They show a component and an environment, never a release.
+// The analytics pages: the summary, its releases' app health and one release's, every feature and
+// one, and one person, by their ID or the app's user ID. They show a component and an environment,
+// never a release; a feature, an item, only its environment, and a person neither.
 const analyticsRouteOf = (
   project: ProjectKey,
   id: string | undefined,
@@ -570,9 +593,24 @@ const analyticsRouteOf = (
   if (id === "features" && rest.length === 0) {
     return { page: "features", project, ...shown }
   }
+  if (id === "features") {
+    const feature = keyOf(FeatureKey, rest[0])
+    return Option.isSome(feature)
+      ? {
+          page: "feature",
+          project,
+          feature: feature.value,
+          ...(shown.environment === undefined ? {} : { environment: shown.environment }),
+        }
+      : { page: "missing" }
+  }
   if (id === "people" && rest.length === 0) {
     const user = keyOf(AppUserId, query.get("user") ?? undefined)
     return Option.isSome(user) ? { page: "person", project, user: user.value } : { page: "missing" }
+  }
+  if (id === "people") {
+    const person = keyOf(PersonId, rest[0])
+    return Option.isSome(person) ? { page: "person", project, person: person.value } : { page: "missing" }
   }
   if (id !== "releases") {
     return { page: "missing" }

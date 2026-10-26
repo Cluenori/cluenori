@@ -21,8 +21,10 @@ import { defineConfig } from "vite"
 // And to 255 KB when an error's occurrence became a page of its own (253.9 KB to 254.3 KB): its
 // endpoint in the typed client, its route and its atom; the page loads after start. And to 256 KB
 // with Feeds (254.3 KB to 255.7 KB): five endpoints in the typed client, their routes and atoms, the
-// sidebar's entry and Now's panel; the pages, and the rows Now shows, load after start.
-const firstLoadBudget = { scriptKb: 256, styleKb: 36 }
+// sidebar's entry and Now's panel; the pages, and the rows Now shows, load after start. And to 257 KB
+// with a feature's story (255.7 KB to 256.5 KB): its endpoint and Schemas in the typed client, its
+// route and its atom; its page, and a person's, load after start.
+const firstLoadBudget = { scriptKb: 257, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

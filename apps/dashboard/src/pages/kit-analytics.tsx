@@ -4,7 +4,7 @@ import { AsyncResult } from "effect/reactivity"
 import { HeartPulseIcon, UserSearchIcon } from "lucide-react"
 import { useState } from "react"
 
-import { cohortRowsOf, healthRowsOf, personDaysOf } from "@/app-facts"
+import { cohortRowsOf, healthRowsOf, peopleNowOf, personDaysOf } from "@/app-facts"
 import { KitCard, KitColumn, KitGroup, KitSample } from "@/pages/kit-section"
 import {
   sampleCohorts,
@@ -19,13 +19,14 @@ import {
   sampleUsage,
   sampleUsageSinceRecently,
 } from "@/sample/sample-apps"
-import { AppsStart, ReleasesInUse, UsagePanel } from "@/views/app-usage"
+import { AppsStart, ReleasesInUse, UsageTotals } from "@/views/app-usage"
 import { BarRows } from "@/views/bar-rows"
 import { FeatureTable } from "@/views/feature-table"
 import { HealthList } from "@/views/health-list"
 import { HealthTable } from "@/views/health-table"
 import { Loaded } from "@/views/loaded"
 import { Panel } from "@/views/panel"
+import { PeopleCounters } from "@/views/people-counters"
 import { InstallationList, Timeline } from "@/views/person-views"
 import { RetentionGrid } from "@/views/retention-grid"
 import { SdkKeys } from "@/views/sdk-keys"
@@ -96,22 +97,19 @@ export function KitAnalytics() {
         </KitCard>
         <KitCard
           title="People"
-          description="DAU, WAU, MAU and sessions by UTC day. Partial: an app that first sent 12 days ago, its earlier days and the weeks and months reaching them unknown, hatched."
-          files={["app-usage.tsx", "bar-rows.tsx", "app-facts.ts"]}
+          description="Daily, weekly and monthly people on the latest whole UTC day against a week before, each with its days, and the period's totals. Partial: an app that first sent 12 days ago, its month unknown, its earlier days hatched."
+          files={["people-counters.tsx", "app-usage.tsx", "app-facts.ts"]}
         >
           <KitSample label="Full">
-            <div className="w-full">
-              <UsagePanel usage={sampleUsage} period={samplePeriod} color={purple} periodText="the last 30 days" />
+            <div className="flex w-full flex-col gap-4">
+              <PeopleCounters now={peopleNowOf(sampleUsage, samplePeriod)} color={purple} />
+              <UsageTotals usage={sampleUsage} period={samplePeriod} periodText="the last 30 days" />
             </div>
           </KitSample>
           <KitSample label="Partial">
-            <div className="w-full">
-              <UsagePanel
-                usage={sampleUsageSinceRecently}
-                period={samplePeriod}
-                color={purple}
-                periodText="the last 30 days"
-              />
+            <div className="flex w-full flex-col gap-4">
+              <PeopleCounters now={peopleNowOf(sampleUsageSinceRecently, samplePeriod)} color={purple} />
+              <UsageTotals usage={sampleUsageSinceRecently} period={samplePeriod} periodText="the last 30 days" />
             </div>
           </KitSample>
         </KitCard>

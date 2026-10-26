@@ -12,7 +12,9 @@ const failureWords: Readonly<Record<string, string>> = {
   ComponentNotFound: "The project has no such component any more; reload the page to see its components.",
   ArchiveUnavailable: "The archive didn't answer. Try again in a moment.",
   PersonNotFound:
-    "No person has this user ID: the apps never sent it. Check it is the ID the app gives Cluenori.identify.",
+    "No person has this ID or user ID: the apps never sent it. Check it is the ID the app gives Cluenori.identify.",
+  FeatureNotFound:
+    "Nothing kept names this feature: no app marked it in 15 months, and no service named it in cluenori.feature.",
   SdkKeyNotFound: "The component has no such SDK key any more; reload the page to see its keys.",
   FeedNotFound: "There is no such feed here: it may have been deleted, or it lists no project you see.",
   NotAllowed: "Only an owner can do this.",

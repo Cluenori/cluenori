@@ -9,7 +9,7 @@ import { AsyncResult } from "effect/reactivity"
 import { Grid3x3Icon, HeartPulseIcon, KeyRoundIcon, ShapesIcon, UserSearchIcon } from "lucide-react"
 import { useId, useState } from "react"
 
-import { appColorOf, appPeriodWords, cohortRowsOf, latestSentOf } from "@/app-facts"
+import { appColorOf, appPeriodWords, cohortRowsOf, latestSentOf, peopleNowOf } from "@/app-facts"
 import { useAppEnvironments } from "@/hooks/use-app-environments"
 import { count } from "@/lib/format"
 import type { AppScope } from "@/project-data"
@@ -31,11 +31,12 @@ import type { Environments } from "@/project-facts"
 import { colorOf, isShownIn } from "@/project-facts"
 import { Link, navigate } from "@/router"
 import { AnalyticsSwitches } from "@/views/analytics-switches"
-import { AppsStart, ReleasesInUse, UsagePanel } from "@/views/app-usage"
+import { AppsStart, ReleasesInUse, UsageTotals } from "@/views/app-usage"
 import { FeatureTable } from "@/views/feature-table"
 import { HealthList } from "@/views/health-list"
 import { failureText, Loaded } from "@/views/loaded"
 import { Panel } from "@/views/panel"
+import { PeopleCounters } from "@/views/people-counters"
 import { ProjectHeader } from "@/views/project-header"
 import { RetentionGrid } from "@/views/retention-grid"
 import { SdkKeys } from "@/views/sdk-keys"
@@ -55,7 +56,7 @@ import { VersionPolicyDialog, VersionPolicySummary } from "@/views/version-polic
 
 // How many releases and features the summary shows; their pages list every one.
 const summaryReleases = 5
-const summaryFeatures = 6
+const summaryFeatures = 8
 
 const page = "mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6"
 
@@ -72,9 +73,10 @@ const policyProblemOf = (cause: Cause.Cause<unknown>) => {
 
 /**
  * The analytics page of a project, or of one of its components: what to do first when no app sends
- * yet; else how its apps are used over the period, by day and by release; weekly retention; its
- * releases' app health against the release before each; its features; finding one person by the
- * app's user ID; and each component's SDK keys and version policy.
+ * yet; else, first, its daily, weekly and monthly people as big counters, and the period's totals;
+ * then its features, each opening its story; weekly retention and the releases in use; its
+ * releases' app health against the release before each; finding one person by the app's user ID;
+ * and each component's SDK keys and version policy.
  */
 export function AnalyticsPage({
   project,
@@ -146,10 +148,12 @@ function Analytics({
           }
           return (
             <div className="flex flex-col gap-4">
-              <UsagePanel usage={answer} period={period} color={color} periodText={periodText} />
-              <div className="grid gap-4 xl:grid-cols-2">
-                <ReleasesInUse usage={answer} colorOfComponent={(of) => colorOf(of, keys)} />
+              <PeopleCounters now={peopleNowOf(answer, period)} color={color} />
+              <UsageTotals usage={answer} period={period} periodText={periodText} />
+              <FeaturesPanel scope={scope} people={answer.people} color={color} shown={shown} />
+              <div className="grid items-start gap-4 xl:grid-cols-2">
                 <RetentionPanel scope={scope} color={color} />
+                <ReleasesInUse usage={answer} colorOfComponent={(of) => colorOf(of, keys)} />
               </div>
               <Panel
                 icon={HeartPulseIcon}
@@ -182,10 +186,7 @@ function Analytics({
                   </p>
                 )}
               </Panel>
-              <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-                <FeaturesPanel scope={scope} people={answer.people} color={color} shown={shown} />
-                <FindPerson project={project} />
-              </div>
+              <FindPerson project={project} />
             </div>
           )
         }}
@@ -233,7 +234,7 @@ function FeaturesPanel({
     <Panel
       icon={ShapesIcon}
       title="Features"
-      subtitle="By the people who used each, the most first"
+      subtitle="By the people who used each in the period, the most first; each opens its story"
       action={
         <Link
           to={{ page: "features", project: scope.project, ...shown }}
@@ -249,7 +250,17 @@ function FeaturesPanel({
             <p className="px-5 py-6 text-sm text-muted-foreground">No feature was used in this period.</p>
           ) : (
             <>
-              <FeatureTable rows={table.features.slice(0, summaryFeatures)} people={people} color={color} />
+              <FeatureTable
+                rows={table.features.slice(0, summaryFeatures)}
+                people={people}
+                color={color}
+                linkOf={(feature) => ({
+                  page: "feature",
+                  project: scope.project,
+                  feature,
+                  ...(scope.environment === undefined ? {} : { environment: scope.environment }),
+                })}
+              />
               {table.features.length > summaryFeatures && (
                 <p className="border-t px-5 py-3 text-sm text-muted-foreground">
                   {count(summaryFeatures)} of {count(table.features.length)}.

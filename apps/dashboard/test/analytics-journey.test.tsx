@@ -7,7 +7,7 @@ import { App } from "@/app"
 
 import { expectAccessible } from "./accessible.ts"
 import { answerApi, apiCalls } from "./fake-api.ts"
-import { knownUser } from "./notes-apps.ts"
+import { knownPerson, knownUser } from "./notes-apps.ts"
 import { notesApi } from "./notes-project.ts"
 
 describe("analytics journey", () => {
@@ -17,12 +17,11 @@ describe("analytics journey", () => {
       window.history.pushState(null, "", "/projects/notes/analytics")
       const screen = yield* Effect.promise(() => render(<App />))
 
-      // The apps sent from production and beta; the page shows production, the project's.
-      yield* Effect.promise(() =>
-        expect
-          .element(screen.getByText("Active each UTC day, and in the 7 and 30 days ending it", { exact: false }))
-          .toBeVisible(),
-      )
+      // The apps sent from production and beta; the page shows production, the project's. It leads
+      // with the people of the latest whole day and week.
+      const people = screen.getByRole("region", { name: "People" })
+      yield* Effect.promise(() => expect.element(people.getByText("55", { exact: true })).toBeVisible())
+      yield* Effect.promise(() => expect.element(people.getByText("180", { exact: true })).toBeVisible())
       const environment = screen.getByRole("group", { name: "Environment" })
       yield* Effect.promise(() =>
         expect.element(environment.getByRole("button", { name: "production" })).toHaveAttribute("aria-pressed", "true"),
@@ -34,10 +33,8 @@ describe("analytics journey", () => {
       // Before MetricKit reported of a release, its crashes are unknown, not zero.
       yield* Effect.promise(() => expect.element(health.getByText(/unknown$/)).toBeVisible())
       yield* Effect.promise(() => expect.element(health.getByText("0.4.0+25")).not.toBeInTheDocument())
-      // The month reaching before the app first sent isn't counted.
-      yield* Effect.promise(() =>
-        expect.element(screen.getByRole("region", { name: "People" }).getByText("unknown")).toBeVisible(),
-      )
+      // The month reaching before the app first sent isn't counted: unknown, never zero.
+      yield* Effect.promise(() => expect.element(people.getByText("Not 30 days counted yet")).toBeVisible())
       yield* expectAccessible()
 
       yield* Effect.promise(() => health.getByRole("link", { name: /0\.3\.0\+20/ }).click())
@@ -77,6 +74,15 @@ describe("analytics journey", () => {
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: knownUser })).toBeVisible(),
       )
+      // Found by the app's user ID, the page moves to the person's own address, which keeps them.
+      yield* Effect.promise(() =>
+        expect.poll(() => window.location.pathname).toBe(`/projects/notes/analytics/people/${knownPerson}`),
+      )
+      assert.strictEqual(window.location.search, "")
+      // Six days active in 30, the one a session only crossed into too; ten sessions started.
+      const active = screen.getByRole("region", { name: "How active they are" })
+      yield* Effect.promise(() => expect.element(active.getByText("6", { exact: true })).toBeVisible())
+      yield* Effect.promise(() => expect.element(active.getByText("10", { exact: true })).toBeVisible())
       yield* Effect.promise(() => expect.element(screen.getByText("note.shared")).toBeVisible())
       yield* Effect.promise(() => expect.element(screen.getByText("Launched cold")).toBeVisible())
       yield* Effect.promise(() => expect.element(screen.getByText("iPhone17,2, iOS 27.1")).toBeVisible())
@@ -88,8 +94,68 @@ describe("analytics journey", () => {
         expect
           .element(screen.getByRole("alert"))
           .toHaveTextContent(
-            "No person has this user ID: the apps never sent it. Check it is the ID the app gives Cluenori.identify.",
+            "No person has this ID or user ID: the apps never sent it. Check it is the ID the app gives Cluenori.identify.",
           ),
+      )
+      yield* expectAccessible()
+    }),
+  )
+
+  it.effect("opens a feature's story from the analytics page, and from a person who used it", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi())
+      window.history.pushState(null, "", "/projects/notes/analytics")
+      const screen = yield* Effect.promise(() => render(<App />))
+
+      yield* Effect.promise(() => screen.getByRole("link", { name: "notes.share" }).first().click())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("heading", { level: 1, name: "notes.share" })).toBeVisible(),
+      )
+      // Its use and what its services did for it, each day, with its errors.
+      yield* Effect.promise(() => expect.element(screen.getByRole("region", { name: "Each day" })).toBeVisible())
+      const errors = screen.getByRole("region", { name: "Errors" })
+      yield* Effect.promise(() => expect.element(errors.getByText("TimeoutException")).toBeVisible())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("button", { name: "Copy for an agent" })).toBeVisible(),
+      )
+      yield* expectAccessible()
+
+      // From one who used it to their page, and back to the story of another feature they used.
+      yield* Effect.promise(() =>
+        screen
+          .getByRole("region", { name: "Who uses it" })
+          .getByRole("link", { name: /user-1842/ })
+          .click(),
+      )
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("heading", { level: 1, name: knownUser })).toBeVisible(),
+      )
+      yield* Effect.promise(() =>
+        screen
+          .getByRole("region", { name: "Features they use" })
+          .getByRole("link", { name: /notes\.edit/ })
+          .click(),
+      )
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("heading", { level: 1, name: "notes.edit" })).toBeVisible(),
+      )
+      // Only the app names it: the page says why its services' signals aren't there.
+      yield* Effect.promise(() => expect.element(screen.getByText(/No service named this feature/)).toBeVisible())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("region", { name: "Errors" })).not.toBeInTheDocument(),
+      )
+      yield* expectAccessible()
+    }),
+  )
+
+  it.effect("says a feature nothing names isn't there", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi())
+      window.history.pushState(null, "", "/projects/notes/analytics/features/notes.nothing")
+      const screen = yield* Effect.promise(() => render(<App />))
+
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("alert").getByText(/^Nothing kept names this feature/)).toBeVisible(),
       )
       yield* expectAccessible()
     }),

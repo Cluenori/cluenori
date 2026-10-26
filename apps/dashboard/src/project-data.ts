@@ -8,7 +8,9 @@ import type {
   ComponentKey,
   EnvelopeName,
   EnvironmentKey,
+  FeatureKey,
   MemberId,
+  PersonId,
   ProjectKey,
   ReleaseVersion,
   TraceId,
@@ -889,23 +891,43 @@ export const featureUseAtom = Atom.family((scope: AppScope) =>
 )
 
 /**
- * The person the app's own user ID is linked to: their installations, active days and timeline.
- * Fails with `PersonNotFound` when the apps never sent that user ID.
+ * One person, by their ID or the app's own user ID linked to them: their installations, active days,
+ * features and timeline. Fails with `PersonNotFound` when the apps never sent that person or user ID.
  */
-export const personAtom = Atom.family((key: { readonly project: ProjectKey; readonly user: AppUserId }) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const asOf = yield* DateTime.now
-        const person = yield* client.analytics.personByUser({
-          params: { project: key.project },
-          query: { user: key.user },
-        })
-        return { person, asOf }
-      }),
+export const personAtom = Atom.family(
+  (key: { readonly project: ProjectKey } & ({ readonly person: PersonId } | { readonly user: AppUserId })) =>
+    kept(
+      CluenoriClient.runtime.atom(
+        Effect.gen(function* () {
+          const client = yield* CluenoriClient
+          const asOf = yield* DateTime.now
+          const person =
+            "person" in key
+              ? yield* client.analytics.person({ params: { project: key.project, person: key.person } })
+              : yield* client.analytics.personByUser({ params: { project: key.project }, query: { user: key.user } })
+          return { person, asOf }
+        }),
+      ),
     ),
-  ),
+)
+
+/**
+ * One feature's story over everything kept of it, with no period, in one environment or every one.
+ * Fails with `FeatureNotFound` when nothing kept names it.
+ */
+export const featureAtom = Atom.family(
+  (key: { readonly project: ProjectKey; readonly feature: FeatureKey; readonly environment?: EnvironmentKey }) =>
+    kept(
+      CluenoriClient.runtime.atom(
+        Effect.gen(function* () {
+          const client = yield* CluenoriClient
+          return yield* client.analytics.feature({
+            params: { project: key.project, feature: key.feature },
+            query: key.environment === undefined ? {} : { environment: key.environment },
+          })
+        }),
+      ),
+    ),
 )
 
 /** Each of the project's components' version policies; a component without one isn't listed. */

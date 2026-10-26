@@ -1,4 +1,4 @@
-import { AppHealthList } from "@cluenori/analytics"
+import { AppHealthList, FeatureNotFound, FeatureStory } from "@cluenori/analytics"
 import type { ReleaseHealth } from "@cluenori/analytics"
 import {
   calendarDayOf,
@@ -27,6 +27,7 @@ import {
   AppSignalId,
   AppUsage,
   AppUserId,
+  ErrorGroupId,
   FeatureUseTable,
   PersonNotFound,
 } from "@cluenori/signals"
@@ -49,7 +50,11 @@ const beta = EnvironmentKey.make("beta")
 
 /** The user ID of the one person the apps sent, and their person. */
 export const knownUser = AppUserId.make("user-1842")
-const person = PersonId.make("019a0fd1-2c3e-7a10-8b2d-4e5f60718200")
+export const knownPerson = PersonId.make("019a0fd1-2c3e-7a10-8b2d-4e5f60718200")
+const person = knownPerson
+const anonymous = PersonId.make("019a0fd1-2c3e-7a10-8b2d-4e5f60718201")
+const share = FeatureKey.make("notes.share")
+const edit = FeatureKey.make("notes.edit")
 const installation = InstallationId.make("019a0fd1-2c3e-7a10-8b2d-4e5f60718293")
 const session = SessionId.make("019a1001-0000-7000-8000-000000000001")
 
@@ -210,11 +215,17 @@ const personOf = (to: number): AppPerson => ({
       lastSeen: at(to - 20 * minute),
     },
   ],
-  days: [0, 2, 5, 9, 15].map((ago) => ({
+  // Yesterday only a session that crossed midnight reached: active, with no session started.
+  days: [0, 1, 2, 5, 9, 15].map((ago) => ({
     day: calendarDayOf(at(to - ago * day)),
-    sessions: 2,
+    sessions: ago === 1 ? 0 : 2,
     foregroundMs: 9 * minute,
   })),
+  features: [
+    { feature: share, days: 3, events: 4, screens: 2, lastDay: calendarDayOf(at(to)) },
+    { days: 5, events: 0, screens: 9, lastDay: calendarDayOf(at(to)) },
+    { feature: edit, days: 2, events: 6, screens: 3, lastDay: calendarDayOf(at(to - 5 * day)) },
+  ],
   timeline: [
     {
       component: ios,
@@ -249,6 +260,101 @@ const personOf = (to: number): AppPerson => ({
     },
   ],
 })
+
+/**
+ * A feature's story, as Analytics tells it of Notes: notes.share, which the app marks and the API
+ * names, with warnings, errors and operations, in production; notes.edit, which only the app marks;
+ * and nothing else.
+ */
+// The days ago notes.share's calls failed, and how many.
+const failedDaysAgo = new Map([
+  [5, 3],
+  [1, 2],
+])
+
+const storyOf = (feature: string, now: number, environment: string | undefined): FeatureStory | undefined => {
+  const today = Math.floor(now / day)
+  const dayOf = (ago: number) => calendarDayOf(at((today - ago) * day))
+  const used = (ago: number) => ({
+    day: dayOf(ago),
+    people: 3 + ((ago * 7) % 5),
+    events: 6 + ((ago * 3) % 7),
+    screens: 4,
+  })
+  const kept = { from: at(now - 90 * day), to: at(now) }
+  const use = {
+    days: Array.from({ length: 18 }, (_, index) => used(17 - index)),
+    people: 61,
+    latestPeople: [
+      { person, users: [knownUser], days: 3, events: 4, lastDay: dayOf(0) },
+      { person: anonymous, users: [], days: 1, events: 2, lastDay: dayOf(1) },
+    ],
+    releases: [
+      {
+        component: ios,
+        environment: production,
+        release: ReleaseVersion.make("0.3.0+20"),
+        people: 50,
+        firstDay: dayOf(6),
+        lastDay: dayOf(0),
+      },
+      {
+        component: ios,
+        environment: production,
+        release: ReleaseVersion.make("0.2.0+10"),
+        people: 14,
+        firstDay: dayOf(17),
+        lastDay: dayOf(7),
+      },
+    ],
+  }
+  if (feature === "notes.edit") {
+    return {
+      feature: edit,
+      asOf: at(now),
+      use: { ...use, latestPeople: use.latestPeople.slice(0, 1), releases: use.releases.slice(0, 1) },
+      logs: { covered: new Period(kept), days: [], errors: [] },
+      operations: [],
+    }
+  }
+  if (feature !== "notes.share" || (environment !== undefined && environment !== "production")) {
+    return undefined
+  }
+  const error = ErrorGroupId.make("4f1c9a2e7b3d5068")
+  return {
+    feature: share,
+    asOf: at(now),
+    use,
+    logs: {
+      covered: new Period(kept),
+      days: [
+        { day: dayOf(6), warnings: 2, errors: 0 },
+        { day: dayOf(5), warnings: 1, errors: 3 },
+        { day: dayOf(1), warnings: 0, errors: 2 },
+      ],
+      errors: [
+        {
+          id: error,
+          kind: "exception",
+          title: "TimeoutException: Notification service did not answer",
+          culprit: "Notes.Api.Sharing.ShareService.Notify",
+          occurrences: 5,
+          firstSeen: at(now - 5 * day),
+          lastSeen: at(now - day),
+          lastComponent: ComponentKey.make("notes-api"),
+          lastEnvironment: production,
+        },
+      ],
+    },
+    operations: [6, 5, 4, 3, 2, 1, 0].map((ago) => ({
+      day: dayOf(ago),
+      component: ComponentKey.make("notes-api"),
+      operation: EnvelopeName.make("POST /api/notes/{id}/share"),
+      count: 40 + ago * 3,
+      errors: failedDaysAgo.get(ago) ?? 0,
+    })),
+  }
+}
 
 /**
  * The public API of `api`, with Notes's app answering Analytics' questions, its SDK keys and its
@@ -310,6 +416,18 @@ export const withApps = (api: AnswerApi): AnswerApi => {
               ]
             : [],
         })
+      }
+      if (call.method === "GET" && area === "features" && id !== undefined) {
+        const environment = call.query.get("environment") ?? undefined
+        const story = notes ? storyOf(id, now, environment) : undefined
+        return story === undefined
+          ? yield* reply(FeatureNotFound, new FeatureNotFound({ feature: FeatureKey.make(id) }), 404)
+          : yield* reply(FeatureStory, story)
+      }
+      if (call.method === "GET" && area === "people" && id !== undefined) {
+        return notes && id === person
+          ? yield* reply(AppPerson, personOf(now))
+          : yield* reply(PersonNotFound, new PersonNotFound(), 404)
       }
       if (call.method === "GET" && area === "people" && id === undefined) {
         const user = call.query.get("user")

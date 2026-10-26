@@ -73,6 +73,8 @@ const appReleasePage = import("@/pages/app-release-page")
 const AppReleasePage = lazy(() => appReleasePage.then((module) => ({ default: module.AppReleasePage })))
 const featuresPage = import("@/pages/features-page")
 const FeaturesPage = lazy(() => featuresPage.then((module) => ({ default: module.FeaturesPage })))
+const featurePage = import("@/pages/feature-page")
+const FeaturePage = lazy(() => featurePage.then((module) => ({ default: module.FeaturePage })))
 const personPage = import("@/pages/person-page")
 const PersonPage = lazy(() => personPage.then((module) => ({ default: module.PersonPage })))
 // Feeds, the deployment's live lists of chosen events, load after start too.
@@ -290,10 +292,25 @@ function PageOf({ route, projects }: { readonly route: Route; readonly projects:
           />
         </Suspense>
       )
+    case "feature":
+      return (
+        <Suspense fallback={opening}>
+          <FeaturePage
+            key={route.feature}
+            project={route.project}
+            feature={route.feature}
+            {...(route.environment === undefined ? {} : { named: route.environment })}
+          />
+        </Suspense>
+      )
     case "person":
       return (
         <Suspense fallback={opening}>
-          <PersonPage key={route.user} project={route.project} user={route.user} />
+          {"person" in route ? (
+            <PersonPage key={route.person} project={route.project} person={route.person} />
+          ) : (
+            <PersonPage key={route.user} project={route.project} user={route.user} />
+          )}
         </Suspense>
       )
     case "trace":

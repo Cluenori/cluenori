@@ -1,4 +1,13 @@
-import { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import {
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  FeatureKey,
+  PersonId,
+  ProjectKey,
+  ReleaseVersion,
+} from "@cluenori/foundation"
+import { AppUserId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 
 import type { Route } from "@/router"
@@ -51,6 +60,31 @@ describe("routeOf", () => {
     }
     assert.strictEqual(hrefOf({ page: "errors", project, release }), "/projects/folio/errors?release=2.4.0%2B312")
     assert.deepStrictEqual(routeOf("/projects/folio/logs", "?release=2.4.0%20beta"), { page: "missing" })
+  })
+
+  it("reads a feature and a person back as items, a person by their ID or the app's user ID", () => {
+    const project = ProjectKey.make("folio")
+    const feature: Route = {
+      page: "feature",
+      project,
+      feature: FeatureKey.make("folio.share"),
+      environment: EnvironmentKey.make("production"),
+    }
+    assert.deepStrictEqual(readBack(feature), feature)
+    const { environment: _, ...everywhere } = feature
+    assert.deepStrictEqual(readBack(everywhere), everywhere)
+    const person: Route = { page: "person", project, person: PersonId.make("019a0fd1-2c3e-7a10-8b2d-4e5f60718200") }
+    assert.strictEqual(hrefOf(person), "/projects/folio/analytics/people/019a0fd1-2c3e-7a10-8b2d-4e5f60718200")
+    assert.deepStrictEqual(readBack(person), person)
+    const user: Route = { page: "person", project, user: AppUserId.make("user-1842") }
+    assert.deepStrictEqual(readBack(user), user)
+    // Neither is a guess: an address that isn't a feature's key or a person's ID is missing.
+    assert.deepStrictEqual(routeOf("/projects/folio/analytics/features/Folio Share", ""), { page: "missing" })
+    assert.deepStrictEqual(routeOf("/projects/folio/analytics/people/user-1842", ""), { page: "missing" })
+    assert.deepStrictEqual(
+      trailOf(feature, () => "Folio").map((step) => step.label),
+      ["Now", "Folio", "Product", "Features", "Feature"],
+    )
   })
 
   it("reads the deployment's pages, which no project's address names", () => {

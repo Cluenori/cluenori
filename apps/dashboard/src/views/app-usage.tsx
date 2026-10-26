@@ -1,14 +1,12 @@
 import type { AppUsage } from "@cluenori/signals"
 import { DateTime } from "effect"
-import { RocketIcon, TagIcon, UsersRoundIcon } from "lucide-react"
+import { RocketIcon, TagIcon } from "lucide-react"
 
-import { dayTicksOf, daySpanText, latestOf, usageColumnsOf } from "@/app-facts"
 import { calendarDayText, count, ratio, share } from "@/lib/format"
-import { BarRows } from "@/views/bar-rows"
-import { Panel, PanelStats } from "@/views/panel"
+import { Panel } from "@/views/panel"
 
 // How a project's apps are used, as the analytics page shows it: what to do when none sends yet,
-// people and sessions by day, and the releases in use.
+// the period's totals, and the releases in use.
 
 /**
  * No app sent anything over the period: what to do, step by step, with the SDK's start for this
@@ -50,65 +48,51 @@ export function AppsStart({
   )
 }
 
-/** People and sessions by UTC day, and the period's totals. */
-export function UsagePanel({
+/**
+ * The period's totals under the people counters: everyone active in it, their sessions, sessions per
+ * person and per person a day, and installations; and, when the apps first sent within the period,
+ * since when it is counted.
+ */
+export function UsageTotals({
   usage,
   period,
-  color,
   periodText,
 }: {
   readonly usage: AppUsage
   readonly period: { readonly from: DateTime.Utc; readonly to: DateTime.Utc }
-  readonly color: string
   readonly periodText: string
 }) {
-  const daily = usageColumnsOf(usage, period, (day) => day.people)
-  const weekly = usageColumnsOf(usage, period, (day) => day.weekPeople)
-  const monthly = usageColumnsOf(usage, period, (day) => day.monthPeople)
-  const sessions = usageColumnsOf(usage, period, (day) => day.sessions)
-  const noteOf = (columns: typeof daily) => {
-    const latest = latestOf(columns)
-    return latest === undefined ? "unknown" : count(latest)
-  }
   const since =
     usage.covered !== undefined && DateTime.isGreaterThan(usage.covered.from, period.from)
-      ? `, since ${calendarDayText(DateTime.formatIso(usage.covered.from).slice(0, 10))}, when the apps first sent`
-      : ""
+      ? calendarDayText(DateTime.formatIso(usage.covered.from).slice(0, 10))
+      : undefined
+  const stats = [
+    { label: `People in ${periodText}`, value: count(usage.people) },
+    { label: "Sessions", value: count(usage.sessions) },
+    ...(usage.sessionsPerPerson === undefined
+      ? []
+      : [{ label: "Sessions per person", value: ratio(usage.sessionsPerPerson) }]),
+    ...(usage.sessionsPerPersonDay === undefined
+      ? []
+      : [{ label: "Per person a day", value: ratio(usage.sessionsPerPersonDay) }]),
+    { label: "Installations", value: count(usage.installations) },
+  ]
   return (
-    <Panel
-      icon={UsersRoundIcon}
-      title="People"
-      subtitle={`Active each UTC day, and in the 7 and 30 days ending it${since}`}
-      badge="UTC"
-    >
-      <div className="p-5">
-        <BarRows
-          rowHeight={52}
-          label={`People and sessions by UTC day over ${periodText}: daily active people, weekly, monthly, and sessions.`}
-          rows={[
-            { label: "DAU", note: noteOf(daily), color, values: daily.values },
-            { label: "WAU", note: noteOf(weekly), color, values: weekly.values },
-            { label: "MAU", note: noteOf(monthly), color, values: monthly.values },
-            { label: "Sessions", note: noteOf(sessions), color, values: sessions.values },
-          ]}
-          ticks={dayTicksOf(daily)}
-          timeOf={(span) => daySpanText(daily, span)}
-        />
-      </div>
-      <PanelStats
-        stats={[
-          { label: "People", value: count(usage.people) },
-          { label: "Sessions", value: count(usage.sessions) },
-          ...(usage.sessionsPerPerson === undefined
-            ? []
-            : [{ label: "Sessions per person", value: ratio(usage.sessionsPerPerson) }]),
-          ...(usage.sessionsPerPersonDay === undefined
-            ? []
-            : [{ label: "Per person a day", value: ratio(usage.sessionsPerPersonDay) }]),
-          { label: "Installations", value: count(usage.installations) },
-        ]}
-      />
-    </Panel>
+    <section aria-label="The period's totals" className="flex min-w-0 flex-col border bg-card">
+      <dl className="grid grid-cols-2 sm:auto-cols-fr sm:grid-flow-col">
+        {stats.map((stat) => (
+          <div key={stat.label} className="flex min-w-0 flex-col gap-1 px-5 py-3">
+            <dt className="truncate text-sm text-muted-foreground">{stat.label}</dt>
+            <dd className="truncate font-mono text-lg">{stat.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {since !== undefined && (
+        <p className="border-t px-5 py-2.5 text-sm text-muted-foreground">
+          Counted since {since}, when the apps first sent; earlier days are unknown, not none.
+        </p>
+      )}
+    </section>
   )
 }
 

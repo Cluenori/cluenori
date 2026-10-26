@@ -1,8 +1,11 @@
+import type { FeatureKey } from "@cluenori/foundation"
 import type { AppInstallation, TimelineEntry } from "@cluenori/signals"
 import { DateTime } from "effect"
 
 import { timelineWordsOf } from "@/app-facts"
 import { ago, clockTime, countryName, dayOf, moment } from "@/lib/format"
+import type { Route } from "@/router"
+import { Link } from "@/router"
 
 /**
  * A person's installations, the latest seen first: each one's component in its color, environment and
@@ -80,7 +83,14 @@ const byDay = (entries: ReadonlyArray<TimelineEntry>) => {
  * in words with its details, the feature it was in when the app marked one, and its release when
  * the timeline has more than one.
  */
-export function Timeline({ entries }: { readonly entries: ReadonlyArray<TimelineEntry> }) {
+export function Timeline({
+  entries,
+  featureLinkOf,
+}: {
+  readonly entries: ReadonlyArray<TimelineEntry>
+  /** The page of a feature, which its key opens. */
+  readonly featureLinkOf?: (feature: FeatureKey) => Route
+}) {
   const releases = new Set(entries.map((entry) => `${entry.component} ${entry.release}`))
   return (
     <ol className="flex flex-col">
@@ -106,7 +116,14 @@ export function Timeline({ entries }: { readonly entries: ReadonlyArray<Timeline
                     )}
                   </span>
                   <span className="col-start-2 flex flex-wrap gap-x-3 text-sm text-muted-foreground sm:col-start-3 sm:justify-end">
-                    {feature !== undefined && <span className="font-mono">{feature}</span>}
+                    {feature !== undefined &&
+                      (featureLinkOf === undefined ? (
+                        <span className="font-mono">{feature}</span>
+                      ) : (
+                        <Link to={featureLinkOf(feature)} className="font-mono underline-offset-4 hover:underline">
+                          {feature}
+                        </Link>
+                      ))}
                     {releases.size > 1 && <span className="font-mono">{entry.release}</span>}
                   </span>
                 </li>

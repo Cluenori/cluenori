@@ -137,7 +137,17 @@ function Features({
                 {rows.length === 0 ? (
                   <p className="px-5 py-6 text-sm text-muted-foreground">No feature matches “{search.trim()}”.</p>
                 ) : (
-                  <FeatureTable rows={rows} people={answer.people} color={color} />
+                  <FeatureTable
+                    rows={rows}
+                    people={answer.people}
+                    color={color}
+                    linkOf={(feature) => ({
+                      page: "feature",
+                      project,
+                      feature,
+                      ...(environment === undefined ? {} : { environment }),
+                    })}
+                  />
                 )}
                 <p className="mt-auto border-t px-5 py-3 text-sm text-muted-foreground">
                   {count(rows.length)} of {count(table.features.length)}. A feature is the key the app marks its screens
