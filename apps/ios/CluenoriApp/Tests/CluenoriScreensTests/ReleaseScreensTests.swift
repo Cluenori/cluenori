@@ -83,6 +83,12 @@ let releaseAnswer = #"""
     {"summary":{"component":"notes-api","environment":"production","release":"2026.10.21-e91f09c",
       "firstSeen":"2026-10-21T09:12:00.000Z","lastSeen":"2026-10-21T13:41:00.000Z","count":12400,"errors":52,
       "previous":"2026.10.20-a1b2c3d","verdict":"worse","slower":2,"failingMore":0,"newErrors":1},
+    "life":{"step":"1h",
+      "points":[{"start":"2026-10-21T09:00:00.000Z","requests":4000,"failed":20,"p95Ms":200,"warnings":8,"errors":5},
+        {"start":"2026-10-21T10:00:00.000Z","warnings":2}],
+      "totals":{"from":"2026-10-21T09:00:00.000Z","to":"2026-10-21T12:00:00.000Z","requests":12400,"failed":52,
+        "warnings":24,"errors":17,"logsFrom":"2026-10-21T09:00:00.000Z"},
+      "previous":{"from":"2026-10-20T09:00:00.000Z","to":"2026-10-21T09:00:00.000Z","requests":60000,"failed":120}},
     "slower":[
       {"operation":"GET /api/feed","count":5200,"errors":4,"p95Ms":210,"previousCount":20110,"previousErrors":12,
         "previousP95Ms":106},
@@ -204,6 +210,10 @@ struct ReleaseModelTests {
         #expect(detail.failingMore.isEmpty)
         #expect(detail.faster.first?.previousP95Ms == 260)
         #expect(detail.newOperations == ["POST /api/notes/{id}/share"])
+        // Its life, a step it knows nothing of left unknown rather than 0, and the release before's.
+        #expect(detail.life?.points.last?.requests == nil)
+        #expect(detail.life?.previous?.warnings == nil)
+        #expect(detail.life?.totals.rate(12400, per: .hour) == 12400.0 / 3)
         #expect(detail.errors.map(\.id) == ["4f1c9a2e7b3d5068"])
         #expect(detail.incidents.first?.resolvedAt != nil)
         // The same release is one screen, whatever the period.
@@ -378,6 +388,49 @@ struct ReleaseSourcesTests {
         #expect(detail.summary.store?.externalTesting == "WAITING_FOR_BETA_REVIEW")
         #expect(detail.changes == nil)
         #expect(detail.slower.isEmpty && detail.errors.isEmpty && detail.incidents.isEmpty)
+    }
+
+    @Test func `compares lives of different lengths in an hour under a day, and in a day over it`() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        // 3 hours, 900 requests: 300 an hour.
+        let short = LifeTotals(from: start, to: start.addingTimeInterval(3 * 3_600), requests: 900)
+        #expect(short.rateUnit == .hour)
+        #expect(short.rate(900, per: .hour) == 300)
+        // 6 days, 900 requests: 150 a day, and the shorter life in the same unit.
+        let long = LifeTotals(from: start, to: start.addingTimeInterval(6 * 86_400), requests: 900, failed: 9)
+        #expect(long.rateUnit == .day)
+        #expect(long.rate(900, per: .day) == 150)
+        #expect(short.rate(900, per: .day) == 7_200)
+        // A minute's life counts as an hour, not sixty times its runs.
+        #expect(LifeTotals(from: start, to: start.addingTimeInterval(60)).rate(10, per: .hour) == 10)
+        #expect(long.failedShare == 0.01)
+        #expect(short.failedShare == nil)
+    }
+
+    @Test func `keeps a zoom of a life within it and at least three steps wide`() {
+        #expect(LifeWindow.within(from: 9, to: 4, steps: 20) == LifeWindow(first: 4, last: 9))
+        #expect(LifeWindow.within(from: 19, to: 19, steps: 20) == LifeWindow(first: 17, last: 19))
+        #expect(LifeWindow.within(from: -3, to: 40, steps: 20).isWhole(steps: 20))
+        #expect(LifeWindow.within(from: 1, to: 1, steps: 2) == LifeWindow(first: 0, last: 1))
+    }
+
+    @Test func `briefs an agent on a release with the commands and calls that read it whole`() async throws {
+        let deployment = FakeDeployment()
+        deployment.answer("GET /api/projects/notes/releases/notes-api/2026.10.21-e91f09c", 200, releaseAnswer)
+        let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
+        let release = try #require(pairing.models).release(feedRelease)
+        await release.detail.load()
+        let detail = try #require(release.detail.value)
+        #expect(
+            releaseBrief(project: "notes", detail: detail) == """
+                Find out whether release 2026.10.21-e91f09c of notes-api (production) works, in Cluenori project notes.
+                Compare it with the release before it, 2026.10.20-a1b2c3d: Cluenori says "worse".
+                It ran from 2026-10-21T09:00:00.000Z to 2026-10-21T12:00:00.000Z.
+                Read it whole, step by step: ./cluenori release notes notes-api 2026.10.21-e91f09c --environment production --life
+                Its operations: GET /api/projects/notes/operations?component=notes-api&environment=production&release=2026.10.21-e91f09c&from=2026-10-21T09%3A00%3A00.000Z&to=2026-10-21T12%3A00%3A00.000Z
+                Its errors: GET /api/projects/notes/errors?component=notes-api&environment=production&release=2026.10.21-e91f09c&from=2026-10-21T09%3A00%3A00.000Z&to=2026-10-21T12%3A00%3A00.000Z
+                Its warnings and errors: GET /api/projects/notes/logs?component=notes-api&environment=production&release=2026.10.21-e91f09c&from=2026-10-21T09%3A00%3A00.000Z&to=2026-10-21T12%3A00%3A00.000Z
+                """)
     }
 
     @Test func `opens only https pages from an answer's links`() {

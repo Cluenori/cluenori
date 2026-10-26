@@ -1077,11 +1077,77 @@
                 state: .succeeded,
                 run: PromotionRun(id: 118_702, url: "https://github.com/\(repository)/actions/runs/118702"),
                 endedAt: now.addingTimeInterval(-2 * hour - 5 * minute))
+            let errors = errors(now).groups.prefix(2).enumerated().map { index, group in
+                ErrorGroup(
+                    id: group.id, kind: group.kind, title: group.title, culprit: group.culprit,
+                    occurrences: group.occurrences, firstSeen: group.firstSeen,
+                    firstRelease: index == 1 ? summary.release : summary.previous, lastSeen: group.lastSeen,
+                    lastComponent: summary.component, lastEnvironment: summary.environment,
+                    lastRelease: summary.release)
+            }
             return ReleaseDetail(
-                summary: summary, slower: [], failingMore: [], faster: [], failingLess: [],
-                newOperations: summary.component == "notes-api" ? ["GET /api/feed/offline"] : [], errors: [],
+                summary: summary, life: life(summary, now),
+                slower: summary.component == "notes-api"
+                    ? [
+                        ComparedOperation(
+                            operation: "GET /api/search", count: 8_400, errors: 6, p95Ms: 420, previousCount: 9_100,
+                            previousErrors: 4, previousP95Ms: 260)
+                    ] : [],
+                failingMore: [],
+                faster: summary.component == "notes-api"
+                    ? [
+                        ComparedOperation(
+                            operation: "GET /api/feed", count: 62_100, errors: 120, p95Ms: 212, previousCount: 58_000,
+                            previousErrors: 110, previousP95Ms: 340)
+                    ] : [],
+                failingLess: [],
+                newOperations: summary.component == "notes-api" ? ["GET /api/feed/offline"] : [],
+                errors: summary.count == nil ? [] : Array(errors),
                 incidents: [], changes: changes, problems: [], promotions: [deployed], deployTargets: targets,
                 notes: [ReleaseNote(locale: "en-US", text: "Read your feed offline.")], repository: repository)
+        }
+
+        // A release's life from its first run to its last, by the hour under 3 days, else by the day,
+        // with the release before's totals; an app's people by the day. Nil for a release that hasn't run.
+        private static func life(_ summary: ReleaseSummary, _ now: Date) -> ReleaseLife? {
+            guard let firstSeen = summary.firstSeen, let lastSeen = summary.lastSeen, let count = summary.count else {
+                return nil
+            }
+            let isApp = summary.component == "notes-ios"
+            let byDay = lastSeen.timeIntervalSince(firstSeen) >= 3 * day
+            let step: TimeInterval = byDay ? day : hour
+            let start = (firstSeen.timeIntervalSince1970 / step).rounded(.down) * step
+            let steps = max(1, Int(((lastSeen.timeIntervalSince1970 - start) / step).rounded(.up)))
+            let perStep = count / steps
+            let points = (0..<steps).map { index in
+                let at = start + Double(index) * step
+                let hourOfDay = at.truncatingRemainder(dividingBy: day) / hour
+                let busy = byDay ? 1 : 0.55 + 0.45 * sin((hourOfDay - 9) / 24 * 2 * .pi)
+                let requests = Int(Double(perStep) * busy) + index * 37 % 23
+                return LifePoint(
+                    start: Date(timeIntervalSince1970: at), requests: requests,
+                    failed: index % 9 == 4 ? requests / 40 : requests / 600, p95Ms: 180 + Double(index * 13 % 40),
+                    warnings: index % 4 == 0 ? 3 : 1, errors: index % 9 == 4 ? 4 : index % 3 == 0 ? 1 : 0,
+                    people: byDay && isApp ? 820 + index * 31 % 90 : nil)
+            }
+            func sum(_ value: (LifePoint) -> Int?) -> Int { points.compactMap(value).reduce(0, +) }
+            let to = Date(timeIntervalSince1970: start + Double(steps) * step)
+            let from = Date(timeIntervalSince1970: start)
+            let totals = LifeTotals(
+                from: from, to: to, requests: sum(\.requests), failed: sum(\.failed), warnings: sum(\.warnings),
+                errors: sum(\.errors), logsFrom: from, people: isApp && byDay ? 1_240 : nil)
+            let lived = to.timeIntervalSince(from)
+            let previous = summary.previous.map { _ in
+                LifeTotals(
+                    from: from.addingTimeInterval(-3 * day), to: from,
+                    requests: Int(Double(sum(\.requests)) * 3 * day / lived * 0.9),
+                    failed: Int(Double(sum(\.failed)) * 3 * day / lived * 1.3),
+                    warnings: Int(Double(sum(\.warnings)) * 3 * day / lived * 0.8),
+                    errors: Int(Double(sum(\.errors)) * 3 * day / lived * 1.6),
+                    logsFrom: from.addingTimeInterval(-3 * day),
+                    people: isApp ? 1_310 : nil)
+            }
+            return ReleaseLife(step: byDay ? .`1d` : .`1h`, points: points, totals: totals, previous: previous)
         }
 
         // MARK: Telemetry

@@ -25,8 +25,10 @@ or understand, and one level deeper shows more, never everything at once (`conce
     and the way to all of them, and on to one: an operation's percentiles, an error's stack, a log
     line, an incident and Acknowledge.
   - **Releases**, its delivery: what release is in each component's environment and the one next
-    step, leading to a component, its version and promotions, and a release, compared with the one
-    before, with its commit, changes, App Store build, promotions and notes; and every release.
+    step, leading to a component, its version and promotions, and a release: whether it works,
+    its life's numbers beside the release before's, its life step by step (zoomed from a strip of
+    all of it), its errors and warnings, its requests that moved, then its changes, incidents,
+    notes and App Store build, and "Ask an agent", which shares a brief of it; and every release.
 
 Product and Releases keep the screens they had before this tree; their own redesign comes next
 (`concept/Modules.md`, "Navigation"). Until then, the deeper screens (analytics, delivery, a

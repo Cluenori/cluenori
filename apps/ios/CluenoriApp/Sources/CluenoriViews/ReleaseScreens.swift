@@ -340,11 +340,12 @@ extension Verdict {
 
 /// One release: what it is and where it runs now, with the one step that moves it on when its
 /// delivery says it is next somewhere, and deploying it anywhere else in a menu; then its promotions,
-/// how it compares with the one before it, what got slower or fails more, its new errors, the
-/// incidents while it ran, then what changed since the release before and its store build, then what
-/// got faster or fails less and what's new in it; each section only when it has something. Its
-/// operations, errors, and logs open narrowed to it. While a promotion hasn't ended, it asks again
-/// every 15 seconds.
+/// then the answer to whether it works: its verdict and its life beside the release before's, its
+/// life step by step, its errors and warnings, and its requests that moved; then what changed since
+/// the release before, the incidents while it ran, its notes and its store build. Its numbers open
+/// its operations, errors, and logs narrowed to it, and "Ask an agent" shares a brief of it. Each
+/// section shows only when it has something. While a promotion hasn't ended, it asks again every 15
+/// seconds.
 struct ReleaseScreen: View {
     let release: ReleaseModel
 
@@ -387,32 +388,23 @@ struct ReleaseScreen: View {
                 if !detail.problems.isEmpty {
                     SourceProblemsSection(problems: detail.problems, of: .release)
                 }
-                PromotionsSection(release: release)
-                Section {
-                    ReleaseHeader(
-                        release: summary.release,
-                        component: summary.component,
-                        environment: summary.environment,
-                        previous: summary.previous,
-                        firstSeen: summary.firstSeen,
-                        lastSeen: summary.lastSeen,
-                        count: summary.count,
-                        errors: summary.errors,
-                        verdict: summary.verdict,
-                        slower: summary.slower,
-                        failingMore: summary.failingMore,
-                        newErrors: summary.newErrors,
-                        deployedAt: summary.deployedAt,
-                        storeStage: summary.store.map {
-                            storeStageWords($0.stage, appStoreState: $0.appStoreState, phased: $0.phasedRelease)
-                        }
-                    )
+                // A promotion still moving is the news; once they have ended, they follow the answer.
+                if release.hasUnendedPromotions {
+                    PromotionsSection(release: release)
                 }
-                InThisReleaseSection(
-                    release: summary.ref(in: release.release.project),
-                    notes: release.release,
-                    noteLocales: release.notes.savedNotes.map(\.locale)
-                )
+                let ref = summary.ref(in: release.release.project)
+                ReleaseAnswerSection(summary: summary, life: detail.life, ref: ref)
+                if !release.hasUnendedPromotions {
+                    PromotionsSection(release: release)
+                }
+                if let life = detail.life {
+                    ReleaseLifeSection(life: life)
+                }
+                if detail.life != nil || !detail.errors.isEmpty {
+                    ReleaseErrorsSection(
+                        errors: detail.errors, release: summary.release, warnings: detail.life?.totals.warnings,
+                        ref: ref)
+                }
                 ComparedSection(
                     title: Text("Slower", bundle: #bundle, comment: "Section of the operations a release made slower."),
                     release: release.release,
@@ -425,43 +417,6 @@ struct ReleaseScreen: View {
                     operations: detail.failingMore,
                     change: .failingMore
                 )
-                let newErrors = detail.errors.filter { $0.firstRelease == summary.release }
-                if !newErrors.isEmpty {
-                    Section {
-                        ForEach(newErrors, id: \.id) { group in
-                            NavigationLink(value: Route.error(of: .project(release.release.project), id: group.id)) {
-                                ErrorGroupRow(
-                                    title: group.title, culprit: group.culprit, occurrences: group.occurrences)
-                            }
-                        }
-                    } header: {
-                        Text("New errors", bundle: #bundle, comment: "Section of the errors first seen in a release.")
-                    }
-                }
-                if !detail.incidents.isEmpty {
-                    Section {
-                        ForEach(detail.incidents, id: \.id) { incident in
-                            IncidentRow(
-                                title: incident.title,
-                                openedAt: incident.openedAt,
-                                acknowledged: incident.acknowledgedAt != nil,
-                                resolvedAt: incident.resolvedAt
-                            )
-                        }
-                    } header: {
-                        Text(
-                            "Incidents while it ran",
-                            bundle: #bundle,
-                            comment: "Section of the incidents that opened while a release ran."
-                        )
-                    }
-                }
-                if let changes = detail.changes {
-                    ChangesSection(previous: summary.previous, changes: changes)
-                }
-                if let store = summary.store {
-                    StoreSection(store: store)
-                }
                 ComparedSection(
                     title: Text("Faster", bundle: #bundle, comment: "Section of the operations a release made faster."),
                     release: release.release,
@@ -489,6 +444,31 @@ struct ReleaseScreen: View {
                             comment: "Section of the operations a release ran that the one before didn't."
                         )
                     }
+                }
+                if let changes = detail.changes {
+                    ChangesSection(previous: summary.previous, changes: changes)
+                }
+                if !detail.incidents.isEmpty {
+                    Section {
+                        ForEach(detail.incidents, id: \.id) { incident in
+                            IncidentRow(
+                                title: incident.title,
+                                openedAt: incident.openedAt,
+                                acknowledged: incident.acknowledgedAt != nil,
+                                resolvedAt: incident.resolvedAt
+                            )
+                        }
+                    } header: {
+                        Text(
+                            "Incidents while it ran",
+                            bundle: #bundle,
+                            comment: "Section of the incidents that opened while a release ran."
+                        )
+                    }
+                }
+                NotesSection(release: release.release, locales: release.notes.savedNotes.map(\.locale))
+                if let store = summary.store {
+                    StoreSection(store: store)
                 }
             } else if !release.promotions.isEmpty {
                 // A commit just promoted from this phone: the deployment knows its release once its
@@ -533,6 +513,11 @@ struct ReleaseScreen: View {
             .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
+            if let detail = release.detail.value {
+                ToolbarItem(placement: .primaryAction) {
+                    AskAnAgent(brief: releaseBrief(project: release.release.project, detail: detail))
+                }
+            }
             if let others = places?.otherDeploys, !others.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     OtherDeploysMenu(deploys: others) { release.startPromoting(to: $0) }
@@ -755,112 +740,6 @@ struct PromotionEnd: Equatable {
     }
 }
 
-/// How the release compares with the one before it: its verdict and why, the release before it, the
-/// environment it was measured in, how much it ran and failed, and when it was deployed and where its
-/// build stands, each when known.
-struct ReleaseHeader: View {
-    let release: String
-    let component: String
-    let environment: String?
-    let previous: String?
-    let firstSeen: Date?
-    let lastSeen: Date?
-    /// Absent without telemetry, as are `errors` and the times.
-    let count: Int?
-    let errors: Int?
-    let verdict: Verdict
-    let slower: Int
-    let failingMore: Int
-    let newErrors: Int
-    let deployedAt: Date?
-    /// Where its build stands in App Store Connect, in words; nil for a release without one.
-    let storeStage: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    VerdictText(verdict: verdict, slower: slower, failingMore: failingMore, newErrors: newErrors)
-                        .foregroundStyle(verdict.tint)
-                    VerdictReason(verdict: verdict, release: release, component: component)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            } icon: {
-                Image(systemName: verdict.symbol)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(verdict.tint)
-            }
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                GridRow {
-                    Text("Release before", bundle: #bundle, comment: "The release before the one shown.")
-                        .foregroundStyle(.secondary)
-                    if let previous {
-                        Text(verbatim: previous)
-                            .monospaced()
-                    } else {
-                        Text("None", bundle: #bundle, comment: "A release with no release before it.")
-                    }
-                }
-                if let environment {
-                    GridRow {
-                        Text(
-                            "Measured in", bundle: #bundle,
-                            comment: "The environment a release's comparison with the one before is of."
-                        )
-                        .foregroundStyle(.secondary)
-                        Text(verbatim: environment)
-                    }
-                }
-                if let firstSeen, let lastSeen {
-                    GridRow {
-                        Text("Ran", bundle: #bundle, comment: "When a release ran, from its first minute to its last.")
-                            .foregroundStyle(.secondary)
-                        Text(
-                            min(firstSeen, lastSeen)..<max(firstSeen, lastSeen),
-                            format: .interval.month(.abbreviated).day().hour().minute()
-                        )
-                        // Over two days, it takes two lines rather than an ellipsis.
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                if let count {
-                    GridRow {
-                        Text("Runs", bundle: #bundle, comment: "How many operations a release ran.")
-                            .foregroundStyle(.secondary)
-                        HStack(spacing: 6) {
-                            Text(count, format: .number)
-                                .monospacedDigit()
-                            if let errors {
-                                FailedShare(count: count, failed: errors)
-                            }
-                        }
-                    }
-                }
-                if let deployedAt {
-                    GridRow {
-                        Text("Deployed", bundle: #bundle, comment: "When a release's deploy was reported.")
-                            .foregroundStyle(.secondary)
-                        Text(deployedAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-                    }
-                }
-                if let storeStage {
-                    GridRow {
-                        Text(
-                            "App Store", bundle: #bundle,
-                            comment: "Where a release's build stands in App Store Connect."
-                        )
-                        .foregroundStyle(.secondary)
-                        Text(verbatim: storeStage)
-                    }
-                }
-            }
-            .font(.subheadline)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
 /// Why a verdict says what it does, for those whose sections don't show it.
 struct VerdictReason: View {
     let verdict: Verdict
@@ -900,44 +779,20 @@ struct VerdictReason: View {
     }
 }
 
-/// The project's operations, errors, and logs of one release: the screens the app has, narrowed to
-/// it; and its notes for its users.
-struct InThisReleaseSection: View {
+/// A release's notes for its users: the languages it has them in, opening its notes screen.
+struct NotesSection: View {
     let release: ReleaseRef
-    /// The release whose notes screen opens: the one the screen shows, whose notes it edits.
-    let notes: ReleaseRef
     /// The languages it has notes in.
-    let noteLocales: [String]
+    let locales: [String]
 
     var body: some View {
         Section {
-            NavigationLink(value: Route.operations(of: .release(release))) {
-                Label {
-                    Text("Operations", bundle: #bundle, comment: "Opens the operations of one release.")
-                } icon: {
-                    Image(systemName: "chart.bar")
-                }
-            }
-            NavigationLink(value: Route.errors(of: .release(release))) {
-                Label {
-                    Text("Errors", bundle: #bundle, comment: "Opens the errors of one release.")
-                } icon: {
-                    Image(systemName: "exclamationmark.octagon")
-                }
-            }
-            NavigationLink(value: Route.logs(of: .release(release))) {
-                Label {
-                    Text("Logs", bundle: #bundle, comment: "Opens the warnings and errors logged by one release.")
-                } icon: {
-                    Image(systemName: "text.page")
-                }
-            }
-            NavigationLink(value: Route.notes(notes)) {
+            NavigationLink(value: Route.notes(release)) {
                 LabeledContent {
-                    if noteLocales.isEmpty {
+                    if locales.isEmpty {
                         Text("None yet", bundle: #bundle, comment: "A release without notes.")
                     } else {
-                        Text(verbatim: noteLocales.formatted(.list(type: .and, width: .narrow)))
+                        Text(verbatim: locales.formatted(.list(type: .and, width: .narrow)))
                     }
                 } label: {
                     Label {
@@ -947,8 +802,6 @@ struct InThisReleaseSection: View {
                     }
                 }
             }
-        } header: {
-            Text("In this release", bundle: #bundle, comment: "Section of links to one release's telemetry.")
         }
     }
 }
