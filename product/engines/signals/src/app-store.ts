@@ -467,7 +467,7 @@ export const appStore = Effect.gen(function* () {
     }
   })
 
-  // How many of one event are in the people's timelines in the query's period, up to `atMost`:
+  // How many of one event are in the people's timelines since the query's instant, up to `atMost`:
   // found through the timeline's index of events by name and time, so it reads only that event's
   // signals, and stops at `atMost`.
   const eventCount = Effect.fn("AppStore.eventCount")(function* (query: EventCountQuery, atMost: number) {
@@ -479,7 +479,7 @@ export const appStore = Effect.gen(function* () {
           SELECT 1 FROM signals_app_timeline
           WHERE json_extract(entry, '$.signal._tag') = 'event'
             AND json_extract(entry, '$.signal.name') = ${query.event}
-            AND at >= ${DateTime.toEpochMillis(query.period.from)} AND at < ${DateTime.toEpochMillis(query.period.to)}
+            AND at >= ${DateTime.toEpochMillis(query.since)}
             AND json_extract(entry, '$.component') = ${query.component}
             ${query.environment === undefined ? sql`` : sql`AND json_extract(entry, '$.environment') = ${query.environment}`}
           LIMIT ${Math.max(0, Math.floor(atMost))})`,
@@ -487,8 +487,8 @@ export const appStore = Effect.gen(function* () {
     if (row.count > 0) {
       return row.count
     }
-    // None in the timelines, which keep each person's latest signals only: one that arrived in the
-    // period and was trimmed since still counts.
+    // None in the timelines, which keep each person's latest signals only: one that arrived since and
+    // was trimmed still counts.
     const last = yield* SqlSchema.findOne({
       Request: Schema.Void,
       Result: Schema.Struct({ arrived: Count }),
@@ -496,7 +496,7 @@ export const appStore = Effect.gen(function* () {
         SELECT count(*) AS arrived FROM signals_app_event_last
         WHERE component = ${query.component} AND name = ${query.event}
           ${query.environment === undefined ? sql`` : sql`AND environment = ${query.environment}`}
-          AND at >= ${DateTime.toEpochMillis(query.period.from)} AND at < ${DateTime.toEpochMillis(query.period.to)}`,
+          AND at >= ${DateTime.toEpochMillis(query.since)}`,
     })(undefined)
     return Math.min(Math.max(0, Math.floor(atMost)), last.arrived > 0 ? 1 : 0)
   }, Effect.orDie)

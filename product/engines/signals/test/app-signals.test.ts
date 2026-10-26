@@ -11,6 +11,7 @@ import {
 import { SdkKey } from "@cluenori/projects"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Schema } from "effect"
+import { SqlClient } from "effect/sql"
 
 import type { AppBatch, AppSignal } from "../src/index.ts"
 import { AppSignalId, AppSignals, AppUserId } from "../src/index.ts"
@@ -408,18 +409,18 @@ describe("AppSignals", () => {
           ...batchOf(installationOf(4), events(now - 5 * 60_000, "user.registered", 2)),
           environment: EnvironmentKey.make("beta"),
         })
-        const lastHour = new Period({ from: DateTime.makeUnsafe(now - hour), to: DateTime.makeUnsafe(now) })
+        const lastHour = DateTime.makeUnsafe(now - hour)
         const registered = EnvelopeName.make("user.registered")
         const counted = [
-          yield* apps.eventCount({ period: lastHour, component: ios, environment: production, event: registered }, 100),
-          yield* apps.eventCount({ period: lastHour, component: ios, event: registered }, 100),
-          yield* apps.eventCount({ period: lastHour, component: ios, event: registered }, 2),
+          yield* apps.eventCount({ since: lastHour, component: ios, environment: production, event: registered }, 100),
+          yield* apps.eventCount({ since: lastHour, component: ios, event: registered }, 100),
+          yield* apps.eventCount({ since: lastHour, component: ios, event: registered }, 2),
           yield* apps.eventCount(
-            { period: lastDays(1), component: ios, environment: production, event: registered },
+            { since: DateTime.makeUnsafe(now - day), component: ios, environment: production, event: registered },
             100,
           ),
           yield* apps.eventCount(
-            { period: lastHour, component: ComponentKey.make("notes-web"), event: registered },
+            { since: lastHour, component: ComponentKey.make("notes-web"), event: registered },
             100,
           ),
         ]
@@ -431,11 +432,69 @@ describe("AppSignals", () => {
           yield* record(batchOf(installationOf(1), events(now - 20 * 60_000, "card.flipped", 250)))
         }
         assert.strictEqual(
-          yield* apps.eventCount({ period: lastHour, component: ios, environment: production, event: registered }, 100),
+          yield* apps.eventCount({ since: lastHour, component: ios, environment: production, event: registered }, 100),
+          1,
+        )
+        // One that arrives after the moment a caller started from counts too, once it has arrived.
+        yield* record(batchOf(installationOf(5), events(now + 5_000, "user.signedOut", 1)))
+        assert.strictEqual(
+          yield* apps.eventCount(
+            { since: DateTime.makeUnsafe(now), component: ios, event: EnvelopeName.make("user.signedOut") },
+            100,
+          ),
           1,
         )
       }),
     ),
+  )
+
+  it.effect("knows an event arrived from the timelines kept before it counted when each last arrived", () =>
+    Effect.gen(function* () {
+      let n = 0
+      const events = (at: number, name: string, count: number): ReadonlyArray<AppSignal> =>
+        Array.from({ length: count }, () => {
+          n += 1
+          return {
+            _tag: "event",
+            id: AppSignalId.make(uuidAt(at, n)),
+            at: DateTime.makeUnsafe(at),
+            session: sessionAt(at, n),
+            name: EnvelopeName.make(name),
+          }
+        })
+      // A payment in a person's timeline, in a database from before migration 0014.
+      yield* inApps(
+        "apps-event-before",
+        now,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient
+          yield* record(batchOf(installationOf(1), events(now - 11 * 60_000, "payment.completed", 1)))
+          yield* sql`DROP INDEX signals_app_timeline_events`
+          yield* sql`DROP TABLE signals_app_event_last`
+          yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 14`
+        }).pipe(Effect.orDie),
+      )
+      // Migrated, then the same person's 1,000 later signals trim it from their timeline.
+      const counted = yield* inApps(
+        "apps-event-before",
+        now,
+        Effect.gen(function* () {
+          const apps = yield* AppSignals
+          for (let batch = 0; batch < 4; batch += 1) {
+            yield* record(batchOf(installationOf(1), events(now - 5 * 60_000, "card.flipped", 250)))
+          }
+          return yield* apps.eventCount(
+            {
+              since: DateTime.makeUnsafe(now - 30 * 60_000),
+              component: ios,
+              event: EnvelopeName.make("payment.completed"),
+            },
+            100,
+          )
+        }),
+      )
+      assert.strictEqual(counted, 1)
+    }),
   )
 
   it.effect("tells one feature's whole life: each day, everyone, who used it last, its releases", () =>

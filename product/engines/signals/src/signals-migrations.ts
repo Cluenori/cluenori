@@ -431,6 +431,12 @@ export const migrateSignals = Migrator.make({})({
         at INTEGER NOT NULL,
         PRIMARY KEY (component, environment, name)
       ) WITHOUT ROWID`
+      // Those the timelines hold now, so a trimmed one still counts.
+      yield* sql`INSERT INTO signals_app_event_last (component, environment, name, at)
+        SELECT json_extract(entry, '$.component'), json_extract(entry, '$.environment'),
+          json_extract(entry, '$.signal.name'), max(at)
+        FROM signals_app_timeline WHERE json_extract(entry, '$.signal._tag') = 'event'
+        GROUP BY 1, 2, 3`
     }),
   }),
 })

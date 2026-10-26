@@ -312,8 +312,12 @@ export type PersonLookup = typeof PersonLookup.Type
  * Which event to count: those named `event` that the apps of `component` sent in `period`,
  * optionally in one environment.
  */
+/**
+ * One event of one component, of one environment when it names one, counted from `since` on: up to
+ * every one already arrived, however recent.
+ */
 export const EventCountQuery = Schema.Struct({
-  period: Period,
+  since: Instant,
   component: ComponentKey,
   environment: Schema.optionalKey(EnvironmentKey),
   event: EnvelopeName,

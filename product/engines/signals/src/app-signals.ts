@@ -190,10 +190,11 @@ export class AppSignals extends Context.Service<
      */
     readonly person: (lookup: PersonLookup) => Effect.Effect<AppPerson, PersonNotFound>
     /**
-     * How many of one event the apps of a component sent in the query's period, counted up to
-     * `atMost`, as the people's timelines keep them: each person's latest 1,000 signals, 15 months,
-     * so a person past 1,000 signals in the period counts only their latest. Never 0 when one
-     * arrived in the period: when each event last arrived is kept apart from the timelines. Reads
+     * How many of one event the apps of a component sent since the query's instant, up to every one
+     * already arrived, counted up to `atMost`, as the people's timelines keep them: each person's
+     * latest 1,000 signals, 15 months, so a person past 1,000 signals since then counts only their
+     * latest. Never 0 when one arrived since: when each event last arrived is kept apart from the
+     * timelines, for those that arrived from November 2026 on and those the timelines held then. Reads
      * only that event's signals in the period, through an index, and stops at `atMost`. An event
      * arrives when its batch does, which can be later than it happened.
      */

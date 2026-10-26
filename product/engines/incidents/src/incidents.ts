@@ -801,7 +801,9 @@ export class Incidents extends Context.Service<
           }
           case "event": {
             const atMost = condition._tag === "moreThan" ? condition.count + 1 : 1
-            const count = yield* apps.eventCount({ period, ...place, event: subject.event }, atMost)
+            // Every one arrived since the window opened, even while URLs were fetched: never an
+            // absence the check's own moment invents.
+            const count = yield* apps.eventCount({ since: period.from, ...place, event: subject.event }, atMost)
             return { count, errors: 0, p95Ms: undefined }
           }
           case "error":

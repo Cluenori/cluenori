@@ -79,8 +79,9 @@ const share = yield* apps.feature({ feature: FeatureKey.make("notes.share") })
 const served = yield* signals.featureOperations({ feature: FeatureKey.make("notes.share") })
 // each day's operations its services named it in `cluenori.feature` for: [{ day, component, operation, count, errors }]
 const person = yield* apps.person({ _tag: "ByUser", user: AppUserId.make("8c1f…") })
-// How many `user.registered` arrived in a period, read through an index and stopped at 11.
-const registered = yield* apps.eventCount({ period, event: EnvelopeName.make("user.registered") }, 11)
+// How many `user.registered` arrived since an instant, every one so far, read through an index and
+// stopped at 11.
+const registered = yield* apps.eventCount({ since, component, event: EnvelopeName.make("user.registered") }, 11)
 // installations, the days they were active, the features they used, and their latest 1,000
 // signals; PersonNotFound otherwise
 ```
@@ -137,7 +138,8 @@ never had, with `LogLineNotFound`.
   - sessions, started and ended, with their foreground time (90 days);
   - each person's timeline, their latest 1,000 signals but memory (15 months);
     events in it are counted by name through a partial index (`eventCount`, for monitors), so a
-    person past 1,000 signals counts only their latest;
+    person past 1,000 signals counts only their latest; when each event last arrived is kept
+    apart, so one trimmed still counts;
   - the IDs of the signals of the last 14 days, by their own time, so a batch sent again counts once.
 - **Rules about people:** a user ID seen for the first time is linked to its installation's person
   when that person has none, so what they did before signing in stays theirs, or else to a new
