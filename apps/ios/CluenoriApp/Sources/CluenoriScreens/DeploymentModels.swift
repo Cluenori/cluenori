@@ -90,6 +90,27 @@ public final class DeploymentModels {
         return model
     }
 
+    /// One of a project's incidents, its life and the releases that ran when it opened.
+    public func incident(_ project: String, id: String) -> IncidentModel {
+        model("incident \(project) \(id)") {
+            IncidentModel(project: project, id: id, api: api, context: context)
+        }
+    }
+
+    /// A project's monitors and how each is.
+    public func monitors(_ project: String) -> MonitorsModel {
+        model("monitors \(project)") {
+            MonitorsModel(project: project, api: api, context: context)
+        }
+    }
+
+    /// One of a project's monitors and its history of checks.
+    public func monitor(_ project: String, id: String) -> MonitorModel {
+        model("monitor \(project) \(id)") {
+            MonitorModel(project: project, id: id, api: api, context: context)
+        }
+    }
+
     /// A project's tech in `environment`; its period changes by `ProjectModel.choose`.
     public func project(_ key: String, environment: String?, period: PeriodKey) -> ProjectModel {
         model("project \(key) \(environment ?? "")") {

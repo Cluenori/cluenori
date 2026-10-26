@@ -715,6 +715,38 @@
                 return ok(IncidentList(open: [down(now)], resolved: [recovered(now)], checkedAt: now))
             case ("POST", "\(project)/incidents/\(downId)/acknowledge"):
                 return ok(down(now, acknowledgedAt: now))
+            case ("GET", "\(project)/incidents/\(downId)"):
+                return ok(
+                    IncidentDetail(
+                        incident: down(now),
+                        updates: [
+                            IncidentUpdate(
+                                change: .opened, at: now.addingTimeInterval(-4 * minute), title: down(now).title)
+                        ],
+                        releases: [IncidentRelease(environment: "prod", release: "2026.10.21-e91f09c")]))
+            case ("GET", "\(project)/incidents/\(recovered(now).id)"):
+                let incident = recovered(now)
+                return ok(
+                    IncidentDetail(
+                        incident: incident,
+                        updates: [
+                            IncidentUpdate(
+                                change: .opened, at: incident.openedAt, title: "GET /api/feed: 4% failed, usually 0.2%"),
+                            IncidentUpdate(
+                                change: .worsened, at: incident.openedAt.addingTimeInterval(2 * minute),
+                                title: incident.title),
+                            IncidentUpdate(change: .acknowledged, at: incident.acknowledgedAt ?? incident.openedAt),
+                            IncidentUpdate(change: .resolved, at: incident.resolvedAt ?? incident.openedAt),
+                        ],
+                        releases: [IncidentRelease(environment: "prod", release: "2026.10.20-a1b2c3d")]))
+            case ("GET", "\(project)/monitors"):
+                return ok(MonitorList(monitors: monitorStates(now)))
+            case ("GET", "\(project)/monitors/\(healthId)"):
+                return ok(healthDetail(now))
+            case ("GET", "\(project)/monitors/\(webId)"):
+                return ok(
+                    MonitorDetail(
+                        state: monitorStates(now)[1], recent: steps(now, failing: false), failures: [], incidents: []))
             case ("GET", "\(project)/load"):
                 return ok(load(now))
             case ("GET", "\(project)/operations"):
@@ -809,6 +841,68 @@
                         monitor: "019a0fe0-7200-7b00-8c00-000000000002", url: "https://notes.example/health",
                         failures: 3, problem: "HTTP 503")),
                 openedAt: now.addingTimeInterval(-4 * minute), acknowledgedAt: acknowledgedAt)
+        }
+
+        private static let healthId = "019a0fe0-7200-7b00-8c00-000000000002"
+        private static let webId = "019a0fe0-7200-7b00-8c00-000000000004"
+
+        // 90 UTC days of checks up to today's, from `added`: a bad day 12 days ago, some failures 3
+        // days ago, and today's, failing now when `failing`.
+        private static func days(_ now: Date, added: Date, failing: Bool) -> [MonitorDay] {
+            (0..<90).compactMap { back in
+                let date = now.addingTimeInterval(-Double(back) * day)
+                guard date >= added else { return nil }
+                let name = date.formatted(Date.ISO8601FormatStyle(timeZone: .gmt).year().month().day())
+                let failed = back == 0 && failing ? 4 : back == 12 && failing ? 38 : back == 3 ? 2 : 0
+                return MonitorDay(day: name, checks: back == 0 ? 600 : 1440, failed: failed, averageMs: 88)
+            }
+        }
+
+        private static func monitorStates(_ now: Date) -> [MonitorState] {
+            let healthAdded = now.addingTimeInterval(-60 * day)
+            let webAdded = now.addingTimeInterval(-120 * day)
+            return [
+                MonitorState(
+                    monitor: Monitor(
+                        id: healthId, component: "notes-api", url: "https://notes.example/health", addedAt: healthAdded),
+                    lastCheck: MonitorCheck(
+                        at: now.addingTimeInterval(-20), status: 503, ms: 142, problem: "HTTP 503"),
+                    since: now.addingTimeInterval(-5 * minute),
+                    days: days(now, added: healthAdded, failing: true)),
+                MonitorState(
+                    monitor: Monitor(
+                        id: webId, component: "notes-web", url: "https://notes.example/", addedAt: webAdded),
+                    lastCheck: MonitorCheck(at: now.addingTimeInterval(-20), status: 200, ms: 64),
+                    since: now.addingTimeInterval(-3 * day + 40 * minute),
+                    days: days(now, added: webAdded, failing: false)),
+            ]
+        }
+
+        // The last 24 hours by five minutes; the last few failing when `failing`.
+        private static func steps(_ now: Date, failing: Bool) -> [MonitorStep] {
+            let step: TimeInterval = 5 * minute
+            let last = (now.timeIntervalSince1970 / step).rounded(.down) * step
+            return (0..<288).map { back in
+                let failed = failing && back < 1 ? 4 : 0
+                let average = 70 + Double((back * 37) % 40) + (back % 60 == 7 ? 300 : 0)
+                return MonitorStep(
+                    start: Date(timeIntervalSince1970: last - Double(back) * step), checks: 5, failed: failed,
+                    averageMs: average, slowestMs: average + 30)
+            }.reversed()
+        }
+
+        private static func healthDetail(_ now: Date) -> MonitorDetail {
+            MonitorDetail(
+                state: monitorStates(now)[0], recent: steps(now, failing: true),
+                failures: (0..<4).map { back in
+                    MonitorCheck(
+                        at: now.addingTimeInterval(-20 - Double(back) * minute), status: 503, ms: 140,
+                        problem: "HTTP 503")
+                } + [
+                    MonitorCheck(
+                        at: now.addingTimeInterval(-3 * day), problem: "No answer within 10 seconds")
+                ],
+                incidents: [down(now)])
         }
 
         // Yesterday's: the feed failing for 20 minutes, since recovered.

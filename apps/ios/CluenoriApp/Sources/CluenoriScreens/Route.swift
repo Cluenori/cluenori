@@ -151,8 +151,12 @@ public enum Route: Hashable, Sendable {
     case tech(project: String, environment: String? = nil)
     /// A project's incidents, open and resolved, in every environment.
     case incidents(project: String)
-    /// One of a project's incidents.
+    /// One of a project's incidents: its whole life, whatever any period.
     case incident(project: String, id: String)
+    /// A project's monitors: whether everything is up, and each one's last 30 days.
+    case uptime(project: String)
+    /// One of a project's monitors and its history of checks.
+    case monitor(project: String, id: String)
     /// A project's delivery: what release is in each of its components' environments, and what's
     /// next.
     case delivery(project: String)
@@ -199,7 +203,8 @@ public enum Route: Hashable, Sendable {
     public var project: String? {
         switch self {
         case .feeds, .feed: nil
-        case .project(let key), .tech(let key, _), .incidents(let key), .incident(let key, _), .delivery(let key),
+        case .project(let key), .tech(let key, _), .incidents(let key), .incident(let key, _), .uptime(let key),
+            .monitor(let key, _), .delivery(let key),
             .releases(let key, _), .notesStyle(let key), .component(let key, _), .componentReleases(let key, _),
             .person(let key, _), .personByID(let key, _), .versionPolicy(let key, _), .sdkKeys(let key, _),
             .logLine(let key, _):
@@ -282,6 +287,10 @@ public enum Route: Hashable, Sendable {
         case .tech(let key, _), .delivery(let key): [.project(key), self]
         case .incidents(let key): [.project(key), .tech(project: key), self]
         case .incident(let key, _): [.project(key), .tech(project: key), .incidents(project: key), self]
+        // Uptime opens from the incidents, a monitor from Uptime.
+        case .uptime(let key): [.project(key), .tech(project: key), .incidents(project: key), self]
+        case .monitor(let key, _):
+            [.project(key), .tech(project: key), .incidents(project: key), .uptime(project: key), self]
         case .releases(let key, _): [.project(key), .delivery(project: key), self]
         case .component(let key, _): [.project(key), .delivery(project: key), self]
         case .componentReleases(let key, let component):
@@ -341,8 +350,8 @@ public enum Route: Hashable, Sendable {
 
     /// The screen a link names, `cluenori://projects/notes/errors/4f1c9a2e7b3d5068`; nil for any
     /// other link: `cluenori://feeds` and `cluenori://feeds/<ID>`; `cluenori://projects/<key>`, and
-    /// under it `/tech`, `/incidents`,
-    /// `/incidents/<id>`, `/delivery`, `/operations`, and one, `/operations/<name>?component=<key>`,
+    /// under it `/tech`, `/incidents`, `/incidents/<id>`, `/uptime`, `/uptime/<monitor ID>`,
+    /// `/delivery`, `/operations`, and one, `/operations/<name>?component=<key>`,
     /// its name as path segments, `/traces/<trace ID>`, which takes
     /// `?around=<ISO 8601>`, `/errors`, `/errors/<id>`, `/logs`,
     /// `/logs/messages/<id>`, `/logs/lines/<id>` (the project's alone),
@@ -444,6 +453,8 @@ public enum Route: Hashable, Sendable {
         case ("tech", 1, .project(let key, let environment)): .tech(project: key, environment: environment)
         case ("incidents", 1, .project(let key, _)): .incidents(project: key)
         case ("incidents", 2, .project(let key, _)): .incident(project: key, id: rest[1])
+        case ("uptime", 1, .project(let key, _)): .uptime(project: key)
+        case ("uptime", 2, .project(let key, _)): .monitor(project: key, id: rest[1])
         case ("delivery", 1, .project(let key, _)): .delivery(project: key)
         case ("operations", 1, _): .operations(of: telemetry)
         case ("errors", 1, _): .errors(of: telemetry)

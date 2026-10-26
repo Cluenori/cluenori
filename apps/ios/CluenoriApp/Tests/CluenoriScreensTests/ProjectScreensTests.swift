@@ -49,6 +49,11 @@ struct RouteTests {
             "cluenori://projects/notes/incidents/0199f7a2-6000-7000-8000-000000000001",
             .incident(project: "notes", id: "0199f7a2-6000-7000-8000-000000000001")
         ),
+        ("cluenori://projects/notes/uptime", .uptime(project: "notes")),
+        (
+            "cluenori://projects/notes/uptime/0199f7a2-6000-7000-8000-000000000002",
+            .monitor(project: "notes", id: "0199f7a2-6000-7000-8000-000000000002")
+        ),
         ("cluenori://projects/notes/delivery", .delivery(project: "notes")),
         ("cluenori://projects/notes/errors", .errors(of: .project("notes"))),
         (
@@ -103,6 +108,13 @@ struct RouteTests {
             navigation.path == [
                 .project("notes"), .tech(project: "notes"), .incidents(project: "notes"),
                 .incident(project: "notes", id: "0199f7a2-6000-7000-8000-000000000001"),
+            ])
+        // A monitor comes from Uptime, which comes from the incidents.
+        navigation.open(.monitor(project: "notes", id: "m1"))
+        #expect(
+            navigation.path == [
+                .project("notes"), .tech(project: "notes"), .incidents(project: "notes"), .uptime(project: "notes"),
+                .monitor(project: "notes", id: "m1"),
             ])
 
         let release = ReleaseRef(project: "notes", component: "notes-api", environment: nil, version: "1.8.0")

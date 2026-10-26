@@ -23,7 +23,14 @@ or understand, and one level deeper shows more, never everything at once (`conce
   - **Tech**, in the environment chosen on the phone, over the period: its load and busiest
     operations, its errors, its latest warnings and errors, and its incidents, each the latest few
     and the way to all of them, and on to one: an operation's percentiles, an error's stack, a log
-    message and its lines, a log line by its ID with "Ask an agent", an incident and Acknowledge.
+    message and its lines, a log line by its ID with "Ask an agent".
+  - **Incidents** and **Uptime**, every environment's: the incidents answer first how many are
+    open and whether someone is on each, and whether every monitor is up, then those open and
+    those resolved in the last 7 days. An incident has no period: where it stands, Acknowledge,
+    what it is about (opening its monitor or operation), its life, and the release that ran when
+    it opened. Uptime answers whether every monitor is up, each with its last 30 days; a monitor
+    shows its last 24 hours, its last 90 days, its incidents and its failed checks. Both share a
+    brief ("Ask an agent"); an operation lists its own incidents.
   - **Releases**, its delivery: what release is in each component's environment and the one next
     step, leading to a component, its version and promotions, and a release: whether it works,
     its life's numbers beside the release before's, its life step by step (zoomed from a strip of
@@ -32,7 +39,7 @@ or understand, and one level deeper shows more, never everything at once (`conce
 
 Product and Releases keep the screens they had before this tree; their own redesign comes next
 (`concept/Modules.md`, "Navigation"). Until then, the deeper screens (analytics, delivery, a
-release, the lists) are system lists, not panels; monitors aren't shown; People waits for its data;
+release, the lists) are system lists, not panels; People waits for its data;
 and Product shows the environment chosen on the phone, often the API's (`prod`), so it can say no
 app sent anything while the apps send from `production`. It should open where the project's apps
 send, without its "Analytics" title.
@@ -122,7 +129,9 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   product's line about a project (`ProductLine`) is worked out from it, by the web's rules
   (Foundation, "Its line for Now and the project"), with Releases' steady line from the delivery. A project's tech (`ProjectModel`) asks its load,
   operations, errors and logs in one environment over the period; its incidents
-  (`IncidentsModel`, one per project) are every environment's, and acknowledging one is sent once.
+  (`IncidentsModel`, one per project) are every environment's, and acknowledging one is sent once;
+  an incident's life, the monitors and a monitor's history are `IncidentModel`, `MonitorsModel` and
+  `MonitorModel`, and Uptime's rules and the briefs are `UptimeFacts` and `UptimeBriefs`.
   Alerts (`AlertsModel`, `PushAlert`): what an alert push says, whether it still rings, what the
   phone allows, registering its push token, acknowledging, and a test alarm. Every
   question goes through `Answer`: shown at once from the phone, asked again, and kept when the
@@ -150,7 +159,7 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   something reaches its environment. Who "you" is comes from `/api/me`, asked once a promotion names
   who started it, and kept for the pairing.
 - **Links to screens:** `cluenori://projects/<key>`, and under it `/tech`, `/incidents`,
-  `/incidents/<id>`, `/delivery`, `/operations`, `/errors`, `/errors/<id>`, `/logs`, `/logs/messages/<id>`,
+  `/incidents/<id>`, `/uptime`, `/uptime/<monitor ID>`, `/delivery`, `/operations`, `/errors`, `/errors/<id>`, `/logs`, `/logs/messages/<id>`,
   `/logs/lines/<id>`, `/releases`,
   `/notes-style`, `/components/<component>` and its every
   release, `/components/<component>/releases`, `/components/<component>/version-policy` and

@@ -79,9 +79,9 @@ struct RouteScreen: View {
         // A project's tech follows the period in place; a project's summary is over the last day.
         // Analytics look over their own period of UTC days, which their screens follow in place.
         // A feed is live, over its last 90 days.
-        // A request is one thing, whenever it happened.
-        case .feeds, .feed, .project, .tech, .incidents, .incident, .delivery, .component, .release, .trace,
-            .operations(.release),
+        // A request is one thing, whenever it happened; so is an incident's life, or a monitor's.
+        case .feeds, .feed, .project, .tech, .incidents, .incident, .uptime, .monitor, .delivery, .component,
+            .release, .trace, .operations(.release),
             .errors(.release), .error(.release, _), .logs(.release), .logMessage(.release, _), .logLine, .notes,
             .notesStyle, .analytics, .features, .appHealth, .feature, .person, .personByID, .versionPolicy, .sdkKeys:
             false
@@ -137,9 +137,14 @@ private struct ProjectRouteScreen: View {
                 navigation: navigation
             )
         case .incidents(let key):
-            IncidentsScreen(incidents: models.incidents(key))
+            IncidentsScreen(incidents: models.incidents(key), monitors: models.monitors(key))
         case .incident(let key, let id):
-            IncidentScreen(incidents: models.incidents(key), id: id, today: models.today)
+            IncidentScreen(
+                incident: models.incident(key, id: id), incidents: models.incidents(key), today: models.today)
+        case .uptime(let key):
+            UptimeScreen(monitors: models.monitors(key))
+        case .monitor(let key, let id):
+            MonitorScreen(monitor: models.monitor(key, id: id))
         case .delivery(let key):
             DeliveryScreen(delivery: models.delivery(key), environments: environments)
         case .operations(let telemetry):
@@ -151,6 +156,7 @@ private struct ProjectRouteScreen: View {
         case .operation(let operation):
             OperationScreen(
                 operation: models.operation(operation, period: navigation.period),
+                incidents: models.incidents(operation.project),
                 environments: environments,
                 navigation: navigation
             )

@@ -160,11 +160,30 @@ struct OperationRowView: View {
 /// one release's span (`concept/Experience.md`, "Lists, groups and items"): what the period holds of
 /// it, or that it holds none and when it last ran; its load and its p50, p95 and p99 over time,
 /// where a tap opens that moment and the requests kept from it; its percentiles; then its failed and
-/// slowest requests, each opening its trace.
+/// slowest requests, each opening its trace. Its incidents, open and resolved lately, come first
+/// when it has any.
 struct OperationScreen: View {
     let operation: OperationModel
+    /// The project's incidents, of which those about this operation show.
+    let incidents: IncidentsModel
     let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
+
+    // The incidents about this operation, in its component and, when it shows one, its environment.
+    private var about: [Incident] {
+        guard let list = incidents.incidents.value else { return [] }
+        let ref = operation.operation
+        return (list.open + list.resolved).filter { incident in
+            let name: String? =
+                switch incident.evidence {
+                case .failing(let failing): failing.operation
+                case .stopped(let stopped): stopped.operation
+                case .down, .unknown: nil
+                }
+            return name == ref.name && incident.component == ref.component
+                && (ref.environment == nil || incident.environment == ref.environment)
+        }
+    }
 
     var body: some View {
         List {
@@ -175,6 +194,21 @@ struct OperationScreen: View {
                 route: .operation(operation.operation),
                 navigation: navigation
             )
+            if !about.isEmpty {
+                Section {
+                    ForEach(about, id: \.id) { incident in
+                        NavigationLink(value: Route.incident(project: incidents.project, id: incident.id)) {
+                            IncidentRow(
+                                title: incident.title, openedAt: incident.openedAt,
+                                acknowledged: incident.acknowledgedAt != nil, resolvedAt: incident.resolvedAt)
+                        }
+                    }
+                } header: {
+                    Text(
+                        "Incidents", bundle: #bundle,
+                        comment: "Section of the incidents about an operation: open, and resolved in the last 7 days.")
+                }
+            }
             Section {
                 if let row = operation.table.value?.rows.first {
                     Text(
@@ -281,8 +315,16 @@ struct OperationScreen: View {
             }
         }
         .navigationTitle(operation.operation.name)
-        .refreshable { await operation.refresh() }
-        .task { await operation.refresh() }
+        .refreshable {
+            async let incidents: Void = incidents.load()
+            await operation.refresh()
+            await incidents
+        }
+        .task {
+            async let incidents: Void = incidents.load()
+            await operation.refresh()
+            await incidents
+        }
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: operation.load.problem, receivedAt: operation.load.receivedAt)
         }
