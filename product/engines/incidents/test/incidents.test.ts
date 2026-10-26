@@ -191,52 +191,22 @@ describe("Incidents", () => {
     ),
   )
 
-  it.effect("opens an incident when a scheduled job misses twice its gap, and resolves it once it runs", () =>
+  it.effect("never takes an operation that runs regularly for a job, however long it pauses", () =>
     inProject(
-      "stopped",
+      "regular-not-a-job",
       start,
       Effect.gen(function* () {
-        // A cleanup job ran every hour for the 10 hours before; a feed is asked for whenever.
-        yield* record(
-          jobs,
-          Array.from({ length: 10 }, (_, index) => counts("cleanup.run", start - (index + 1) * hour, 1)),
-        )
+        // An endpoint the app asks every 31 minutes for a day, as Graphit's did, then nobody asks.
         yield* record(
           api,
-          [3, 47, 260, 300, 410, 590, 600].map((ago) => counts("GET /api/feed", start - ago * minute, 1)),
+          Array.from({ length: 48 }, (_, index) =>
+            counts("GET /api/verification/latest", start - (index + 1) * 31 * minute, 1),
+          ),
         )
 
-        const onTime = yield* checkAt(start)
-        // Two gaps after its last run, and five minutes for its telemetry, it is overdue.
-        const stopped = yield* checkAt(start + hour + 6 * minute)
-        yield* record(jobs, [counts("cleanup.run", start + hour + 10 * minute, 1)])
-        const ranAgain = yield* checkAt(start + hour + 11 * minute)
-        const resolved = yield* checkAt(start + hour + 17 * minute)
+        const checks = [yield* checkAt(start), yield* checkAt(start + 2 * hour), yield* checkAt(start + day)]
 
-        assert.deepStrictEqual(onTime, [])
-        assert.deepStrictEqual(stopped, [["opened", "cleanup.run stopped: it usually runs every hour"]])
-        assert.deepStrictEqual(ranAgain, [])
-        assert.deepStrictEqual(resolved, [["resolved", "cleanup.run stopped: it usually runs every hour"]])
-      }),
-    ),
-  )
-
-  it.effect("learns a job that runs every 10 minutes from its last 6 hours, too busy for two days", () =>
-    inProject(
-      "stopped-often",
-      start,
-      Effect.gen(function* () {
-        // An outbox poller, every 10 minutes for 40 hours: 240 runs, more than two days look at.
-        yield* record(
-          jobs,
-          Array.from({ length: 240 }, (_, index) => counts("outbox.poll", start - (index + 1) * 10 * minute, 1)),
-        )
-
-        const onTime = yield* checkAt(start)
-        const stopped = yield* checkAt(start + 16 * minute)
-
-        assert.deepStrictEqual(onTime, [])
-        assert.deepStrictEqual(stopped, [["opened", "outbox.poll stopped: it usually runs every 10 minutes"]])
+        assert.deepStrictEqual(checks, [[], [], []])
       }),
     ),
   )

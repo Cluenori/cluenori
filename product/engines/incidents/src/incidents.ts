@@ -24,12 +24,9 @@ import {
   downAfter,
   failingWindow,
   isFailing,
-  overdueAt,
   reopenWithin,
   resolveAfter,
-  scheduleWindows,
   titleOf,
-  usualGapOf,
   usualWindow,
   worseTimes,
 } from "./detectors.ts"
@@ -114,8 +111,6 @@ const BaselineRow = Schema.Struct({
   environment: EnvironmentColumn,
   operation: EnvelopeName,
   usualRate: Schema.Finite,
-  gapMs: Schema.NullOr(Schema.Finite),
-  lastRanAt: Schema.NullOr(Schema.Int),
 })
 type BaselineRow = typeof BaselineRow.Type
 
@@ -292,9 +287,7 @@ export class Incidents extends Context.Service<
         Request: Schema.Void,
         Result: BaselineRow,
         execute: () => sql`
-          SELECT component, environment, operation, usual_rate AS "usualRate", gap_ms AS "gapMs",
-            last_ran_at AS "lastRanAt"
-          FROM incidents_baselines`,
+          SELECT component, environment, operation, usual_rate AS "usualRate" FROM incidents_baselines`,
       })
 
       const findState = SqlSchema.findOneOption({
@@ -305,36 +298,18 @@ export class Incidents extends Context.Service<
 
       const newId = crypto.randomUUIDv7().pipe(Effect.orDie)
 
-      // ---- Learning: each operation's usual error rate, and its schedule if it runs on one ------
+      // ---- Learning: each operation's usual error rate ------------------------------------------
 
       const learn = Effect.fn("Incidents.learn")(function* (now: number) {
         // Up to an hour before now: learned at most an hour ago, the usual never holds the 15
         // minutes being judged, so an operation failing from its start has a usual of none.
         const week = yield* signals.operations({ period: periodOf(now - Duration.toMillis(usualWindow), now - hour) })
-        // The two days first: a schedule learned there stands over one from the 6 hours.
-        const schedules = new Map<string, { readonly gap: number; readonly last: number }>()
-        for (const { window, atMost } of scheduleWindows) {
-          const ran = yield* signals.minutesRan({ period: periodOf(now - Duration.toMillis(window), now) }, atMost)
-          for (const entry of ran) {
-            const minutes = entry.minutes.map(DateTime.toEpochMillis)
-            const gap = usualGapOf(minutes)
-            const last = minutes.at(-1)
-            if (gap !== undefined && last !== undefined && !schedules.has(operationKeyOf(entry))) {
-              schedules.set(operationKeyOf(entry), { gap, last })
-            }
-          }
-        }
-        const rows = week.rows.map((row) => {
-          const schedule = schedules.get(operationKeyOf(row))
-          return {
-            component: row.component,
-            environment: row.environment ?? "",
-            operation: row.operation,
-            usual_rate: row.count === 0 ? 0 : row.errors / row.count,
-            gap_ms: schedule?.gap ?? null,
-            last_ran_at: schedule?.last ?? null,
-          }
-        })
+        const rows = week.rows.map((row) => ({
+          component: row.component,
+          environment: row.environment ?? "",
+          operation: row.operation,
+          usual_rate: row.count === 0 ? 0 : row.errors / row.count,
+        }))
         yield* sql
           .withTransaction(
             Effect.gen(function* () {
@@ -378,85 +353,6 @@ export class Incidents extends Context.Service<
               ]
             : []
         })
-      })
-
-      // Scheduled operations that are overdue, and those already stopped, whose schedule may no
-      // longer be learned: an open incident stays open until its operation runs again.
-      const stoppedNow = Effect.fn("Incidents.stoppedNow")(function* (
-        now: number,
-        baselines: ReadonlyArray<BaselineRow>,
-        open: ReadonlyArray<IncidentRow>,
-      ) {
-        const watched = new Map<
-          string,
-          {
-            readonly component: ComponentKey
-            readonly environment: EnvironmentKey | undefined
-            readonly operation: EnvelopeName
-            readonly gap: number
-            readonly last: number
-          }
-        >()
-        for (const row of baselines) {
-          if (row.gapMs !== null && row.lastRanAt !== null) {
-            watched.set(operationKeyOf(row), {
-              component: row.component,
-              environment: row.environment === "" ? undefined : row.environment,
-              operation: row.operation,
-              gap: row.gapMs,
-              last: row.lastRanAt,
-            })
-          }
-        }
-        for (const row of open) {
-          if (row.evidence._tag === "stopped") {
-            const environment = row.environment === "" ? undefined : row.environment
-            const key = operationKeyOf({ component: row.component, environment, operation: row.evidence.operation })
-            watched.set(key, {
-              component: row.component,
-              environment,
-              operation: row.evidence.operation,
-              gap: row.evidence.usualGapMs,
-              last: DateTime.toEpochMillis(row.evidence.lastRanAt),
-            })
-          }
-        }
-        const firings: Array<Firing> = []
-        for (const entry of watched.values()) {
-          if (now < overdueAt(entry.last, entry.gap)) {
-            continue
-          }
-          const since = yield* signals.minutesRan(
-            {
-              period: periodOf(entry.last + 60_000, now),
-              component: entry.component,
-              operation: entry.operation,
-              ...(entry.environment === undefined ? {} : { environment: entry.environment }),
-            },
-            Number.MAX_SAFE_INTEGER,
-          )
-          const latest = since.flatMap((ran) => ran.minutes.map(DateTime.toEpochMillis)).at(-1)
-          if (latest !== undefined) {
-            yield* sql`UPDATE incidents_baselines SET last_ran_at = ${latest}
-              WHERE component = ${entry.component} AND environment = ${entry.environment ?? ""}
-                AND operation = ${entry.operation}`.pipe(Effect.orDie)
-            continue
-          }
-          firings.push({
-            detector: "stopped",
-            component: entry.component,
-            environment: entry.environment,
-            subject: entry.operation,
-            evidence: {
-              _tag: "stopped",
-              operation: entry.operation,
-              lastRanAt: DateTime.makeUnsafe(entry.last),
-              usualGapMs: entry.gap,
-            },
-            level: 0,
-          })
-        }
-        return firings
       })
 
       // One check of a URL: absent when it passed; else what was wrong.
@@ -665,11 +561,7 @@ export class Incidents extends Context.Service<
         }
         const baselines = yield* findBaselines(undefined).pipe(Effect.orDie)
         const open = yield* findOpen(undefined).pipe(Effect.orDie)
-        const firings = [
-          ...(yield* downNow(now)),
-          ...(yield* failingNow(now, baselines)),
-          ...(yield* stoppedNow(now, baselines, open)),
-        ]
+        const firings = [...(yield* downNow(now)), ...(yield* failingNow(now, baselines))]
         const settings = yield* settingsNow
         const changes = yield* settle(now, open, firings, settings)
         yield* sql`INSERT INTO incidents_state (id, checked_at) VALUES (1, ${now})

@@ -209,7 +209,7 @@ A detector is a fixed rule that opens an incident. It compares each measure with
 | --- | --- | --- |
 | Down | A monitor's URL fails two checks in a row | Alarm |
 | Failing | An operation's error rate over the last 15 minutes is at least 2% and three times its usual, with at least 5 failures | Alarm |
-| Stopped | An operation that runs on a schedule, such as a cleanup job, misses twice its usual gap. Cluenori learns the schedule from its history. | Time sensitive |
+| Stopped | A job I declared, such as a cleanup that runs every hour, misses its run. Cluenori never guesses which operations are jobs: an endpoint people happen to call every half hour is not one, and every alert must be real. Until jobs can be declared, nothing opens as stopped. | Time sensitive |
 | New error | An error group appears for the first time | None; the morning brief |
 | Slower | An operation's p95 over the last day is at least 1.5 times its p95 over the 7 days before, and at least 100 ms more | None; the morning brief |
 

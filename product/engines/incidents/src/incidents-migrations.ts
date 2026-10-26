@@ -63,5 +63,11 @@ export const migrateIncidents = Migrator.make({})({
         checked_at INTEGER
       )`
     }),
+    // Schedules are no longer learned (detectors.ts, "Stopped"): what was learned goes.
+    "0002_no_learned_schedules": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE incidents_baselines DROP COLUMN gap_ms`
+      yield* sql`ALTER TABLE incidents_baselines DROP COLUMN last_ran_at`
+    }),
   }),
 })

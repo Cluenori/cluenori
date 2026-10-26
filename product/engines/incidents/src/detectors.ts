@@ -24,47 +24,9 @@ export const isFailing = (counted: { readonly count: number; readonly errors: nu
 
 // ---- Stopped ----------------------------------------------------------------------------------
 
-/**
- * The windows a schedule is learned from, back from now, each with the most minutes an operation
- * may have run in to be looked at: two days for a job that runs every 15 minutes or less often, and
- * the last 6 hours for one that runs every 5 to 15 minutes. Busier operations cost a row a minute,
- * and run too often to be a schedule.
- */
-export const scheduleWindows = [
-  { window: Duration.days(2), atMost: 200 },
-  { window: Duration.hours(6), atMost: 72 },
-] as const
-
-// A schedule needs this many runs, at least this far apart, most within a quarter of the usual gap.
-const scheduleRuns = 6
-const shortestGap = Duration.toMillis(Duration.minutes(5))
-const regularShare = 0.8
-
-// Telemetry arrives a minute or two after it happens; an overdue run gets this much more.
-const arrivalGrace = Duration.toMillis(Duration.minutes(5))
-
-/**
- * The gap an operation runs at, from the starts of the minutes it ran in, oldest first: the median
- * gap between them, when it ran at least 6 times, at least 5 minutes apart, and 80% of its gaps are
- * within a quarter of the median. Undefined when it runs on no schedule: a request people make
- * whenever they like, or a job started by them.
- */
-export const usualGapOf = (minutes: ReadonlyArray<number>): number | undefined => {
-  if (minutes.length < scheduleRuns) {
-    return undefined
-  }
-  const gaps = minutes.slice(1).map((minute, index) => minute - (minutes[index] ?? minute))
-  const sorted = gaps.toSorted((left, right) => left - right)
-  const median = sorted[Math.floor(sorted.length / 2)] ?? 0
-  if (median < shortestGap) {
-    return undefined
-  }
-  const regular = gaps.filter((gap) => Math.abs(gap - median) <= median / 4).length
-  return regular >= regularShare * gaps.length ? median : undefined
-}
-
-/** When a scheduled operation that last ran at `lastRanAt` is overdue: two gaps later, and a little. */
-export const overdueAt = (lastRanAt: number, gapMs: number) => lastRanAt + 2 * gapMs + arrivalGrace
+// Not learned: an operation that runs regularly isn't a job until someone says so. Guessing from
+// its history alerted about an endpoint people call every half hour, and every alert must be real.
+// Stopped incidents opened before stay readable; none open now.
 
 // ---- Down -------------------------------------------------------------------------------------
 

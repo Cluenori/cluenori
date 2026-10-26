@@ -223,77 +223,79 @@ describe("Notifications", () => {
     }),
   )
 
-  it.effect("tells each change at its level, and nothing about an incident someone is on, or outside production", () =>
-    Effect.gen(function* () {
-      const settings = yield* settingsWithKey
-      const apns = fakeApns(accepts)
-      yield* inWorkspace(
-        "levels",
-        start + 20 * minute,
-        settings,
-        apns.layer,
-        Effect.gen(function* () {
-          yield* withProjects
-          yield* phoneWith(phoneToken)
-          yield* notify([
-            activityOf(
-              IncidentOpened.make({ ...fields, detector: "failing", title: "POST /api/export: 18% failed" }),
-              start + 19 * minute,
-            ),
-            activityOf(
-              IncidentOpened.make({ ...fields, detector: "stopped", title: "cleanup.run stopped" }),
-              start + 19 * minute,
-            ),
-            // Down 11 minutes ago: too late to ring.
-            activityOf(IncidentOpened.make(fields), start + 9 * minute),
-            activityOf(IncidentReopened.make({ ...fields, detector: "failing" })),
-            activityOf(IncidentWorsened.make({ ...fields, detector: "failing" }), start + 19 * minute),
-            activityOf(IncidentWorsened.make({ ...fields, acknowledged: true })),
-            activityOf(IncidentResolved.make(fields)),
-            activityOf(IncidentResolved.make({ ...fields, acknowledged: true })),
-            activityOf(IncidentAcknowledged.make({ incident, title: fields.title })),
-            // An incident in an environment the project doesn't call production, and one in one it does.
-            activityOf(
-              IncidentOpened.make({ ...fields, environment: EnvironmentKey.make("dev"), production: false }),
-              start + 19 * minute,
-            ),
-            activityOf(
-              IncidentOpened.make({
-                ...fields,
-                detector: "stopped",
-                title: "billing.run stopped",
-                environment: EnvironmentKey.make("prod"),
-                production: true,
-              }),
-              start + 19 * minute,
-            ),
-            // A project's other activity, and activity without a project.
-            activityOf({ _tag: "project.created", project: "notes" }),
-            activityOf(IncidentOpened.make(fields), start + 19 * minute, {}),
-          ])
-        }),
-      )
-      const told = yield* Effect.forEach(apns.accepted, (push) =>
-        decodePayload(push.payload).pipe(
-          Effect.map((payload) => [
-            payload.aps.alert.title,
-            payload.cluenori.level,
-            payload.aps.sound ?? "",
-            push.headers["apns-priority"],
-          ]),
-        ),
-      )
-      assert.deepStrictEqual(told, [
-        ["Notes · Failing", "alarm", "", "10"],
-        ["Notes · Stopped", "timeSensitive", "default", "10"],
-        ["Notes · Down", "timeSensitive", "default", "10"],
-        ["Notes · Failing again", "timeSensitive", "default", "10"],
-        ["Notes · Failing, worse", "alarm", "", "10"],
-        ["Notes · Recovered", "quiet", "", "5"],
-        ["Notes · Acknowledged", "quiet", "", "5"],
-        ["Notes · Stopped", "timeSensitive", "default", "10"],
-      ])
-    }),
+  it.effect(
+    "tells each change at its level, and nothing about an incident someone is on, outside production, or stopped",
+    () =>
+      Effect.gen(function* () {
+        const settings = yield* settingsWithKey
+        const apns = fakeApns(accepts)
+        yield* inWorkspace(
+          "levels",
+          start + 20 * minute,
+          settings,
+          apns.layer,
+          Effect.gen(function* () {
+            yield* withProjects
+            yield* phoneWith(phoneToken)
+            yield* notify([
+              activityOf(
+                IncidentOpened.make({ ...fields, detector: "failing", title: "POST /api/export: 18% failed" }),
+                start + 19 * minute,
+              ),
+              activityOf(
+                IncidentOpened.make({ ...fields, detector: "stopped", title: "cleanup.run stopped" }),
+                start + 19 * minute,
+              ),
+              // Down 11 minutes ago: too late to ring.
+              activityOf(IncidentOpened.make(fields), start + 9 * minute),
+              activityOf(IncidentReopened.make({ ...fields, detector: "failing" })),
+              activityOf(IncidentWorsened.make({ ...fields, detector: "failing" }), start + 19 * minute),
+              activityOf(IncidentWorsened.make({ ...fields, acknowledged: true })),
+              activityOf(IncidentResolved.make(fields)),
+              activityOf(IncidentResolved.make({ ...fields, acknowledged: true })),
+              // A stopped incident from when schedules were guessed ends: no one hears of it.
+              activityOf(IncidentResolved.make({ ...fields, detector: "stopped", title: "cleanup.run stopped" })),
+              activityOf(IncidentAcknowledged.make({ incident, title: fields.title })),
+              // An incident in an environment the project doesn't call production, and one in one it does.
+              activityOf(
+                IncidentOpened.make({ ...fields, environment: EnvironmentKey.make("dev"), production: false }),
+                start + 19 * minute,
+              ),
+              activityOf(
+                IncidentOpened.make({
+                  ...fields,
+                  detector: "stopped",
+                  title: "billing.run stopped",
+                  environment: EnvironmentKey.make("prod"),
+                  production: true,
+                }),
+                start + 19 * minute,
+              ),
+              // A project's other activity, and activity without a project.
+              activityOf({ _tag: "project.created", project: "notes" }),
+              activityOf(IncidentOpened.make(fields), start + 19 * minute, {}),
+            ])
+          }),
+        )
+        const told = yield* Effect.forEach(apns.accepted, (push) =>
+          decodePayload(push.payload).pipe(
+            Effect.map((payload) => [
+              payload.aps.alert.title,
+              payload.cluenori.level,
+              payload.aps.sound ?? "",
+              push.headers["apns-priority"],
+            ]),
+          ),
+        )
+        assert.deepStrictEqual(told, [
+          ["Notes · Failing", "alarm", "", "10"],
+          ["Notes · Down", "timeSensitive", "default", "10"],
+          ["Notes · Failing again", "timeSensitive", "default", "10"],
+          ["Notes · Failing, worse", "alarm", "", "10"],
+          ["Notes · Recovered", "quiet", "", "5"],
+          ["Notes · Acknowledged", "quiet", "", "5"],
+        ])
+      }),
   )
 
   it.effect("forgets a token APNs says is gone, and leaves what it couldn't send for the next delivery", () =>
