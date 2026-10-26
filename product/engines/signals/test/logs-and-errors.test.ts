@@ -80,6 +80,13 @@ const warning = (index: number): LogEntry => ({
   attributes: {},
 })
 
+// A warning that says `message`, of `template` when there is one.
+const long = (index: number, message: string, template?: string): LogEntry => ({
+  ...warning(index),
+  message,
+  ...(template === undefined ? {} : { template }),
+})
+
 const logExportOf = (digit: string, entries: ReadonlyArray<LogEntry>): LogExport => ({
   digest: BatchDigest.make(digit.repeat(64)),
   archive: new Uint8Array(0),
@@ -514,11 +521,14 @@ describe("Signals' warnings and errors", () => {
           const errorsOnly = yield* signals.logs({ period: lastHour, minimumLevel: "error" })
           const slowly = yield* signals.logs({ period: lastHour, search: "SLOWLY" })
           const ofTrace = yield* signals.logs({ period: lastHour, trace: exportTrace })
-          return [all, errorsOnly, slowly, ofTrace].map((page) => page.lines.length)
+          // A search is text, whatever its length or characters: `%` matches only itself.
+          const percent = yield* signals.logs({ period: lastHour, search: "%" })
+          const longest = yield* signals.logMessages({ period: lastHour, search: `${"%_é".repeat(66)}xy` })
+          return [...[all, errorsOnly, slowly, ofTrace, percent].map((page) => page.lines.length), longest.lines]
         }),
       )
 
-      assert.deepStrictEqual(found, [8, 5, 3, 2])
+      assert.deepStrictEqual(found, [8, 5, 3, 2, 0, 0])
     }),
   )
 
@@ -722,6 +732,21 @@ describe("Signals' warnings and errors", () => {
           const signals = yield* Signals
           const sql = yield* SqlClient.SqlClient
           yield* signals.recordLogs(api, read)
+          // Messages longer than a key: they differ before its 1,000 characters, and repeat after.
+          const padding = "still waiting ".repeat(200)
+          yield* signals.recordLogs(
+            api,
+            logExportOf("b", [
+              long(0, `Sync stalled going north ${padding}`),
+              long(1, `Sync stalled going south ${padding}`),
+              long(2, `Sync stalled going south ${padding}`),
+              long(3, `Export 51c2 stalled ${padding}`, `Export {Id} stalled ${padding}`),
+              long(4, `Export 9f9f stalled ${padding}`, `Export {Id} stalled ${padding}`),
+              // Text after a NUL is text too: these are two messages.
+              long(5, "Sync paused\u0000by the owner"),
+              long(6, "Sync paused\u0000by the server"),
+            ]),
+          )
           const table = yield* signals.logMessages({ period: lastHour })
           // A database as it was before: its warnings and errors stored, then messages taken away.
           yield* dropLogMessages

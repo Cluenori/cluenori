@@ -386,6 +386,8 @@ export const migrateSignals = Migrator.make({})({
         message: Schema.String,
         template: Schema.NullOr(Schema.String),
       })
+      // One line at a time: a line's message, template, and logger may each be long, so a page of
+      // many may not fit the Durable Object's memory. They are read whole, as ingest reads them.
       const page = SqlSchema.findAll({
         Request: Schema.Int,
         Result: Row,
@@ -393,7 +395,7 @@ export const migrateSignals = Migrator.make({})({
           SELECT id, time, component, environment, release, level, category,
             coalesce(json_extract(entry, '$.message'), '') AS message,
             json_extract(entry, '$.template') AS template
-          FROM signals_logs WHERE id > ${after} ORDER BY id LIMIT 500`,
+          FROM signals_logs WHERE id > ${after} ORDER BY id LIMIT 1`,
       })
       let after = 0
       for (;;) {

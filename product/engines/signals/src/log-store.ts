@@ -64,9 +64,6 @@ const coveredOf = (period: Period, now: number) => {
 const periodOf = (covered: { readonly from: number; readonly to: number }) =>
   new Period({ from: DateTime.makeUnsafe(covered.from), to: DateTime.makeUnsafe(covered.to) })
 
-// `%` and `_` in what people search for are themselves, not patterns.
-const likePattern = (text: string) => `%${text.replace(/[!%_]/g, (character) => `!${character}`)}%`
-
 const CountRow = Schema.Struct({ start: Schema.Int, key: Schema.String, count: Schema.Int })
 
 const lineOf = (row: typeof LineRow.Type): LogLine => ({
@@ -293,7 +290,7 @@ export const logStore = Effect.gen(function* () {
         WHERE ${sql.and([
           ...filtersOf(covered, query),
           sql`l.level IN ${sql.in(levelsFrom[query.minimumLevel ?? "warn"])}`,
-          ...(query.search === undefined ? [] : [sql`l.text LIKE ${likePattern(query.search)} ESCAPE '!'`]),
+          ...(query.search === undefined ? [] : [sql`instr(lower(l.text), lower(${query.search})) > 0`]),
           ...(query.category === undefined ? [] : [sql`l.category = ${query.category}`]),
           ...(query.trace === undefined ? [] : [sql`l.trace = ${query.trace}`]),
           ...(query.error === undefined ? [] : [sql`l.error = ${query.error}`]),
@@ -427,7 +424,7 @@ export const logStore = Effect.gen(function* () {
   const lineFilters = (covered: { readonly from: number; readonly to: number }, query: LogMessageQuery) => [
     ...filtersOf(covered, query),
     sql`l.level IN ${sql.in(levelsFrom[query.minimumLevel ?? "warn"])}`,
-    ...(query.search === undefined ? [] : [sql`l.text LIKE ${likePattern(query.search)} ESCAPE '!'`]),
+    ...(query.search === undefined ? [] : [sql`instr(lower(l.text), lower(${query.search})) > 0`]),
   ]
 
   const findMessages = (covered: { readonly from: number; readonly to: number }, query: LogMessageQuery) =>

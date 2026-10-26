@@ -415,7 +415,11 @@ export function LogsPage({
                   now={now}
                   // The bars count every line of a message, so a search, which counts some, has none.
                   stepsOf={(message) =>
-                    columns === undefined || search !== undefined
+                    // The counts keep their own top 100, which may leave out a message shown
+                    // here: its history is then unknown, not zero.
+                    columns === undefined ||
+                    search !== undefined ||
+                    !columns.series.some((series) => series.key === `${message.id}`)
                       ? undefined
                       : logColumnsOf(columns, [`${message.id}`]).values
                   }

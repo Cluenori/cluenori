@@ -240,6 +240,8 @@ struct LogMessageScreen: View {
                                     message: line.message)
                             }
                         }
+                    } else {
+                        AnswerPlaceholder(problem: message.lines.problem)
                     }
                 } header: {
                     Text("Latest lines", bundle: #bundle, comment: "Section of a log message's newest lines.")
@@ -276,7 +278,12 @@ struct LogMessageScreen: View {
         .refreshable { await message.refresh() }
         .task { await message.refresh() }
         .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: message.detail.problem, receivedAt: message.detail.receivedAt)
+            // The message and its lines are asked for apart; either may be what failed.
+            if message.detail.problem != nil {
+                AnswerBanner(problem: message.detail.problem, receivedAt: message.detail.receivedAt)
+            } else {
+                AnswerBanner(problem: message.lines.problem, receivedAt: message.lines.receivedAt)
+            }
         }
     }
 }
@@ -378,6 +385,9 @@ struct LogLineByIDScreen: View {
         }
         .navigationTitle(Text("Log line", bundle: #bundle, comment: "Title of one log line."))
         .task { await line.line.load() }
+        .safeAreaInset(edge: .bottom) {
+            AnswerBanner(problem: line.line.problem, receivedAt: line.line.receivedAt)
+        }
     }
 }
 
