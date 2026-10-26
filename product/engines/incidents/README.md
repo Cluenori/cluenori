@@ -54,12 +54,14 @@ An unknown incident fails with `IncidentNotFound`, an unknown monitor with `Moni
   - **Stopped:** none open now. No operation is taken for a job from how it ran (see "Decisions
     and constraints"); stopped incidents opened before stay readable.
   - **Monitor:** a monitor someone set up whose condition holds: no answer (Down, above), nothing
-    for N minutes (not judged until N minutes after it was added), more than N in M minutes, p95
-    above X ms or more than X% failed over M minutes (each judged on at least 5 runs). Its incident
+    for N minutes (not judged until N minutes after it was added), more than N in M minutes, its
+    p50, p95 or p99, as chosen, above X ms over M minutes (judged on at least 5, 20 or 100 runs, so
+    a p99 of a handful of runs is never an alert), or more than X% failed over M minutes (judged on
+    at least 5 runs). Its incident
     is keyed by the monitor, carries its level, and its title names the subject and the numbers:
     "cleanup.run hasn't run for 30 minutes", "GET /api/card p95 820 ms, above 500 ms". Thresholds
     and windows are bounded by the schema (1 minute to 7 days for nothing-for, 1 day for a window,
-    10 minutes for a p95, a count up to a million); at most 30 monitors a project.
+    10 minutes for a latency, a count up to a million); at most 30 monitors a project.
   - **Quiet hints:** how often each sparse operation usually runs, guessed hourly from its last
     days, and those that haven't run for well over that. Kept as hints only: no incident, no
     activity, no push.
@@ -149,5 +151,8 @@ check starts no trace in the service it checks; then reads each monitor of count
   when it opens and when it reopens. Down and Failing reopen time-sensitive, as before. A quiet hint offers "Monitor this", which declares it.
 - **Any member who sees the project may add or remove its monitors,** as they may acknowledge its
   incidents (the API's `MemberProjects`); not owner-only.
+- **A latency monitor names its percentile** (`latencyAbove`, migration `0006_latency_percentile`):
+  `p95Above` monitors and their incidents' evidence became `latencyAbove` at 95. `monitor.added`
+  activity written before still says `p95Above` and no longer decodes; no deployment had one.
 - **Existing URL monitors became `noAnswer` monitors at `alarm`** (migration `0005_monitors`), so
   they ring as before.

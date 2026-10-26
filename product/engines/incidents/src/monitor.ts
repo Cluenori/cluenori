@@ -56,6 +56,16 @@ export const MonitorMeasure = Schema.Struct({ at: Instant, value: Schema.optiona
   identifier: "MonitorMeasure",
 })
 
+/** Which of an operation's latencies a monitor judges: its p50, p95 or p99. */
+export const LatencyPercentile = Schema.Literals([50, 95, 99]).annotate({ identifier: "LatencyPercentile" })
+export type LatencyPercentile = typeof LatencyPercentile.Type
+
+/**
+ * How many runs a window needs before a percentile of it means something, fewer being unknown, never
+ * judged: p99 of 5 runs is merely the slowest.
+ */
+export const runsJudged: Readonly<Record<LatencyPercentile, number>> = { 50: 5, 95: 20, 99: 100 }
+
 // A window back from now, in whole minutes: a minute to a day; and how long nothing may come, a
 // minute to a week. Counts are kept by the minute for two days, so a day is read by the minute.
 const WindowMinutes = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1440 }))
@@ -67,7 +77,9 @@ const QuietMinutes = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10
  * - `nothingFor`: its operation didn't run, or its event didn't arrive, for `minutes`; first judged
  *   `minutes` after the monitor was added.
  * - `moreThan`: its error, log message or event came more than `count` times in the last `minutes`.
- * - `p95Above`: its operation's p95 over the last `minutes` was above `ms`, of at least 5 runs.
+ * - `latencyAbove`: its operation's `percentile` (p50, p95 or p99) over the last `minutes` was above
+ *   `ms`, of at least as many runs as that percentile needs to mean something: 5 for p50, 20 for p95,
+ *   100 for p99 (`runsJudged`).
  * - `errorRateAbove`: more than `percent` of its operation's runs over the last `minutes` failed, of
  *   at least 5 runs.
  */
@@ -82,11 +94,12 @@ export const MonitorCondition = Schema.Union([
     count: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1_000_000 })),
     minutes: WindowMinutes,
   }).annotate({ identifier: "MoreThan" }),
-  Schema.TaggedStruct("p95Above", {
+  Schema.TaggedStruct("latencyAbove", {
     subject: OperationSubject,
+    percentile: LatencyPercentile,
     ms: Schema.Finite.check(Schema.isBetween({ minimum: 1, maximum: 600_000 })),
     minutes: WindowMinutes,
-  }).annotate({ identifier: "P95Above" }),
+  }).annotate({ identifier: "LatencyAbove" }),
   Schema.TaggedStruct("errorRateAbove", {
     subject: OperationSubject,
     percent: Schema.Finite.check(Schema.isGreaterThan(0), Schema.isLessThan(100)),
@@ -150,8 +163,8 @@ export const MonitorState = Schema.Struct({
   days: Schema.Array(MonitorDay),
   /**
    * What the last look at its counts found, for a monitor of counts; absent for a URL's, and until
-   * its first look: how many ran or came in its window, its p95 in ms, or its error rate in percent,
-   * the value absent when its operation ran fewer than 5 times.
+   * its first look: how many ran or came in its window, its percentile in ms, or its error rate in
+   * percent, the value absent when its operation ran too few times to judge (`runsJudged`).
    */
   measured: Schema.optionalKey(MonitorMeasure),
   /** Whether it has an open incident now. */

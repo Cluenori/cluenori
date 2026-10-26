@@ -33,6 +33,7 @@ export {
   AlertLevel,
   ErrorSubject,
   EventSubject,
+  LatencyPercentile,
   MessageSubject,
   Monitor,
   MonitorCondition,
@@ -48,5 +49,6 @@ export {
   MonitorStep,
   MonitorUrl,
   OperationSubject,
+  runsJudged,
   UrlSubject,
 } from "./monitor.ts"

@@ -55,7 +55,7 @@ export const Evidence = Schema.Union([
     monitor: MonitorId,
     /** Its condition then. */
     condition: MonitorCondition,
-    /** What it measured: how many ran or came, the p95 in ms, or the error rate in percent. */
+    /** What it measured: how many ran or came, its percentile in ms, or the error rate in percent. */
     value: Schema.Finite,
     /** What its subject is called: the operation's or event's name, an error's or log message's title. */
     name: Schema.String,

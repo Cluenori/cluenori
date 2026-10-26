@@ -368,8 +368,8 @@ const monitorEvidenceWords = (condition: MonitorCondition, value: number) => {
       return `${count(value)} in ${lasting(("minutes" in condition ? condition.minutes : 1) * 60_000)}`
     case "moreThan":
       return `${count(value)} in ${lasting(condition.minutes * 60_000)}, more than ${count(condition.count)}`
-    case "p95Above":
-      return `p95 ${duration(value)}, above ${duration(condition.ms)}`
+    case "latencyAbove":
+      return `p${condition.percentile} ${duration(value)}, above ${duration(condition.ms)}`
     case "errorRateAbove":
       return `${share(value, 100)} failed, above ${share(condition.percent, 100)}`
   }

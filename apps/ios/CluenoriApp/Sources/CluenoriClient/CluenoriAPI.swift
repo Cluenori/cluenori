@@ -663,11 +663,12 @@ public nonisolated struct CluenoriAPI: Sendable {
     /// Adds a monitor to one component: a subject, a condition and a level (alarm, timeSensitive or
     /// quiet). A URL that doesn't answer two checks in a row (no environment); an operation or app
     /// event with nothing for N minutes, first judged N minutes after it is added; an error, log
-    /// message or event more than N times in a window; an operation's p95 above X ms, or error rate
-    /// above X%, over a window of at least 5 runs. Windows are 1 to 1,440 minutes, nothing-for 1 to
-    /// 10,080. Looked at from the next check on. A project has at most 30; the same subject,
-    /// condition and environment twice is refused with the first one's ID. Any member who sees the
-    /// project may add one.
+    /// message or event more than N times in a window; an operation's p50, p95 or p99 above X ms
+    /// (`latencyAbove`, judged of at least 5, 20 or 100 runs), or error rate above X% (of at least
+    /// 5 runs), over a window. Windows are 1 to 1,440 minutes, nothing-for 1 to 10,080. Looked at
+    /// from the next check on. A project has at most 30; the same subject, condition and
+    /// environment twice is refused with the first one's ID. Any member who sees the project may
+    /// add one.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, `.componentNotFound`, `.monitorExists`,
     /// `.monitorLimitReached`, or as any call can.
@@ -5102,6 +5103,48 @@ public nonisolated struct LastSeen: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct LatencyAbove: Codable, Hashable, Sendable {
+    public let subject: OperationSubject
+    public let percentile: Double
+    public let ms: Double
+    public let minutes: Int
+
+    public init(subject: OperationSubject, percentile: Double, ms: Double, minutes: Int) {
+        self.subject = subject
+        self.percentile = percentile
+        self.ms = ms
+        self.minutes = minutes
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case subject = "subject"
+        case percentile = "percentile"
+        case ms = "ms"
+        case minutes = "minutes"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "latencyAbove" else {
+            throw container.`corruption at`(._tag, "_tag isn't latencyAbove.")
+        }
+        self.subject = try container.`value at`(.subject)
+        self.percentile = try container.`value at`(.percentile)
+        self.ms = try container.`value at`(.ms)
+        self.minutes = try container.`value at`(.minutes)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("latencyAbove", forKey: ._tag)
+        try container.encode(self.subject, forKey: .subject)
+        try container.encode(self.percentile, forKey: .percentile)
+        try container.encode(self.ms, forKey: .ms)
+        try container.encode(self.minutes, forKey: .minutes)
+    }
+}
+
 /// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
 public nonisolated struct LaunchStart: RawRepresentable, Codable, Hashable, Sendable {
     public let rawValue: String
@@ -6281,7 +6324,7 @@ public nonisolated enum MonitorCondition: Codable, Hashable, Sendable {
     case noAnswer(NoAnswer)
     case nothingFor(NothingFor)
     case moreThan(MoreThan)
-    case p95Above(P95Above)
+    case latencyAbove(LatencyAbove)
     case errorRateAbove(ErrorRateAbove)
     case unknown(String)
 
@@ -6295,7 +6338,7 @@ public nonisolated enum MonitorCondition: Codable, Hashable, Sendable {
         case "noAnswer": self = .noAnswer(try NoAnswer(from: decoder))
         case "nothingFor": self = .nothingFor(try NothingFor(from: decoder))
         case "moreThan": self = .moreThan(try MoreThan(from: decoder))
-        case "p95Above": self = .p95Above(try P95Above(from: decoder))
+        case "latencyAbove": self = .latencyAbove(try LatencyAbove(from: decoder))
         case "errorRateAbove": self = .errorRateAbove(try ErrorRateAbove(from: decoder))
         default: self = .unknown(kind)
         }
@@ -6306,7 +6349,7 @@ public nonisolated enum MonitorCondition: Codable, Hashable, Sendable {
         case .noAnswer(let value): try value.encode(to: encoder)
         case .nothingFor(let value): try value.encode(to: encoder)
         case .moreThan(let value): try value.encode(to: encoder)
-        case .p95Above(let value): try value.encode(to: encoder)
+        case .latencyAbove(let value): try value.encode(to: encoder)
         case .errorRateAbove(let value): try value.encode(to: encoder)
         case .unknown(let kind):
             var container = encoder.container(keyedBy: `JSON keys`.self)
@@ -7075,43 +7118,6 @@ public nonisolated struct OperationTable: Codable, Hashable, Sendable {
         try container.encode(self.errors, forKey: .errors)
         try container.encodeIfPresent(self.dataUntil, forKey: .dataUntil)
         try container.encodeIfPresent(self.lastSeen, forKey: .lastSeen)
-    }
-}
-
-public nonisolated struct P95Above: Codable, Hashable, Sendable {
-    public let subject: OperationSubject
-    public let ms: Double
-    public let minutes: Int
-
-    public init(subject: OperationSubject, ms: Double, minutes: Int) {
-        self.subject = subject
-        self.ms = ms
-        self.minutes = minutes
-    }
-
-    private enum `JSON keys`: String, CodingKey {
-        case _tag = "_tag"
-        case subject = "subject"
-        case ms = "ms"
-        case minutes = "minutes"
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: `JSON keys`.self)
-        guard try container.`value at`(._tag) as String == "p95Above" else {
-            throw container.`corruption at`(._tag, "_tag isn't p95Above.")
-        }
-        self.subject = try container.`value at`(.subject)
-        self.ms = try container.`value at`(.ms)
-        self.minutes = try container.`value at`(.minutes)
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: `JSON keys`.self)
-        try container.encode("p95Above", forKey: ._tag)
-        try container.encode(self.subject, forKey: .subject)
-        try container.encode(self.ms, forKey: .ms)
-        try container.encode(self.minutes, forKey: .minutes)
     }
 }
 

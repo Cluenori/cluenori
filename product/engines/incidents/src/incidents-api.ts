@@ -79,7 +79,7 @@ export class IncidentsGroup extends HttpApiGroup.make("incidents")
       ],
     }).annotate(
       OpenApi.Description,
-      "Adds a monitor to one component: a subject, a condition and a level (alarm, timeSensitive or quiet). A URL that doesn't answer two checks in a row (no environment); an operation or app event with nothing for N minutes, first judged N minutes after it is added; an error, log message or event more than N times in a window; an operation's p95 above X ms, or error rate above X%, over a window of at least 5 runs. Windows are 1 to 1,440 minutes, nothing-for 1 to 10,080. Looked at from the next check on. A project has at most 30; the same subject, condition and environment twice is refused with the first one's ID. Any member who sees the project may add one.",
+      "Adds a monitor to one component: a subject, a condition and a level (alarm, timeSensitive or quiet). A URL that doesn't answer two checks in a row (no environment); an operation or app event with nothing for N minutes, first judged N minutes after it is added; an error, log message or event more than N times in a window; an operation's p50, p95 or p99 above X ms (`latencyAbove`, judged of at least 5, 20 or 100 runs), or error rate above X% (of at least 5 runs), over a window. Windows are 1 to 1,440 minutes, nothing-for 1 to 10,080. Looked at from the next check on. A project has at most 30; the same subject, condition and environment twice is refused with the first one's ID. Any member who sees the project may add one.",
     ),
   )
   .add(

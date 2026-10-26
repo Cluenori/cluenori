@@ -220,13 +220,16 @@ struct MonitorThisTests {
                     ErrorRateAbove(subject: OperationSubject(operation: "POST /api/export"), percent: 2.5, minutes: 120)
                 ))
 
-        draft.kind = .p95Above
-        #expect(draft.threshold == "500")
+        draft.kind = .latencyAbove
+        #expect(draft.threshold == "500" && draft.percentile == .p95)
         draft.threshold = "1500.5"
+        draft.percentile = .p99
         #expect(
             condition(draft, english)
-                == .p95Above(
-                    P95Above(subject: OperationSubject(operation: "POST /api/export"), ms: 1500.5, minutes: 120)))
+                == .latencyAbove(
+                    LatencyAbove(
+                        subject: OperationSubject(operation: "POST /api/export"), percentile: 99, ms: 1500.5,
+                        minutes: 120)))
     }
 
     @Test func `refuses what the API would: windows past a day, nothing-for past 7 days, and rates of 0 or 100`() {
@@ -243,17 +246,17 @@ struct MonitorThisTests {
         nothing.unit = .minutes
         #expect(condition(nothing, english) == nil)
 
-        var slow = OperationMonitorDraft(kind: .p95Above, minutes: 60)
+        var slow = OperationMonitorDraft(kind: .latencyAbove, minutes: 60)
         slow.amount = "2"
         slow.unit = .days
         #expect(
             slow.monitor(operation: "o", component: "c", environment: nil, locale: english)
-                == .failure(.window(.p95Above)))
+                == .failure(.window(.latencyAbove)))
         slow.unit = .hours
         slow.threshold = "0"
         #expect(
             slow.monitor(operation: "o", component: "c", environment: nil, locale: english)
-                == .failure(.threshold(.p95Above)))
+                == .failure(.threshold(.latencyAbove)))
 
         var failing = OperationMonitorDraft(kind: .errorRateAbove, minutes: 15)
         for refused in ["0", "100", "", "five"] {

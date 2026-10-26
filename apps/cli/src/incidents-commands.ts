@@ -41,8 +41,8 @@ const conditionWords = (condition: MonitorCondition) => {
       return `${name}: nothing for ${minutesWords(condition.minutes)}`
     case "moreThan":
       return `${name}: more than ${count(condition.count)} in ${minutesWords(condition.minutes)}`
-    case "p95Above":
-      return `${name}: p95 above ${milliseconds(condition.ms)} over ${minutesWords(condition.minutes)}`
+    case "latencyAbove":
+      return `${name}: p${condition.percentile} above ${milliseconds(condition.ms)} over ${minutesWords(condition.minutes)}`
     case "errorRateAbove":
       return `${name}: more than ${condition.percent}% failed over ${minutesWords(condition.minutes)}`
   }
@@ -310,14 +310,14 @@ export const monitorShow = Command.make(
     }),
 ).pipe(Command.withDescription("One monitor: how it is now, each day's checks, its failed checks and its incidents."))
 
-// What a monitor of counts measured, in words: `0 runs`, `p95 820ms`, `12% failed`.
+// What a monitor of counts measured, in words: `0 runs`, `p99 820ms`, `12% failed`.
 const measuredWords = (condition: MonitorCondition, value: number | undefined) => {
   if (value === undefined) {
     return "too few runs to judge"
   }
   switch (condition._tag) {
-    case "p95Above":
-      return `p95 ${milliseconds(value)}`
+    case "latencyAbove":
+      return `p${condition.percentile} ${milliseconds(value)}`
     case "errorRateAbove":
       return `${value.toFixed(1)}% failed`
     case "noAnswer":
@@ -381,7 +381,9 @@ const conditionOf = Effect.fn("conditionOf")(function* (
   input: {
     readonly nothingFor: Option.Option<string>
     readonly moreThan: Option.Option<number>
+    readonly p50Above: Option.Option<number>
     readonly p95Above: Option.Option<number>
+    readonly p99Above: Option.Option<number>
     readonly errorRateAbove: Option.Option<number>
   },
   within: number,
@@ -395,8 +397,14 @@ const conditionOf = Effect.fn("conditionOf")(function* (
   if (Option.isSome(input.moreThan)) {
     return { _tag: "moreThan", subject, count: input.moreThan.value, minutes: within }
   }
-  if (Option.isSome(input.p95Above)) {
-    return { _tag: "p95Above", subject, ms: input.p95Above.value, minutes: within }
+  for (const [percentile, ms] of [
+    [50, input.p50Above],
+    [95, input.p95Above],
+    [99, input.p99Above],
+  ] as const) {
+    if (Option.isSome(ms)) {
+      return { _tag: "latencyAbove", subject, percentile, ms: ms.value, minutes: within }
+    }
   }
   return { _tag: "errorRateAbove", subject, percent: Option.getOrElse(input.errorRateAbove, () => 0), minutes: within }
 })
@@ -420,9 +428,17 @@ export const monitorAdd = Command.make(
       Flag.optional,
       Flag.withDescription("Fires when the error, log message or event came more than this many times in --within."),
     ),
+    p50Above: Flag.Int("p50-above").pipe(
+      Flag.optional,
+      Flag.withDescription("Fires when the operation's p50 over --within is above this many ms, of at least 5 runs."),
+    ),
     p95Above: Flag.Int("p95-above").pipe(
       Flag.optional,
-      Flag.withDescription("Fires when the operation's p95 over --within is above this many ms, of at least 5 runs."),
+      Flag.withDescription("Fires when the operation's p95 over --within is above this many ms, of at least 20 runs."),
+    ),
+    p99Above: Flag.Int("p99-above").pipe(
+      Flag.optional,
+      Flag.withDescription("Fires when the operation's p99 over --within is above this many ms, of at least 100 runs."),
     ),
     errorRateAbove: Flag.Finite("error-rate-above").pipe(
       Flag.optional,
@@ -448,14 +464,19 @@ export const monitorAdd = Command.make(
       const project = yield* parsed(ProjectKey, input.project, "a project key")
       const component = yield* parsed(ComponentKey, input.component, "a component key")
       const subject = yield* subjectOf(input)
-      const conditions = [input.nothingFor, input.moreThan, input.p95Above, input.errorRateAbove].filter((given) =>
-        Option.isSome<unknown>(given),
-      )
+      const conditions = [
+        input.nothingFor,
+        input.moreThan,
+        input.p50Above,
+        input.p95Above,
+        input.p99Above,
+        input.errorRateAbove,
+      ].filter((given) => Option.isSome<unknown>(given))
       if (subject._tag === "url" ? conditions.length > 0 : conditions.length !== 1) {
         return yield* refuse(
           subject._tag === "url"
             ? "A URL's monitor takes no condition: it fires when two checks in a row fail."
-            : "Give exactly one of --nothing-for, --more-than, --p95-above or --error-rate-above.",
+            : "Give exactly one of --nothing-for, --more-than, --p50-above, --p95-above, --p99-above or --error-rate-above.",
         )
       }
       const within = yield* minutesOf(input.within)
@@ -494,7 +515,7 @@ export const monitorAdd = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Watch something every minute and open an incident when it holds: a URL that doesn't answer, an operation or event with nothing for a while, an error, log message or event more than N times, an operation's p95 or error rate above a number.",
+    "Watch something every minute and open an incident when it holds: a URL that doesn't answer, an operation or event with nothing for a while, an error, log message or event more than N times, an operation's p50, p95 or p99 or its error rate above a number.",
   ),
 )
 

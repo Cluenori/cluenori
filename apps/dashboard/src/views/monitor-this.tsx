@@ -1,6 +1,6 @@
 import type { ComponentKey, EnvironmentKey, ProjectKey } from "@cluenori/foundation"
-import type { AlertLevel, MonitorCondition } from "@cluenori/incidents"
-import { AddMonitor } from "@cluenori/incidents"
+import type { AlertLevel, LatencyPercentile, MonitorCondition } from "@cluenori/incidents"
+import { AddMonitor, runsJudged } from "@cluenori/incidents"
 import { useAtomSet } from "@effect/atom-react"
 import { Exit, Result, Schema } from "effect"
 import { RadarIcon } from "lucide-react"
@@ -33,7 +33,7 @@ export type CountSubject = Exclude<MonitorCondition["subject"], { readonly _tag:
 
 // The conditions that fit each subject.
 const kindsOf: Readonly<Record<CountSubject["_tag"], ReadonlyArray<CountKind>>> = {
-  operation: ["nothingFor", "p95Above", "errorRateAbove"],
+  operation: ["nothingFor", "latencyAbove", "errorRateAbove"],
   event: ["nothingFor", "moreThan"],
   error: ["moreThan"],
   message: ["moreThan"],
@@ -42,7 +42,7 @@ const kindsOf: Readonly<Record<CountSubject["_tag"], ReadonlyArray<CountKind>>> 
 const kindLabels: Readonly<Record<CountKind, string>> = {
   nothingFor: "Nothing for",
   moreThan: "More than",
-  p95Above: "p95 above",
+  latencyAbove: "Latency above",
   errorRateAbove: "Error rate above",
 }
 
@@ -56,6 +56,20 @@ const levelOptions: ReadonlyArray<{
   { value: "quiet", label: "Quiet", description: "Shows without a sound" },
 ]
 
+// The percentiles a monitor of latency judges, by the name the form shows.
+const percentiles = { p50: 50, p95: 95, p99: 99 } as const satisfies Record<string, LatencyPercentile>
+type PercentileName = keyof typeof percentiles
+
+const percentileOptions: ReadonlyArray<{
+  readonly value: PercentileName
+  readonly label: string
+  readonly description: string
+}> = [
+  { value: "p50", label: "p50", description: `Half the runs were slower; judged of at least ${runsJudged[50]} runs` },
+  { value: "p95", label: "p95", description: `1 run in 20 was slower; judged of at least ${runsJudged[95]} runs` },
+  { value: "p99", label: "p99", description: `1 run in 100 was slower; judged of at least ${runsJudged[99]} runs` },
+]
+
 const units = { minutes: 1, hours: 60, days: 1440 } as const
 type Unit = keyof typeof units
 
@@ -63,14 +77,20 @@ type Unit = keyof typeof units
 const decodeMonitor = Schema.decodeUnknownResult(AddMonitor)
 
 // The condition the form says, for the schema to check.
-const conditionOf = (subject: CountSubject, kind: CountKind, threshold: number, minutes: number) => {
+const conditionOf = (
+  subject: CountSubject,
+  kind: CountKind,
+  threshold: number,
+  minutes: number,
+  percentile: LatencyPercentile,
+) => {
   switch (kind) {
     case "nothingFor":
       return { _tag: kind, subject, minutes }
     case "moreThan":
       return { _tag: kind, subject, count: threshold, minutes }
-    case "p95Above":
-      return { _tag: kind, subject, ms: threshold, minutes }
+    case "latencyAbove":
+      return { _tag: kind, subject, percentile, ms: threshold, minutes }
     case "errorRateAbove":
       return { _tag: kind, subject, percent: threshold, minutes }
   }
@@ -80,7 +100,7 @@ const conditionOf = (subject: CountSubject, kind: CountKind, threshold: number, 
 const thresholds: Readonly<Record<CountKind, { readonly label: string; readonly first: string } | undefined>> = {
   nothingFor: undefined,
   moreThan: { label: "Times", first: "10" },
-  p95Above: { label: "Milliseconds", first: "500" },
+  latencyAbove: { label: "Milliseconds", first: "500" },
   errorRateAbove: { label: "Percent failed", first: "5" },
 }
 
@@ -117,6 +137,7 @@ export function MonitorThis({
     return minutes % 60 === 0 ? String(minutes / 60) : String(minutes)
   })
   const [unit, setUnit] = useState<Unit>(() => ((initial?.minutes ?? 60) % 60 === 0 ? "hours" : "minutes"))
+  const [percentile, setPercentile] = useState<PercentileName>("p95")
   const [level, setLevel] = useState<AlertLevel>("timeSensitive")
   const [saving, setSaving] = useState(false)
   const [refusal, setRefusal] = useState<string | undefined>(undefined)
@@ -125,7 +146,7 @@ export function MonitorThis({
   const decoded = decodeMonitor({
     component,
     ...(environment === undefined ? {} : { environment }),
-    condition: conditionOf(subject, kind, Number(threshold), Number(amount) * units[unit]),
+    condition: conditionOf(subject, kind, Number(threshold), Number(amount) * units[unit], percentiles[percentile]),
     level,
   })
 
@@ -179,6 +200,15 @@ export function MonitorThis({
                 setKind(next)
                 setThreshold(thresholds[next]?.first ?? "")
               }}
+            />
+          )}
+          {kind === "latencyAbove" && (
+            <Segmented
+              label="Percentile"
+              options={percentileOptions}
+              value={percentile}
+              onChange={setPercentile}
+              mono
             />
           )}
           <div className="flex flex-wrap items-end gap-3">

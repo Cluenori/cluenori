@@ -45,7 +45,7 @@ export const subjectWords = (subject: MonitorCondition["subject"]) => {
 
 /**
  * When a monitor fires, in a line: "Doesn't answer two checks in a row", "Nothing for 30 minutes",
- * "More than 10 in 1 hour", "p95 above 500 ms over 15 minutes", "More than 5% failed over 15 minutes".
+ * "More than 10 in 1 hour", "p99 above 500 ms over 15 minutes", "More than 5% failed over 15 minutes".
  */
 export const conditionWords = (condition: MonitorCondition) => {
   switch (condition._tag) {
@@ -55,21 +55,21 @@ export const conditionWords = (condition: MonitorCondition) => {
       return `Nothing for ${minutesWords(condition.minutes)}`
     case "moreThan":
       return `More than ${count(condition.count)} in ${minutesWords(condition.minutes)}`
-    case "p95Above":
-      return `p95 above ${duration(condition.ms)} over ${minutesWords(condition.minutes)}`
+    case "latencyAbove":
+      return `p${condition.percentile} above ${duration(condition.ms)} over ${minutesWords(condition.minutes)}`
     case "errorRateAbove":
       return `More than ${share(condition.percent, 100)} failed over ${minutesWords(condition.minutes)}`
   }
 }
 
-/** What a monitor of counts measured: "0 in 30 minutes", "p95 820 ms", "12% failed", or too few runs. */
+/** What a monitor of counts measured: "0 in 30 minutes", "p99 820 ms", "12% failed", or too few runs. */
 export const measuredWords = (condition: MonitorCondition, value: number | undefined) => {
   if (value === undefined) {
     return "Too few runs to judge"
   }
   switch (condition._tag) {
-    case "p95Above":
-      return `p95 ${duration(value)}`
+    case "latencyAbove":
+      return `p${condition.percentile} ${duration(value)}`
     case "errorRateAbove":
       return `${share(value, 100)} failed`
     case "noAnswer":

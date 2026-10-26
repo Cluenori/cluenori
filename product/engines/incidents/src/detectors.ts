@@ -1,7 +1,7 @@
 import { Duration } from "effect"
 
 import type { Evidence } from "./incident.ts"
-import type { MonitorCondition } from "./monitor.ts"
+import { type MonitorCondition, runsJudged } from "./monitor.ts"
 
 // ---- Failing ----------------------------------------------------------------------------------
 
@@ -86,26 +86,44 @@ export const checkTimeout = Duration.seconds(10)
 /** A monitor's condition other than a URL's: one judged on counts Signals keeps. */
 export type CountCondition = Exclude<MonitorCondition, { readonly _tag: "noAnswer" }>
 
-// A p95 or an error rate of fewer runs says too little to alert on.
-const runsJudged = 5
+// An error rate of fewer runs says too little to alert on.
+const rateRunsJudged = 5
+
+/** An operation's runs and latencies in one environment of a monitor's window. */
+export interface LatencyRead {
+  readonly count: number
+  readonly p50Ms: number
+  readonly p95Ms: number
+  readonly p99Ms: number
+}
+
+// Where each percentile is in what Signals answers.
+const latencyFields = { 50: "p50Ms", 95: "p95Ms", 99: "p99Ms" } as const
 
 /**
  * What a monitor of counts measures from what it read over its window: how many ran or came; the
- * p95 in ms or the error rate in percent, undefined when its operation ran fewer than 5 times; the
- * p95 also when no environment it was read in had 5 runs (`p95Ms` undefined).
+ * error rate in percent, undefined when its operation ran fewer than 5 times; or its percentile in ms,
+ * the highest of the environments read that ran at least as often as the percentile needs
+ * (`runsJudged`), so one slow environment is seen, undefined when none did.
  */
 export const measuredOf = (
   condition: CountCondition,
-  read: { readonly count: number; readonly errors: number; readonly p95Ms: number | undefined },
+  read: { readonly count: number; readonly errors: number; readonly latencies: ReadonlyArray<LatencyRead> },
 ): number | undefined => {
   switch (condition._tag) {
     case "nothingFor":
     case "moreThan":
       return read.count
-    case "p95Above":
-      return read.count >= runsJudged ? read.p95Ms : undefined
+    case "latencyAbove": {
+      const judged = read.latencies.filter((row) => row.count >= runsJudged[condition.percentile])
+      if (judged.length === 0) {
+        return undefined
+      }
+      const field = latencyFields[condition.percentile]
+      return Math.max(...judged.map((row) => row[field]))
+    }
     case "errorRateAbove":
-      return read.count >= runsJudged ? (100 * read.errors) / read.count : undefined
+      return read.count >= rateRunsJudged ? (100 * read.errors) / read.count : undefined
   }
 }
 
@@ -119,7 +137,7 @@ export const firesOn = (condition: CountCondition, value: number | undefined) =>
       return value === 0
     case "moreThan":
       return value > condition.count
-    case "p95Above":
+    case "latencyAbove":
       return value > condition.ms
     case "errorRateAbove":
       return value > condition.percent
@@ -180,8 +198,8 @@ const monitorTitleOf = (name: string, condition: MonitorCondition, value: number
         : `${name}: none for ${minutesWords(condition.minutes)}`
     case "moreThan":
       return `${name}: ${value} in ${minutesWords(condition.minutes)}, more than ${condition.count}`
-    case "p95Above":
-      return `${name} p95 ${msWords(value)}, above ${msWords(condition.ms)}`
+    case "latencyAbove":
+      return `${name} p${condition.percentile} ${msWords(value)}, above ${msWords(condition.ms)}`
     case "errorRateAbove":
       return `${name}: ${percent(value / 100)} failed, above ${percent(condition.percent / 100)}`
   }

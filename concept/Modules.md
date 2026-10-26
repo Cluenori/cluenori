@@ -224,7 +224,7 @@ A monitor is what I set up: a subject, a condition, and a level. Down and Failin
 | Doesn't answer | A URL, such as a component's health endpoint | Two checks in a row fail (Down) | `https://notes.example/health is down: HTTP 503` |
 | Nothing for N | An operation (a job) or an event | None in the last N minutes | `cleanup.run hasn't run for 30 minutes` |
 | More than N in a window | An error, a log message or an event | More than N in the last M minutes | `Error 3f9c… happened 14 times in 1 hour, more than 10` |
-| p95 above X | An operation | Its p95 over the last M minutes is above X ms, with at least 5 runs | `GET /api/card p95 820 ms, above 500 ms` |
+| Latency above X | An operation | Its p50, p95 or p99, as chosen, over the last M minutes is above X ms, with at least 5, 20 or 100 runs; fewer are unknown, never an alert | `GET /api/card p95 820 ms, above 500 ms` |
 | Error rate above X | An operation | More than X% of its runs failed over the last M minutes, with at least 5 runs | `GET /api/card: 12% failed, above 5%` |
 
 Its level is alarm, time sensitive or quiet (no push); a URL monitor is an alarm by default, others time sensitive. Each is set up in one step: "Monitor this" on an operation's, error's, log message's or event's page offers the conditions that fit it; Uptime adds a URL; and `./cluenori monitor add` does both. It is removed just as explicitly, and removing it resolves its open incident. Each is looked at in the minute's check, from the counts Signals already keeps. No formulas, query language, combinations or rule dashboards.

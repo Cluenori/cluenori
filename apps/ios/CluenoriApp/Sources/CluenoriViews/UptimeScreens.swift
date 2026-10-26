@@ -174,10 +174,13 @@ struct MonitorConditionText: View {
             Text(
                 "More than \(more.count) in \(window(more.minutes))", bundle: #bundle,
                 comment: "A monitor's condition: too many in a window. The variables are a count and a duration.")
-        case .p95Above(let p95):
+        case .latencyAbove(let latency):
             Text(
-                "p95 above \(milliseconds(p95.ms)) over \(window(p95.minutes))", bundle: #bundle,
-                comment: "A monitor's condition: an operation's p95 too slow. The variables are durations.")
+                "\(latency.percentileName) above \(milliseconds(latency.ms)) over \(window(latency.minutes))",
+                bundle: #bundle,
+                comment:
+                    "A monitor's condition: an operation's latency too slow. The variables are a percentile, such as p95, and durations."
+            )
         case .errorRateAbove(let rate):
             Text(
                 "More than \(percent(rate.percent)) failed over \(window(rate.minutes))", bundle: #bundle,
@@ -205,9 +208,10 @@ private func measured(_ condition: MonitorCondition, _ value: Double?) -> Text {
         return Text(
             "\(Int(value)) in \(window(more.minutes))", bundle: #bundle,
             comment: "What a monitor counted. The variables are a count and a duration.")
-    case .p95Above:
+    case .latencyAbove(let latency):
         return Text(
-            "p95 \(milliseconds(value))", bundle: #bundle, comment: "An operation's p95. The variable is a duration.")
+            "\(latency.percentileName) \(milliseconds(value))", bundle: #bundle,
+            comment: "An operation's latency. The variables are a percentile, such as p95, and a duration.")
     case .errorRateAbove:
         return Text(
             "\(percent(value)) failed", bundle: #bundle, comment: "The share of an operation's runs that failed.")
@@ -950,8 +954,10 @@ struct MonitorOperationSheet: View {
                             comment: "A monitor that fires when an operation doesn't run."
                         )
                         .tag(OperationMonitorDraft.Kind.nothingFor)
-                        Text("p95 above", bundle: #bundle, comment: "A monitor that fires when an operation is slow.")
-                            .tag(OperationMonitorDraft.Kind.p95Above)
+                        Text(
+                            "Latency above", bundle: #bundle, comment: "A monitor that fires when an operation is slow."
+                        )
+                        .tag(OperationMonitorDraft.Kind.latencyAbove)
                         Text("Errors above", bundle: #bundle, comment: "A monitor that fires when too many runs fail.")
                             .tag(OperationMonitorDraft.Kind.errorRateAbove)
                     } label: {
@@ -960,6 +966,25 @@ struct MonitorOperationSheet: View {
                     .pickerStyle(.segmented)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
+                }
+                if draft.kind == .latencyAbove {
+                    Section {
+                        Picker(selection: $draft.percentile) {
+                            ForEach(OperationMonitorDraft.Percentile.allCases, id: \.self) { percentile in
+                                Text(verbatim: "p\(Int(percentile.rawValue))").tag(percentile)
+                            }
+                        } label: {
+                            Text("Percentile", bundle: #bundle, comment: "The choice of the latency a monitor judges.")
+                        }
+                        .pickerStyle(.segmented)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                    } footer: {
+                        Text(
+                            "Judged of at least \(draft.percentile.runsJudged) runs in its window; fewer are unknown, never an alert.",
+                            bundle: #bundle,
+                            comment: "How many runs a latency monitor needs. The variable is a count.")
+                    }
                 }
                 Section {
                     if draft.kind != .nothingFor {
@@ -1065,7 +1090,7 @@ struct MonitorOperationSheet: View {
     }
 
     private var thresholdLabel: Text {
-        draft.kind == .p95Above
+        draft.kind == .latencyAbove
             ? Text("Milliseconds", bundle: #bundle, comment: "The field for a monitor's p95 threshold.")
             : Text("Percent failed", bundle: #bundle, comment: "The field for a monitor's error-rate threshold.")
     }
@@ -1103,7 +1128,7 @@ struct MonitorOperationSheet: View {
                     comment: "A monitor's window out of range."))
                 .foregroundStyle(Palette.red)
         case .failure(.threshold(let kind)):
-            (kind == .p95Above
+            (kind == .latencyAbove
                 ? Text("Milliseconds: 1 to 600,000.", bundle: #bundle, comment: "A p95 threshold out of range.")
                 : Text(
                     "Percent failed: more than 0, less than 100.", bundle: #bundle,

@@ -774,7 +774,7 @@ export class Incidents extends Context.Service<
       }, Effect.orDie)
 
       // What a monitor of counts reads over its window: how many ran or came, how many failed, and
-      // the p95. One read, through an index, of the subject's counts: Signals' minute counts of one
+      // each environment's latencies. One read, through an index, of the subject's counts: Signals' minute counts of one
       // operation, the warnings and errors of one error or log message, or one event's signals.
       const readCounts = Effect.fn("Incidents.readCounts")(function* (
         monitor: MonitorRow,
@@ -789,14 +789,12 @@ export class Incidents extends Context.Service<
         switch (subject._tag) {
           case "operation": {
             const table = yield* signals.operations({ period, ...place, operation: subject.operation })
-            // Environments added up when the monitor names none; the p95 the highest of those that
-            // ran at least 5 times, so one environment slow is seen.
-            const judged = table.rows.filter((row) => row.count >= 5)
+            // Environments added up when the monitor names none; each one's latencies kept apart, so
+            // the slowest that ran often enough is judged (`measuredOf`).
             return {
               count: table.rows.reduce((total, row) => total + row.count, 0),
               errors: table.rows.reduce((total, row) => total + row.errors, 0),
-              // None when no environment ran 5 times: unknown, never 0.
-              p95Ms: judged.length === 0 ? undefined : Math.max(...judged.map((row) => row.p95Ms)),
+              latencies: table.rows,
             }
           }
           case "event": {
@@ -804,7 +802,7 @@ export class Incidents extends Context.Service<
             // Every one arrived since the window opened, even while URLs were fetched: never an
             // absence the check's own moment invents.
             const count = yield* apps.eventCount({ since: period.from, ...place, event: subject.event }, atMost)
-            return { count, errors: 0, p95Ms: undefined }
+            return { count, errors: 0, latencies: [] }
           }
           case "error":
           case "message": {
@@ -818,7 +816,7 @@ export class Incidents extends Context.Service<
             return {
               count: counts.series.reduce((total, series) => total + series.total, 0),
               errors: 0,
-              p95Ms: undefined,
+              latencies: [],
             }
           }
         }

@@ -167,5 +167,23 @@ export const migrateIncidents = Migrator.make({})({
         value REAL
       ) WITHOUT ROWID`
     }),
+    // A monitor of an operation's latency names its percentile: `p95Above` became `latencyAbove` at
+    // 95, in monitors and in the evidence of their incidents, written in the order the encoder writes
+    // it, so the same monitor added again is still refused.
+    // Not handled: `monitor.added` activity entries written before keep `p95Above` and no longer
+    // decode; no deployment had added one when this changed. Rewriting them would take a migration
+    // of Foundation's activity table.
+    "0006_latency_percentile": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      const latency = (column: string) =>
+        sql.literal(`json_object('_tag', 'latencyAbove', 'subject', json(json_extract(${column}, '$.subject')),
+          'percentile', 95, 'ms', json_extract(${column}, '$.ms'), 'minutes', json_extract(${column}, '$.minutes'))`)
+      yield* sql`UPDATE incidents_monitors SET condition = ${latency("condition")}
+        WHERE json_extract(condition, '$._tag') = 'p95Above'`
+      yield* sql`UPDATE incidents_incidents SET evidence = json_set(evidence, '$.condition', json(${latency(
+        "json_extract(evidence, '$.condition')",
+      )}))
+        WHERE detector = 'monitor' AND json_extract(evidence, '$.condition._tag') = 'p95Above'`
+    }),
   }),
 })

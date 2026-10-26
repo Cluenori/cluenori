@@ -120,13 +120,36 @@ public final class MonitorsModel {
     }
 }
 
+extension LatencyAbove {
+    /// The percentile it judges as written: `p95`.
+    public var percentileName: String {
+        if let whole = Int(exactly: percentile) { "p\(whole)" } else { "p\(percentile)" }
+    }
+}
+
 /// A monitor of an operation as "Monitor this" types it: when it fires, its number as typed, its
 /// window as typed with a unit, and the level of its alerts. `monitor` checks it by the API's rules,
 /// so the form says what is wrong before sending.
 public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
     /// When it fires: the conditions that fit an operation.
     public enum Kind: CaseIterable, Sendable {
-        case nothingFor, p95Above, errorRateAbove
+        case nothingFor, latencyAbove, errorRateAbove
+    }
+
+    /// Which latency a monitor of latency judges, and how many runs it needs to, as the API's
+    /// `runsJudged`: fewer are unknown, never judged.
+    public enum Percentile: Double, CaseIterable, Sendable {
+        case p50 = 50
+        case p95 = 95
+        case p99 = 99
+
+        public var runsJudged: Int {
+            switch self {
+            case .p50: 5
+            case .p95: 20
+            case .p99: 100
+            }
+        }
     }
 
     /// The unit of its window, in minutes.
@@ -148,6 +171,8 @@ public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
         didSet { if kind != oldValue { threshold = Self.firstThreshold(kind) } }
     }
     public var threshold: String
+    /// The latency judged, for `latencyAbove`.
+    public var percentile = Percentile.p95
     public var amount: String
     public var unit: Unit
     public var level: AlertLevel
@@ -182,7 +207,7 @@ public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
     private static func firstThreshold(_ kind: Kind) -> String {
         switch kind {
         case .nothingFor: ""
-        case .p95Above: "500"
+        case .latencyAbove: "500"
         case .errorRateAbove: "5"
         }
     }
@@ -205,11 +230,12 @@ public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
         switch kind {
         case .nothingFor:
             condition = .nothingFor(NothingFor(subject: .operation(subject), minutes: minutes))
-        case .p95Above:
+        case .latencyAbove:
             guard let ms = Self.number(threshold, locale), ms >= 1, ms <= 600_000 else {
                 return .failure(.threshold(kind))
             }
-            condition = .p95Above(P95Above(subject: subject, ms: ms, minutes: minutes))
+            condition = .latencyAbove(
+                LatencyAbove(subject: subject, percentile: percentile.rawValue, ms: ms, minutes: minutes))
         case .errorRateAbove:
             guard let percent = Self.number(threshold, locale), percent > 0, percent < 100 else {
                 return .failure(.threshold(kind))
@@ -282,7 +308,7 @@ extension MonitorCondition {
             case .event(let subject): .event(subject.event)
             case .unknown: .unknown
             }
-        case .p95Above(let condition): .operation(condition.subject.operation)
+        case .latencyAbove(let condition): .operation(condition.subject.operation)
         case .errorRateAbove(let condition): .operation(condition.subject.operation)
         case .unknown: .unknown
         }
@@ -498,7 +524,8 @@ public enum UptimeBriefs {
         case .noAnswer: "doesn't answer two checks in a row"
         case .nothingFor(let nothing): "nothing for \(minutes(nothing.minutes))"
         case .moreThan(let more): "more than \(more.count) in \(minutes(more.minutes))"
-        case .p95Above(let p95): "p95 above \(milliseconds(p95.ms)) over \(minutes(p95.minutes))"
+        case .latencyAbove(let latency):
+            "\(latency.percentileName) above \(milliseconds(latency.ms)) over \(minutes(latency.minutes))"
         case .errorRateAbove(let rate): "more than \(number(rate.percent))% failed over \(minutes(rate.minutes))"
         case .unknown(let tag): "a condition this app doesn't know (\(tag))"
         }
@@ -509,7 +536,7 @@ public enum UptimeBriefs {
         switch condition {
         case .nothingFor(let nothing): "\(number(value)) in \(minutes(nothing.minutes))"
         case .moreThan(let more): "\(number(value)) in \(minutes(more.minutes))"
-        case .p95Above: "p95 \(milliseconds(value))"
+        case .latencyAbove(let latency): "\(latency.percentileName) \(milliseconds(value))"
         case .errorRateAbove: "\(number(value))% failed"
         case .noAnswer, .unknown: number(value)
         }

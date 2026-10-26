@@ -49,6 +49,13 @@ const taking = (entry: OperationCounts, ms: number): OperationCounts => ({
   durations: sketchOf(Array.from({ length: entry.count }, () => ms)).sketch,
 })
 
+// The same counts, its runs taking these times.
+const spread = (entry: OperationCounts, durations: ReadonlyArray<number>): OperationCounts => ({
+  ...entry,
+  totalMs: durations.reduce((total, ms) => total + ms, 0),
+  durations: sketchOf(durations).sketch,
+})
+
 // The URL of the `index`th of many monitors.
 const healthUrl = (index: number) => MonitorUrl.make(`https://notes.test/health/${index}`)
 
@@ -704,94 +711,97 @@ describe("Incidents", () => {
     ),
   )
 
-  it.effect("fires a monitor of an operation's p95 or error rate above its numbers, and resolves it when removed", () =>
-    inProject(
-      "monitor-thresholds",
-      start,
-      Effect.gen(function* () {
-        const projects = yield* Projects
-        const incidents = yield* Incidents
-        yield* projects.create(member, ProjectName.make("Notes"))
-        yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
-        // 10 card reads at 820 ms, and 20 syncs with 4 failed: 20%, too few for the failing detector.
-        yield* record(api, [release(taking(counts("GET /api/card", start - minute, 10), 820), "1.2.3")])
-        yield* record(api, [counts("POST /api/sync", start - minute, 20, 4)])
-        // An export of 4 slow runs: too few to judge. A split of 3 slow runs in each of two
-        // environments: none judged, though 6 in all.
-        yield* record(api, [taking(counts("POST /api/export", start - minute, 4), 9000)])
-        yield* record(api, [taking(counts("POST /api/split", start - minute, 3), 1000)])
-        yield* record(api, [dev(taking(counts("POST /api/split", start - minute, 3), 1000))])
-        const slow = yield* incidents.addMonitor(member, {
-          component: api,
-          condition: { _tag: "p95Above", subject: operation("GET /api/card"), ms: 500, minutes: 15 },
-          level: "alarm",
-        })
-        yield* incidents.addMonitor(member, {
-          component: api,
-          condition: { _tag: "errorRateAbove", subject: operation("POST /api/sync"), percent: 5, minutes: 15 },
-          level: "quiet",
-        })
-        yield* incidents.addMonitor(member, {
-          component: api,
-          condition: { _tag: "p95Above", subject: operation("POST /api/export"), ms: 500, minutes: 15 },
-          level: "alarm",
-        })
-        // Another of the same operation's p95, set higher: both fire, each its own incident.
-        yield* incidents.addMonitor(member, {
-          component: api,
-          condition: { _tag: "p95Above", subject: operation("GET /api/card"), ms: 600, minutes: 15 },
-          level: "alarm",
-        })
-        const split = yield* incidents.addMonitor(member, {
-          component: api,
-          condition: { _tag: "p95Above", subject: operation("POST /api/split"), ms: 500, minutes: 15 },
-          level: "alarm",
-        })
-        // Not above: the same numbers, set higher.
-        yield* incidents.addMonitor(member, {
-          component: api,
-          condition: { _tag: "errorRateAbove", subject: operation("POST /api/sync"), percent: 20, minutes: 15 },
-          level: "alarm",
-        })
+  it.effect(
+    "fires a monitor of an operation's chosen percentile or error rate above its numbers, of enough runs, and resolves it when removed",
+    () =>
+      inProject(
+        "monitor-thresholds",
+        start,
+        Effect.gen(function* () {
+          const projects = yield* Projects
+          const incidents = yield* Incidents
+          yield* projects.create(member, ProjectName.make("Notes"))
+          yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
+          // 10 card reads at 820 ms: enough for a p50, too few for a p95. 100 feed reads, 97 at 50 ms
+          // and 3 at 2 s: a p95 of 50 ms and a p99 of 2 s. 20 syncs with 4 failed: 20%, too few for
+          // the failing detector.
+          yield* record(api, [release(taking(counts("GET /api/card", start - minute, 10), 820), "1.2.3")])
+          yield* record(api, [
+            spread(counts("GET /api/feed", start - minute, 100), [...Array(97).fill(50), 2000, 2000, 2000]),
+          ])
+          yield* record(api, [counts("POST /api/sync", start - minute, 20, 4)])
+          // A split of 3 slow runs in each of two environments: none judged, though 6 in all.
+          yield* record(api, [taking(counts("POST /api/split", start - minute, 3), 1000)])
+          yield* record(api, [dev(taking(counts("POST /api/split", start - minute, 3), 1000))])
+          const latency = (operationName: string, percentile: 50 | 95 | 99, ms: number) =>
+            incidents.addMonitor(member, {
+              component: api,
+              condition: {
+                _tag: "latencyAbove",
+                subject: operation(operationName),
+                percentile,
+                ms,
+                minutes: 15,
+              },
+              level: "alarm",
+            })
+          const slow = yield* latency("GET /api/card", 50, 500)
+          // Another of the same operation, set higher: both fire, each its own incident.
+          yield* latency("GET /api/card", 50, 600)
+          // The card's p95, of 10 runs: unknown, never judged.
+          const cardP95 = yield* latency("GET /api/card", 95, 500)
+          // The feed's tail is slow, its p95 isn't.
+          yield* latency("GET /api/feed", 99, 1000)
+          yield* latency("GET /api/feed", 95, 1000)
+          const split = yield* latency("POST /api/split", 50, 500)
+          yield* incidents.addMonitor(member, {
+            component: api,
+            condition: { _tag: "errorRateAbove", subject: operation("POST /api/sync"), percent: 5, minutes: 15 },
+            level: "quiet",
+          })
+          // Not above: the same numbers, set higher.
+          yield* incidents.addMonitor(member, {
+            component: api,
+            condition: { _tag: "errorRateAbove", subject: operation("POST /api/sync"), percent: 20, minutes: 15 },
+            level: "alarm",
+          })
 
-        const fired = (yield* checkAt(start)).map(([change, title]) => [
-          change,
-          title.replace(/p95 \d+ ms/, "p95 ~ ms"),
-        ])
-        const states = (yield* incidents.monitors).monitors
-        const p95 = states.find((state) => state.monitor.id === slow.id)?.measured?.value
-        const unjudged = states.find((state) => state.monitor.id === split.id)?.measured
-        const slowIncident = (yield* incidents.incidents).open.find((incident) =>
-          incident.title.endsWith("above 500 ms"),
-        )
-        const ran = slowIncident === undefined ? [] : (yield* incidents.incident(slowIncident.id)).releases
-        yield* incidents.removeMonitor(member, slow.id)
-        const list = yield* incidents.incidents
+          const fired = (yield* checkAt(start)).map(([change, title]) => [
+            change,
+            title.replace(/(p\d\d) [\d.]+ (ms|s),/, "$1 ~,"),
+          ])
+          const states = (yield* incidents.monitors).monitors
+          const measured = (id: string) => states.find((state) => state.monitor.id === id)?.measured
+          const p50 = measured(slow.id)?.value
+          const slowIncident = (yield* incidents.incidents).open.find((incident) =>
+            incident.title.endsWith("above 500 ms"),
+          )
+          const ran = slowIncident === undefined ? [] : (yield* incidents.incident(slowIncident.id)).releases
+          yield* incidents.removeMonitor(member, slow.id)
+          const list = yield* incidents.incidents
 
-        assert.deepStrictEqual(
-          fired.toSorted(([, left], [, right]) => String(left).localeCompare(String(right))),
-          [
-            ["opened", "GET /api/card p95 ~ ms, above 500 ms"],
-            ["opened", "GET /api/card p95 ~ ms, above 600 ms"],
-            ["opened", "POST /api/sync: 20% failed, above 5%"],
-          ],
-        )
-        assert.isTrue(p95 !== undefined && Math.abs(p95 - 820) <= 820 * 0.02)
-        assert.isTrue(unjudged !== undefined && unjudged.value === undefined)
-        // A monitor of every environment: the release that ran in each.
-        assert.deepStrictEqual(ran, [
-          { environment: EnvironmentKey.make("production"), release: ReleaseVersion.make("1.2.3") },
-        ])
-        assert.deepStrictEqual(
-          list.open.map((incident) => incident.title.replace(/p95 \d+ ms/, "p95 ~ ms")).toSorted(),
-          ["GET /api/card p95 ~ ms, above 600 ms", "POST /api/sync: 20% failed, above 5%"],
-        )
-        assert.deepStrictEqual(
-          list.resolved.map((incident) => incident.subject),
-          ["GET /api/card"],
-        )
-      }),
-    ),
+          assert.deepStrictEqual(
+            fired.toSorted(([, left], [, right]) => String(left).localeCompare(String(right))),
+            [
+              ["opened", "GET /api/card p50 ~, above 500 ms"],
+              ["opened", "GET /api/card p50 ~, above 600 ms"],
+              ["opened", "GET /api/feed p99 ~, above 1000 ms"],
+              ["opened", "POST /api/sync: 20% failed, above 5%"],
+            ],
+          )
+          assert.isTrue(p50 !== undefined && Math.abs(p50 - 820) <= 820 * 0.02)
+          assert.isTrue(measured(cardP95.id) !== undefined && measured(cardP95.id)?.value === undefined)
+          assert.isTrue(measured(split.id) !== undefined && measured(split.id)?.value === undefined)
+          // A monitor of every environment: the release that ran in each.
+          assert.deepStrictEqual(ran, [
+            { environment: EnvironmentKey.make("production"), release: ReleaseVersion.make("1.2.3") },
+          ])
+          assert.deepStrictEqual(
+            list.resolved.map((incident) => incident.subject),
+            ["GET /api/card"],
+          )
+        }),
+      ),
   )
 
   it.effect("fires a monitor of an app's event that came more times than its number in its window", () =>
@@ -848,8 +858,10 @@ describe("Incidents", () => {
         of({ _tag: "nothingFor", subject: job, minutes: 30 }),
         of({ _tag: "nothingFor", subject: job, minutes: 0 }),
         of({ _tag: "nothingFor", subject: job, minutes: 10_081 }),
-        of({ _tag: "p95Above", subject: job, ms: 500, minutes: 1441 }),
-        of({ _tag: "p95Above", subject: job, ms: Number.POSITIVE_INFINITY, minutes: 15 }),
+        of({ _tag: "latencyAbove", subject: job, percentile: 95, ms: 500, minutes: 1441 }),
+        of({ _tag: "latencyAbove", subject: job, percentile: 95, ms: Number.POSITIVE_INFINITY, minutes: 15 }),
+        of({ _tag: "latencyAbove", subject: job, percentile: 90, ms: 500, minutes: 15 }),
+        of({ _tag: "latencyAbove", subject: job, ms: 500, minutes: 15 }),
         of({ _tag: "errorRateAbove", subject: job, percent: 100, minutes: 15 }),
         of({ _tag: "moreThan", subject: job, count: 3, minutes: 15 }),
         of({ _tag: "moreThan", subject: { _tag: "error", error: "DROP TABLE" }, count: 3, minutes: 15 }),
@@ -857,7 +869,7 @@ describe("Incidents", () => {
         of(url, { level: "loud" }),
         of({ _tag: "noAnswer", subject: { _tag: "url", url: "https://notes.test/\u0007" } }),
       ].map(decoded),
-      [true, false, false, false, false, false, false, false, false, false, false],
+      [true, false, false, false, false, false, false, false, false, false, false, false, false],
     )
   })
 })
