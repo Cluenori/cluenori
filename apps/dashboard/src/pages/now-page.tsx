@@ -2,11 +2,12 @@ import type { ProjectKey } from "@cluenori/foundation"
 import { useAtomValue } from "@effect/atom-react"
 import type { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { BellIcon, FolderPlusIcon, FoldersIcon } from "lucide-react"
+import { BellIcon, FolderPlusIcon, FoldersIcon, RssIcon } from "lucide-react"
+import { lazy, Suspense } from "react"
 
 import { compact, count } from "@/lib/format"
 import type { ProjectPulse } from "@/project-data"
-import { todayAtom } from "@/project-data"
+import { feedsAtom, todayAtom } from "@/project-data"
 import type { NeedsYou, ProjectState } from "@/project-facts"
 import { changeOf, dayLoadOf, needsYouOf, peopleOf, projectStateOf } from "@/project-facts"
 import { Link } from "@/router"
@@ -15,6 +16,9 @@ import { Loaded } from "@/views/loaded"
 import { NeedsYouList } from "@/views/needs-you-list"
 import { Panel } from "@/views/panel"
 import { TrendWords } from "@/views/trend-words"
+
+// The feeds' rows load with the feeds' answer, after start: most deployments start without feeds.
+const FeedRows = lazy(() => import("@/views/feed-rows").then((module) => ({ default: module.FeedRows })))
 
 /** A project as Now lists it: its key and its name. */
 export type ListedProject = { readonly key: ProjectKey; readonly name: string }
@@ -149,10 +153,12 @@ function ProjectRow({
 /**
  * Now: what needs the founder across every project, the most urgent first, each one click from what
  * it is about; then every project, its state, its last 24 hours, and its daily people against last
- * week, one click from its own page. All of it is Today's one answer.
+ * week, one click from its own page, all of it Today's one answer; and the feeds, when there are
+ * any, with what arrived lately.
  */
 export function NowPage({ projects }: { readonly projects: ReadonlyArray<ListedProject> }) {
   const today = useAtomValue(todayAtom)
+  const feeds = useAtomValue(feedsAtom)
   const nameOf = (key: ProjectKey) => projects.find((project) => project.key === key)?.name ?? key
   const items = AsyncResult.isSuccess(today) ? needsYouOf(today.value) : undefined
   const stateOf = (project: ProjectKey) => {
@@ -215,6 +221,14 @@ export function NowPage({ projects }: { readonly projects: ReadonlyArray<ListedP
               ))}
             </ul>
           </Panel>
+
+          {AsyncResult.isSuccess(feeds) && feeds.value.feeds.length > 0 && (
+            <Panel icon={RssIcon} title="Feeds" subtitle="Chosen events across projects, in production">
+              <Suspense fallback={null}>
+                <FeedRows feeds={feeds.value.feeds} now={feeds.value.asOf} nameOf={nameOf} />
+              </Suspense>
+            </Panel>
+          )}
         </div>
       )}
     </div>

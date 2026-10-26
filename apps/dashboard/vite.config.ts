@@ -19,8 +19,10 @@ import { defineConfig } from "vite"
 // passkey Schemas come with the module's checks, which a bundler keeps since its top-level
 // `Effect.fn` calls aren't marked pure. Kit's fix (a pure mark, or the Schemas apart) gives it back.
 // And to 255 KB when an error's occurrence became a page of its own (253.9 KB to 254.3 KB): its
-// endpoint in the typed client, its route and its atom; the page loads after start.
-const firstLoadBudget = { scriptKb: 255, styleKb: 36 }
+// endpoint in the typed client, its route and its atom; the page loads after start. And to 256 KB
+// with Feeds (254.3 KB to 255.7 KB): five endpoints in the typed client, their routes and atoms, the
+// sidebar's entry and Now's panel; the pages, and the rows Now shows, load after start.
+const firstLoadBudget = { scriptKb: 256, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

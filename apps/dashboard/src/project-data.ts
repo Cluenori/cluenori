@@ -3,6 +3,7 @@
 // last answer, marked waiting, until the new one arrives. This is the one file that knows where data
 // comes from; pages and views ask it (PATTERNS.md, "Dashboard views").
 
+import type { FeedId, FeedInput } from "@cluenori/feeds"
 import type {
   ComponentKey,
   EnvelopeName,
@@ -189,6 +190,62 @@ export const removePhoneAtom = CluenoriClient.runtime.fn((phone: PhoneId) =>
     const client = yield* CluenoriClient
     yield* client.phones.removePhone({ params: { phone } })
     yield* Atom.refresh(phonesAtom)
+  }),
+)
+
+/**
+ * The workspace's feeds the member sees, by name, each with its counts of the last 24 hours and 7
+ * days; with `asOf`, when it was asked, which "ago" is measured from.
+ */
+export const feedsAtom = kept(
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const asOf = yield* DateTime.now
+      const { feeds } = yield* client.feeds.feeds()
+      return { feeds, asOf: DateTime.toEpochMillis(asOf) }
+    }),
+  ),
+)
+
+/**
+ * A page of one feed's entries, newest first: the latest page without `before`, an older one from an
+ * earlier page's `next`. The feed's page asks for the latest again each minute.
+ */
+export const feedAtom = Atom.family((key: { readonly feed: FeedId; readonly before?: number }) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.feeds.feed({
+          params: { feed: key.feed },
+          query: key.before === undefined ? {} : { before: key.before },
+        })
+      }),
+    ),
+  ),
+)
+
+/** Makes a feed, or changes feed `feed`, for an owner, and asks for the feeds again: answers the feed. */
+export const saveFeedAtom = CluenoriClient.runtime.fn((change: { readonly feed?: FeedId; readonly input: FeedInput }) =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    const saved =
+      change.feed === undefined
+        ? yield* client.feeds.createFeed({ payload: change.input })
+        : yield* client.feeds.saveFeed({ params: { feed: change.feed }, payload: change.input })
+    yield* Atom.refresh(feedsAtom)
+    yield* Atom.refresh(feedAtom({ feed: saved.id }))
+    return saved
+  }),
+)
+
+/** Deletes a feed and its entries, for an owner, and asks for the feeds again. */
+export const removeFeedAtom = CluenoriClient.runtime.fn((feed: FeedId) =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    yield* client.feeds.removeFeed({ params: { feed } })
+    yield* Atom.refresh(feedsAtom)
   }),
 )
 

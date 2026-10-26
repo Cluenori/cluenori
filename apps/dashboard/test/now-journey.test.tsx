@@ -54,8 +54,9 @@ describe("now journey", () => {
       yield* Effect.promise(() => expect.element(landingRow).toMatchTextContent("Nothing reported in 24 h"))
       yield* Effect.promise(() => expect.element(landingRow).toMatchTextContent("No app data"))
       yield* expectAccessible()
-      // All of Now is Today's one answer: no question of any project's.
+      // All of Now is Today's one answer and the feeds: no question of any project's.
       assert.deepStrictEqual([...new Set(apiCalls().map((call) => call.path.join("/")))].toSorted(), [
+        "feeds",
         "me",
         "projects",
         "today",

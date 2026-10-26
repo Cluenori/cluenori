@@ -1,3 +1,4 @@
+import { FeedList } from "@cluenori/feeds"
 import {
   calendarDayOf,
   ComponentKey,
@@ -1876,6 +1877,10 @@ export const notesApi = ({
         const now = yield* Clock.currentTimeMillis
         promotions ??= (seeded ?? world.promotionsAt)(now)
         return yield* today(todayAt(now, workspace, promotions, settings.productionEnvironments, older))
+      }
+      // No feeds: the feeds journey answers its own (test/feeds-journey.test.tsx).
+      if (call.method === "GET" && first === "feeds" && project === undefined) {
+        return yield* reply(FeedList, { feeds: [] })
       }
       if (first !== "projects") {
         return yield* noSuchCall(call.method, call.path)

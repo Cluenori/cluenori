@@ -75,6 +75,10 @@ const featuresPage = import("@/pages/features-page")
 const FeaturesPage = lazy(() => featuresPage.then((module) => ({ default: module.FeaturesPage })))
 const personPage = import("@/pages/person-page")
 const PersonPage = lazy(() => personPage.then((module) => ({ default: module.PersonPage })))
+// Feeds, the deployment's live lists of chosen events, load after start too.
+const feedsPage = import("@/pages/feeds-page")
+const FeedsPage = lazy(() => feedsPage.then((module) => ({ default: module.FeedsPage })))
+const FeedPage = lazy(() => feedsPage.then((module) => ({ default: module.FeedPage })))
 // Phones, with the QR code encoder, are a page of the deployment, opened now and then.
 const phonesPage = import("@/pages/phones-page")
 const PhonesPage = lazy(() => phonesPage.then((module) => ({ default: module.PhonesPage })))
@@ -303,6 +307,18 @@ function PageOf({ route, projects }: { readonly route: Route; readonly projects:
             {...(route.environment === undefined ? {} : { environment: route.environment })}
             {...(route.release === undefined ? {} : { release: route.release })}
           />
+        </Suspense>
+      )
+    case "feeds":
+      return (
+        <Suspense fallback={opening}>
+          <FeedsPage />
+        </Suspense>
+      )
+    case "feed":
+      return (
+        <Suspense fallback={opening}>
+          <FeedPage key={route.feed} feed={route.feed} />
         </Suspense>
       )
     case "phones":

@@ -14,6 +14,8 @@ const failureWords: Readonly<Record<string, string>> = {
   PersonNotFound:
     "No person has this user ID: the apps never sent it. Check it is the ID the app gives Cluenori.identify.",
   SdkKeyNotFound: "The component has no such SDK key any more; reload the page to see its keys.",
+  FeedNotFound: "There is no such feed here: it may have been deleted, or it lists no project you see.",
+  NotAllowed: "Only an owner can do this.",
 }
 
 const tagOf = (error: unknown) =>

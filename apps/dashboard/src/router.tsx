@@ -1,3 +1,4 @@
+import { FeedId } from "@cluenori/feeds"
 import {
   ComponentKey,
   EnvelopeName,
@@ -108,6 +109,8 @@ export type Route =
       readonly environment?: EnvironmentKey
       readonly release?: ReleaseVersion
     }
+  | { readonly page: "feeds" }
+  | { readonly page: "feed"; readonly feed: FeedId }
   | { readonly page: "phones" }
   | { readonly page: "browsers" }
   | { readonly page: "members" }
@@ -220,6 +223,10 @@ export const hrefOf = (route: Route): string => {
       return `${projectPath(route.project)}/analytics/people?user=${encodeURIComponent(route.user)}`
     case "trace":
       return withQuery(`${projectPath(route.project)}/traces/${route.trace}`, route)
+    case "feeds":
+      return "/feeds"
+    case "feed":
+      return `/feeds/${route.feed}`
     case "phones":
       return "/phones"
     case "browsers":
@@ -254,7 +261,15 @@ const LineId = Schema.FiniteFromString.pipe(Schema.decodeTo(Schema.Int.check(Sch
 const componentKey = (text: string | undefined) => keyOf(ComponentKey, text)
 
 // The deployment's own pages, which are no project's: the first part of their addresses.
-const deploymentPages: ReadonlySet<string> = new Set(["kit", "github", "phones", "browsers", "members", "invite"])
+const deploymentPages: ReadonlySet<string> = new Set([
+  "kit",
+  "github",
+  "feeds",
+  "phones",
+  "browsers",
+  "members",
+  "invite",
+])
 
 export const routeOf = (path: string, search: string): Route => {
   const [first, key, page, id, ...rest] = path.split("/").filter((part) => part.length > 0)
@@ -268,6 +283,13 @@ export const routeOf = (path: string, search: string): Route => {
   if (first === "github") {
     const returned = gitHubReturnOf(query)
     return key === undefined ? { page: "github", ...(returned === undefined ? {} : { returned }) } : { page: "missing" }
+  }
+  if (first === "feeds") {
+    if (key === undefined) {
+      return { page: "feeds" }
+    }
+    const feed = keyOf(FeedId, key)
+    return Option.isSome(feed) && page === undefined ? { page: "feed", feed: feed.value } : { page: "missing" }
   }
   if (first === "phones" || first === "browsers" || first === "members" || first === "invite") {
     return key === undefined ? { page: first } : { page: "missing" }
@@ -424,6 +446,8 @@ export const doorOf = (route: Route): Door | undefined => {
     case "now":
     case "missing":
     case "project":
+    case "feeds":
+    case "feed":
     case "phones":
     case "browsers":
     case "members":
@@ -453,6 +477,8 @@ const pageNames: Readonly<Record<Exclude<Route["page"], "now" | "project" | "mis
   person: "Person",
   releases: "Releases",
   release: "Release",
+  feeds: "Feeds",
+  feed: "Feed",
   phones: "Phones",
   browsers: "Browsers",
   members: "Members",
@@ -475,7 +501,7 @@ const doorPageOf = (door: Door, project: ProjectKey): Route => {
 
 const doorNames: Readonly<Record<Door, string>> = { tech: "Tech", product: "Product", releases: "Releases" }
 
-// The steps between a door and a page further down: an operation is one of Operations, an error one
+// The steps between a door, or Now, and a page further down: a feed is one of Feeds, an operation one of Operations, an error one
 // of Errors, an occurrence one of its error's, a release's app health one of App health's; each keeps
 // the page's filters, which an occurrence has none of.
 const betweenOf = (route: Route): ReadonlyArray<TrailStep> => {
@@ -492,6 +518,9 @@ const betweenOf = (route: Route): ReadonlyArray<TrailStep> => {
       { label: pageNames.errors, to: { page: "errors", project: route.project } },
       { label: pageNames.error, to: { page: "error", project: route.project, error: route.error } },
     ]
+  }
+  if (route.page === "feed") {
+    return [{ label: pageNames.feeds, to: { page: "feeds" } }]
   }
   if (route.page === "appRelease") {
     const { release: _, ...shown } = route
@@ -511,7 +540,7 @@ export const trailOf = (route: Route, projectName: (project: ProjectKey) => stri
   }
   const now: TrailStep = { label: "Now", to: { page: "now" } }
   if (!("project" in route)) {
-    return [now, { label: pageNames[route.page] }]
+    return [now, ...betweenOf(route), { label: pageNames[route.page] }]
   }
   if (route.page === "project") {
     return [now, { label: projectName(route.project) }]

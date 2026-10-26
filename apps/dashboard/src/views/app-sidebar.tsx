@@ -7,6 +7,7 @@ import {
   MonitorIcon,
   MoonIcon,
   PaletteIcon,
+  RssIcon,
   SearchIcon,
   ServerIcon,
   SmartphoneIcon,
@@ -46,7 +47,7 @@ const doors: ReadonlyArray<{ readonly door: Door; readonly label: string; readon
 ]
 
 /**
- * The sidebar: Now, then every project, one click away, with the open project's three doors under
+ * The sidebar: Now and Feeds, then every project, one click away, with the open project's three doors under
  * it, marked while a page behind one is open; search; and the viewer's settings. An environment
  * chosen on one page stays chosen on the others, and a component on Product's and Releases'.
  */
@@ -116,6 +117,17 @@ export function AppSidebar({
                 >
                   <BellDotIcon />
                   <span>Now</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={route.page === "feeds" || route.page === "feed"}
+                  tooltip="Feeds"
+                  render={<Link to={{ page: "feeds" }} />}
+                  className="h-9"
+                >
+                  <RssIcon />
+                  <span>Feeds</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
