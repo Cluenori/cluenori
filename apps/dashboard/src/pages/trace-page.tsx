@@ -1,18 +1,21 @@
 import type { EnvironmentKey, ProjectKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
-import type { LogLevel, TraceView } from "@cluenori/signals"
+import { ComponentKey, EnvelopeName } from "@cluenori/foundation"
+import type { LogLevel, TraceSpan, TraceView } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { cn } from "cn"
-import { DateTime } from "effect"
+import { DateTime, Option, Schema } from "effect"
 import { ArrowLeftIcon, ListTreeIcon, MousePointerClickIcon, ScrollTextIcon, SearchXIcon } from "lucide-react"
 import type { ReactNode } from "react"
 import { useState } from "react"
 
-import { count, duration, moment, preciseTime } from "@/lib/format"
+import { count, dayOf, duration, preciseTime } from "@/lib/format"
 import { traceAtom } from "@/project-data"
 import type { Route } from "@/router"
 import { Link } from "@/router"
 import { AttributeList } from "@/views/attribute-list"
+import { CopyButton } from "@/views/copy-button"
 import { Loaded } from "@/views/loaded"
+import { OperationName } from "@/views/operation-name"
 import { Panel, PanelStats } from "@/views/panel"
 import { buttonVariants } from "@/views/ui/button"
 import { stepKindOf, stepKinds, Waterfall } from "@/views/waterfall"
@@ -32,22 +35,49 @@ const noApps = () => false
 const millisOf = DateTime.toEpochMillis
 
 /**
- * The top of the page: back to the project's performance, in the environment and of the release the
- * trace was opened from, and what the trace is.
+ * The top of the page: back to the request's operation, or to the project's performance, in the
+ * environment and of the release the trace was opened from; what the request is; and its actions.
  */
-function TraceHeader({ back, children }: { readonly back: Route; readonly children: ReactNode }) {
+function TraceHeader({
+  back,
+  actions,
+  children,
+}: {
+  readonly back: { readonly to: Route; readonly label: string }
+  readonly actions?: ReactNode
+  readonly children: ReactNode
+}) {
   return (
-    <header className="flex flex-wrap items-center gap-x-4 gap-y-3 pb-2">
-      <Link
-        to={back}
-        aria-label="Back to the performance"
-        className={buttonVariants({ variant: "outline", size: "icon" })}
-      >
+    <header className="flex flex-wrap items-start gap-x-4 gap-y-3 pb-2">
+      <Link to={back.to} aria-label={back.label} className={buttonVariants({ variant: "outline", size: "icon" })}>
         <ArrowLeftIcon />
       </Link>
-      <div className="flex min-w-0 flex-col">{children}</div>
+      <div className="flex min-w-0 flex-[1_1_20rem] flex-col gap-1">{children}</div>
+      {actions !== undefined && <div className="flex max-w-full min-w-0 flex-wrap items-center gap-3">{actions}</div>}
     </header>
   )
+}
+
+// The HTTP status a span answered with, when it says one: a whole number from 100 to 599.
+const statusOf = (span: TraceSpan) => {
+  const status = span.attributes["http.response.status_code"]
+  return typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? status : undefined
+}
+
+// One shell argument, whatever it holds: an operation's name is what the app sent, so a command
+// quotes it rather than letting the shell read it.
+const shellArgument = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`
+
+// What an agent needs to look into one request: where it is, and how to read it and its operation.
+const agentBrief = (project: ProjectKey, view: TraceView, root: TraceSpan, status: number | undefined) => {
+  const at = DateTime.formatIso(root.start)
+  return [
+    `Investigate this request in Cluenori project ${project}.`,
+    `Trace ${view.trace}: ${root.name} in ${root.component}, at ${at}, took ${Math.round(root.durationMs)} ms${status === undefined ? "" : `, answered ${status}`}${root.failed ? ", failed" : ""}${root.statusMessage === undefined ? "" : `: ${root.statusMessage}`}.`,
+    `${count(view.spans.length)} spans, ${count(view.logs.length)} log records.`,
+    `Read every span and log with the API: GET /api/projects/${project}/traces/${view.trace}?around=${encodeURIComponent(at)}; or ./cluenori trace ${project} ${view.trace} --at ${at}.`,
+    `Its operation over time, with its other slow and failed requests: ./cluenori operation ${project} ${shellArgument(root.name)} --component ${root.component}.`,
+  ].join("\n")
 }
 
 /** Why the page shows no steps, with what the reader can do. */
@@ -59,15 +89,24 @@ function NoSteps({ title, children }: { readonly title: string; readonly childre
   )
 }
 
-/** The trace's steps, the one chosen, and its log lines. */
-function TraceSteps({ back, view }: { readonly back: Route; readonly view: TraceView }) {
+/** The request: what it was, its trace's steps, the one chosen, and its log lines. */
+function TraceSteps({
+  project,
+  view,
+  backOf,
+}: {
+  readonly project: ProjectKey
+  readonly view: TraceView
+  /** The way back: to the operation the request is of, when its first step names one. */
+  readonly backOf: (root: TraceSpan | undefined) => { readonly to: Route; readonly label: string }
+}) {
   const root = view.spans[0]
   const [selected, setSelected] = useState(root?.span)
   if (root === undefined) {
     return (
       <div className="flex flex-col gap-4">
-        <TraceHeader back={back}>
-          <h1 className="font-mono text-2xl font-semibold tracking-[-0.02em]">{view.trace}</h1>
+        <TraceHeader back={backOf(undefined)}>
+          <h1 className="font-mono text-2xl font-semibold tracking-[-0.02em] wrap-anywhere">{view.trace}</h1>
         </TraceHeader>
         <NoSteps title="No steps of this trace">
           The archive has none of this trace&apos;s steps. It may be older than 90 days, or from another project.
@@ -79,20 +118,35 @@ function TraceSteps({ back, view }: { readonly back: Route; readonly view: Trace
   const ofKind = (kind: "database" | "call") => view.spans.filter((entry) => stepKindOf(entry, noApps) === kind)
   const timeIn = (kind: "database" | "call") => ofKind(kind).reduce((total, entry) => total + entry.durationMs, 0)
   const rootStart = millisOf(root.start)
+  const status = statusOf(root)
 
   return (
     <div className="flex flex-col gap-4">
-      <TraceHeader back={back}>
-        <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-[-0.02em]">
-          {root.name}
+      <TraceHeader
+        back={backOf(root)}
+        actions={<CopyButton text={agentBrief(project, view, root, status)} label="Copy for an agent" />}
+      >
+        <h1 className="flex min-w-0 items-baseline gap-3 text-2xl font-semibold tracking-[-0.02em]">
+          <OperationName name={root.name} wrap />
           {root.failed && (
-            <span className="border border-failure/60 px-2 py-0.5 font-mono text-sm font-normal text-failure">
+            <span className="shrink-0 border border-failure/60 px-2 py-0.5 font-mono text-sm font-normal text-failure">
               failed
             </span>
           )}
         </h1>
+        <p className="text-[15px]">
+          Took <span className="font-mono">{duration(root.durationMs)}</span>
+          {status !== undefined && (
+            <>
+              , answered <span className={cn("font-mono", status >= 500 && "text-failure")}>{status}</span>
+            </>
+          )}
+          {root.statusMessage !== undefined && <span className="text-failure">: {root.statusMessage}</span>}
+        </p>
         <p className="text-sm text-muted-foreground">
-          {root.component}, <span className="font-mono">{moment(rootStart)}</span>
+          {root.component}, <span className="font-mono">{preciseTime(rootStart)}</span>,{" "}
+          <span className="font-mono">{dayOf(rootStart)}</span>
+          <span className="sr-only">. Trace {view.trace}</span>
         </p>
       </TraceHeader>
 
@@ -195,9 +249,11 @@ function TraceSteps({ back, view }: { readonly back: Route; readonly view: Trace
 }
 
 /**
- * One trace across components: every step it took, through the services that ran it; how long
- * each ran; and every line it logged. It is found in the archive by its ID; the time the address
- * names, as links from errors, logs and kept traces give it, says which of its files to read first.
+ * One request and its trace across components, by its ID, with no period, since it is one thing
+ * (`concept/Experience.md`, "Lists, groups and items"): what it was and how it ended; every step it
+ * took, as a waterfall, through the services that ran it; and every line it logged; with a brief
+ * to copy for an agent. It is found in the archive by its ID; the time the address names, as links
+ * from errors, logs and requests give it, says which of its files to read first.
  */
 export function TracePage({
   project,
@@ -214,15 +270,24 @@ export function TracePage({
   readonly release?: ReleaseVersion
 }) {
   const view = useAtomValue(traceAtom({ project, trace, ...(around === undefined ? {} : { around }) }))
-  const back: Route = {
-    page: "performance",
+  const filters = {
     project,
     ...(environment === undefined ? {} : { environment }),
     ...(release === undefined ? {} : { release }),
   }
+  const backOf = (root: TraceSpan | undefined) => {
+    const operation = root === undefined ? Option.none() : Schema.decodeOption(EnvelopeName)(root.name)
+    const component = root === undefined ? Option.none() : Schema.decodeOption(ComponentKey)(root.component)
+    return Option.isSome(operation) && Option.isSome(component)
+      ? {
+          to: { page: "operation" as const, ...filters, component: component.value, operation: operation.value },
+          label: "Back to its operation",
+        }
+      : { to: { page: "performance" as const, ...filters }, label: "Back to the performance" }
+  }
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
-      <Loaded result={view}>{(answer) => <TraceSteps back={back} view={answer} />}</Loaded>
+      <Loaded result={view}>{(answer) => <TraceSteps project={project} view={answer} backOf={backOf} />}</Loaded>
     </div>
   )
 }

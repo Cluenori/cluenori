@@ -81,7 +81,7 @@ function Requests({ project, filters }: { readonly project: ProjectKey; readonly
       icon={ActivityIcon}
       title="Requests"
       subtitle="Any slower than usual first, then the most time in total"
-      action={<AllLink to={{ page: "operations", project, ...filters }}>All requests</AllLink>}
+      action={<AllLink to={{ page: "performance", project, ...filters }}>All requests</AllLink>}
     >
       <Loaded result={AsyncResult.all({ operations, compared })}>
         {({ operations: table, compared: usual }) => {

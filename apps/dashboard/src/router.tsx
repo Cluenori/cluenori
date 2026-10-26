@@ -52,8 +52,10 @@ export type GitHubReturn =
  * every project, and each project's state. A project, `/projects/notes`, is its people, its load,
  * what needs the founder there, and three doors (`Door`): Product, for now the analytics pages; Tech,
  * `/projects/notes/tech`, a summary of operations, errors, logs and incidents, each leading to its
- * full page; and Releases. Each area is a page with its `Filters`; performance leads to every
- * operation and then to one; the errors page leads to one error and its occurrences over the period,
+ * full page; and Releases. Each area is a page with its `Filters`; performance is every operation
+ * (`concept/Experience.md`, "Lists, groups and items"), leading to one and its requests, and each
+ * request to its trace; a moment opened from a chart is marked on the page (`?at=<ISO 8601>`),
+ * never a filter; the errors page leads to one error and its occurrences over the period,
  * and each occurrence to its own page, by its ID, with no filters, since it is one thing
  * (`/projects/notes/errors/<error>/<line>`, `concept/Experience.md`); the
  * releases page leads to one release, by its component and version, and its environment when it has
@@ -69,9 +71,13 @@ export type Route =
   | { readonly page: "project"; readonly project: ProjectKey }
   | { readonly page: "tech"; readonly project: ProjectKey; readonly environment?: EnvironmentKey }
   | { readonly page: "incidents"; readonly project: ProjectKey }
-  | ({ readonly page: "performance"; readonly project: ProjectKey } & Filters)
-  | ({ readonly page: "operations"; readonly project: ProjectKey } & Filters)
-  | ({ readonly page: "operation"; readonly project: ProjectKey; readonly operation: EnvelopeName } & Filters)
+  | ({ readonly page: "performance"; readonly project: ProjectKey; readonly at?: DateTime.Utc } & Filters)
+  | ({
+      readonly page: "operation"
+      readonly project: ProjectKey
+      readonly operation: EnvelopeName
+      readonly at?: DateTime.Utc
+    } & Filters)
   | ({ readonly page: "errors"; readonly project: ProjectKey } & Filters)
   | ({ readonly page: "error"; readonly project: ProjectKey; readonly error: ErrorGroupId } & Filters)
   | { readonly page: "occurrence"; readonly project: ProjectKey; readonly error: ErrorGroupId; readonly line: number }
@@ -136,9 +142,10 @@ export type Route =
 const operationPath = (operation: string) => operation.split("/").map(encodeURIComponent).join("/")
 
 // A page's query, in a fixed order: `?component=notes-api&environment=staging&release=2.4.0%2B312`.
-const withQuery = (path: string, query: Filters & { readonly around?: DateTime.Utc }) => {
+const withQuery = (path: string, query: Filters & { readonly around?: DateTime.Utc; readonly at?: DateTime.Utc }) => {
   const pairs = [
     ...(query.around === undefined ? [] : [`around=${encodeURIComponent(DateTime.formatIso(query.around))}`]),
+    ...(query.at === undefined ? [] : [`at=${encodeURIComponent(DateTime.formatIso(query.at))}`]),
     ...(query.component === undefined ? [] : [`component=${encodeURIComponent(query.component)}`]),
     ...(query.environment === undefined ? [] : [`environment=${encodeURIComponent(query.environment)}`]),
     ...(query.release === undefined ? [] : [`release=${encodeURIComponent(query.release)}`]),
@@ -199,7 +206,6 @@ export const hrefOf = (route: Route): string => {
     case "incidents":
       return `${projectPath(route.project)}/incidents`
     case "performance":
-    case "operations":
     case "errors":
     case "logs":
     case "releases":
@@ -320,11 +326,14 @@ export const routeOf = (path: string, search: string): Route => {
   const component = componentKey(query.get("component") ?? undefined)
   const environment = keyOf(EnvironmentKey, query.get("environment") ?? undefined)
   const release = keyOf(ReleaseVersion, query.get("release") ?? undefined)
-  // A filter named that isn't a key makes the address no page's.
+  // The moment a chart opened, when the address names one.
+  const at = keyOf(Instant, query.get("at") ?? undefined)
+  // A filter or moment named that isn't one makes the address no page's.
   const mistyped =
     (query.has("component") && Option.isNone(component)) ||
     (query.has("environment") && Option.isNone(environment)) ||
-    (query.has("release") && Option.isNone(release))
+    (query.has("release") && Option.isNone(release)) ||
+    (query.has("at") && Option.isNone(at))
   const operationsAt = `/projects/${key}/operations/`
   const isOperation = page === "operations" && id !== undefined && path.startsWith(operationsAt)
   const isRelease = page === "releases" && rest.length === 1
@@ -355,8 +364,13 @@ export const routeOf = (path: string, search: string): Route => {
   if (page === "incidents" && id === undefined) {
     return { page: "incidents", project: project.value }
   }
-  if ((page === "performance" || page === "logs") && id === undefined) {
+  const ofMoment = Option.isSome(at) ? { at: at.value } : {}
+  if (page === "logs" && id === undefined) {
     return { page, ...filters }
+  }
+  // Every operation is Performance's list; `/operations`, its old address, opens it too.
+  if ((page === "performance" || page === "operations") && id === undefined) {
+    return { page: "performance", ...filters, ...ofMoment }
   }
   if (page === "releases") {
     if (id === undefined) {
@@ -375,12 +389,9 @@ export const routeOf = (path: string, search: string): Route => {
     return analyticsRouteOf(project.value, id, rest, query, filters)
   }
   if (page === "operations") {
-    if (id === undefined) {
-      return { page: "operations", ...filters }
-    }
     const operation = keyOf(EnvelopeName, path.slice(operationsAt.length).split("/").map(decoded).join("/"))
     return Option.isSome(operation)
-      ? { page: "operation", ...filters, operation: operation.value }
+      ? { page: "operation", ...filters, operation: operation.value, ...ofMoment }
       : { page: "missing" }
   }
   if (page === "errors") {
@@ -442,7 +453,6 @@ export const doorOf = (route: Route): Door | undefined => {
     case "tech":
     case "incidents":
     case "performance":
-    case "operations":
     case "operation":
     case "errors":
     case "error":
@@ -480,13 +490,12 @@ const pageNames: Readonly<Record<Exclude<Route["page"], "now" | "project" | "mis
   tech: "Tech",
   incidents: "Incidents",
   performance: "Performance",
-  operations: "Operations",
   operation: "Operation",
   errors: "Errors",
   error: "Error",
   occurrence: "Occurrence",
   logs: "Logs",
-  trace: "Trace",
+  trace: "Request",
   analytics: "Product",
   appReleases: "App health",
   appRelease: "Release",
@@ -519,13 +528,18 @@ const doorPageOf = (door: Door, project: ProjectKey): Route => {
 
 const doorNames: Readonly<Record<Door, string>> = { tech: "Tech", product: "Product", releases: "Releases" }
 
-// The steps between a door, or Now, and a page further down: a feed is one of Feeds, an operation one of Operations, an error one
-// of Errors, an occurrence one of its error's, a release's app health one of App health's; each keeps
-// the page's filters, which an occurrence has none of.
+// The steps between a door, or Now, and a page further down: a feed is one of Feeds, an operation
+// and a trace are Performance's, an error one of Errors, an occurrence one of its error's, a release's
+// app health one of App health's; each keeps the page's filters, which an occurrence has none of,
+// but not the moment it opened.
 const betweenOf = (route: Route): ReadonlyArray<TrailStep> => {
   if (route.page === "operation") {
-    const { operation: _, ...filters } = route
-    return [{ label: pageNames.operations, to: { ...filters, page: "operations" } }]
+    const { operation: _, at: __, ...filters } = route
+    return [{ label: pageNames.performance, to: { ...filters, page: "performance" } }]
+  }
+  if (route.page === "trace") {
+    const { trace: _, around: __, ...filters } = route
+    return [{ label: pageNames.performance, to: { ...filters, page: "performance" } }]
   }
   if (route.page === "error") {
     const { error: _, ...filters } = route

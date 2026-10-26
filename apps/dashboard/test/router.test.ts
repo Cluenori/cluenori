@@ -9,6 +9,7 @@ import {
 } from "@cluenori/foundation"
 import { AppUserId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
+import { DateTime } from "effect"
 
 import type { Route } from "@/router"
 import { doorOf, hrefOf, movedAddressOf, routeOf, trailOf } from "@/router"
@@ -85,6 +86,32 @@ describe("routeOf", () => {
       trailOf(feature, () => "Folio").map((step) => step.label),
       ["Now", "Folio", "Product", "Features", "Feature"],
     )
+  })
+
+  it("reads the moment a chart opened on every operation and on one, and opens every operation at its old address", () => {
+    const project = ProjectKey.make("folio")
+    const at = DateTime.makeUnsafe("2026-10-26T14:35:00.000Z")
+    const list: Route = { page: "performance", project, environment: EnvironmentKey.make("production"), at }
+    const group: Route = {
+      page: "operation",
+      project,
+      component: ComponentKey.make("folio-api"),
+      operation: EnvelopeName.make("GET /api/feed"),
+      at,
+    }
+    assert.deepStrictEqual(readBack(list), list)
+    assert.deepStrictEqual(readBack(group), group)
+    assert.strictEqual(
+      hrefOf(list),
+      "/projects/folio/performance?at=2026-10-26T14%3A35%3A00.000Z&environment=production",
+    )
+    // A moment that isn't a time makes the address no page's, as a mistyped filter does.
+    assert.deepStrictEqual(routeOf("/projects/folio/performance", "?at=yesterday"), { page: "missing" })
+    assert.deepStrictEqual(routeOf("/projects/folio/operations", "?component=folio-api"), {
+      page: "performance",
+      project,
+      component: ComponentKey.make("folio-api"),
+    })
   })
 
   it("reads the deployment's pages, which no project's address names", () => {
@@ -196,7 +223,7 @@ describe("trailOf", () => {
     assert.deepStrictEqual(labelsOf({ page: "project", project }), ["Now", "Folio"])
     assert.deepStrictEqual(labelsOf({ page: "tech", project }), ["Now", "Folio", "Tech"])
     assert.deepStrictEqual(labelsOf({ page: "errors", project }), ["Now", "Folio", "Tech", "Errors"])
-    assert.deepStrictEqual(labelsOf(operation("GET /api/feed")), ["Now", "Folio", "Tech", "Operations", "Operation"])
+    assert.deepStrictEqual(labelsOf(operation("GET /api/feed")), ["Now", "Folio", "Tech", "Performance", "Operation"])
     assert.deepStrictEqual(labelsOf({ page: "analytics", project }), ["Now", "Folio", "Product"])
     assert.deepStrictEqual(labelsOf({ page: "releases", project }), ["Now", "Folio", "Releases"])
     assert.deepStrictEqual(labelsOf({ page: "phones" }), ["Now", "Phones"])
@@ -206,7 +233,7 @@ describe("trailOf", () => {
     const steps = trailOf(operation("GET /api/feed"), () => "Folio")
     assert.isUndefined(steps.at(-1)?.to)
     assert.deepStrictEqual(steps.at(-2)?.to, {
-      page: "operations",
+      page: "performance",
       project: ProjectKey.make("folio"),
       component: ComponentKey.make("folio-api"),
     })

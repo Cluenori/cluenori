@@ -298,10 +298,19 @@ const inStaging = (entry: OperationRow): OperationRow => ({
   errors: 0,
 })
 
+// The import, retired: it last ran 3 days ago, and only a question about it alone lists it.
+const retired = "POST /api/import"
+const retiredRow = row(retired, 140, 2, [200, 340, 610, 900])
+
 const operations = ({ asked, period, now }: Question) => {
   // The 7 days before the last day end a day ago; every other question ends now.
   const usual = now - DateTime.toEpochMillis(period.to) > 12 * hour
-  const rows = (usual ? usualRows : lastDayRows)
+  const retiredUntil = now - 3 * day
+  const coversRetired = DateTime.toEpochMillis(period.from) < retiredUntil
+  const rows = [
+    ...(usual ? usualRows : lastDayRows),
+    ...(asked.operation === retired && coversRetired ? [retiredRow] : []),
+  ]
     .filter(
       (entry) =>
         ofApiRelease(asked) &&
@@ -309,12 +318,17 @@ const operations = ({ asked, period, now }: Question) => {
         (asked.operation === undefined || entry.operation === asked.operation),
     )
     .map((entry) => (ofProduction(asked) ? entry : inStaging(entry)))
+  const known =
+    asked.operation === undefined ||
+    asked.operation === retired ||
+    lastDayRows.some((entry) => entry.operation === asked.operation)
   return reply(OperationTable, {
     covered: period,
     rows,
     count: rows.reduce((sum, entry) => sum + entry.count, 0),
     errors: rows.reduce((sum, entry) => sum + entry.errors, 0),
-    dataUntil: period.to,
+    ...(rows.length === 0 ? {} : { dataUntil: period.to }),
+    ...(known ? { lastSeen: DateTime.makeUnsafe(asked.operation === retired ? retiredUntil : now - minute) } : {}),
   })
 }
 
@@ -352,13 +366,15 @@ const keptTraces = ({ asked, period, now }: Question) => {
   const failed = kept(exportTrace, 40 * minute, 4_210, 500)
   const slow = kept(TraceId.make("9c41e07b2d5af6831e0c7d2b4a9f6e15"), 3 * hour, 2_870, 200)
   const ofExport = asked.operation === undefined || asked.operation === "POST /api/export"
+  const from = Math.max(DateTime.toEpochMillis(period.from), now - 14 * day)
+  const inPeriod = (entry: typeof failed) =>
+    ofExport &&
+    DateTime.toEpochMillis(entry.start) >= from &&
+    DateTime.toEpochMillis(entry.start) < DateTime.toEpochMillis(period.to)
   return reply(KeptTraces, {
-    covered: new Period({
-      from: DateTime.makeUnsafe(Math.max(DateTime.toEpochMillis(period.from), now - 14 * day)),
-      to: period.to,
-    }),
-    slowest: ofExport ? [failed, slow] : [],
-    failed: ofExport ? [failed] : [],
+    covered: new Period({ from: DateTime.makeUnsafe(from), to: period.to }),
+    slowest: [failed, slow].filter(inPeriod),
+    failed: [failed].filter(inPeriod),
   })
 }
 
@@ -491,7 +507,7 @@ const trace = (around: number, id: string) => {
     kind: "server" | "client" | "internal",
     offset: number,
     durationMs: number,
-    attributes: Record<string, string>,
+    attributes: Record<string, string | number>,
   ) => ({
     span: SpanId.make(spanId),
     ...(depth === 0 ? {} : { parent: SpanId.make("a1a1a1a1a1a1a1a1") }),
@@ -514,7 +530,10 @@ const trace = (around: number, id: string) => {
     spans:
       id === exportTrace
         ? [
-            span("a1a1a1a1a1a1a1a1", 0, "POST /api/export", "server", 0, 4_210, { "http.route": "/api/export" }),
+            span("a1a1a1a1a1a1a1a1", 0, "POST /api/export", "server", 0, 4_210, {
+              "http.route": "/api/export",
+              "http.response.status_code": 500,
+            }),
             span("b2b2b2b2b2b2b2b2", 1, "INSERT exports", "client", 3_840, 12, { "db.system.name": "postgresql" }),
           ]
         : [],

@@ -54,19 +54,24 @@ open from. Above every page but Now, its trail: each level above it, one click a
                                                  errors over time, and the incidents, the top few of each with a way
                                                  to all of them; each component's numbers; the environments the
                                                  project calls production, changed here
-      /projects/notes/performance                the load and failures over time, the operations that got slower or
-                                                 take the most time
-      /projects/notes/operations                 every operation, searchable and sortable by any percentile
-        /projects/notes/operations/GET%20/api/feed?component=…
-                                                 one operation, its name as path segments: its load and p95 over time,
-                                                 its slowest and failed traces
+      /projects/notes/performance[?at=<ISO 8601>]
+                                                 every operation (a list): what the period holds in a sentence, the
+                                                 load, where a click opens a moment, marked, with the requests kept
+                                                 from it; then every operation, searchable and sortable, the slower
+                                                 first; /projects/notes/operations opens it too
+        /projects/notes/operations/GET%20/api/feed?component=…[&at=<ISO 8601>]
+                                                 one operation and its requests (a group), its name as path segments:
+                                                 what the period holds, or none and when it last ran; its load and p95,
+                                                 a click opening a moment; its slowest and failed requests
       /projects/notes/errors                     errors over time by component, and every error group
         /projects/notes/errors/<id>              one error: its exception chain, every frame, its operation, its log record
       /projects/notes/logs                       warnings and errors over time, and every line, searchable
       /projects/notes/incidents                  every open incident, those resolved in the last 7 days, and the monitors,
                                                  each with its last check
       /projects/notes/traces/<trace id>[?around=<ISO 8601>]
-                                                 one trace from the archive: its steps on a time line, its log lines
+                                                 one request and its trace (an item), from the archive, with no
+                                                 period: how it ended, its steps as a waterfall, its log lines, and
+                                                 a brief to copy for an agent
       /projects/notes/errors?component=notes-api&environment=staging&release=2.4.0%2B312
                                                  any page of numbers narrowed to a component, an environment
                                                  (production when none is named) and a release; an operation, an error

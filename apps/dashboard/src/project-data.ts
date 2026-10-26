@@ -317,6 +317,24 @@ export const keptTracesAtom = Atom.family((scope: Scope) =>
 )
 
 /**
+ * The slowest and the failed of the traces kept in one moment, `from` to `to` in Unix milliseconds,
+ * whatever the period: the requests of a step a chart opened.
+ */
+export const momentTracesAtom = Atom.family((key: Scope & { readonly from: number; readonly to: number }) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.signals.keptTraces({
+          params: { project: key.project },
+          query: { from: DateTime.makeUnsafe(key.from), to: DateTime.makeUnsafe(key.to), ...filtersOf(key) },
+        })
+      }),
+    ),
+  ),
+)
+
+/**
  * The operations over the last day and over the 7 days before, whatever the period: what "slower"
  * compares (`slowerOf` in `@cluenori/signals`). Both questions go at once.
  */

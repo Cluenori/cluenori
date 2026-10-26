@@ -1,6 +1,6 @@
 import { cn } from "cn"
 import { useCallback, useId, useState } from "react"
-import type { KeyboardEvent, PointerEvent } from "react"
+import type { KeyboardEvent, MouseEvent, PointerEvent } from "react"
 
 import { count } from "@/lib/format"
 
@@ -58,7 +58,8 @@ export const largestOf = (values: ReadonlyArray<number | undefined>) =>
  * Counts over time as rows of bars that share one time axis: a row per thing counted, each bar as
  * tall as its column's value. Pointing at a column, or moving with the arrow keys, shows every
  * row's value in it. On a narrow screen neighboring columns are merged, and `timeOf` gets the run
- * of columns one bar stands for.
+ * of columns one bar stands for. With `onPick`, a click or Enter on a column opens that moment;
+ * `marked` is the column of the moment open, outlined within the rest, which stay as they are.
  */
 export function BarRows({
   rows,
@@ -68,6 +69,8 @@ export function BarRows({
   rowHeight = 44,
   format = count,
   combine = sumOf,
+  marked,
+  onPick,
 }: {
   readonly rows: ReadonlyArray<BarRow>
   /** Labels under the chart, by column. */
@@ -81,6 +84,10 @@ export function BarRows({
   readonly format?: (value: number) => string
   /** How merged columns become one: added up by default, or the largest, for latency. */
   readonly combine?: (values: ReadonlyArray<number | undefined>) => number | undefined
+  /** The given column of the moment open, marked on every row. */
+  readonly marked?: number
+  /** Opens the moment of a run of columns, the one clicked. */
+  readonly onPick?: (span: ColumnSpan) => void
 }) {
   const hatch = `${useId().replaceAll(":", "")}-hatch`
   const given = Math.max(...rows.map((row) => row.values.length), 1)
@@ -109,6 +116,11 @@ export function BarRows({
   // The column a keyboard or a screen reader reads: the pointed one, or the latest.
   const reading = pointed ?? columns - 1
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" && onPick !== undefined) {
+      event.preventDefault()
+      onPick(spanOf(reading))
+      return
+    }
     const by = arrowMoves[event.key]
     const to = { Home: 0, End: columns - 1 }[event.key] ?? (by === undefined ? undefined : reading + by)
     if (to !== undefined) {
@@ -116,6 +128,7 @@ export function BarRows({
       setPointed(Math.min(columns - 1, Math.max(0, to)))
     }
   }
+  const markedColumn = marked === undefined || marked < 0 || marked >= given ? undefined : Math.floor(marked / group)
   const readout = `${timeOf(spanOf(reading))}: ${merged
     .map((row) => {
       const value = row.values[reading]
@@ -144,13 +157,28 @@ export function BarRows({
         // reader says the column's time and every row's value.
         role="slider"
         tabIndex={0}
-        aria-label={label}
+        aria-label={onPick === undefined ? label : `${label} Enter opens the moment shown.`}
         aria-orientation="horizontal"
         aria-valuemin={0}
         aria-valuemax={columns - 1}
         aria-valuenow={reading}
         aria-valuetext={readout}
-        className="relative touch-pan-y outline-offset-4 select-none focus-visible:outline-1"
+        className={cn(
+          "relative touch-pan-y outline-offset-4 select-none focus-visible:outline-1",
+          onPick !== undefined && "cursor-pointer",
+        )}
+        {...(onPick === undefined
+          ? {}
+          : {
+              onClick: (event: MouseEvent<HTMLDivElement>) => {
+                const box = event.currentTarget.getBoundingClientRect()
+                const column = Math.min(
+                  columns - 1,
+                  Math.max(0, Math.floor(((event.clientX - box.left) / box.width) * columns)),
+                )
+                onPick(spanOf(column))
+              },
+            })}
         onPointerMove={point}
         onPointerDown={point}
         onPointerLeave={() => setPointed(undefined)}
@@ -158,6 +186,14 @@ export function BarRows({
         onFocus={() => setPointed(reading)}
         onBlur={() => setPointed(undefined)}
       >
+        {markedColumn !== undefined && (
+          <span
+            aria-hidden
+            data-marked
+            className="pointer-events-none absolute -inset-y-1 border-x border-foreground/60 bg-foreground/[0.08]"
+            style={{ left: `${markedColumn * slot}%`, width: `max(3px, ${slot}%)` }}
+          />
+        )}
         {pointed !== undefined && (
           <span
             aria-hidden

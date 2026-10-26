@@ -47,12 +47,13 @@ const millisOf = DateTime.toEpochMillis
 
 const ticks = [0, 0.25, 0.5, 0.75, 1]
 
-// The first label starts at its tick, the last ends at it, and the others are centered on theirs.
+// The first label starts at its tick, the last ends at it, and the others are centered on theirs;
+// on a phone's width only the last, the whole trace's length, fits.
 const tickAlignment = (tick: number) => {
   if (tick === 0) {
-    return ""
+    return "max-sm:hidden"
   }
-  return tick === 1 ? "-translate-x-full" : "-translate-x-1/2"
+  return tick === 1 ? "-translate-x-full" : "-translate-x-1/2 max-sm:hidden"
 }
 
 /**

@@ -792,7 +792,10 @@ language.
   operation, an error, or a trace, has a page of its own (`src/pages/error-page.tsx`). A page is a
   list, a group, or an item (`concept/Experience.md`): lists and groups have `FilterSwitches` and
   say when a period holds none of a thing and when it last happened; an item, opened by its own ID,
-  has no period or filter (`OccurrencePage` in `src/pages/error-page.tsx`).
+  has no period or filter (`OccurrencePage` in `src/pages/error-page.tsx`). A click on a chart
+  opens that moment, marked within the rest, never a filter: `?at=` in the address, the column
+  marked by `BarRows`' `marked`, and what the moment held below (`MomentPanel` in
+  `src/views/moment-panel.tsx`).
   Folded detail, such as a stack's library frames, opens with one click where it is.
 - **Data comes from one file,** `src/project-data.ts`: an atom for each question the pages ask the
   public API, run on its typed client, `kept` so going back shows an answer at once and a stale one

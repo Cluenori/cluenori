@@ -152,16 +152,15 @@ describe("environments journey", () => {
       yield* Effect.promise(() => screen.getByRole("link", { name: "Open the trace" }).click())
       yield* Effect.promise(() => expect.element(screen.getByText("INSERT exports")).toBeVisible())
       assert.include(window.location.search, `environment=production&release=${worse}`)
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Back to the performance" }).click())
+      // The way back is to the request's operation, then to every operation, each keeping them.
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Back to its operation" }).click())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("heading", { level: 1, name: /\/api\/export/ })).toBeVisible(),
+      )
+      assert.strictEqual(window.location.search, `?component=notes-api&environment=production&release=${worse}`)
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Back to every operation" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Performance" })).toBeVisible(),
-      )
-      assert.strictEqual(window.location.search, `?environment=production&release=${worse}`)
-
-      // An operation opened from there, too.
-      yield* Effect.promise(() => screen.getByText("/api/feed", { exact: true }).click())
-      yield* Effect.promise(() =>
-        expect.element(screen.getByRole("heading", { level: 1, name: /\/api\/feed/ })).toBeVisible(),
       )
       assert.strictEqual(window.location.search, `?component=notes-api&environment=production&release=${worse}`)
       yield* Effect.promise(() => expect.element(screen.getByRole("link", { name: worse })).toBeVisible())

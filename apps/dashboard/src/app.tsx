@@ -43,8 +43,6 @@ const SearchDialog = lazy(() => searchDialog.then((module) => ({ default: module
 // anyone opens one.
 const performancePage = import("@/pages/performance-page")
 const PerformancePage = lazy(() => performancePage.then((module) => ({ default: module.PerformancePage })))
-const operationsPage = import("@/pages/operations-page")
-const OperationsPage = lazy(() => operationsPage.then((module) => ({ default: module.OperationsPage })))
 const errorsPage = import("@/pages/errors-page")
 const ErrorsPage = lazy(() => errorsPage.then((module) => ({ default: module.ErrorsPage })))
 const logsPage = import("@/pages/logs-page")
@@ -167,17 +165,12 @@ function PageOf({ route, projects }: { readonly route: Route; readonly projects:
         <WithEnvironments project={route.project} named={route.environment}>
           {(environments) => (
             <Suspense fallback={opening}>
-              <PerformancePage project={route.project} environments={environments} {...filterProps(route)} />
-            </Suspense>
-          )}
-        </WithEnvironments>
-      )
-    case "operations":
-      return (
-        <WithEnvironments project={route.project} named={route.environment}>
-          {(environments) => (
-            <Suspense fallback={opening}>
-              <OperationsPage project={route.project} environments={environments} {...filterProps(route)} />
+              <PerformancePage
+                project={route.project}
+                environments={environments}
+                {...filterProps(route)}
+                {...(route.at === undefined ? {} : { at: route.at })}
+              />
             </Suspense>
           )}
         </WithEnvironments>
@@ -192,6 +185,7 @@ function PageOf({ route, projects }: { readonly route: Route; readonly projects:
                 operation={route.operation}
                 environments={environments}
                 {...filterProps(route)}
+                {...(route.at === undefined ? {} : { at: route.at })}
               />
             </Suspense>
           )}
