@@ -459,26 +459,56 @@ extension ReleaseHealth {
     }
 }
 
-/// One person of a project, found by the app's own user ID for them: their user IDs, installations,
-/// active days and timeline. Fails with `missing` for a user ID the apps never sent.
+/// One person of a project, by Cluenori's ID for them, or found by the app's own user ID for them:
+/// their user IDs, installations, active days, the features they used, and timeline. Fails with
+/// `missing` for an ID or user ID the apps never sent.
 @Observable
 public final class PersonModel {
     public let project: String
-    public let user: String
+    public let who: PersonRef.Who
     public let person: Answer<AppPerson>
 
-    init(project: String, user: String, api: CluenoriAPI, context: AnswerContext) {
+    init(project: String, who: PersonRef.Who, api: CluenoriAPI, context: AnswerContext) {
         self.project = project
-        self.user = user
-        person = Answer(
-            context,
-            .init(key: "projects/\(project)/people/user/\(user)") { () async throws(APIError) in
-                try await api.personByUser(project: project, user: user)
-            })
+        self.who = who
+        switch who {
+        case .person(let id):
+            person = Answer(
+                context,
+                .init(key: "projects/\(project)/people/\(id)") { () async throws(APIError) in
+                    try await api.person(project: project, person: id)
+                })
+        case .user(let user):
+            person = Answer(
+                context,
+                .init(key: "projects/\(project)/people/user/\(user)") { () async throws(APIError) in
+                    try await api.personByUser(project: project, user: user)
+                })
+        }
     }
 
     public func load() async {
         await person.load()
+    }
+
+    /// The features they used, each opening its story: only those the app named, the last used first.
+    public var features: [PersonFeature] {
+        (person.value?.features ?? []).filter { $0.feature != nil }
+    }
+
+    /// What an agent needs to look into them further, through the API and the CLI.
+    public var agentBrief: String? {
+        guard let found = person.value else { return nil }
+        let users = found.users.isEmpty ? "no user ID" : "user IDs \(found.users.joined(separator: ", "))"
+        let features = features.compactMap(\.feature)
+        return [
+            "Look into person \(found.person) of Cluenori project \(project), with \(users).",
+            "First seen \(found.firstSeen.formatted(.iso8601)), last seen \(found.lastSeen.formatted(.iso8601)), on \(found.installations.count) installations.",
+            features.isEmpty
+                ? "The app marked none of what they did with a feature."
+                : "Features they used, the last first: \(features.joined(separator: ", ")); read one with ./cluenori feature \(project) <feature>.",
+            "Read them with the API: GET /api/projects/\(project)/people/\(found.person), or ./cluenori person \(project) \(found.person): their installations, days, features and their latest 1,000 signals.",
+        ].joined(separator: "\n")
     }
 
     /// The user ID `text` names, as the deployment takes one: 1 to 128 printable ASCII characters
@@ -489,5 +519,206 @@ public final class PersonModel {
             trimmed.utf8.allSatisfy({ (0x21...0x7e).contains($0) })
         else { return nil }
         return trimmed
+    }
+}
+
+/// Daily, weekly and monthly people on the latest whole UTC day of a period's usage, each against
+/// the same day a week before: the answer an analytics screen starts with. A count that isn't known,
+/// a day not counted or 7 or 30 days reaching before the apps first sent, is nil, never 0.
+public struct PeopleCounts: Equatable, Sendable {
+    public struct Count: Equatable, Sendable {
+        public let value: Int?
+        public let weekBefore: Int?
+
+        /// How it moved against a week before, as a share: 0.06 for 6% more; nil when either is
+        /// unknown, or a week before had no one.
+        public var change: Double? {
+            guard let value, let weekBefore, weekBefore > 0 else { return nil }
+            return Double(value - weekBefore) / Double(weekBefore)
+        }
+    }
+
+    /// The latest whole UTC day, at its start: yesterday's, as today's so far would read as a fall.
+    public let day: Date
+    public let daily: Count
+    public let weekly: Count
+    public let monthly: Count
+
+    /// The counts of `usage` on the whole UTC day before the one `now` is in.
+    public static func of(_ usage: AppUsage, now: Date) -> PeopleCounts {
+        let day = UTCDay.start(of: now).addingTimeInterval(-UTCDay.length)
+        let weekBefore = day.addingTimeInterval(-7 * UTCDay.length)
+        let byDay = Dictionary(
+            usage.days.compactMap { entry in UTCDay.date(entry.day).map { ($0, entry) } },
+            uniquingKeysWith: { a, _ in a })
+        func count(_ value: (UsageDay) -> Int?) -> Count {
+            Count(value: byDay[day].flatMap(value), weekBefore: byDay[weekBefore].flatMap(value))
+        }
+        return PeopleCounts(
+            day: day, daily: count { $0.people }, weekly: count { $0.weekPeople }, monthly: count { $0.monthPeople })
+    }
+}
+
+extension AnalyticsModel {
+    /// The people counters, on the latest whole UTC day when usage answered; nil until it does.
+    public var peopleCounts: PeopleCounts? {
+        usage.value.map { PeopleCounts.of($0, now: usage.receivedAt ?? .now) }
+    }
+}
+
+/// A feature of a project, as its screen opens it: by its key, in one environment or every one.
+nonisolated public struct FeatureRef: Hashable, Sendable {
+    public let project: String
+    /// Its key, as the apps mark it and services name it: `notes.share`.
+    public let key: String
+    /// Nil for every environment.
+    public let environment: String?
+
+    public init(project: String, key: String, environment: String? = nil) {
+        self.project = project
+        self.key = key
+        self.environment = environment
+    }
+}
+
+/// A person of a project, as their screen opens them.
+nonisolated public struct PersonRef: Hashable, Sendable {
+    /// Which person: by Cluenori's ID for them, their screen's lasting address, or by the app's
+    /// own user ID for them.
+    public enum Who: Hashable, Sendable {
+        case person(String)
+        case user(String)
+    }
+
+    public let project: String
+    public let who: Who
+
+    public init(project: String, who: Who) {
+        self.project = project
+        self.who = who
+    }
+}
+
+/// One UTC day of a feature's story: its people and events from the apps, and, when its services
+/// named it, its operations, the failed ones, and its warnings and errors. Nil where unknown: a
+/// service's part before the 90 days its logs are kept.
+public struct FeatureDay: Equatable, Sendable, Identifiable {
+    public let day: Date
+    public let people: Int
+    public let events: Int
+    public let operations: Int
+    public let failed: Int
+    public let warnings: Int?
+    public let errors: Int?
+
+    public var id: Date {
+        day
+    }
+}
+
+/// One feature's story, over everything kept of it, with no period: who uses it each day, and what
+/// its services ran, warned and failed for it. Shown at once from the phone, and asked again.
+@Observable
+public final class FeatureModel {
+    public let feature: FeatureRef
+    public let story: Answer<FeatureStory>
+
+    init(feature: FeatureRef, api: CluenoriAPI, context: AnswerContext) {
+        self.feature = feature
+        story = Answer(
+            context,
+            .init(key: "projects/\(feature.project)/features/\(feature.key)/\(feature.environment ?? "*")") {
+                () async throws(APIError) in
+                try await api.feature(project: feature.project, feature: feature.key, environment: feature.environment)
+            })
+    }
+
+    public func load() async {
+        await story.load()
+    }
+
+    /// Whether any service named it in `cluenori.feature`: ran an operation, or sent a warning or
+    /// error for it. Without, the screen says only the apps' part.
+    public var servicesNamedIt: Bool {
+        guard let story = story.value else { return false }
+        return !story.operations.isEmpty || !story.logs.days.isEmpty
+    }
+
+    /// Its last `count` UTC days, the day it was answered last and so far; empty until it answers.
+    public func days(last count: Int = 30) -> [FeatureDay] {
+        guard let story = story.value else { return [] }
+        return Self.days(of: story, last: count)
+    }
+
+    /// The last `count` UTC days of `story`, the oldest first, ending with the day it was answered.
+    public static func days(of story: FeatureStory, last count: Int) -> [FeatureDay] {
+        let today = UTCDay.start(of: story.asOf)
+        let use = Dictionary(story.use.days.map { ($0.day, $0) }, uniquingKeysWith: { a, _ in a })
+        let logs = Dictionary(story.logs.days.map { ($0.day, $0) }, uniquingKeysWith: { a, _ in a })
+        var operations: [String: (count: Int, failed: Int)] = [:]
+        for each in story.operations {
+            let sum = operations[each.day] ?? (0, 0)
+            operations[each.day] = (sum.count + each.count, sum.failed + each.errors)
+        }
+        let logsFrom = story.logs.covered.map { UTCDay.start(of: $0.from) }
+        return (0..<count).reversed().map { back in
+            let day = today.addingTimeInterval(-Double(back) * UTCDay.length)
+            let key = String(day.formatted(.iso8601.year().month().day()))
+            let logged = logs[key]
+            let kept = logsFrom.map { day >= $0 } ?? false
+            return FeatureDay(
+                day: day, people: use[key]?.people ?? 0, events: use[key]?.events ?? 0,
+                operations: operations[key]?.count ?? 0, failed: operations[key]?.failed ?? 0,
+                warnings: kept ? logged?.warnings ?? 0 : nil, errors: kept ? logged?.errors ?? 0 : nil)
+        }
+    }
+
+    /// Each operation that ran for it, every day kept, the most first: its component, name, count,
+    /// and how many failed.
+    public var operations: [(component: String, operation: String, count: Int, failed: Int)] {
+        var totals: [String: (component: String, operation: String, count: Int, failed: Int)] = [:]
+        for each in story.value?.operations ?? [] {
+            let key = "\(each.component)\u{0}\(each.operation)"
+            let sum = totals[key] ?? (each.component, each.operation, 0, 0)
+            totals[key] = (sum.component, sum.operation, sum.count + each.count, sum.failed + each.errors)
+        }
+        return totals.values.sorted { $0.count != $1.count ? $0.count > $1.count : $0.operation < $1.operation }
+    }
+
+    /// What an agent needs to look into it further, through the API and the CLI.
+    public var agentBrief: String? {
+        guard let story = story.value else { return nil }
+        let project = feature.project
+        let environment = feature.environment.map { ", environment \($0)" } ?? ""
+        let query = feature.environment.map { "?environment=\($0)" } ?? ""
+        let flag = feature.environment.map { " --environment \($0)" } ?? ""
+        let used = story.use.days
+        var lines = [
+            "Look into feature \(story.feature) in Cluenori project \(project)\(environment), as of \(story.asOf.formatted(.iso8601)).",
+            used.first.map { first in
+                "Apps: \(story.use.people) people used it, from \(first.day) to \(used.last?.day ?? first.day)."
+            } ?? "No app marked it in the 15 months kept.",
+        ]
+        if servicesNamedIt {
+            let week = days(last: 7)
+            lines.append(
+                "Services, last 7 days: \(week.map(\.operations).reduce(0, +)) operations, \(week.map(\.failed).reduce(0, +)) failed; \(week.compactMap(\.errors).reduce(0, +)) errors, \(week.compactMap(\.warnings).reduce(0, +)) warnings."
+            )
+        } else {
+            lines.append("No service named it in cluenori.feature.")
+        }
+        lines.append(
+            "Read its whole story with the API: GET /api/projects/\(project)/features/\(story.feature)\(query), or ./cluenori feature \(project) \(story.feature)\(flag)."
+        )
+        if !story.logs.errors.isEmpty {
+            lines.append(
+                "Its errors, the most frequent first: \(story.logs.errors.map(\.id).joined(separator: ", ")); read one with ./cluenori error \(project) <error> --last 90d."
+            )
+        }
+        if let person = story.use.latestPeople.first {
+            lines.append(
+                "Who used it last: read one with ./cluenori person \(project) <person>, such as \(person.person).")
+        }
+        return lines.joined(separator: "\n")
     }
 }

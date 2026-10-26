@@ -15,8 +15,11 @@ or understand, and one level deeper shows more, never everything at once (`conce
 - **A project**, in production: a row for each product, the most urgent first, with its line and
   the things behind it, each leading in; the products with nothing to say last. Its parts:
   - **Product**, its apps' analytics in the environment chosen on the phone, over 7, 30 or 90 UTC
-    days: people by day, retention, each release's app health beside the release before, each
-    feature's use; one person by the app's user ID; an app's version policy and SDK keys.
+    days: daily, weekly and monthly people first, then people by day, retention, each release's
+    app health beside the release before, each feature's use, each opening its story with no
+    period (who uses it, and each day its people, events, operations, warnings and errors); one
+    person, by the app's user ID or from a feature, with the features they use; an app's version
+    policy and SDK keys. A feature and a person each share a brief for an agent ("Ask an agent").
   - **Tech**, in the environment chosen on the phone, over the period: its load and busiest
     operations, its errors, its latest warnings and errors, and its incidents, each the latest few
     and the way to all of them, and on to one: an operation's percentiles, an error's stack, a log
@@ -133,8 +136,10 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   their model while the app runs. Analytics (`AnalyticsModel`, one per component and environment,
   which its features' and releases' app health screens share) look over their own period of UTC
   days (`AnalyticsPeriod`); a measure or a count the deployment leaves out stays out, never 0
-  (`UsageSeries`, `HealthLine`). A person (`PersonModel`) is asked by the app's user ID; one the
-  apps never sent is `missing`. A component's version policy (`VersionPolicyModel`, set keeping its
+  (`UsageSeries`, `HealthLine`, `PeopleCounts`). A person (`PersonModel`) is asked by the app's
+  user ID or by Cluenori's ID for them; one the apps never sent is `missing`. A feature's story
+  (`FeatureModel`, one per feature and environment) has no period; a feature nothing names is
+  `missing`. A component's version policy (`VersionPolicyModel`, set keeping its
   words, or cleared) and its SDK keys (`SdkKeysModel`, issued or revoked) are actions sent once,
   like a version. Which components are apps the API doesn't say, so every component is offered. A
   promotion started on the phone shows at once on its component
@@ -150,7 +155,8 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   `/operations`, `/errors`, `/errors/<id>`, and `/logs` are that release's alone, and `/notes` its
   notes; a release opens over its component. `/analytics` and `/analytics/features` take
   `?component=<key>` too; `/analytics/app-health/<component>/<release>` opens over its component's
-  analytics; `/people?user=<user ID>` opens one person. Each takes
+  analytics; `/analytics/features/<feature>` opens a feature's story, `/analytics/people/<person ID>`
+  and `/people?user=<user ID>` one person. Each takes
   `?environment=<key>`: the environment a project's tech and telemetry show, or the one a release's
   component says it runs in; a project's own screen, in production, takes none. An alert opens its
   incident. A screen narrowed to a release (`Telemetry` in its

@@ -112,6 +112,10 @@
                     return (404, Data(#"{"_tag":"PersonNotFound"}"#.utf8))
                 }
                 return DemoAnswers.ok(person(now))
+            case ("GET", "\(project)/people/prs-7f2c19"):
+                return DemoAnswers.ok(person(now))
+            case ("GET", "\(project)/features/sharing"), ("GET", "\(project)/features/editor"):
+                return DemoAnswers.ok(featureStory(path.hasSuffix("sharing") ? "sharing" : "editor", now: now))
             case ("GET", "\(project)/version-policies"):
                 return DemoAnswers.ok(VersionPolicies(policies: [policy(now)]))
             case ("PUT", "\(project)/version-policies/notes-ios"):
@@ -318,6 +322,77 @@
             FeatureUse(feature: "drafts.sync", people: 122, events: 380, screens: 90),
         ]
 
+        // MARK: One feature
+
+        // A feature's story: used every day for 45 days; sharing's service, notes-api, names it too,
+        // and its notification call timed out on two days this week.
+        private static func featureStory(_ feature: String, now: Date) -> FeatureStory {
+            let today = dayStart(now)
+            let served = feature == "sharing"
+            let use = (0..<45).reversed().map { back in
+                let date = today.addingTimeInterval(-Double(back) * day)
+                let people = (served ? 60 : 380) + (45 - back) * (served ? 2 : 5) + back * 13 % 17
+                return FeatureUseDay(day: dayText(date), people: people, events: people * 3, screens: people * 2)
+            }
+            let operations: [FeatureOperationDay] =
+                served
+                ? (0..<20).reversed().flatMap { back in
+                    let date = dayText(today.addingTimeInterval(-Double(back) * day))
+                    return [
+                        FeatureOperationDay(
+                            day: date, component: "notes-api", operation: "POST /api/notes/{id}/share",
+                            count: 180 + back * 7 % 40, errors: back == 1 ? 14 : back == 3 ? 6 : 0),
+                        FeatureOperationDay(
+                            day: date, component: "notes-api", operation: "GET /api/notes/{id}/share-link",
+                            count: 90 + back * 11 % 30, errors: 0),
+                    ]
+                } : []
+            let logs: [FeatureLogDay] =
+                served
+                ? [
+                    FeatureLogDay(day: dayText(today.addingTimeInterval(-3 * day)), warnings: 4, errors: 6),
+                    FeatureLogDay(day: dayText(today.addingTimeInterval(-2 * day)), warnings: 2, errors: 0),
+                    FeatureLogDay(day: dayText(today.addingTimeInterval(-day)), warnings: 9, errors: 14),
+                ] : []
+            let errors: [ErrorGroup] =
+                served
+                ? [
+                    ErrorGroup(
+                        id: "4f1c9a2e7b3d5068", kind: .exception,
+                        title: "TimeoutException: Notification service did not answer",
+                        culprit: "Notes.Api.Sharing.ShareService.Notify", occurrences: 20,
+                        firstSeen: now.addingTimeInterval(-3 * day), firstRelease: "2026.10.21-e91f09c",
+                        lastSeen: now.addingTimeInterval(-20 * hour), lastComponent: "notes-api",
+                        lastEnvironment: "production", lastRelease: "2026.10.21-e91f09c")
+                ] : []
+            return FeatureStory(
+                feature: feature, asOf: now,
+                use: FeatureUseLife(
+                    days: use, people: served ? 1_240 : 4_610,
+                    latestPeople: [
+                        FeaturePerson(
+                            person: "prs-7f2c19", users: ["user-1842"], days: 9, events: 31,
+                            lastDay: dayText(today)),
+                        FeaturePerson(person: "prs-1a0e44", users: [], days: 2, events: 3, lastDay: dayText(today)),
+                        FeaturePerson(
+                            person: "prs-c3d2b1", users: ["user-0921"], days: 14, events: 77,
+                            lastDay: dayText(today.addingTimeInterval(-day))),
+                    ],
+                    releases: [
+                        FeatureRelease(
+                            component: "notes-ios", environment: "production", release: "1.1.0+9",
+                            people: served ? 980 : 3_900, firstDay: dayText(today.addingTimeInterval(-12 * day)),
+                            lastDay: dayText(today)),
+                        FeatureRelease(
+                            component: "notes-ios", environment: "production", release: "1.0.2+7",
+                            people: served ? 410 : 1_450, firstDay: dayText(today.addingTimeInterval(-44 * day)),
+                            lastDay: dayText(today.addingTimeInterval(-day))),
+                    ]),
+                logs: FeatureLogs(
+                    covered: Period(from: now.addingTimeInterval(-90 * day), to: now), days: logs, errors: errors),
+                operations: operations)
+        }
+
         // MARK: One person
 
         private static func person(_ now: Date) -> AppPerson {
@@ -349,6 +424,16 @@
                     return PersonDay(
                         day: dayText(date), sessions: 1 + index * 7 % 4, foregroundMs: Double(240_000 + index * 31_000))
                 },
+                features: [
+                    PersonFeature(
+                        feature: "sharing", days: 9, events: 31, screens: 14, lastDay: dayText(dayStart(now))),
+                    PersonFeature(
+                        feature: "editor", days: 24, events: 410, screens: 260, lastDay: dayText(dayStart(now))),
+                    PersonFeature(days: 26, events: 0, screens: 88, lastDay: dayText(dayStart(now))),
+                    PersonFeature(
+                        feature: "search", days: 6, events: 22, screens: 9,
+                        lastDay: dayText(dayStart(now).addingTimeInterval(-4 * day))),
+                ],
                 timeline: [
                     entry(
                         "1.1.0+9",

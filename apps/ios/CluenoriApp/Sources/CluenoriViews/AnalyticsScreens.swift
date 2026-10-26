@@ -19,6 +19,9 @@ struct AnalyticsScreen: View {
     var body: some View {
         let ref = analytics.analytics
         List {
+            if !analytics.sentNothing {
+                PeopleCountersSection(counts: analytics.peopleCounts, problem: analytics.usage.problem)
+            }
             AnalyticsFilterSections(
                 analytics: ref, components: components, environments: environments, route: route,
                 navigation: navigation)
@@ -40,8 +43,8 @@ struct AnalyticsScreen: View {
                     project: ref.project, releases: analytics.appHealth.value?.releases,
                     problem: analytics.appHealth.problem)
                 FeaturesSection(
-                    features: analytics.featureUse.value?.features, problem: analytics.featureUse.problem,
-                    shownAtMost: 5, all: .features(ref))
+                    analytics: ref, features: analytics.featureUse.value?.features,
+                    problem: analytics.featureUse.problem, shownAtMost: 5, all: .features(ref))
                 FindPersonSection(project: ref.project, navigation: navigation)
             }
             AppSetupSection(project: ref.project, component: ref.component, policy: componentPolicy)
@@ -230,8 +233,97 @@ struct StartCode: View {
     }
 }
 
-/// People over the period: DAU, WAU, MAU and sessions by UTC day, each with its latest day's count;
-/// then the period's people, installations, sessions, and sessions per person.
+/// Daily, weekly and monthly people on the latest whole UTC day, each against the same day a week
+/// before: the answer the analytics screen starts with. A count that isn't known shows a dash.
+struct PeopleCountersSection: View {
+    let counts: PeopleCounts?
+    let problem: AnswerProblem?
+
+    var body: some View {
+        Section {
+            if let counts {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { tiles(counts) }
+                    VStack(spacing: 8) { tiles(counts) }
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+            } else {
+                AnswerPlaceholder(problem: problem)
+            }
+        } footer: {
+            if let counts {
+                Text(
+                    "On \(counts.day, format: utcDayStyle()), the latest whole UTC day, against the same day a week before.",
+                    bundle: #bundle,
+                    comment: "Below analytics' people counters. The variable is a day, such as Oct 22."
+                )
+            }
+        }
+    }
+
+    @ViewBuilder private func tiles(_ counts: PeopleCounts) -> some View {
+        PeopleCounter(
+            title: Text("Daily", bundle: #bundle, comment: "People active on a day: DAU."), count: counts.daily,
+            unknown: Text("Not counted", bundle: #bundle, comment: "A day's people that aren't counted."))
+        PeopleCounter(
+            title: Text("Weekly", bundle: #bundle, comment: "People active in 7 days: WAU."), count: counts.weekly,
+            unknown: Text("Not 7 days yet", bundle: #bundle, comment: "WAU before 7 days were counted."))
+        PeopleCounter(
+            title: Text("Monthly", bundle: #bundle, comment: "People active in 30 days: MAU."), count: counts.monthly,
+            unknown: Text("Not 30 days yet", bundle: #bundle, comment: "MAU before 30 days were counted."))
+    }
+}
+
+/// One count of people, big, and how it moved against a week before; a dash when it isn't counted,
+/// never 0.
+struct PeopleCounter: View {
+    let title: Text
+    let count: PeopleCounts.Count
+    let unknown: Text
+
+    var body: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 4) {
+                title
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondary)
+                if let value = count.value {
+                    Text(value, format: .number)
+                        .font(.title.monospacedDigit())
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                } else {
+                    Text(verbatim: "—")
+                        .font(.title.monospaced())
+                        .foregroundStyle(Palette.secondary)
+                        .accessibilityLabel(Text("Unknown", bundle: #bundle, comment: "A count that isn't known."))
+                }
+                Group {
+                    // What it is against is said below the counters: the same day a week before.
+                    if let change = count.change {
+                        changeText(change)
+                            .foregroundStyle(changeColor(change))
+                    } else if count.value == nil {
+                        unknown.foregroundStyle(Palette.secondary)
+                    } else {
+                        Text("Not counted before", bundle: #bundle, comment: "A count whose week before isn't known.")
+                            .foregroundStyle(Palette.secondary)
+                    }
+                }
+                .font(.caption)
+                .lineLimit(2)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// People over the period: daily people and sessions by UTC day, each with its latest day's count;
+/// then the period's people, installations, sessions, and sessions per person. Weekly and monthly
+/// people are the counters above.
 struct PeopleSection: View {
     let usage: AppUsage?
     let problem: AnswerProblem?
@@ -241,7 +333,7 @@ struct PeopleSection: View {
     var body: some View {
         Section {
             if let usage {
-                ForEach(series) { series in
+                ForEach(series.filter { $0.kind == .dailyPeople || $0.kind == .sessions }) { series in
                     UsageChartRow(series: series, days: days)
                 }
                 CountRow(
@@ -380,8 +472,11 @@ struct AppHealthSection: View {
     }
 }
 
-/// Each feature's use, the most people first: the first few, leading to all of them, or all.
+/// Each feature's use, the most people first, each opening its story: the first few, leading to
+/// all of them, or all.
 struct FeaturesSection: View {
+    /// Whose features: their project, and the environment their stories open in.
+    let analytics: AnalyticsRef
     let features: [FeatureUse]?
     let problem: AnswerProblem?
     /// How many it shows; nil for all.
@@ -400,9 +495,19 @@ struct FeaturesSection: View {
                     .foregroundStyle(.secondary)
                 }
                 ForEach(features.prefix(shownAtMost ?? features.count), id: \.self) { use in
-                    FeatureRow(
+                    let row = FeatureRow(
                         feature: use.feature, people: use.people, events: use.events, screens: use.screens,
                         peakMemoryP95Bytes: use.memory?.peakP95Bytes)
+                    if let key = use.feature {
+                        NavigationLink(
+                            value: Route.feature(
+                                FeatureRef(project: analytics.project, key: key, environment: analytics.environment))
+                        ) {
+                            row
+                        }
+                    } else {
+                        row
+                    }
                 }
                 if let all, let shownAtMost, features.count > shownAtMost {
                     NavigationLink(value: all) {
@@ -554,8 +659,8 @@ struct FeaturesScreen: View {
                 components: (environments.detail.value?.components ?? []).map { ($0.key, $0.name) },
                 environments: environments, route: route, navigation: navigation)
             FeaturesSection(
-                features: analytics.featureUse.value?.features, problem: analytics.featureUse.problem,
-                shownAtMost: nil, all: nil)
+                analytics: ref, features: analytics.featureUse.value?.features,
+                problem: analytics.featureUse.problem, shownAtMost: nil, all: nil)
         }
         .navigationTitle(Text("Features", bundle: #bundle, comment: "Title of every feature's use."))
         .refreshable { await analytics.featureUse.load() }
@@ -714,7 +819,9 @@ struct AppHealthContent: View {
                 PeopleSection(
                     usage: nil, problem: .unreachable, series: [],
                     days: UsageSeries.days(of: .month, endingWith: AnalyticsPreviewData.now))
-                FeaturesSection(features: nil, problem: .unreachable, shownAtMost: 5, all: nil)
+                FeaturesSection(
+                    analytics: AnalyticsRef(project: "notesapp"), features: nil, problem: .unreachable, shownAtMost: 5,
+                    all: nil)
             }
             .safeAreaInset(edge: .bottom) { AnswerBanner(problem: .unreachable, receivedAt: nil) }
             .navigationTitle("Analytics")
@@ -745,6 +852,7 @@ struct AppHealthContent: View {
                     releases: [AnalyticsPreviewData.partial, AnalyticsPreviewData.worse, AnalyticsPreviewData.first],
                     problem: nil)
                 FeaturesSection(
+                    analytics: AnalyticsRef(project: "notesapp"),
                     features: AnalyticsPreviewData.features.features, problem: nil, shownAtMost: 2,
                     all: .features(AnalyticsRef(project: "notesapp")))
                 AppSetupSection(
@@ -763,7 +871,8 @@ struct AppHealthContent: View {
                     days: UsageSeries.days(of: .month, endingWith: AnalyticsPreviewData.now))
                 RetentionSection(rows: [], answered: true, problem: nil)
                 AppHealthSection(project: "notesapp", releases: [], problem: nil)
-                FeaturesSection(features: [], problem: nil, shownAtMost: 5, all: nil)
+                FeaturesSection(
+                    analytics: AnalyticsRef(project: "notesapp"), features: [], problem: nil, shownAtMost: 5, all: nil)
             }
             .navigationTitle("Analytics")
         }

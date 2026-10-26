@@ -199,7 +199,23 @@ public final class DeploymentModels {
 
     /// One person of a project, by the app's own user ID for them.
     public func person(_ project: String, user: String) -> PersonModel {
-        model("person \(project) \(user)") { PersonModel(project: project, user: user, api: api, context: context) }
+        model("person \(project) \(user)") {
+            PersonModel(project: project, who: .user(user), api: api, context: context)
+        }
+    }
+
+    /// One person of a project, by Cluenori's ID for them.
+    public func person(_ project: String, id: String) -> PersonModel {
+        model("person \(project) id \(id)") {
+            PersonModel(project: project, who: .person(id), api: api, context: context)
+        }
+    }
+
+    /// One feature's story, in its environment or every one.
+    public func feature(_ feature: FeatureRef) -> FeatureModel {
+        model("feature \(feature.project) \(feature.key) \(feature.environment ?? "*")") {
+            FeatureModel(feature: feature, api: api, context: context)
+        }
     }
 
     /// A project's components' version policies.

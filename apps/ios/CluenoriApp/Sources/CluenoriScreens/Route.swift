@@ -164,8 +164,12 @@ public enum Route: Hashable, Sendable {
     case features(AnalyticsRef)
     /// One release's app health beside the release before it, in the release's environment.
     case appHealth(ReleaseRef)
+    /// One feature's story, with no period, in one environment or every one.
+    case feature(FeatureRef)
     /// One person, by the app's own user ID for them.
     case person(project: String, user: String)
+    /// One person, by Cluenori's ID for them: their screen's lasting address.
+    case personByID(project: String, person: String)
     /// One component's version policy: which releases must update, and which are offered it.
     case versionPolicy(project: String, component: String)
     /// One component's SDK keys, which its app's builds carry.
@@ -177,8 +181,9 @@ public enum Route: Hashable, Sendable {
         case .feeds, .feed: nil
         case .project(let key), .tech(let key, _), .incidents(let key), .incident(let key, _), .delivery(let key),
             .releases(let key, _), .notesStyle(let key), .component(let key, _), .componentReleases(let key, _),
-            .person(let key, _), .versionPolicy(let key, _), .sdkKeys(let key, _):
+            .person(let key, _), .personByID(let key, _), .versionPolicy(let key, _), .sdkKeys(let key, _):
             key
+        case .feature(let feature): feature.project
         case .analytics(let analytics), .features(let analytics): analytics.project
         case .appHealth(let release): release.project
         case .operations(let telemetry), .errors(let telemetry), .error(let telemetry, _), .logs(let telemetry):
@@ -220,6 +225,8 @@ public enum Route: Hashable, Sendable {
                     name: operation.name))
         case .analytics(let analytics): return .analytics(analytics.showing(environment))
         case .features(let analytics): return .features(analytics.showing(environment))
+        case .feature(let feature):
+            return .feature(FeatureRef(project: feature.project, key: feature.key, environment: environment))
         default: return self
         }
     }
@@ -234,6 +241,7 @@ public enum Route: Hashable, Sendable {
             showing(environment, in: project)
         case .analytics(let analytics) where analytics.environment == nil: showing(environment, in: project)
         case .features(let analytics) where analytics.environment == nil: showing(environment, in: project)
+        case .feature(let feature) where feature.environment == nil: showing(environment, in: project)
         default: self
         }
     }
@@ -271,7 +279,13 @@ public enum Route: Hashable, Sendable {
                         project: release.project, component: release.component, environment: release.environment)),
                 self,
             ]
-        case .person(let key, _): [.project(key), .analytics(AnalyticsRef(project: key)), self]
+        case .feature(let feature):
+            [
+                .project(feature.project), .analytics(AnalyticsRef(project: feature.project)),
+                .features(AnalyticsRef(project: feature.project)), self,
+            ]
+        case .person(let key, _), .personByID(let key, _):
+            [.project(key), .analytics(AnalyticsRef(project: key)), self]
         case .versionPolicy(let key, let component), .sdkKeys(let key, let component):
             [.project(key), .analytics(AnalyticsRef(project: key, component: component)), self]
         }
@@ -301,7 +315,8 @@ public enum Route: Hashable, Sendable {
     /// and `/sdk-keys`, and `/releases/<component>/<release>`, under which `/operations`, `/errors`,
     /// `/errors/<id>`, and `/logs` are the release's alone, and `/notes` its notes; `/analytics` and
     /// its `/features`, which take `?component=<key>` too, and
-    /// `/analytics/app-health/<component>/<release>`; and `/people?user=<user ID>`. Each takes
+    /// `/analytics/app-health/<component>/<release>`, `/analytics/features/<feature>` and
+    /// `/analytics/people/<person ID>`; and `/people?user=<user ID>`. Each takes
     /// `?environment=<key>`: the environment a project's tech and telemetry show, or, for a
     /// release's, the one its component says it runs in; the project's own screen, in production,
     /// takes none.
@@ -341,6 +356,9 @@ public enum Route: Hashable, Sendable {
             switch parts.count {
             case 2: self = .analytics(analytics)
             case 3 where parts[2] == "features": self = .features(analytics)
+            case 4 where parts[2] == "features":
+                self = .feature(FeatureRef(project: project, key: parts[3], environment: environment))
+            case 4 where parts[2] == "people": self = .personByID(project: project, person: parts[3])
             case 5 where parts[2] == "app-health":
                 self = .appHealth(
                     ReleaseRef(project: project, component: parts[3], environment: environment, version: parts[4]))

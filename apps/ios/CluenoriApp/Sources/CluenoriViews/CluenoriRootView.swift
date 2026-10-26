@@ -82,7 +82,7 @@ struct RouteScreen: View {
         case .feeds, .feed, .project, .tech, .incidents, .incident, .delivery, .component, .release,
             .operations(.release),
             .errors(.release), .error(.release, _), .logs(.release), .notes, .notesStyle, .analytics, .features,
-            .appHealth, .person, .versionPolicy, .sdkKeys:
+            .appHealth, .feature, .person, .personByID, .versionPolicy, .sdkKeys:
             false
         }
     }
@@ -215,8 +215,12 @@ private struct ProjectRouteScreen: View {
                 release: release,
                 period: navigation.analyticsPeriod
             )
+        case .feature(let feature):
+            FeatureScreen(feature: models.feature(feature), environments: environments, navigation: navigation)
         case .person(let project, let user):
-            PersonScreen(person: models.person(project, user: user))
+            PersonScreen(person: models.person(project, user: user), navigation: navigation)
+        case .personByID(let project, let person):
+            PersonScreen(person: models.person(project, id: person), navigation: navigation)
         case .versionPolicy(let project, let component):
             VersionPolicyScreen(
                 policies: models.versionPolicies(project), component: component,

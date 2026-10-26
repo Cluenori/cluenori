@@ -58,6 +58,8 @@ let personAnswer = #"""
       "sdk":{"name":"cluenori-swift","version":"0.1.0"},"firstSeen":"2026-09-11T08:00:00.000Z",
       "lastSeen":"2026-10-22T14:46:00.000Z"}],
     "days":[{"day":"2026-10-22","sessions":3,"foregroundMs":600000}],
+    "features":[{"feature":"notes.share","days":3,"events":4,"screens":2,"lastDay":"2026-10-22"},
+      {"days":5,"events":0,"screens":9,"lastDay":"2026-10-22"}],
     "timeline":[{"component":"notes-ios","environment":"production","release":"0.3.0+20","installation":"inst-1",
       "signal":{"_tag":"screen","id":"sg-1","at":"2026-10-22T14:40:00.000Z","session":"ses-1","screen":"NoteEditor"}}]}
     """#
@@ -93,6 +95,14 @@ struct AnalyticsRouteTests {
             .features(AnalyticsRef(project: "notes", component: "notes-ios"))
         ),
         ("cluenori://projects/notes/people?user=user-1842", .person(project: "notes", user: "user-1842")),
+        (
+            "cluenori://projects/notes/analytics/features/notes.share?environment=production",
+            .feature(FeatureRef(project: "notes", key: "notes.share", environment: "production"))
+        ),
+        (
+            "cluenori://projects/notes/analytics/people/prs-1",
+            .personByID(project: "notes", person: "prs-1")
+        ),
         (
             "cluenori://projects/notes/components/notes-ios/version-policy",
             .versionPolicy(project: "notes", component: "notes-ios")
@@ -337,6 +347,20 @@ struct PersonTests {
         #expect(person.person.problem == .missing)
     }
 
+    @Test func `opens a person by their ID, with the features they named, and a brief for an agent`() async throws {
+        let deployment = FakeDeployment()
+        deployment.answer("GET /api/projects/notes/people/prs-1", 200, personAnswer)
+        let person = try pairedModels(deployment).person("notes", id: "prs-1")
+
+        await person.load()
+
+        // What the app marked with no feature isn't a feature of theirs to open.
+        #expect(person.features.map(\.feature) == ["notes.share"])
+        let brief = try #require(person.agentBrief)
+        #expect(brief.contains("./cluenori person notes prs-1"))
+        #expect(brief.contains("Features they used, the last first: notes.share"))
+    }
+
     @Test(arguments: [
         (" user-1842 ", "user-1842"), ("8C1F4E2A-55D0-4B7E-9F31-2A6C0D9E7B11", "8C1F4E2A-55D0-4B7E-9F31-2A6C0D9E7B11"),
     ])
@@ -529,5 +553,89 @@ struct SdkKeysTests {
         #expect(!(await keys.revoke("cluenori-sdk.notes.notes-ios.newer")))
 
         #expect(keys.revoking["cluenori-sdk.notes.notes-ios.newer"] == .failed(.missing))
+    }
+}
+
+/// notes.share over 3 days, the last of them today: the app used it the first and last day; its
+/// service ran two operations for it on the last, one failing, and sent warnings and errors the
+/// day before, its logs kept from that day.
+let featureAnswer = #"""
+    {"feature":"notes.share","asOf":"2026-10-22T15:00:00.000Z",
+    "use":{"days":[{"day":"2026-10-20","people":4,"events":6,"screens":2},
+      {"day":"2026-10-22","people":2,"events":3,"screens":1}],
+      "people":5,"latestPeople":[{"person":"prs-1","users":["user-1842"],"days":2,"events":5,"lastDay":"2026-10-22"}],
+      "releases":[]},
+    "logs":{"covered":{"from":"2026-10-21T09:00:00.000Z","to":"2026-10-22T15:00:00.000Z"},
+      "days":[{"day":"2026-10-21","warnings":3,"errors":1}],"errors":[]},
+    "operations":[
+      {"day":"2026-10-22","component":"notes-api","operation":"POST /api/notes/{id}/share","count":7,"errors":1},
+      {"day":"2026-10-22","component":"notes-api","operation":"GET /api/notes/{id}/share-link","count":9,"errors":0},
+      {"day":"2026-10-21","component":"notes-api","operation":"POST /api/notes/{id}/share","count":4,"errors":0}]}
+    """#
+
+struct FeatureTests {
+    @Test func `tells a feature's days, the services' part unknown before its logs were kept`() async throws {
+        let deployment = FakeDeployment()
+        deployment.answer("GET /api/projects/notes/features/notes.share", 200, featureAnswer)
+        let feature = try pairedModels(deployment).feature(
+            FeatureRef(project: "notes", key: "notes.share", environment: "production"))
+
+        await feature.load()
+
+        #expect(deployment.queries("/api/projects/notes/features/notes.share").first == ["environment": "production"])
+        let days = feature.days(last: 3)
+        #expect(days.map(\.day) == ["2026-10-20", "2026-10-21", "2026-10-22"].compactMap(UTCDay.date))
+        #expect(days.map(\.people) == [4, 0, 2])
+        #expect(days.map(\.operations) == [0, 4, 16])
+        #expect(days.map(\.failed) == [0, 0, 1])
+        // The 20th is before the logs kept: unknown, not none; the 22nd had none.
+        #expect(days.map(\.warnings) == [nil, 3, 0])
+        #expect(days.map(\.errors) == [nil, 1, 0])
+        #expect(feature.servicesNamedIt)
+        #expect(
+            feature.operations.map(\.operation) == ["POST /api/notes/{id}/share", "GET /api/notes/{id}/share-link"])
+        #expect(feature.operations.map(\.count) == [11, 9])
+        let brief = try #require(feature.agentBrief)
+        #expect(brief.contains("./cluenori feature notes notes.share --environment production"))
+        #expect(brief.contains("Apps: 5 people used it, from 2026-10-20 to 2026-10-22."))
+    }
+
+    @Test func `says when nothing kept names a feature`() async throws {
+        let deployment = FakeDeployment()
+        deployment.answer(
+            "GET /api/projects/notes/features/notes.nothing", 404,
+            #"{"_tag":"FeatureNotFound","feature":"notes.nothing"}"#)
+        let feature = try pairedModels(deployment).feature(FeatureRef(project: "notes", key: "notes.nothing"))
+
+        await feature.load()
+
+        #expect(feature.story.value == nil)
+        #expect(feature.story.problem == .missing)
+    }
+}
+
+struct PeopleCountsTests {
+    @Test func `counts people on the latest whole UTC day against a week before, unknown never 0`() throws {
+        let usage = try JSONDecoder.api.decode(
+            AppUsage.self,
+            from: Data(
+                #"""
+                {"days":[{"day":"2026-10-14","people":50,"weekPeople":200,"installations":1,"sessions":1,"foregroundMs":1},
+                  {"day":"2026-10-21","people":60,"weekPeople":180,"installations":1,"sessions":1,"foregroundMs":1},
+                  {"day":"2026-10-22","people":9,"weekPeople":181,"installations":1,"sessions":1,"foregroundMs":1}],
+                "people":1,"installations":1,"sessions":1,"releases":[]}
+                """#.utf8))
+        let now = try #require(UTCDay.date("2026-10-22")).addingTimeInterval(15 * 3_600)
+
+        let counts = PeopleCounts.of(usage, now: now)
+
+        // Yesterday, not today so far.
+        #expect(counts.day == UTCDay.date("2026-10-21"))
+        #expect(counts.daily.value == 60)
+        #expect(counts.daily.change == 0.2)
+        #expect(counts.weekly.value == 180)
+        #expect(counts.weekly.change == -0.1)
+        #expect(counts.monthly.value == nil)
+        #expect(counts.monthly.change == nil)
     }
 }
