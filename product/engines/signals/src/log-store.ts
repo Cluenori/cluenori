@@ -12,7 +12,7 @@ import type {
   LogPage,
   LogQuery,
 } from "./error-groups.ts"
-import { ErrorGroupNotFound, levelsFrom } from "./error-groups.ts"
+import { ErrorGroupNotFound, levelsFrom, LogLineNotFound } from "./error-groups.ts"
 import type { ErrorGroupShape } from "./exports.ts"
 import type { LogLine } from "./log-entry.ts"
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
@@ -223,22 +223,53 @@ export const logStore = Effect.gen(function* () {
         LIMIT ${limit}`,
     })(undefined)
 
+  // A group is kept 15 months after it was last seen, whether or not cleanup has run since.
+  const findGroup = SqlSchema.findAll({
+    Request: Schema.Struct({ id: ErrorGroupId, keptFrom: Schema.Int }),
+    Result: GroupRow,
+    execute: ({ id, keptFrom }) => sql`
+      SELECT id, kind, title, culprit, first_seen AS "firstSeen", first_release AS "firstRelease",
+        last_seen AS "lastSeen", last_component AS "lastComponent", last_environment AS "lastEnvironment",
+        last_release AS "lastRelease", 0 AS occurrences
+      FROM signals_error_groups WHERE id = ${id} AND last_seen >= ${keptFrom}`,
+  })
+
+  // The group is found by its ID whatever the period: only its occurrences are the period's.
   const error = Effect.fn("LogStore.error")(function* (id: ErrorGroupId, query: ErrorQuery, now: number) {
+    const [known] = yield* findGroup({ id, keptFrom: now - Duration.toMillis(groupRetention) }).pipe(Effect.orDie)
+    if (known === undefined) {
+      return yield* new ErrorGroupNotFound({ error: id })
+    }
     const covered = coveredOf(query.period, now)
     if (Option.isNone(covered)) {
-      return yield* new ErrorGroupNotFound({ error: id })
+      const none: ErrorDetail = { group: groupOf(known), latest: [] }
+      return none
     }
     const [row] = yield* findGroups(covered.value, query, id).pipe(Effect.orDie)
-    if (row === undefined) {
-      return yield* new ErrorGroupNotFound({ error: id })
-    }
     const lineRows = yield* findLines(
       covered.value,
       { ...query, minimumLevel: "error", error: id },
       latestOccurrences,
     ).pipe(Effect.orDie)
-    const detail: ErrorDetail = { group: groupOf(row), latest: lineRows.map(lineOf) }
+    const detail: ErrorDetail = { group: groupOf(row ?? known), latest: lineRows.map(lineOf) }
     return detail
+  })
+
+  // A line is kept 90 days, whether or not cleanup has run since.
+  const findLine = SqlSchema.findAll({
+    Request: Schema.Struct({ id: Schema.Int, keptFrom: Schema.Int }),
+    Result: LineRow,
+    execute: ({ id, keptFrom }) =>
+      sql`SELECT id, component, entry FROM signals_logs WHERE id = ${id} AND time >= ${keptFrom}`,
+  })
+
+  // One warning or error by its ID, whenever it happened, while it is kept.
+  const line = Effect.fn("LogStore.line")(function* (id: number, now: number) {
+    const [row] = yield* findLine({ id, keptFrom: now - Duration.toMillis(logRetention) }).pipe(Effect.orDie)
+    if (row === undefined) {
+      return yield* new LogLineNotFound({ line: id })
+    }
+    return lineOf(row)
   })
 
   const logs = Effect.fn("LogStore.logs")(function* (query: LogQuery, now: number) {
@@ -306,5 +337,5 @@ export const logStore = Effect.gen(function* () {
     return counts
   })
 
-  return { add, cleanUp, error, errors, logCounts, logs }
+  return { add, cleanUp, error, errors, line, logCounts, logs }
 })

@@ -308,6 +308,15 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       }),
     new ProjectNotFound({ project }),
   ),
+  logLine: served(
+    projectCalls.logLine,
+    (id) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.logLine(id)
+      }),
+    new ProjectNotFound({ project }),
+  ),
   logs: served(
     projectCalls.logs,
     (query) =>

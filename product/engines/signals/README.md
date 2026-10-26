@@ -22,6 +22,8 @@ const table = yield* signals.errors({ period })
 // [{ id: "159dae307f199986", title: "TimeoutException: Notification service did not answer",
 //    culprit: "Program.<>c.<<<Main>$>b__0_5>d.MoveNext()", occurrences: 3, ... }]
 const detail = yield* signals.error(table.groups[0].id, { period }) // latest occurrences, with stacks
+// Found whatever the period: a period without it answers occurrences: 0 and latest: [].
+const line = yield* signals.logLine(detail.latest[0].id) // one occurrence by its ID, no period
 const view = yield* signals.trace(detail.latest[0].trace, detail.latest[0].time) // the time is optional
 // view.spans: the trace's spans as a tree; view.logs: its logs at every level, from the archive
 
@@ -68,7 +70,8 @@ const person = yield* apps.person({ _tag: "ByUser", user: AppUserId.make("8c1fâ€
 
 An export that isn't one fails with `OtlpInvalid`. When the archive can't take an export,
 `record*` fails with `ArchiveUnavailable`, having stored nothing, and the exporter is told to send it
-again. An unknown error ID fails with `ErrorGroupNotFound`.
+again. An error ID the project never had, or forgot 15 months after it was last seen, fails with
+`ErrorGroupNotFound`; a line older than 90 days, or one it never had, with `LogLineNotFound`.
 
 ## Owns
 

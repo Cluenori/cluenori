@@ -103,6 +103,15 @@ struct ErrorScreen: View {
                     )
                 }
                 Section {
+                    if detail.latest.isEmpty {
+                        // The error is found whatever the period; only its occurrences are the period's.
+                        Text(
+                            "None in this period. Last seen \(detail.group.lastSeen, format: .relative(presentation: .named)).",
+                            bundle: #bundle,
+                            comment: "An error none of whose occurrences are in the period, and when it last happened."
+                        )
+                        .foregroundStyle(.secondary)
+                    }
                     ForEach(detail.latest, id: \.id) { line in
                         NavigationLink {
                             LogLineScreen(line: line)
@@ -121,9 +130,9 @@ struct ErrorScreen: View {
                 if error.detail.problem == .missing {
                     NothingShown(
                         title: Text(
-                            "This error didn't happen",
+                            "No such error",
                             bundle: #bundle,
-                            comment: "An error the period doesn't have."
+                            comment: "An error the project doesn't have, or forgot 15 months after it was last seen."
                         ),
                         systemImage: "checkmark.circle",
                         narrowed: error.release != nil,
@@ -163,7 +172,7 @@ struct ErrorSummary: View {
                 .textSelection(.enabled)
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                 GridRow {
-                    Text("Occurrences", bundle: #bundle, comment: "How many times an error happened in the period.")
+                    Text("In the period", bundle: #bundle, comment: "How many times an error happened in the period.")
                         .foregroundStyle(.secondary)
                     Text(occurrences, format: .number)
                 }

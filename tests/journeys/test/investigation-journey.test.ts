@@ -99,6 +99,13 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("investigation", (it)
       assert.include(occurrence?.exception?.stack ?? "", "Notifier.cs:line 42")
       assert.strictEqual(occurrence?.trace, failedTrace)
 
+      // The error is found in a period that holds none of it, and its occurrence by its ID alone.
+      const later = { from: DateTime.add(now, { days: 2 }), to: DateTime.add(now, { days: 3 }) }
+      const quiet = yield* client.signals.error({ params: { project, error: timeout.id }, query: later })
+      assert.deepStrictEqual([quiet.group.occurrences, quiet.latest.length], [0, 0])
+      const opened = yield* client.signals.logLine({ params: { project, line: occurrence?.id ?? 0 } })
+      assert.deepStrictEqual(opened, occurrence)
+
       // Warnings and errors can be searched; the info line is only in the archive.
       const warnings = yield* client.signals.logs({ params: { project }, query: { ...period, search: "slow" } })
       assert.deepStrictEqual(

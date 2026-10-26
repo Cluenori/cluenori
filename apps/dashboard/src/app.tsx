@@ -55,6 +55,7 @@ const operationPage = import("@/pages/operation-page")
 const OperationPage = lazy(() => operationPage.then((module) => ({ default: module.OperationPage })))
 const errorPage = import("@/pages/error-page")
 const ErrorPage = lazy(() => errorPage.then((module) => ({ default: module.ErrorPage })))
+const OccurrencePage = lazy(() => errorPage.then((module) => ({ default: module.OccurrencePage })))
 const tracePage = import("@/pages/trace-page")
 const TracePage = lazy(() => tracePage.then((module) => ({ default: module.TracePage })))
 // Releases, and one release, load after start too, so the first load holds its budget.
@@ -215,6 +216,12 @@ function PageOf({ route, projects }: { readonly route: Route; readonly projects:
             </Suspense>
           )}
         </WithEnvironments>
+      )
+    case "occurrence":
+      return (
+        <Suspense fallback={opening}>
+          <OccurrencePage key={route.line} project={route.project} error={route.error} line={route.line} />
+        </Suspense>
       )
     case "logs":
       return (

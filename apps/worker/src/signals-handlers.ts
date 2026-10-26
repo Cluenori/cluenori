@@ -91,6 +91,13 @@ export const SignalsHandlers = HttpApiBuilder.group(CluenoriApi, "signals", (han
         })
       }),
     )
+    .handle("logLine", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.logLine, params.line)
+      }),
+    )
     .handle("logs", ({ params, query }) =>
       Effect.gen(function* () {
         const member = yield* CurrentMember

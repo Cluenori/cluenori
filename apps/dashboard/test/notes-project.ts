@@ -67,9 +67,11 @@ import {
   compareVersions,
   hasEnded,
 } from "@cluenori/releases"
-import type { OperationRow, LogLine, SeriesStep } from "@cluenori/signals"
+import type { OperationRow, SeriesStep } from "@cluenori/signals"
 import {
   OperationTable,
+  LogLine,
+  LogLineNotFound,
   ErrorDetail,
   ErrorGroup,
   ErrorGroupId,
@@ -2128,6 +2130,16 @@ export const notesApi = ({
           notesOf.get(noted) ?? [],
           numbered,
         )
+      }
+      // One warning or error by its ID, with no period: the lines as they stand now.
+      if (area === "logs" && id === "lines" && more !== undefined) {
+        const now = yield* Clock.currentTimeMillis
+        const found = linesOf(new Period({ from: DateTime.makeUnsafe(now - day), to: DateTime.makeUnsafe(now) })).find(
+          (entry) => `${entry.id}` === more,
+        )
+        return yield* found === undefined
+          ? reply(LogLineNotFound, new LogLineNotFound({ line: Number(more) }), 404)
+          : reply(LogLine, found)
       }
       if (asked.from === undefined || asked.to === undefined) {
         return yield* Effect.die(`The dashboard asked for ${area} without a period.`)

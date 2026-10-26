@@ -53,7 +53,11 @@ export const ErrorTable = Schema.Struct({
 }).annotate({ identifier: "ErrorTable" })
 export type ErrorTable = typeof ErrorTable.Type
 
-/** One error, and its latest occurrences in the period, newest first: at most 10. */
+/**
+ * One error, whatever the period: what it is, when it was first and last seen, and how often it
+ * happened in the period, with its latest occurrences there, newest first: at most 10, and none
+ * when the period holds none of them.
+ */
 export const ErrorDetail = Schema.Struct({
   group: ErrorGroup,
   latest: Schema.Array(LogLine),
@@ -63,6 +67,11 @@ export type ErrorDetail = typeof ErrorDetail.Type
 /** The project has no error with this ID. */
 export class ErrorGroupNotFound extends Schema.TaggedError<ErrorGroupNotFound>()("ErrorGroupNotFound", {
   error: ErrorGroupId,
+}) {}
+
+/** The project keeps no warning or error with this ID: it never had one, or it is older than 90 days. */
+export class LogLineNotFound extends Schema.TaggedError<LogLineNotFound>()("LogLineNotFound", {
+  line: Schema.Int,
 }) {}
 
 /** The levels a search of warnings and errors can start from. */

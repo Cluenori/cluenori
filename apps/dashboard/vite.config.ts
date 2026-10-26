@@ -18,7 +18,9 @@ import { defineConfig } from "vite"
 // from 249.4 KB to 252.8 KB; and to 254 KB with @bagatka/webauthn (252.3 KB to 253.9 KB): the API's
 // passkey Schemas come with the module's checks, which a bundler keeps since its top-level
 // `Effect.fn` calls aren't marked pure. Kit's fix (a pure mark, or the Schemas apart) gives it back.
-const firstLoadBudget = { scriptKb: 254, styleKb: 36 }
+// And to 255 KB when an error's occurrence became a page of its own (253.9 KB to 254.3 KB): its
+// endpoint in the typed client, its route and its atom; the page loads after start.
+const firstLoadBudget = { scriptKb: 255, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

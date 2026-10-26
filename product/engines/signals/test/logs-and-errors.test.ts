@@ -14,6 +14,7 @@ import {
   BatchDigest,
   ErrorGroupNotFound,
   ErrorGroupId,
+  LogLineNotFound,
   readLogs,
   readTraces,
   Signals,
@@ -323,7 +324,7 @@ describe("Signals' warnings and errors", () => {
     Effect.gen(function* () {
       const { export: read } = yield* readAt(now, fixtureLogs)
       const timeoutId = read.errors.find((group) => group.title.startsWith("TimeoutException"))?.id
-      const { detail, missing } = yield* inProject(
+      const { detail, missing, opened, noLine } = yield* inProject(
         "error-detail",
         now,
         Effect.gen(function* () {
@@ -333,15 +334,78 @@ describe("Signals' warnings and errors", () => {
           const notThere = yield* signals
             .error(ErrorGroupId.make("f".repeat(16)), { period: lastHour })
             .pipe(Effect.flip)
-          return { detail: found, missing: notThere }
+          // An occurrence opens by its ID alone, with no period.
+          const oldest = found.latest.at(-1)
+          const byId = oldest === undefined ? undefined : yield* signals.logLine(oldest.id)
+          const unknown = yield* signals.logLine(999_999).pipe(Effect.flip)
+          return { detail: found, missing: notThere, opened: byId, noLine: unknown }
         }),
       )
 
+      assert.deepStrictEqual(opened, detail.latest.at(-1))
+      assert.deepStrictEqual(noLine, new LogLineNotFound({ line: 999_999 }))
       assert.strictEqual(detail.group.occurrences, 3)
       assert.strictEqual(detail.latest.length, 3)
       assert.include(detail.latest[0]?.exception?.stack ?? "", "TimeoutException")
       assert.isDefined(detail.latest[0]?.trace)
       assert.deepStrictEqual(missing, new ErrorGroupNotFound({ error: ErrorGroupId.make("f".repeat(16)) }))
+    }),
+  )
+
+  it.effect("finds an error whatever the period, with none of its occurrences when they are outside it", () =>
+    Effect.gen(function* () {
+      const { export: read } = yield* readAt(now, fixtureLogs)
+      const timeout = read.errors.find((group) => group.title.startsWith("TimeoutException"))
+      const id = timeout?.id ?? ErrorGroupId.make("0".repeat(16))
+      // Three days later, the last 24 hours hold none of its occurrences.
+      const later = now + 3 * 86_400_000
+      const lastDay = new Period({ from: DateTime.makeUnsafe(later - 86_400_000), to: DateTime.makeUnsafe(later) })
+      yield* inProject(
+        "error-outside-period",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordLogs(api, read)
+        }),
+      )
+      const detail = yield* inProject(
+        "error-outside-period",
+        later,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          return yield* signals.error(id, { period: lastDay })
+        }),
+      )
+
+      // A project that sends nothing more still forgets them on time: a line after 90 days, the
+      // error 15 months after it was last seen.
+      const forgotten = yield* inProject(
+        "error-outside-period",
+        now + 91 * 86_400_000,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          const line = yield* signals.logLine(1).pipe(Effect.flip)
+          const stillKnown = yield* signals.error(id, { period: lastDay })
+          return { line, stillKnown: stillKnown.group.id }
+        }),
+      )
+      const gone = yield* inProject(
+        "error-outside-period",
+        now + 456 * 86_400_000,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          return yield* signals.error(id, { period: lastDay }).pipe(Effect.flip)
+        }),
+      )
+
+      assert.deepStrictEqual(forgotten, { line: new LogLineNotFound({ line: 1 }), stillKnown: id })
+      assert.deepStrictEqual(gone, new ErrorGroupNotFound({ error: id }))
+      assert.strictEqual(detail.group.id, id)
+      assert.strictEqual(detail.group.occurrences, 0)
+      assert.deepStrictEqual(detail.latest, [])
+      // What it is and when it was seen don't depend on the period.
+      assert.strictEqual(detail.group.title, timeout?.title)
+      assert.isBelow(DateTime.toEpochMillis(detail.group.lastSeen), later - 86_400_000)
     }),
   )
 

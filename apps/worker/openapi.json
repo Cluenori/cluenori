@@ -2001,7 +2001,82 @@
             }
           }
         },
-        "description": "One error and its latest occurrences in a period, with their messages, stack traces, and trace IDs: where an investigation starts. Each occurrence's trace ID and time open its trace with the traces endpoint."
+        "description": "One error, found whatever the period: what it is, when it was first and last seen, how often it happened in the period, and its latest occurrences there, with their messages, stack traces, and trace IDs: where an investigation starts. Each occurrence's ID opens it with the log line endpoint, and its trace ID and time its trace with the traces endpoint."
+      }
+    },
+    "/api/projects/{project}/logs/lines/{line}": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.logLine",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "line",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "LogLine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogLine"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | LogLineNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LogLineNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "One warning or error by its ID, whenever it happened: an occurrence of an error or a line of the logs, with its message, exception, stack, trace ID, and attributes. Kept 90 days."
       }
     },
     "/api/projects/{project}/logs": {
@@ -9326,6 +9401,27 @@
           "category",
           "message",
           "attributes"
+        ],
+        "additionalProperties": false
+      },
+      "LogLineNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "LogLineNotFound"
+            ]
+          },
+          "line": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "_tag",
+          "line"
         ],
         "additionalProperties": false
       },

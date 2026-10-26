@@ -19,9 +19,10 @@ import {
   IndexedLevel,
   LogCounts,
   LogCountsBy,
+  LogLineNotFound,
   LogPage,
 } from "./error-groups.ts"
-import { ErrorGroupId } from "./log-entry.ts"
+import { ErrorGroupId, LogLine } from "./log-entry.ts"
 import { OperationTable, KeptTraces, LoadSeries, SeriesStep } from "./operation-queries.ts"
 import { TraceView } from "./trace-view.ts"
 
@@ -129,7 +130,17 @@ export class SignalsGroup extends HttpApiGroup.make("signals")
       error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ErrorGroupNotFound.pipe(HttpApiSchema.status(404))],
     }).annotate(
       OpenApi.Description,
-      "One error and its latest occurrences in a period, with their messages, stack traces, and trace IDs: where an investigation starts. Each occurrence's trace ID and time open its trace with the traces endpoint.",
+      "One error, found whatever the period: what it is, when it was first and last seen, how often it happened in the period, and its latest occurrences there, with their messages, stack traces, and trace IDs: where an investigation starts. Each occurrence's ID opens it with the log line endpoint, and its trace ID and time its trace with the traces endpoint.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("logLine", "/projects/:project/logs/lines/:line", {
+      params: { project: ProjectKey, line: Schema.FiniteFromString.pipe(Schema.decodeTo(Schema.Int)) },
+      success: LogLine,
+      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), LogLineNotFound.pipe(HttpApiSchema.status(404))],
+    }).annotate(
+      OpenApi.Description,
+      "One warning or error by its ID, whenever it happened: an occurrence of an error or a line of the logs, with its message, exception, stack, trace ID, and attributes. Kept 90 days.",
     ),
   )
   .add(

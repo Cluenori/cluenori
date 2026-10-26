@@ -80,6 +80,7 @@ export {
   LogCounts,
   LogCountsBy,
   LogCountSeries,
+  LogLineNotFound,
   LogPage,
   LogQuery,
 } from "./error-groups.ts"

@@ -40,8 +40,8 @@ public final class ErrorModel {
     public let id: String
     /// The release it is narrowed to, whose span it looks over; nil for a project's, over the period.
     public let release: ReleaseModel?
-    /// Fails with `missing` for an error the period, or the release, doesn't have, which the API
-    /// answers 404.
+    /// Found whatever the period: only its occurrences are the period's. Fails with `missing` for an
+    /// error the project doesn't have, which the API answers 404.
     public let detail: Answer<ErrorDetail>
 
     init(

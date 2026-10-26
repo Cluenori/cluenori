@@ -15,11 +15,12 @@ import type {
   ErrorTable,
   LogCountQuery,
   LogCounts,
+  LogLineNotFound,
   LogPage,
   LogQuery,
 } from "./error-groups.ts"
 import type { ExportSignal, LogExport, MetricsExport, TraceExport } from "./exports.ts"
-import type { ErrorGroupId } from "./log-entry.ts"
+import type { ErrorGroupId, LogLine } from "./log-entry.ts"
 import { logStore } from "./log-store.ts"
 import { BatchDigest } from "./operation-counts.ts"
 import type {
@@ -117,8 +118,17 @@ export class Signals extends Context.Service<
     readonly environments: (period: Period) => Effect.Effect<ReadonlyArray<EnvironmentKey>>
     /** The errors of the query's period, most frequent first. Reads only. */
     readonly errors: (query: ErrorQuery) => Effect.Effect<ErrorTable>
-    /** One error and its latest occurrences in the query's period. Reads only. */
+    /**
+     * One error, whatever the query's period, with how often it happened there and its latest
+     * occurrences there. Fails only for an error the project never had, or forgot 15 months after it
+     * was last seen. Reads only.
+     */
     readonly error: (id: ErrorGroupId, query: ErrorQuery) => Effect.Effect<ErrorDetail, ErrorGroupNotFound>
+    /**
+     * One warning or error by its ID, whenever it happened: an occurrence of an error, or a line of
+     * the logs. Fails with `LogLineNotFound` once it is older than the 90 days they are kept. Reads only.
+     */
+    readonly logLine: (id: number) => Effect.Effect<LogLine, LogLineNotFound>
     /** A page of warnings and errors, newest first. Reads only. */
     readonly logs: (query: LogQuery) => Effect.Effect<LogPage>
     /**
@@ -258,6 +268,11 @@ export class Signals extends Context.Service<
           return yield* logs.error(id, query, now)
         })
 
+        const logLine = Effect.fn("Signals.logLine")(function* (id: number) {
+          const now = yield* nowMillis
+          return yield* logs.line(id, now)
+        })
+
         const searchLogs = Effect.fn("Signals.logs")(function* (query: LogQuery) {
           const now = yield* nowMillis
           return yield* logs.logs(query, now)
@@ -305,6 +320,7 @@ export class Signals extends Context.Service<
           environments: counts.environments,
           errors,
           error,
+          logLine,
           logs: searchLogs,
           logCounts,
           trace,

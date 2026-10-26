@@ -23,10 +23,20 @@ describe("errors journey", () => {
       yield* expectAccessible()
       yield* Effect.promise(() => happening.click())
 
-      // The error's page: what it said, every frame, the library ones folded, and the operation it happened in.
+      // The error's page is a list: its occurrences over the period, each opening its own page.
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "NpgsqlException" })).toBeVisible(),
       )
+      const occurrences = screen.getByRole("list").filter({ hasText: "Export 51c2 failed after 3 attempts" })
+      yield* Effect.promise(() => expect.element(occurrences).toBeVisible())
+      yield* expectAccessible()
+      yield* Effect.promise(() => occurrences.getByRole("link").first().click())
+
+      // One occurrence, by its ID, with no period to change: what it said, every frame, the library
+      // ones folded, and the operation it happened in.
+      yield* Effect.promise(() => expect.element(screen.getByRole("link", { name: "Every occurrence" })).toBeVisible())
+      assert.match(window.location.pathname, /^\/projects\/notes\/errors\/4f1c9a2e7b3d5068\/3$/)
+      yield* Effect.promise(() => expect.element(screen.getByRole("group", { name: "Period" })).not.toBeInTheDocument())
       yield* Effect.promise(() =>
         expect.element(screen.getByText("Notes.Api.Exports.ExportStore.SaveAsync(Export export)")).toBeVisible(),
       )
@@ -46,6 +56,25 @@ describe("errors journey", () => {
       )
       yield* Effect.promise(() => expect.element(screen.getByText("INSERT exports")).toBeVisible())
       yield* expectAccessible()
+    }),
+  )
+
+  it.effect("refuses an address that names one error and a line of another", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi())
+      // Line 1 is the timeout's, not the database error's.
+      window.history.pushState(null, "", "/projects/notes/errors/4f1c9a2e7b3d5068/1")
+      const screen = yield* Effect.promise(() => render(<App />))
+
+      yield* Effect.promise(() => expect.element(screen.getByRole("alert")).toBeVisible())
+      yield* Effect.promise(() =>
+        expect
+          .element(screen.getByRole("link", { name: "Open it under its own error" }))
+          .toHaveAttribute("href", "/projects/notes/errors/a90e3b7c14d2f685/1"),
+      )
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("button", { name: "Copy for an agent" })).not.toBeInTheDocument(),
+      )
     }),
   )
 

@@ -417,9 +417,10 @@ public nonisolated struct CluenoriAPI: Sendable {
         return try Self.decoded(from: `the answer`)
     }
 
-    /// One error and its latest occurrences in a period, with their messages, stack traces, and
-    /// trace IDs: where an investigation starts. Each occurrence's trace ID and time open its trace
-    /// with the traces endpoint.
+    /// One error, found whatever the period: what it is, when it was first and last seen, how often
+    /// it happened in the period, and its latest occurrences there, with their messages, stack
+    /// traces, and trace IDs: where an investigation starts. Each occurrence's ID opens it with the
+    /// log line endpoint, and its trace ID and time its trace with the traces endpoint.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, `.errorGroupNotFound`, or as any call can.
     @concurrent
@@ -441,6 +442,16 @@ public nonisolated struct CluenoriAPI: Sendable {
         if let release { `query items`.append(("release", Self.text(release))) }
         if let operation { `query items`.append(("operation", Self.text(operation))) }
         let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/errors/\(Self.segment(Self.text(error)))", query: `query items`)
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// One warning or error by its ID, whenever it happened: an occurrence of an error or a line of
+    /// the logs, with its message, exception, stack, trace ID, and attributes. Kept 90 days.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.logLineNotFound`, or as any call can.
+    @concurrent
+    public func logLine(project: String, line: String) async throws(APIError) -> LogLine {
+        let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/logs/lines/\(Self.segment(Self.text(line)))")
         return try Self.decoded(from: `the answer`)
     }
 
@@ -1102,6 +1113,7 @@ public nonisolated enum APIError: Error, Sendable {
     case gitHubAlreadyConnected(GitHubAlreadyConnected)
     case incidentNotFound(IncidentNotFound)
     case inviteRejected(InviteRejected)
+    case logLineNotFound(LogLineNotFound)
     case memberExists(MemberExists)
     case memberNotFound(MemberNotFound)
     case monitorExists(MonitorExists)
@@ -4315,6 +4327,33 @@ public nonisolated struct LogLine: Codable, Hashable, Sendable {
         try container.encodeIfPresent(self.exception, forKey: .exception)
         try container.encodeIfPresent(self.error, forKey: .error)
         try container.encode(self.attributes, forKey: .attributes)
+    }
+}
+
+public nonisolated struct LogLineNotFound: Codable, Hashable, Sendable {
+    public let line: Int
+
+    public init(line: Int) {
+        self.line = line
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case line = "line"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "LogLineNotFound" else {
+            throw container.`corruption at`(._tag, "_tag isn't LogLineNotFound.")
+        }
+        self.line = try container.`value at`(.line)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("LogLineNotFound", forKey: ._tag)
+        try container.encode(self.line, forKey: .line)
     }
 }
 
@@ -8875,6 +8914,7 @@ nonisolated extension CluenoriAPI {
             case "GitHubAlreadyConnected": return .gitHubAlreadyConnected(try jsonDecoder().decode(GitHubAlreadyConnected.self, from: data))
             case "IncidentNotFound": return .incidentNotFound(try jsonDecoder().decode(IncidentNotFound.self, from: data))
             case "InviteRejected": return .inviteRejected(try jsonDecoder().decode(InviteRejected.self, from: data))
+            case "LogLineNotFound": return .logLineNotFound(try jsonDecoder().decode(LogLineNotFound.self, from: data))
             case "MemberExists": return .memberExists(try jsonDecoder().decode(MemberExists.self, from: data))
             case "MemberNotFound": return .memberNotFound(try jsonDecoder().decode(MemberNotFound.self, from: data))
             case "MonitorExists": return .monitorExists(try jsonDecoder().decode(MonitorExists.self, from: data))

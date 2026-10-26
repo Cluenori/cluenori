@@ -137,7 +137,7 @@ describe("environments journey", () => {
         expect.element(screen.getByRole("heading", { level: 1, name: "NpgsqlException" })).toBeVisible(),
       )
       assert.strictEqual(window.location.search, `?component=notes-api&environment=production&release=${worse}`)
-      yield* Effect.promise(() => expect.element(screen.getByRole("link", { name: worse })).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByRole("link", { name: worse, exact: true })).toBeVisible())
       const asked = apiCalls().filter((call) => call.path[2] === "errors" && call.path.length === 4)
       assert.deepStrictEqual(
         asked.map((call) => [call.query.get("environment"), call.query.get("release")]),
@@ -145,7 +145,10 @@ describe("environments journey", () => {
       )
       yield* expectAccessible()
 
-      // Its trace, and the way back, keep them too.
+      // An occurrence is one thing, with no filters; its trace keeps the occurrence's own environment
+      // and release, and the way back keeps them too.
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Open this occurrence" }).click())
+      assert.strictEqual(window.location.search, "")
       yield* Effect.promise(() => screen.getByRole("link", { name: "Open the trace" }).click())
       yield* Effect.promise(() => expect.element(screen.getByText("INSERT exports")).toBeVisible())
       assert.include(window.location.search, `environment=production&release=${worse}`)

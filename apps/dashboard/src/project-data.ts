@@ -340,6 +340,21 @@ export const errorAtom = Atom.family((key: Scope & { readonly error: ErrorGroupI
 )
 
 /**
+ * One warning or error by its ID, whenever it happened: an occurrence of an error, as its own page
+ * shows it, with no period.
+ */
+export const logLineAtom = Atom.family((key: { readonly project: ProjectKey; readonly line: number }) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.signals.logLine({ params: { project: key.project, line: key.line } })
+      }),
+    ),
+  ),
+)
+
+/**
  * Warnings and errors counted over the period, a series for each level, component, or error group;
  * of one component, environment, release, or error group, when the key names it.
  */

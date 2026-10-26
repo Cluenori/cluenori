@@ -50,7 +50,9 @@ export type GitHubReturn =
  * what needs the founder there, and three doors (`Door`): Product, for now the analytics pages; Tech,
  * `/projects/notes/tech`, a summary of operations, errors, logs and incidents, each leading to its
  * full page; and Releases. Each area is a page with its `Filters`; performance leads to every
- * operation and then to one; the errors page leads to one error, with all it was sent with; the
+ * operation and then to one; the errors page leads to one error and its occurrences over the period,
+ * and each occurrence to its own page, by its ID, with no filters, since it is one thing
+ * (`/projects/notes/errors/<error>/<line>`, `concept/Experience.md`); the
  * releases page leads to one release, by its component and version, and its environment when it has
  * one (`/projects/notes/releases/notes-api/2.4.0+312?environment=production`); a trace is a page of
  * its own, by its ID, with the time it happened when a link knows it (`?around=<ISO 8601>`), keeping
@@ -69,6 +71,7 @@ export type Route =
   | ({ readonly page: "operation"; readonly project: ProjectKey; readonly operation: EnvelopeName } & Filters)
   | ({ readonly page: "errors"; readonly project: ProjectKey } & Filters)
   | ({ readonly page: "error"; readonly project: ProjectKey; readonly error: ErrorGroupId } & Filters)
+  | { readonly page: "occurrence"; readonly project: ProjectKey; readonly error: ErrorGroupId; readonly line: number }
   | ({ readonly page: "logs"; readonly project: ProjectKey } & Filters)
   | {
       readonly page: "releases"
@@ -191,6 +194,8 @@ export const hrefOf = (route: Route): string => {
       return withQuery(`${projectPath(route.project)}/operations/${operationPath(route.operation)}`, route)
     case "error":
       return withQuery(`${projectPath(route.project)}/errors/${route.error}`, route)
+    case "occurrence":
+      return `${projectPath(route.project)}/errors/${route.error}/${route.line}`
     case "release": {
       const { component: _, release: __, ...query } = route
       return withQuery(
@@ -244,6 +249,8 @@ const keyOf = <T,>(schema: Schema.Codec<T, string>, text: string | undefined): O
   text === undefined ? Option.none() : Schema.decodeOption(schema)(text)
 
 const projectKey = (text: string) => keyOf(ProjectKey, text)
+// A warning's or error's ID, as the API numbers them: a whole number from 1.
+const LineId = Schema.FiniteFromString.pipe(Schema.decodeTo(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))))
 const componentKey = (text: string | undefined) => keyOf(ComponentKey, text)
 
 // The deployment's own pages, which are no project's: the first part of their addresses.
@@ -285,7 +292,12 @@ export const routeOf = (path: string, search: string): Route => {
   const isOperation = page === "operations" && id !== undefined && path.startsWith(operationsAt)
   const isRelease = page === "releases" && rest.length === 1
   const isAppRelease = page === "analytics" && id === "releases" && rest.length === 2
-  if (Option.isNone(project) || mistyped || (rest.length > 0 && !isOperation && !isRelease && !isAppRelease)) {
+  const isOccurrence = page === "errors" && rest.length === 1
+  if (
+    Option.isNone(project) ||
+    mistyped ||
+    (rest.length > 0 && !isOperation && !isRelease && !isAppRelease && !isOccurrence)
+  ) {
     return { page: "missing" }
   }
   const ofEnvironment = Option.isSome(environment) ? { environment: environment.value } : {}
@@ -338,7 +350,16 @@ export const routeOf = (path: string, search: string): Route => {
       return { page: "errors", ...filters }
     }
     const error = keyOf(ErrorGroupId, id)
-    return Option.isSome(error) ? { page: "error", ...filters, error: error.value } : { page: "missing" }
+    if (Option.isNone(error)) {
+      return { page: "missing" }
+    }
+    if (rest[0] !== undefined) {
+      const line = keyOf(LineId, rest[0])
+      return Option.isSome(line)
+        ? { page: "occurrence", project: project.value, error: error.value, line: line.value }
+        : { page: "missing" }
+    }
+    return { page: "error", ...filters, error: error.value }
   }
   if (page === "traces") {
     const trace = keyOf(TraceId, id)
@@ -387,6 +408,7 @@ export const doorOf = (route: Route): Door | undefined => {
     case "operation":
     case "errors":
     case "error":
+    case "occurrence":
     case "logs":
     case "trace":
       return "tech"
@@ -421,6 +443,7 @@ const pageNames: Readonly<Record<Exclude<Route["page"], "now" | "project" | "mis
   operation: "Operation",
   errors: "Errors",
   error: "Error",
+  occurrence: "Occurrence",
   logs: "Logs",
   trace: "Trace",
   analytics: "Product",
@@ -452,22 +475,29 @@ const doorPageOf = (door: Door, project: ProjectKey): Route => {
 
 const doorNames: Readonly<Record<Door, string>> = { tech: "Tech", product: "Product", releases: "Releases" }
 
-// The step between a door and a page two levels down, if any: an operation is one of Operations, an
-// error one of Errors, a release's app health one of App health's; each keeps the page's filters.
-const betweenOf = (route: Route): TrailStep | undefined => {
+// The steps between a door and a page further down: an operation is one of Operations, an error one
+// of Errors, an occurrence one of its error's, a release's app health one of App health's; each keeps
+// the page's filters, which an occurrence has none of.
+const betweenOf = (route: Route): ReadonlyArray<TrailStep> => {
   if (route.page === "operation") {
     const { operation: _, ...filters } = route
-    return { label: pageNames.operations, to: { ...filters, page: "operations" } }
+    return [{ label: pageNames.operations, to: { ...filters, page: "operations" } }]
   }
   if (route.page === "error") {
     const { error: _, ...filters } = route
-    return { label: pageNames.errors, to: { ...filters, page: "errors" } }
+    return [{ label: pageNames.errors, to: { ...filters, page: "errors" } }]
+  }
+  if (route.page === "occurrence") {
+    return [
+      { label: pageNames.errors, to: { page: "errors", project: route.project } },
+      { label: pageNames.error, to: { page: "error", project: route.project, error: route.error } },
+    ]
   }
   if (route.page === "appRelease") {
     const { release: _, ...shown } = route
-    return { label: pageNames.appReleases, to: { ...shown, page: "appReleases" } }
+    return [{ label: pageNames.appReleases, to: { ...shown, page: "appReleases" } }]
   }
-  return undefined
+  return []
 }
 
 /**
@@ -492,8 +522,7 @@ export const trailOf = (route: Route, projectName: (project: ProjectKey) => stri
   const doorPage = door === undefined ? undefined : { label: doorNames[door], to: doorPageOf(door, route.project) }
   // The door's own page is the last step on it.
   const doorStep = doorPage === undefined || doorPage.to.page === route.page ? [] : [doorPage]
-  const between = betweenOf(route)
-  return [now, project, ...doorStep, ...(between === undefined ? [] : [between]), here]
+  return [now, project, ...doorStep, ...betweenOf(route), here]
 }
 
 // The analytics pages: the summary, its releases' app health and one release's, every feature, and

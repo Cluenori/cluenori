@@ -49,6 +49,8 @@ import {
   LogCountQuery,
   LogCounts,
   LogExport,
+  LogLine,
+  LogLineNotFound,
   LogPage,
   LogQuery,
   MetricsExport,
@@ -86,6 +88,7 @@ export type EngineCallName =
   | "keptTraces"
   | "errors"
   | "error"
+  | "logLine"
   | "logs"
   | "logCounts"
   | "trace"
@@ -209,6 +212,7 @@ export const projectCalls = {
     ErrorDetail,
     Schema.Union([ProjectNotFound, ErrorGroupNotFound]),
   ),
+  logLine: projectCall("logLine", Schema.Int, LogLine, Schema.Union([ProjectNotFound, LogLineNotFound])),
   logs: projectCall("logs", LogQuery, LogPage, ProjectNotFound),
   logCounts: projectCall("logCounts", LogCountQuery, LogCounts, ProjectNotFound),
   trace: projectCall(

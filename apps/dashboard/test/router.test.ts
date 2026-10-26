@@ -82,6 +82,30 @@ describe("routeOf", () => {
     )
   })
 
+  it("reads one occurrence of an error by its ID, with no filters, under its error in the trail", () => {
+    const occurrence = routeOf("/projects/folio/errors/4f1c9a2e7b3d5068/412", "?release=2.4.0%2B312")
+    assert.deepStrictEqual(readBack(occurrence), occurrence)
+    assert.deepStrictEqual(
+      occurrence.page === "occurrence" ? [occurrence.line, Object.keys(occurrence).length] : [],
+      [412, 4],
+    )
+    assert.deepStrictEqual(
+      trailOf(occurrence, () => "Folio").map((step) => [step.label, step.to?.page]),
+      [
+        ["Now", "now"],
+        ["Folio", "project"],
+        ["Tech", "tech"],
+        ["Errors", "errors"],
+        ["Error", "error"],
+        ["Occurrence", undefined],
+      ],
+    )
+    assert.strictEqual(doorOf(occurrence), "tech")
+    for (const line of ["0", "1.5", "first", "-3"]) {
+      assert.deepStrictEqual(routeOf(`/projects/folio/errors/4f1c9a2e7b3d5068/${line}`, ""), { page: "missing" })
+    }
+  })
+
   it("opens a page that says so for an address with a key that isn't one", () => {
     assert.deepStrictEqual(routeOf("/projects/Folio!/errors", ""), { page: "missing" })
     assert.deepStrictEqual(routeOf("/projects/folio/errors/not-an-id", ""), { page: "missing" })

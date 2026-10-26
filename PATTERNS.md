@@ -789,7 +789,10 @@ language.
   (`src/views/filter-switches.tsx`), kept in the URL and in the links it opens. Details of a
   short item open in place, such as a log line. A summary shows the top few of a long list and
   links to a page with all of them, searchable and sortable; an item with more to show, such as an
-  operation, an error, or a trace, has a page of its own (`src/pages/error-page.tsx`).
+  operation, an error, or a trace, has a page of its own (`src/pages/error-page.tsx`). A page is a
+  list, a group, or an item (`concept/Experience.md`): lists and groups have `FilterSwitches` and
+  say when a period holds none of a thing and when it last happened; an item, opened by its own ID,
+  has no period or filter (`OccurrencePage` in `src/pages/error-page.tsx`).
   Folded detail, such as a stack's library frames, opens with one click where it is.
 - **Data comes from one file,** `src/project-data.ts`: an atom for each question the pages ask the
   public API, run on its typed client, `kept` so going back shows an answer at once and a stale one
