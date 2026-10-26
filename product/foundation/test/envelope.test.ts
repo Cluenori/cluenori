@@ -95,6 +95,8 @@ describe("actors and callers", () => {
         const caller = yield* Schema.decodeEffect(Caller)(context)
         assert.deepStrictEqual(caller, context)
       }
+      const refused = yield* Schema.decodeUnknownEffect(Caller)({ country: 42 }).pipe(Effect.flip)
+      assert.strictEqual(refused._tag, "SchemaError")
     }),
   )
 })
