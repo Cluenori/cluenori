@@ -52,7 +52,7 @@ struct TodayModelTests {
         #expect(rows[0].route == .incident(project: "notes", id: "019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f53"))
         #expect(rows[1].route == .error(of: .project("atlas"), id: "4f1c9a2e7b3d5068"))
         #expect(rows[2].evidence == .unknown(kind: "forecast"))
-        #expect(today.unanswered == ["Quiet"])
+        #expect(today.project("quiet")?.answered == false)
         #expect(today.lookedAt == Date(timeIntervalSince1970: 1_792_587_600))
     }
 
@@ -142,9 +142,6 @@ struct NowTests {
         // answer too.
         #expect(projects.map(\.key) == ["notes", "atlas", "kiln", "quiet"])
         #expect(projects[0].rows.map(\.kind) == [.incident(acknowledged: false), .promotion])
-        #expect(projects[0].status == .incident(acknowledged: false))
-        #expect(projects[1].status == .slower)
-        #expect(projects[2].status == nil)
         #expect(!projects[3].answered)
         #expect(projects[3].pulse == nil)
 
@@ -156,8 +153,6 @@ struct NowTests {
         #expect(people.daily == 1_284)
         #expect(people.monthly == 9_870)
         #expect(abs((people.dailyChange ?? 0) - 73.0 / 1_211.0) < 0.000_001)
-        // A week before had no monthly count: its change is unknown, never 0.
-        #expect(people.monthlyChange == nil)
         // Kiln's apps sent nothing: its people are unknown.
         #expect(projects[2].pulse?.people == nil)
         #expect(projects[2].pulse?.hours.isEmpty == true)
@@ -269,5 +264,123 @@ struct IncidentsModelTests {
             #"{"_tag":"IncidentNotFound","incident":"019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f53"}"#)
         await model.acknowledge(id)
         #expect(model.notAcknowledged?.problem == .missing)
+    }
+}
+
+let linesAnswer = #"""
+    {"items":[
+      {"_tag":"error","project":"notes","isNew":true,"ongoing":true,"error":{"id":"4f1c9a2e7b3d5068",
+        "kind":"exception","title":"NpgsqlException: Failed to connect","culprit":"Notes.Store.Save",
+        "occurrences":12,"firstSeen":"2026-10-21T09:00:00.000Z","lastSeen":"2026-10-21T12:59:00.000Z",
+        "lastComponent":"notes-api"}},
+      {"_tag":"incident","project":"notes","incident":{"id":"019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f53",
+        "component":"notes-api","subject":"POST /api/export","title":"POST /api/export: 18% failed, usually 0.1%",
+        "evidence":{"_tag":"failing","operation":"POST /api/export","failed":18,"count":100,"usualRate":0.001},
+        "openedAt":"2026-10-21T12:00:00.000Z","acknowledgedAt":"2026-10-21T12:10:00.000Z"}},
+      {"_tag":"error","project":"notes","isNew":true,"ongoing":false,"error":{"id":"5a2d0b3f8c4e6179",
+        "kind":"exception","title":"TimeoutException: Export took too long","culprit":"Notes.Export.Run",
+        "occurrences":3,"firstSeen":"2026-10-21T10:00:00.000Z","lastSeen":"2026-10-21T10:30:00.000Z",
+        "lastComponent":"notes-api"}}
+    ],
+    "projects":[{"key":"notes","name":"Notes","createdAt":"2026-10-01T10:00:00.000Z"}],
+    "unanswered":[],
+    "pulses":[
+      {"project":"notes","load":[],
+       "people":{"latest":{"day":"2026-10-20","people":900,"installations":950,"sessions":2000,"foregroundMs":5000000},
+         "weekBefore":{"day":"2026-10-13","people":1000,"installations":1050,"sessions":2100,"foregroundMs":4800000}}}
+    ],
+    "at":"2026-10-21T13:00:00.000Z"}
+    """#
+
+struct ProductLineTests {
+    private func today(_ answer: String) async throws -> TodayModel {
+        let deployment = FakeDeployment()
+        deployment.answer("GET /api/today", 200, answer)
+        let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
+        let today = try #require(pairing.models?.today)
+        await today.load()
+        return today
+    }
+
+    @Test func `says each product's news in Today's order, the steady ones after, each leading where it should`()
+        async throws
+    {
+        let today = try await today(nowAnswer)
+        let notes = ProductLine.lines(of: try #require(today.project("notes")))
+        #expect(notes.map(\.product) == [.uptime, .releases, .errors, .performance, .analytics])
+        #expect(notes.map(\.tone) == [.failure, .release, .steady, .steady, .steady])
+        #expect(notes[0].route == .incident(project: "notes", id: "019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f53"))
+        #expect(notes[2].route == .errors(of: .project("notes")))
+        #expect(notes[3].says == .load(operations: 2_100, failed: 15))
+        #expect(notes[4].says == .people(daily: 1_284, percent: 6))
+
+        // Today puts a slower operation before a promotion that failed, red as the promotion is.
+        let atlas = ProductLine.lines(of: try #require(today.project("atlas")))
+        #expect(atlas.map(\.product) == [.performance, .releases, .uptime, .errors])
+        #expect(atlas[1].tone == .failure)
+        #expect(
+            atlas[0].route
+                == .operation(
+                    OperationRef(project: "atlas", component: "atlas-api", environment: "prod", name: "GET /api/search")
+                ))
+
+        // Without load or people, Performance and Analytics have nothing to say.
+        #expect(ProductLine.lines(of: try #require(today.project("kiln"))).map(\.product) == [.uptime, .errors])
+    }
+
+    @Test func `counts errors once each, says an acknowledged incident, and a fall in people of a tenth`() async throws
+    {
+        let notes = ProductLine.lines(of: try #require(try await today(linesAnswer).project("notes")))
+        #expect(notes.map(\.product) == [.errors, .uptime, .analytics])
+        #expect(notes[0].tone == .failure)
+        #expect(notes[0].says == .errors(now: 1, new: 1))
+        #expect(notes[0].rows.count == 2)
+        #expect(notes[1].tone == .warning)
+        #expect(notes[2].tone == .warning)
+        #expect(notes[2].says == .people(daily: 900, percent: -10))
+    }
+
+    @Test func `has no line for a project that didn't answer, and says its rows are unknown, Releases aside`()
+        async throws
+    {
+        let quiet = try #require(try await today(nowAnswer).project("quiet"))
+        #expect(ProductLine.lines(of: quiet).isEmpty)
+        let rows = ProductLine.rows(of: quiet, delivery: nil)
+        #expect(rows.map(\.product) == [.uptime, .errors, .performance, .releases, .analytics, .logs])
+        #expect(rows.map(\.tone) == [.unknown, .unknown, .unknown, .unknown, .unknown, .quiet])
+        #expect(rows.allSatisfy { $0.route == $0.product.route(of: "quiet") })
+    }
+
+    // Today with no items, of Alpha and Zulu, whose daily people are these against a week before.
+    private func peopleAnswer(alpha: (Int, Int), zulu: (Int, Int)) -> String {
+        func pulse(_ key: String, _ people: (Int, Int)) -> String {
+            #"{"project":"\#(key)","load":[],"people":{"latest":{"day":"2026-10-20","people":\#(people.0),"installations":1,"sessions":1,"foregroundMs":1},"weekBefore":{"day":"2026-10-13","people":\#(people.1),"installations":1,"sessions":1,"foregroundMs":1}}}"#
+        }
+        return #"""
+            {"items":[],"projects":[{"key":"alpha","name":"Alpha","createdAt":"2026-10-01T10:00:00.000Z"},
+              {"key":"zulu","name":"Zulu","createdAt":"2026-10-01T10:00:00.000Z"}],
+             "unanswered":[],"pulses":[\#(pulse("alpha", alpha)),\#(pulse("zulu", zulu))],"at":"2026-10-21T13:00:00.000Z"}
+            """#
+    }
+
+    @Test func `rounds a move in people as the web does, says a rise without asking for anything`() async throws {
+        let moved = try await today(peopleAnswer(alpha: (181, 200), zulu: (112, 100)))
+        let alpha = ProductLine.lines(of: try #require(moved.project("alpha")))
+        let zulu = ProductLine.lines(of: try #require(moved.project("zulu")))
+        // 181 against 200 is a fall of 9.5%: 10 in whole percent, half away from zero.
+        #expect(alpha.map(\.says) == [.people(daily: 181, percent: -10), .noIncidents, .nothingNew])
+        #expect(alpha.first?.tone == .warning)
+        #expect(zulu.first { $0.product == .analytics }?.says == .people(daily: 112, percent: 12))
+        #expect(zulu.allSatisfy { !$0.tone.isNews })
+        let steady = try await today(peopleAnswer(alpha: (182, 200), zulu: (100, 100)))
+        #expect(ProductLine.lines(of: try #require(steady.project("alpha"))).first?.tone == .steady)
+    }
+
+    @Test func `lists projects with news from Today's items first, then news from the pulse alone`() async throws {
+        let pulseOnly = try await today(peopleAnswer(alpha: (100, 100), zulu: (50, 100)))
+        #expect(ProductLine.newsFirst(try #require(pulseOnly.projects)).map(\.key) == ["zulu", "alpha"])
+        let items = try await today(nowAnswer)
+        // Notes and Atlas have items; Kiln and Quiet none.
+        #expect(ProductLine.newsFirst(try #require(items.projects)).map(\.key) == ["notes", "atlas", "kiln", "quiet"])
     }
 }

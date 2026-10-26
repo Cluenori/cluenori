@@ -5,17 +5,15 @@ code its web shows, and an alert about a project that is down rings like an alar
 silent mode, with an Acknowledge button. Its screens are a tree: each level is a summary to act on
 or understand, and one level deeper shows more, never everything at once (`concept/Modules.md`).
 
-- **Now**, the root: what needs you across every project, the most urgent first (Today's items:
-  incidents, new and ongoing errors, slower operations, releases waiting for you, silent
-  projects), each opening the item itself; then each project with its status, a line of what's
-  going on, its load over the last 24 hours, and its daily people against a week before; and the
-  feeds, when there are any.
+- **Now**, the root: every project, those that need you first, each with a line for each product
+  that has news ("Errors: 2 happening now", "Performance: GET /api/search slower"), opening the
+  one thing it is about or the product, and the steady ones in one row; and the feeds, when there
+  are any.
 - **Feeds** and **a feed** (`cluenori://feeds/<ID>`), live: how many arrived in the last 24 hours
   and 7 days and from which projects, then the entries, newest first, by day, asked for again each
   minute, each opening its person. A feed's alert opens its feed. Owners make feeds on the web.
-- **A project**, in production: its daily and monthly people against a week before, its load over
-  the last 24 hours with its errors, what needs you there, and a door to each part, with a line of
-  what's inside:
+- **A project**, in production: a row for each product, the most urgent first, with its line and
+  the things behind it, each leading in; the products with nothing to say last. Its parts:
   - **Product**, its apps' analytics in the environment chosen on the phone, over 7, 30 or 90 UTC
     days: people by day, retention, each release's app health beside the release before, each
     feature's use; one person by the app's user ID; an app's version policy and SDK keys.
@@ -49,7 +47,7 @@ don't have), and opens the link `-CluenoriDemoOpen` names; `-CluenoriDemoStep <e
 component's promote sheet, `-CluenoriDemoScroll <points>` scrolls the screen, and
 `-CluenoriDemoFailure YES` fails the API's last promotion to prod, for screenshots with
 `xcrun simctl io booted screenshot`. Now shows three made-up projects: notes, with its monitor
-down, a new error and a build App Store review approved; atlas, with a slower operation; and kiln,
+down, two errors happening now and a build App Store review approved; atlas, with a slower operation; and kiln,
 an API without apps; and a feed, Registrations, of notes's and atlas's
 (`cluenori://feeds/0199f7a2-8000-7000-8000-000000000001`). Its notes-ios sends analytics from production and beta, and
 person `user-1842`; its other environments, such as `?environment=prod`, show analytics' empty
@@ -115,8 +113,9 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   screens that lead to it, `Route.chain`), and each screen's model, which says what happened, never
   in words. Now (`TodayModel`) is Today's answer: its items as rows, each with the route of the
   item itself, and each project with its own rows, the most urgent first, and its pulse, which
-  leaves out what the deployment didn't count, never 0 (`ProjectNow`, `Pulse`, `PeopleNow`); a
-  project's summary is the same answer's. A project's tech (`ProjectModel`) asks its load,
+  leaves out what the deployment didn't count, never 0 (`ProjectNow`, `Pulse`, `PeopleNow`). Each
+  product's line about a project (`ProductLine`) is worked out from it, by the web's rules
+  (Foundation, "Its line for Now and the project"), with Releases' steady line from the delivery. A project's tech (`ProjectModel`) asks its load,
   operations, errors and logs in one environment over the period; its incidents
   (`IncidentsModel`, one per project) are every environment's, and acknowledging one is sent once.
   Alerts (`AlertsModel`, `PushAlert`): what an alert push says, whether it still rings, what the

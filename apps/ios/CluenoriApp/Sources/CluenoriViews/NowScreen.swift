@@ -3,10 +3,10 @@ import CluenoriScreens
 import Foundation
 import SwiftUI
 
-/// Now, the app's root: what needs you across every project, the most urgent first, each opening the
-/// item itself; then each project with its status, a line of what's going on, its load over the last
-/// 24 hours and its daily people; and the feeds, when there are any. Refreshed by pulling down and
-/// whenever the app comes back, with what was seen last shown at once.
+/// Now, the app's root: every project, those that need you first, each with a line for each product
+/// that has news, opening what it is about, and the steady ones in one quiet row; then the feeds,
+/// when there are any. Refreshed by pulling down and whenever the app comes back, with what was seen
+/// last shown at once.
 struct NowScreen: View {
     let today: TodayModel
     let feeds: FeedsModel
@@ -15,7 +15,7 @@ struct NowScreen: View {
     var body: some View {
         NowContent(today: today, feeds: feeds.feeds.value?.feeds ?? [])
             .navigationTitle(Text("Now", bundle: #bundle, comment: "Title of the app's first screen."))
-            .navigationSubtitle(ifAny: today.rows.map { NowSummary(rows: $0).text })
+            .navigationSubtitle(ifAny: today.projects.map { NowSummary(projects: $0).text })
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     PhoneMenu(pairing: pairing)
@@ -41,27 +41,26 @@ struct NowScreen: View {
     }
 }
 
-/// Below Now's title: how many things need you, and across how many projects.
+/// Below Now's title: which project needs you, and in which products; or how many projects do.
 struct NowSummary {
-    let rows: [TodayRow]
+    let projects: [ProjectNow]
 
     var text: Text {
-        let projects = Set(rows.map(\.projectKey).filter { !$0.isEmpty })
-        if rows.isEmpty {
+        let needing = projects.compactMap { project in
+            let news = ProductLine.lines(of: project).filter(\.tone.isNews)
+            return news.isEmpty ? nil : (project.name, news)
+        }
+        guard let (name, news) = needing.first else {
             return Text("Nothing needs you", bundle: #bundle, comment: "Below Now's title: nothing needs attention.")
         }
-        if projects.count == 1, let project = rows.first(where: { !$0.projectKey.isEmpty })?.project {
-            return rows.count == 1
-                ? Text(
-                    "1 thing needs you, in \(project)", bundle: #bundle,
-                    comment: "Below Now's title. The variable is a project's name.")
-                : Text(
-                    "\(rows.count) things need you, in \(project)", bundle: #bundle,
-                    comment: "Below Now's title. The variables are a count and a project's name.")
+        if needing.count > 1 {
+            return Text(
+                "\(needing.count) projects need you", bundle: #bundle,
+                comment: "Below Now's title. The variable is a count of projects.")
         }
         return Text(
-            "\(rows.count) things need you, across \(projects.count) projects", bundle: #bundle,
-            comment: "Below Now's title. The variables are two counts.")
+            "\(name) needs you: \(news.map(\.product.nameString).formatted(.list(type: .and)))", bundle: #bundle,
+            comment: "Below Now's title. The variables are a project's name and its products with news, as a list.")
     }
 }
 
@@ -71,10 +70,9 @@ struct NowContent: View {
     var feeds: [FeedSummary] = []
 
     var body: some View {
-        if let rows = today.rows, let projects = today.projects {
+        if let projects = today.projects {
             PanelScreen {
-                NeedsYouSection(rows: rows, lookedAt: today.lookedAt, unanswered: today.unanswered)
-                ProjectsSection(projects: projects)
+                ProjectsSection(projects: projects, lookedAt: today.lookedAt)
                 if !feeds.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
                         PanelTitle(
@@ -103,45 +101,6 @@ struct NowContent: View {
     }
 }
 
-/// What needs you, across every project, the most urgent first; or that nothing does.
-struct NeedsYouSection: View {
-    let rows: [TodayRow]
-    let lookedAt: Date?
-    /// The names of the projects that didn't answer.
-    let unanswered: [String]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            PanelTitle(
-                title: Text("Needs you", bundle: #bundle, comment: "Title of what needs attention now."),
-                trailing: lookedAt.map { LookedAt(date: $0).text }
-            )
-            Panel {
-                if rows.isEmpty {
-                    NothingNeedsYou()
-                }
-                ForEach(rows) { row in
-                    if row.id != rows.first?.id {
-                        PanelDivider()
-                    }
-                    NeedsYouLink(row: row)
-                }
-            }
-            if !unanswered.isEmpty {
-                Text(
-                    "\(unanswered.formatted()) didn't answer, so what they would show is missing.",
-                    bundle: #bundle,
-                    comment: "Projects that didn't answer Today. The variable is their names, as a list."
-                )
-                .font(.footnote)
-                .foregroundStyle(Palette.secondary)
-                .padding(.horizontal, 2)
-                .padding(.top, 8)
-            }
-        }
-    }
-}
-
 /// When the deployment last looked, as a panel's title ends: `Looked 3 min ago`.
 struct LookedAt {
     let date: Date
@@ -155,44 +114,6 @@ struct LookedAt {
                 bundle: #bundle,
                 comment: "When the deployment last looked. The variable is a duration, such as 3 min."
             )
-        }
-    }
-}
-
-private struct NothingNeedsYou: View {
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            BaselineDot(color: Palette.mint, textStyle: .callout)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Nothing needs you", bundle: #bundle, comment: "Nothing needs attention now.")
-                    .font(.callout.weight(.medium))
-                Text(
-                    "Every project is going as usual.", bundle: #bundle,
-                    comment: "Below Nothing needs you."
-                )
-                .font(.subheadline)
-                .foregroundStyle(Palette.secondary)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// An item that opens the screen of what it is about, or, of a kind this version doesn't know, a row
-/// that opens nothing.
-private struct NeedsYouLink: View {
-    let row: TodayRow
-
-    var body: some View {
-        if let route = row.route {
-            NavigationLink(value: route) {
-                NeedsYouRow(project: row.project, evidence: row.evidence, kind: row.kind)
-            }
-            .buttonStyle(PanelRowStyle())
-        } else {
-            NeedsYouRow(project: row.project, evidence: row.evidence, kind: row.kind)
         }
     }
 }
@@ -305,8 +226,13 @@ struct PromotionNeedTitle: View {
     let state: PromotionItemState
 
     var body: some View {
+        text
+    }
+
+    /// The same, as text inside a sentence.
+    var text: Text {
         let version = Text(verbatim: release)
-        switch state {
+        return switch state {
         case .approved:
             Text(
                 "\(version) passed App Store review", bundle: #bundle,
@@ -425,15 +351,18 @@ struct ItemSince: View {
     }
 }
 
-/// Every project: those that need you first, then the rest by name; or how to create the first.
+/// Every project, those that need you first, a panel each; or how to create the first.
 struct ProjectsSection: View {
     let projects: [ProjectNow]
+    let lookedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PanelTitle(title: Text("Projects", bundle: #bundle, comment: "Title of the list of projects."))
-            Panel {
-                if projects.isEmpty {
+            PanelTitle(
+                title: Text("Projects", bundle: #bundle, comment: "Title of the list of projects."),
+                trailing: lookedAt.map { LookedAt(date: $0).text })
+            if projects.isEmpty {
+                Panel {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("No projects yet", bundle: #bundle, comment: "The deployment has no projects.")
                             .font(.callout.weight(.medium))
@@ -448,182 +377,87 @@ struct ProjectsSection: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                 }
-                ForEach(projects) { project in
-                    if project.id != projects.first?.id {
-                        PanelDivider()
-                    }
-                    NavigationLink(value: Route.project(project.key)) {
-                        ProjectNowRow(
-                            name: project.name,
-                            status: project.status,
-                            note: ProjectNote(project: project),
-                            hours: project.pulse?.hours,
-                            people: project.pulse?.people
-                        )
-                    }
-                    .buttonStyle(PanelRowStyle())
+            }
+            VStack(spacing: 10) {
+                ForEach(ProductLine.newsFirst(projects)) { project in
+                    ProjectLinesPanel(project: project)
                 }
             }
         }
     }
 }
 
-/// A project on Now: its status, its name, a line of what's going on, its load over the last 24
-/// hours, and its daily people against a week before.
-struct ProjectNowRow: View {
-    let name: String
-    /// Its most urgent item's kind; nil when nothing needs you there.
-    let status: TodayRow.Kind?
-    let note: ProjectNote
-    /// Nil when its pulse is unknown.
-    let hours: [PulseHour]?
-    let people: PeopleNow?
+/// A project on Now: its name and what its lines come to, opening its screen; each line with news,
+/// opening what it is about; then the steady ones in one row.
+struct ProjectLinesPanel: View {
+    let project: ProjectNow
+
+    var body: some View {
+        let lines = ProductLine.lines(of: project)
+        let news = lines.filter(\.tone.isNews)
+        let steady = lines.filter { !$0.tone.isNews }
+        Panel {
+            NavigationLink(value: Route.project(project.key)) {
+                ProjectNowHeader(project: project, news: news)
+            }
+            .buttonStyle(PanelRowStyle())
+            ForEach(news) { line in
+                PanelDivider()
+                NavigationLink(value: line.route) {
+                    ProductLineRow(line: line)
+                }
+                .buttonStyle(PanelRowStyle())
+            }
+            if !steady.isEmpty {
+                PanelDivider()
+                SteadyLinesRow(lines: steady)
+            }
+        }
+    }
+}
+
+/// A project's name with its most urgent line's dot, what its lines come to, and its load over the
+/// last 24 hours.
+struct ProjectNowHeader: View {
+    let project: ProjectNow
+    let news: [ProductLine]
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                // Too big for one row: the load and people below what the project is.
-                VStack(alignment: .leading, spacing: 8) {
-                    ProjectNowName(name: name, color: dotColor, note: note, lineLimit: nil)
-                    HStack(spacing: 12) {
-                        if let hours {
-                            PulseSpark(hours: hours)
-                        }
-                        Spacer(minLength: 4)
-                        DailyPeople(people: people)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Dot(color: !project.answered ? Palette.secondary : (news.first?.tone.color ?? Palette.mint))
+                    Text(verbatim: project.name)
+                        .font(.body.weight(.semibold))
+                }
+                Group {
+                    if !project.answered {
+                        Text(
+                            "Didn't answer: what it would show is missing", bundle: #bundle,
+                            comment: "A project that didn't answer Now.")
+                    } else if news.isEmpty {
+                        Text("Nothing needs you", bundle: #bundle, comment: "A project where nothing needs attention.")
+                    } else if news.count == 1 {
+                        Text("1 product needs you", bundle: #bundle, comment: "One of a project's products has news.")
+                    } else {
+                        Text(
+                            "\(news.count) products need you", bundle: #bundle,
+                            comment: "How many of a project's products have news. The variable is a count.")
                     }
                 }
-            } else {
-                HStack(spacing: 12) {
-                    ProjectNowName(name: name, color: dotColor, note: note, lineLimit: 2)
-                    Spacer(minLength: 4)
-                    if let hours {
-                        PulseSpark(hours: hours)
-                    }
-                    DailyPeople(people: people)
-                        .frame(minWidth: 72, alignment: .trailing)
-                }
+                .font(.subheadline)
+                .foregroundStyle(Palette.secondary)
+            }
+            Spacer(minLength: 4)
+            // Too big beside the name at the largest sizes: Performance's line says the load.
+            if let hours = project.pulse?.hours, !hours.isEmpty, !dynamicTypeSize.isAccessibilitySize {
+                PulseSpark(hours: hours)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .frame(minHeight: 68)
         .accessibilityElement(children: .combine)
-    }
-
-    // Its most urgent item's color; mint when nothing needs you, gray when it didn't answer.
-    private var dotColor: Color {
-        status?.color ?? (note.answered ? Palette.mint : Palette.secondary)
-    }
-}
-
-/// A project's status dot and name, over its line.
-private struct ProjectNowName: View {
-    let name: String
-    let color: Color
-    let note: ProjectNote
-    let lineLimit: Int?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Dot(color: color)
-                Text(verbatim: name)
-                    .font(.body.weight(.semibold))
-                    .lineLimit(lineLimit == nil ? nil : 1)
-            }
-            note
-                .font(.subheadline)
-                .foregroundStyle(Palette.secondary)
-                .lineLimit(lineLimit)
-        }
-    }
-}
-
-/// A project's line on Now: what needs you there, else how its last 24 hours went, else that it
-/// didn't answer.
-struct ProjectNote: View {
-    let rows: [TodayRow]
-    let answered: Bool
-    let pulse: Pulse?
-
-    init(project: ProjectNow) {
-        rows = project.rows
-        answered = project.answered
-        pulse = project.pulse
-    }
-
-    var body: some View {
-        if !answered {
-            Text(
-                "Didn't answer: what it would show is missing", bundle: #bundle,
-                comment: "A project that didn't answer Now.")
-        } else if let first = rows.first {
-            let same = rows.filter { $0.kind.sameKind(as: first.kind) }.count
-            let kind = KindCount(kind: first.kind, count: same).text
-            if rows.count > same {
-                Text(
-                    "\(rows.count) need you · \(kind)", bundle: #bundle,
-                    comment:
-                        "How many things need you in a project, and the most urgent kind's count, such as 3 need you · 1 incident."
-                )
-            } else {
-                kind
-            }
-        } else if let pulse {
-            if pulse.operations > 0 {
-                Text(
-                    "\(pulse.operations, format: .number.notation(.compactName)) operations · \(Double(pulse.failed) / Double(pulse.operations), format: .percent.precision(.fractionLength(0...1))) failed",
-                    bundle: #bundle,
-                    comment:
-                        "A project's last 24 hours: how many operations ran, and the share that failed. The variables are a count and a percentage."
-                )
-            } else {
-                Text(
-                    "No operations in 24 hours", bundle: #bundle,
-                    comment: "A project that ran nothing in the last 24 hours.")
-            }
-        } else {
-            Text("Nothing needs you", bundle: #bundle, comment: "A project where nothing needs attention.")
-        }
-    }
-}
-
-/// How many items of one kind a project has, in words: `1 incident`, `2 slower operations`.
-struct KindCount {
-    let kind: TodayRow.Kind
-    let count: Int
-
-    var text: Text {
-        switch kind {
-        case .incident:
-            Text("^[\(count) incident](inflect: true)", bundle: #bundle, comment: "How many open incidents.")
-        case .error:
-            Text("^[\(count) error](inflect: true)", bundle: #bundle, comment: "How many new or ongoing errors.")
-        case .slower:
-            Text(
-                "^[\(count) slower operation](inflect: true)", bundle: #bundle,
-                comment: "How many operations got slower than their usual.")
-        case .promotion:
-            Text(
-                "^[\(count) release](inflect: true) for you", bundle: #bundle,
-                comment: "How many releases need you, such as one App Store review approved.")
-        case .silent:
-            Text("No data today", bundle: #bundle, comment: "A project that sent nothing in the last day.")
-        case .unknown:
-            Text("Update the app", bundle: #bundle, comment: "An item's kind, of a kind this app doesn't know.")
-        }
-    }
-}
-
-extension TodayRow.Kind {
-    /// Whether it is the same kind as `other`, an incident acknowledged or not.
-    func sameKind(as other: TodayRow.Kind) -> Bool {
-        switch (self, other) {
-        case (.incident, .incident): true
-        default: self == other
-        }
     }
 }
 
@@ -667,45 +501,6 @@ struct PulseBars {
         stride(from: 0, to: counts.count, by: 2).map { index in
             let pair = counts[index..<min(index + 2, counts.count)].compactMap(\.self)
             return pair.isEmpty ? nil : pair.reduce(0, +)
-        }
-    }
-}
-
-/// A project's daily people on the latest whole UTC day, and how they moved against a week before:
-/// `1,284`, `DAU +6%`; a dash when unknown, never 0.
-struct DailyPeople: View {
-    let people: PeopleNow?
-
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            if let people {
-                Text(people.daily, format: .number)
-                    .font(.body.monospaced())
-                if let change = people.dailyChange {
-                    Text(
-                        "DAU \(changeText(change))", bundle: #bundle,
-                        comment: "Daily people's change against a week before, such as DAU +6%."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(changeColor(change))
-                } else {
-                    Text(
-                        "DAU", bundle: #bundle,
-                        comment: "Below a project's daily people, when a week before is unknown."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(Palette.secondary)
-                }
-            } else {
-                Text(verbatim: "—")
-                    .font(.body.monospaced())
-                    .foregroundStyle(Palette.secondary)
-                    .accessibilityLabel(
-                        Text("Daily people unknown", bundle: #bundle, comment: "A project whose apps sent nothing."))
-                Text("DAU", bundle: #bundle, comment: "Below a project's daily people, when a week before is unknown.")
-                    .font(.caption)
-                    .foregroundStyle(Palette.secondary)
-            }
         }
     }
 }

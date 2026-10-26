@@ -620,6 +620,7 @@
                 items: [
                     .incident(IncidentItem(project: "notes", incident: down(now))),
                     .error(ErrorItem(project: "notes", error: errors.groups[1], isNew: true, ongoing: true)),
+                    .error(ErrorItem(project: "notes", error: errors.groups[0], isNew: false, ongoing: true)),
                     .slower(
                         SlowerItem(
                             project: "atlas", component: "atlas-api", environment: "prod", operation: "GET /api/search",

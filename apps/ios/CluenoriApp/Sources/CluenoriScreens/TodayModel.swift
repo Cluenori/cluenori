@@ -100,11 +100,6 @@ public struct PeopleNow: Equatable, Sendable {
         Self.change(from: dailyWeekBefore, to: daily)
     }
 
-    /// How monthly people moved against a week before, as `dailyChange` does.
-    public var monthlyChange: Double? {
-        monthly.flatMap { Self.change(from: monthlyWeekBefore, to: $0) }
-    }
-
     private static func change(from before: Int?, to now: Int) -> Double? {
         guard let before, before > 0 else { return nil }
         return Double(now - before) / Double(before)
@@ -151,11 +146,6 @@ public struct ProjectNow: Identifiable, Equatable, Sendable {
     public var id: String {
         key
     }
-
-    /// Its most urgent item's kind; nil when nothing needs you there, or it didn't answer.
-    public var status: TodayRow.Kind? {
-        rows.first?.kind
-    }
 }
 
 /// Today, as Now shows it: what needs attention now across the deployment's projects, the most urgent
@@ -168,8 +158,6 @@ public final class TodayModel {
     /// The projects: those that need you first, in the order of their most urgent item, then the
     /// rest by name; nil until Today first arrives.
     public private(set) var projects: [ProjectNow]? = nil
-    /// The names of projects that didn't answer, whose items are missing.
-    public private(set) var unanswered: [String] = []
     /// When the deployment looked, for the items shown.
     public private(set) var lookedAt: Date? = nil
     public var problem: AnswerProblem? { answer.problem }
@@ -201,7 +189,6 @@ public final class TodayModel {
         let rows = list.items.enumerated().map { index, item in Self.row(item, at: index, names: names) }
         self.rows = rows
         projects = Self.projects(list, rows: rows)
-        unanswered = list.unanswered.map { names[$0] ?? $0 }
         lookedAt = list.at
     }
 

@@ -126,9 +126,6 @@ private struct ProjectRouteScreen: View {
                 key: key,
                 today: models.today,
                 delivery: models.delivery(key),
-                // The analytics the Product door opens, in the environment the project's screens show.
-                analytics: models.analytics(
-                    AnalyticsRef(project: key, environment: environments.chosen), period: navigation.analyticsPeriod),
                 name: models.name(of: key)
             )
         case .tech(let key, let environment):

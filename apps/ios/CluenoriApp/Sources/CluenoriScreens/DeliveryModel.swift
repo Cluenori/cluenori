@@ -100,15 +100,6 @@ public struct ComponentStages: Hashable, Sendable, Identifiable {
         stages.contains { $0.target != nil }
     }
 
-    /// The steps that move a release on to a later environment, `promote`, in order: what the
-    /// project's overview says is ready.
-    public var readyToPromote: [DeliveryStep] {
-        stages.compactMap { stage in
-            guard case .promote = stage.next else { return nil }
-            return stage.next
-        }
-    }
-
     /// The promotions under way to its environments, in their order.
     public var promotions: [Promotion] {
         stages.compactMap(\.promotion)
@@ -126,9 +117,6 @@ public struct DeliveryOverview: Equatable, Sendable {
         public let since: Date
     }
 
-    public let underWay: Int
-    public let failed: Int
-    public let ready: Int
     /// Nil when no release is in a production environment.
     public let latestInProduction: Latest?
 }
@@ -239,7 +227,7 @@ public final class DeliveryModel {
         detail.value?.components.first { $0.key == component }?.name ?? component
     }
 
-    /// The delivery at a glance, as the project's door to it says it; nil until the delivery arrives.
+    /// What Releases' line says when no release needs a member; nil until the delivery arrives.
     public var overview: DeliveryOverview? {
         guard answer.value != nil else { return nil }
         let own = components.filter { $0.shipsWith == nil }
@@ -250,9 +238,6 @@ public final class DeliveryModel {
             .compactMap { pair in pair.stage.current.map { (component: pair.component.name, current: $0) } }
             .max { $0.current.since < $1.current.since }
         return DeliveryOverview(
-            underWay: stages.filter { $0.stage.promotion != nil }.count,
-            failed: stages.filter { $0.stage.failed != nil }.count,
-            ready: own.reduce(0) { $0 + $1.readyToPromote.count },
             latestInProduction: latest.map {
                 DeliveryOverview.Latest(
                     component: $0.component, release: $0.current.summary.release, since: $0.current.since)
