@@ -3185,6 +3185,326 @@
         "description": "What needs attention now across every project, the most urgent first: open incidents not acknowledged, errors happening now (seen in the last 15 minutes), acknowledged incidents, new errors (first seen in the last day), operations whose p95 over the last day is at least 1.5 times and 100 ms more than over the 7 days before, promotions that need a member (approved in App Store review and waiting to be released, waiting for someone to approve their environment on GitHub, or ended without their release getting there, as failed, rejected in App Store review, or lost, until a release reaches that environment), and projects with components that sent nothing in the last day; all in the environments each project calls production. Each item has its evidence and its project; `projects` names every project asked; `pulses` says how each project that answered is going, in its production environments: its load by the hour over the current hour and the 23 before it (an hour not listed had nothing reported), and its apps' people on the latest whole UTC day and the same day a week before (absent until its apps sent anything). A project that didn't answer is in `unanswered`, its items and pulse missing."
       }
     },
+    "/api/feeds": {
+      "get": {
+        "tags": [
+          "feeds"
+        ],
+        "operationId": "feeds.feeds",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "FeedList",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          }
+        },
+        "description": "The feeds the caller sees, by name: each with the sources of the projects they see, how many entries arrived in the last 24 hours and 7 days, the last 7 days' by project, and when the newest arrived. A feed whose projects the caller sees none of isn't listed."
+      },
+      "post": {
+        "tags": [
+          "feeds"
+        ],
+        "operationId": "feeds.createFeed",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Feed"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Makes a feed, for an owner: its name, its alert level (none, quiet, timeSensitive), and 1 to 50 sources, each a project and the event its apps track there, such as `user.registered`. From then on, each such event a project's app sends in production becomes an entry. A source in a project the deployment doesn't have answers 404; anyone but an owner, 403.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedInput"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/feeds/{feed}": {
+      "get": {
+        "tags": [
+          "feeds"
+        ],
+        "operationId": "feeds.feed",
+        "parameters": [
+          {
+            "name": "feed",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/FeedId"
+            },
+            "required": true
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$"
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "FeedEntries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedEntries"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FeedNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "One feed's entries of the projects the caller sees, newest first, 100 at a time; `before` continues from an earlier answer's `next`. Each entry is one event a project's app tracked in production: the project, the event, when, the component, environment and release, the country, and the app's own user ID when the app identified the person. Kept 90 days."
+      },
+      "put": {
+        "tags": [
+          "feeds"
+        ],
+        "operationId": "feeds.saveFeed",
+        "parameters": [
+          {
+            "name": "feed",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/FeedId"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Feed"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FeedNotFound | ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/FeedNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Changes a feed, for an owner: its name, level and sources, in place of those before. Its entries stay. Saving the same again is safe. A source in a project the deployment doesn't have answers 404; anyone but an owner, 403.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedInput"
+              }
+            }
+          },
+          "required": true
+        }
+      },
+      "delete": {
+        "tags": [
+          "feeds"
+        ],
+        "operationId": "feeds.removeFeed",
+        "parameters": [
+          {
+            "name": "feed",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/FeedId"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "FeedNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Deletes a feed and its entries, for an owner; the events stay in the projects' analytics. Anyone else answers 403."
+      }
+    },
     "/api/github": {
       "get": {
         "tags": [
@@ -8050,6 +8370,271 @@
         ],
         "additionalProperties": false
       },
+      "FeedNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "FeedNotFound"
+            ]
+          },
+          "feed": {
+            "$ref": "#/components/schemas/FeedId"
+          }
+        },
+        "required": [
+          "_tag",
+          "feed"
+        ],
+        "additionalProperties": false
+      },
+      "FeedId": {
+        "type": "string"
+      },
+      "Feed": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/FeedId"
+          },
+          "name": {
+            "$ref": "#/components/schemas/FeedName"
+          },
+          "level": {
+            "$ref": "#/components/schemas/FeedLevel"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedSource"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "level",
+          "sources"
+        ],
+        "additionalProperties": false
+      },
+      "FeedSource": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "event": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          }
+        },
+        "required": [
+          "project",
+          "event"
+        ],
+        "additionalProperties": false
+      },
+      "FeedLevel": {
+        "type": "string",
+        "enum": [
+          "none",
+          "quiet",
+          "timeSensitive"
+        ]
+      },
+      "FeedName": {
+        "type": "string",
+        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "FeedInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/FeedName"
+          },
+          "level": {
+            "$ref": "#/components/schemas/FeedLevel"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedSource"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "name",
+          "level",
+          "sources"
+        ],
+        "additionalProperties": false
+      },
+      "FeedEntries": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/FeedSummary"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedEntry"
+            }
+          },
+          "next": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "summary",
+          "entries"
+        ],
+        "additionalProperties": false
+      },
+      "FeedEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "event": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "country": {
+            "$ref": "#/components/schemas/CountryCode"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AppUserId"
+          }
+        },
+        "required": [
+          "id",
+          "project",
+          "event",
+          "at",
+          "component",
+          "environment",
+          "release"
+        ],
+        "additionalProperties": false
+      },
+      "FeedSummary": {
+        "type": "object",
+        "properties": {
+          "feed": {
+            "$ref": "#/components/schemas/Feed"
+          },
+          "lastDay": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lastWeek": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "byProject": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedProjectCount"
+            }
+          },
+          "latest": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "feed",
+          "lastDay",
+          "lastWeek",
+          "byProject"
+        ],
+        "additionalProperties": false
+      },
+      "FeedProjectCount": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "lastWeek": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "project",
+          "lastWeek"
+        ],
+        "additionalProperties": false
+      },
+      "FeedList": {
+        "type": "object",
+        "properties": {
+          "feeds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedSummary"
+            }
+          }
+        },
+        "required": [
+          "feeds"
+        ],
+        "additionalProperties": false
+      },
       "TodayList": {
         "type": "object",
         "properties": {
@@ -10575,6 +11160,9 @@
     },
     {
       "name": "today"
+    },
+    {
+      "name": "feeds"
     },
     {
       "name": "github"

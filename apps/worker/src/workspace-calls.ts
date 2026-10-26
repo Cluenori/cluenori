@@ -4,7 +4,8 @@ import {
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from "@bagatka/webauthn"
-import { Actor, Envelope, Instant, MemberId, NotAllowed, ProjectKey } from "@cluenori/foundation"
+import { Feed, FeedEntries, FeedId, FeedInput, FeedList, FeedNotFound } from "@cluenori/feeds"
+import { Actor, Envelope, EnvelopeName, Instant, MemberId, NotAllowed, ProjectKey } from "@cluenori/foundation"
 import { Caller } from "@cluenori/foundation"
 import { GitHubRefused, GitHubUnavailable, Repository } from "@cluenori/github"
 import {
@@ -86,6 +87,11 @@ export type WorkspaceCallName =
   | "finishConnectingGitHub"
   | "disconnectGitHub"
   | "gitHubToken"
+  | "feeds"
+  | "feed"
+  | "saveFeed"
+  | "removeFeed"
+  | "recordFeeds"
 
 /** One thing the Worker asks the workspace's Durable Object: its input, its answer, and how it fails. */
 export type WorkspaceCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> = ObjectCall<
@@ -110,6 +116,9 @@ export const Calling = Schema.Struct({ actor: Actor, access: Access })
  * crosses from the workspace's object to a project's only in the answer.
  */
 const RepositoryToken = Schema.Struct({ token: Schema.String, expiresAt: Instant })
+
+/** What each project a feed's change touched must watch now, which the Worker tells their objects. */
+const FeedWatches = Schema.Array(Schema.Struct({ project: ProjectKey, events: Schema.Array(EnvelopeName) }))
 
 /** A member just signed in, with their browser's sign-in token. */
 const SignedIn = Schema.Struct({ member: Member, signIn: SignInToken })
@@ -248,4 +257,27 @@ export const workspaceCalls = {
     RepositoryToken,
     Schema.Union([GitHubRefused, GitHubUnavailable]),
   ),
+  feeds: workspaceCall("feeds", Access, FeedList, Schema.Never),
+  feed: workspaceCall(
+    "feed",
+    Schema.Struct({ access: Access, feed: FeedId, before: Schema.optionalKey(Schema.Int) }),
+    FeedEntries,
+    FeedNotFound,
+  ),
+  // Makes a feed, or changes one: the feed, and what the projects it touched must watch now.
+  saveFeed: workspaceCall(
+    "saveFeed",
+    Schema.Struct({ ...Calling.fields, feed: Schema.optionalKey(FeedId), input: FeedInput }),
+    Schema.Struct({ feed: Feed, watches: FeedWatches }),
+    Schema.Union([NotAllowed, FeedNotFound, ProjectNotFound]),
+  ),
+  removeFeed: workspaceCall(
+    "removeFeed",
+    Schema.Struct({ ...Calling.fields, feed: FeedId }),
+    FeedWatches,
+    Schema.Union([NotAllowed, FeedNotFound]),
+  ),
+  // Activity from the queue: the events feeds watch become their entries, and their alerts go out,
+  // or wait for the object's alarm.
+  recordFeeds: workspaceCall("recordFeeds", Schema.Array(Envelope), Schema.Void, Schema.Never),
 }

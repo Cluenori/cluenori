@@ -1,8 +1,10 @@
+import { Feeds } from "@cluenori/feeds"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, MemberId, WorkspaceKey } from "@cluenori/foundation"
 import { GitHubConnection } from "@cluenori/github-app"
 import type { Access } from "@cluenori/members"
 import { Members } from "@cluenori/members"
+import type { PushUnavailable } from "@cluenori/notifications"
 import { NoPushToken, Notifications } from "@cluenori/notifications"
 import type { PhoneId } from "@cluenori/phones"
 import { PhoneKeyRejected, PhoneNotFound, Phones } from "@cluenori/phones"
@@ -10,7 +12,7 @@ import { ProjectIndex } from "@cluenori/projects"
 import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
-import { Config, ConfigProvider, Effect, Layer, ManagedRuntime, Option, Redacted } from "effect"
+import { Clock, Config, ConfigProvider, Duration, Effect, Layer, ManagedRuntime, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 
 import { serve } from "./object-calls.ts"
@@ -18,7 +20,38 @@ import { SyncScheduler } from "./sync-scheduler.ts"
 import type { WorkspaceCallName } from "./workspace-calls.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
 
-type WorkspaceServices = ProjectIndex | Phones | Notifications | Members | GitHubConnection
+type WorkspaceServices = ProjectIndex | Phones | Notifications | Members | GitHubConnection | Feeds
+
+// When APNs doesn't take a feed's alert, it is tried again this much later.
+const alertRetry = Duration.toMillis(Duration.minutes(1))
+
+/**
+ * Sends the feeds' due alerts with `send`, `Feeds.record` or `Feeds.alert`, and sets the object's
+ * alarm for one held back, unless an earlier alarm is set. When APNs doesn't take one, it stays due
+ * and the alarm tries again in a minute.
+ */
+const alertFeeds = Effect.fn("alertFeeds")(function* <R>(
+  storage: DurableObjectStorage,
+  send: Effect.Effect<Option.Option<number>, PushUnavailable, R>,
+) {
+  const due = yield* send.pipe(
+    Effect.catchTag("PushUnavailable", (failure) =>
+      Effect.gen(function* () {
+        yield* Effect.logWarning("APNs didn't take a feed's alert; trying again in a minute", {
+          reason: failure.reason,
+        })
+        return Option.some((yield* Clock.currentTimeMillis) + alertRetry)
+      }),
+    ),
+  )
+  if (Option.isNone(due)) {
+    return
+  }
+  const set = yield* Effect.promise(() => storage.getAlarm())
+  if (set === null || set > due.value) {
+    yield* Effect.promise(() => storage.setAlarm(due.value))
+  }
+})
 
 // The owner `./setup` made; the API token stands for them (PATTERNS.md, "Configuration").
 const ownerSetting = Config.option(Config.schema(MemberId, "CLUENORI_OWNER"))
@@ -44,10 +77,11 @@ const pushSettings = Config.option(
   }),
 )
 
-// Each call the Worker can make, on a visible line, translated to the engines' services.
-const servedCalls: Readonly<
-  Record<WorkspaceCallName, (input: string) => Effect.Effect<string, never, WorkspaceServices>>
-> = {
+// Each call the Worker can make, on a visible line, translated to the engines' services; the
+// object's storage holds the alarm for feeds' alerts.
+const servedCalls = (
+  storage: DurableObjectStorage,
+): Readonly<Record<WorkspaceCallName, (input: string) => Effect.Effect<string, never, WorkspaceServices>>> => ({
   recordProject: serve(workspaceCalls.recordProject, (project) =>
     Effect.gen(function* () {
       const index = yield* ProjectIndex
@@ -260,21 +294,57 @@ const servedCalls: Readonly<
       return { token: Redacted.value(issued.token), expiresAt: issued.expiresAt }
     }),
   ),
-}
+  feeds: serve(workspaceCalls.feeds, (access) =>
+    Effect.gen(function* () {
+      const feeds = yield* Feeds
+      return yield* feeds.list(access)
+    }),
+  ),
+  feed: serve(workspaceCalls.feed, ({ access, feed, before }) =>
+    Effect.gen(function* () {
+      const feeds = yield* Feeds
+      return yield* feeds.entries(feed, access, before)
+    }),
+  ),
+  saveFeed: serve(workspaceCalls.saveFeed, ({ actor, access, feed, input }) =>
+    Effect.gen(function* () {
+      const feeds = yield* Feeds
+      const saved = yield* feeds.save(actor, access, feed, input)
+      return { feed: saved.result, watches: saved.watches }
+    }),
+  ),
+  removeFeed: serve(workspaceCalls.removeFeed, ({ actor, access, feed }) =>
+    Effect.gen(function* () {
+      const feeds = yield* Feeds
+      const removed = yield* feeds.remove(actor, access, feed)
+      return removed.watches
+    }),
+  ),
+  recordFeeds: serve(workspaceCalls.recordFeeds, (activity) =>
+    Effect.gen(function* () {
+      const feeds = yield* Feeds
+      yield* alertFeeds(storage, feeds.record(activity))
+    }),
+  ),
+})
 
 /**
  * The workspace's own Durable Object, named `<workspace>`: the records that belong to the whole
  * workspace rather than one project: the index of its projects, its members, their phones, the
- * alerts that reach them, and its GitHub App. The Worker, and projects' objects for GitHub's tokens,
- * reach it through `call`.
+ * alerts that reach them, its feeds, and its GitHub App. The Worker, and projects' objects for
+ * GitHub's tokens, reach it through `call`.
  */
 export class WorkspaceObject extends DurableObject<Env> {
+  readonly #storage: DurableObjectStorage
+  readonly #calls: ReturnType<typeof servedCalls>
   readonly #runtime: ManagedRuntime.ManagedRuntime<WorkspaceServices, never>
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     // The Worker names the object by a decoded key, so this holds; `make` stops the object if not.
     const workspace = WorkspaceKey.make(ctx.id.name ?? "")
+    this.#storage = ctx.storage
+    this.#calls = servedCalls(ctx.storage)
     const NotificationsLive = Layer.unwrap(
       Effect.gen(function* () {
         const push = yield* pushSettings
@@ -291,7 +361,8 @@ export class WorkspaceObject extends DurableObject<Env> {
       }),
     ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie)
     this.#runtime = ManagedRuntime.make(
-      Layer.mergeAll(NotificationsLive, GitHubConnection.layer({ signing: crypto.subtle })).pipe(
+      Feeds.layer.pipe(
+        Layer.provideMerge(Layer.mergeAll(NotificationsLive, GitHubConnection.layer({ signing: crypto.subtle }))),
         Layer.provideMerge(Layer.mergeAll(Phones.layer, MembersLive)),
         Layer.provideMerge(ProjectIndex.layer),
         Layer.provide(ActivityLog.layer({ workspace })),
@@ -306,6 +377,17 @@ export class WorkspaceObject extends DurableObject<Env> {
 
   /** Runs one of `workspaceCalls`: its input and answer are that call's encodings as JSON text. */
   call(name: WorkspaceCallName, input: string): Promise<string> {
-    return this.#runtime.runPromise(servedCalls[name](input))
+    return this.#runtime.runPromise(this.#calls[name](input))
+  }
+
+  /** Sends the feeds' alerts held back until now, and sets the alarm again for any still held. */
+  override alarm(): Promise<void> {
+    const storage = this.#storage
+    return this.#runtime.runPromise(
+      Effect.gen(function* () {
+        const feeds = yield* Feeds
+        yield* alertFeeds(storage, feeds.alert)
+      }),
+    )
   }
 }

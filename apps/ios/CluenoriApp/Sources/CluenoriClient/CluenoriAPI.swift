@@ -694,6 +694,64 @@ public nonisolated struct CluenoriAPI: Sendable {
         return try Self.decoded(from: `the answer`)
     }
 
+    /// The feeds the caller sees, by name: each with the sources of the projects they see, how many
+    /// entries arrived in the last 24 hours and 7 days, the last 7 days' by project, and when the
+    /// newest arrived. A feed whose projects the caller sees none of isn't listed.
+    ///
+    /// Fails with `.unauthorized`, or as any call can.
+    @concurrent
+    public func feeds() async throws(APIError) -> FeedList {
+        let `the answer` = try await self.send("GET", "/api/feeds")
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// Makes a feed, for an owner: its name, its alert level (none, quiet, timeSensitive), and 1 to
+    /// 50 sources, each a project and the event its apps track there, such as `user.registered`.
+    /// From then on, each such event a project's app sends in production becomes an entry. A source
+    /// in a project the deployment doesn't have answers 404; anyone but an owner, 403.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func createFeed(_ `request body`: FeedInput) async throws(APIError) -> Feed {
+        let `the answer` = try await self.send("POST", "/api/feeds", body: try Self.encoded(`request body`))
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// One feed's entries of the projects the caller sees, newest first, 100 at a time; `before`
+    /// continues from an earlier answer's `next`. Each entry is one event a project's app tracked
+    /// in production: the project, the event, when, the component, environment and release, the
+    /// country, and the app's own user ID when the app identified the person. Kept 90 days.
+    ///
+    /// Fails with `.unauthorized`, `.feedNotFound`, or as any call can.
+    @concurrent
+    public func feed(feed: String, before: String? = nil) async throws(APIError) -> FeedEntries {
+        var `query items`: [(String, String)] = []
+        if let before { `query items`.append(("before", Self.text(before))) }
+        let `the answer` = try await self.send("GET", "/api/feeds/\(Self.segment(Self.text(feed)))", query: `query items`)
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// Changes a feed, for an owner: its name, level and sources, in place of those before. Its
+    /// entries stay. Saving the same again is safe. A source in a project the deployment doesn't
+    /// have answers 404; anyone but an owner, 403.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.feedNotFound`, `.projectNotFound`, or as any
+    /// call can.
+    @concurrent
+    public func saveFeed(feed: String, _ `request body`: FeedInput) async throws(APIError) -> Feed {
+        let `the answer` = try await self.send("PUT", "/api/feeds/\(Self.segment(Self.text(feed)))", body: try Self.encoded(`request body`))
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// Deletes a feed and its entries, for an owner; the events stay in the projects' analytics.
+    /// Anyone else answers 403.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.feedNotFound`, or as any call can.
+    @concurrent
+    public func removeFeed(feed: String) async throws(APIError) {
+        _ = try await self.send("DELETE", "/api/feeds/\(Self.segment(Self.text(feed)))")
+    }
+
     /// Whether Cluenori is connected to GitHub: its GitHub App, absent until an owner connects it,
     /// and the accounts it is installed on, read from GitHub now; `problem` says why they couldn't
     /// be. Owners only.
@@ -1110,6 +1168,7 @@ public nonisolated enum APIError: Error, Sendable {
     case componentNotFound(ComponentNotFound)
     case draftUnavailable(DraftUnavailable)
     case errorGroupNotFound(ErrorGroupNotFound)
+    case feedNotFound(FeedNotFound)
     case gitHubAlreadyConnected(GitHubAlreadyConnected)
     case incidentNotFound(IncidentNotFound)
     case inviteRejected(InviteRejected)
@@ -3192,6 +3251,343 @@ public nonisolated struct FeatureUseTable: Codable, Hashable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode(self.features, forKey: .features)
+    }
+}
+
+public nonisolated struct Feed: Codable, Hashable, Sendable {
+    public let id: String
+    public let name: String
+    public let level: FeedLevel
+    public let sources: [FeedSource]
+
+    public init(id: String, name: String, level: FeedLevel, sources: [FeedSource]) {
+        self.id = id
+        self.name = name
+        self.level = level
+        self.sources = sources
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case id = "id"
+        case name = "name"
+        case level = "level"
+        case sources = "sources"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.id = try container.`value at`(.id)
+        self.name = try container.`value at`(.name)
+        self.level = try container.`value at`(.level)
+        self.sources = try container.`value at`(.sources)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.level, forKey: .level)
+        try container.encode(self.sources, forKey: .sources)
+    }
+}
+
+public nonisolated struct FeedEntries: Codable, Hashable, Sendable {
+    public let summary: FeedSummary
+    public let entries: [FeedEntry]
+    public let next: Int?
+
+    public init(summary: FeedSummary, entries: [FeedEntry], next: Int? = nil) {
+        self.summary = summary
+        self.entries = entries
+        self.next = next
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case summary = "summary"
+        case entries = "entries"
+        case next = "next"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.summary = try container.`value at`(.summary)
+        self.entries = try container.`value at`(.entries)
+        self.next = try container.`value if present at`(.next)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.summary, forKey: .summary)
+        try container.encode(self.entries, forKey: .entries)
+        try container.encodeIfPresent(self.next, forKey: .next)
+    }
+}
+
+public nonisolated struct FeedEntry: Codable, Hashable, Sendable {
+    public let id: Int
+    public let project: String
+    public let event: String
+    public let at: Date
+    public let component: String
+    public let environment: String
+    public let release: String
+    public let country: String?
+    public let user: String?
+
+    public init(
+        id: Int,
+        project: String,
+        event: String,
+        at: Date,
+        component: String,
+        environment: String,
+        release: String,
+        country: String? = nil,
+        user: String? = nil,
+    ) {
+        self.id = id
+        self.project = project
+        self.event = event
+        self.at = at
+        self.component = component
+        self.environment = environment
+        self.release = release
+        self.country = country
+        self.user = user
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case id = "id"
+        case project = "project"
+        case event = "event"
+        case at = "at"
+        case component = "component"
+        case environment = "environment"
+        case release = "release"
+        case country = "country"
+        case user = "user"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.id = try container.`value at`(.id)
+        self.project = try container.`value at`(.project)
+        self.event = try container.`value at`(.event)
+        self.at = try container.`value at`(.at)
+        self.component = try container.`value at`(.component)
+        self.environment = try container.`value at`(.environment)
+        self.release = try container.`value at`(.release)
+        self.country = try container.`value if present at`(.country)
+        self.user = try container.`value if present at`(.user)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.project, forKey: .project)
+        try container.encode(self.event, forKey: .event)
+        try container.encode(self.at, forKey: .at)
+        try container.encode(self.component, forKey: .component)
+        try container.encode(self.environment, forKey: .environment)
+        try container.encode(self.release, forKey: .release)
+        try container.encodeIfPresent(self.country, forKey: .country)
+        try container.encodeIfPresent(self.user, forKey: .user)
+    }
+}
+
+public nonisolated struct FeedInput: Codable, Hashable, Sendable {
+    public let name: String
+    public let level: FeedLevel
+    public let sources: [FeedSource]
+
+    public init(name: String, level: FeedLevel, sources: [FeedSource]) {
+        self.name = name
+        self.level = level
+        self.sources = sources
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case name = "name"
+        case level = "level"
+        case sources = "sources"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.name = try container.`value at`(.name)
+        self.level = try container.`value at`(.level)
+        self.sources = try container.`value at`(.sources)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.level, forKey: .level)
+        try container.encode(self.sources, forKey: .sources)
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public nonisolated struct FeedLevel: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let none = FeedLevel(rawValue: "none")
+    public static let quiet = FeedLevel(rawValue: "quiet")
+    public static let timeSensitive = FeedLevel(rawValue: "timeSensitive")
+}
+
+public nonisolated struct FeedList: Codable, Hashable, Sendable {
+    public let feeds: [FeedSummary]
+
+    public init(feeds: [FeedSummary]) {
+        self.feeds = feeds
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case feeds = "feeds"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.feeds = try container.`value at`(.feeds)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.feeds, forKey: .feeds)
+    }
+}
+
+public nonisolated struct FeedNotFound: Codable, Hashable, Sendable {
+    public let feed: String
+
+    public init(feed: String) {
+        self.feed = feed
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case feed = "feed"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "FeedNotFound" else {
+            throw container.`corruption at`(._tag, "_tag isn't FeedNotFound.")
+        }
+        self.feed = try container.`value at`(.feed)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("FeedNotFound", forKey: ._tag)
+        try container.encode(self.feed, forKey: .feed)
+    }
+}
+
+public nonisolated struct FeedProjectCount: Codable, Hashable, Sendable {
+    public let project: String
+    public let lastWeek: Int
+
+    public init(project: String, lastWeek: Int) {
+        self.project = project
+        self.lastWeek = lastWeek
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case project = "project"
+        case lastWeek = "lastWeek"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.project = try container.`value at`(.project)
+        self.lastWeek = try container.`value at`(.lastWeek)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.project, forKey: .project)
+        try container.encode(self.lastWeek, forKey: .lastWeek)
+    }
+}
+
+public nonisolated struct FeedSource: Codable, Hashable, Sendable {
+    public let project: String
+    public let event: String
+
+    public init(project: String, event: String) {
+        self.project = project
+        self.event = event
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case project = "project"
+        case event = "event"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.project = try container.`value at`(.project)
+        self.event = try container.`value at`(.event)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.project, forKey: .project)
+        try container.encode(self.event, forKey: .event)
+    }
+}
+
+public nonisolated struct FeedSummary: Codable, Hashable, Sendable {
+    public let feed: Feed
+    public let lastDay: Int
+    public let lastWeek: Int
+    public let byProject: [FeedProjectCount]
+    public let latest: Date?
+
+    public init(
+        feed: Feed,
+        lastDay: Int,
+        lastWeek: Int,
+        byProject: [FeedProjectCount],
+        latest: Date? = nil,
+    ) {
+        self.feed = feed
+        self.lastDay = lastDay
+        self.lastWeek = lastWeek
+        self.byProject = byProject
+        self.latest = latest
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case feed = "feed"
+        case lastDay = "lastDay"
+        case lastWeek = "lastWeek"
+        case byProject = "byProject"
+        case latest = "latest"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.feed = try container.`value at`(.feed)
+        self.lastDay = try container.`value at`(.lastDay)
+        self.lastWeek = try container.`value at`(.lastWeek)
+        self.byProject = try container.`value at`(.byProject)
+        self.latest = try container.`value if present at`(.latest)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.feed, forKey: .feed)
+        try container.encode(self.lastDay, forKey: .lastDay)
+        try container.encode(self.lastWeek, forKey: .lastWeek)
+        try container.encode(self.byProject, forKey: .byProject)
+        try container.encodeIfPresent(self.latest, forKey: .latest)
     }
 }
 
@@ -8911,6 +9307,7 @@ nonisolated extension CluenoriAPI {
             case "ComponentNotFound": return .componentNotFound(try jsonDecoder().decode(ComponentNotFound.self, from: data))
             case "DraftUnavailable": return .draftUnavailable(try jsonDecoder().decode(DraftUnavailable.self, from: data))
             case "ErrorGroupNotFound": return .errorGroupNotFound(try jsonDecoder().decode(ErrorGroupNotFound.self, from: data))
+            case "FeedNotFound": return .feedNotFound(try jsonDecoder().decode(FeedNotFound.self, from: data))
             case "GitHubAlreadyConnected": return .gitHubAlreadyConnected(try jsonDecoder().decode(GitHubAlreadyConnected.self, from: data))
             case "IncidentNotFound": return .incidentNotFound(try jsonDecoder().decode(IncidentNotFound.self, from: data))
             case "InviteRejected": return .inviteRejected(try jsonDecoder().decode(InviteRejected.self, from: data))

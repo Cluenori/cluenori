@@ -13,6 +13,7 @@ import { CluenoriIngestApi } from "./app-ingest-api.ts"
 import { AppIngestHandlers, AppManifestHandlers } from "./app-ingest.ts"
 import { AppleAppSiteAssociation } from "./apple-app-site.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
+import { FeedsHandlers } from "./feeds-handlers.ts"
 import { GitHubConnected, GitHubHandlers } from "./github-handlers.ts"
 import { IncidentsHandlers } from "./incidents-handlers.ts"
 import { ManifestCache } from "./manifest-cache.ts"
@@ -76,6 +77,7 @@ const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi
   Layer.provide(PhonePushHandlers),
   Layer.provide(NotificationsHandlers),
   Layer.provide(TodayHandlers),
+  Layer.provide(FeedsHandlers),
   Layer.provide(ReleasesHandlers),
   Layer.provide(AnalyticsHandlers),
   Layer.provide(GitHubHandlers),
@@ -141,14 +143,16 @@ const reactions = ManagedRuntime.make(
 )
 
 /**
- * The activity queue's consumer: each batch goes to the workspace's object, whose notifications tell
- * phones about incidents. When APNs may take them later, the whole batch is tried again: what was
- * sent is kept, so no phone is told twice.
+ * The activity queue's consumer: each batch goes to the workspace's object, whose feeds take the
+ * events they watch and whose notifications tell phones about incidents. When APNs may take alerts
+ * later, the whole batch is tried again: what was recorded and sent is kept, so no entry is made and
+ * no phone told twice. Feeds' own alerts wait for the object's alarm instead.
  */
 const reactTo = (batch: MessageBatch) =>
   Effect.gen(function* () {
     const activity = yield* activityOf(batch)
     const objects = yield* WorkspaceObjects
+    yield* objects.call(workspaceCalls.recordFeeds, activity)
     const told = yield* objects.call(workspaceCalls.notify, activity).pipe(Effect.result)
     if (told._tag === "Failure") {
       yield* Effect.logWarning("APNs didn't take alerts; trying again soon", { reason: told.failure.reason })

@@ -1,5 +1,6 @@
 import { CloudflareBindingLanguageModel, WorkersAiModel } from "@bagatka/ai-cloudflare-binding"
 import { analyticsModule } from "@cluenori/analytics"
+import { FeedWatch } from "@cluenori/feeds"
 import type {
   ErrorSchema,
   ModuleAction,
@@ -54,6 +55,7 @@ type ProjectServices =
   | AppSignals
   | Incidents
   | Today
+  | FeedWatch
   | ReleaseRecords
   | ReleaseSources
   | GitHub
@@ -243,10 +245,13 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       Effect.gen(function* () {
         const projects = yield* Projects
         const apps = yield* AppSignals
+        const feeds = yield* FeedWatch
         const component = yield* projects
           .authenticateSdkKey(key)
           .pipe(Effect.catchTag("SdkKeyNotFound", () => Effect.fail(sdkKeyRejected)))
-        return yield* apps.record({ component, key, ...(country === undefined ? {} : { country }) }, batch)
+        const accepted = yield* apps.record({ component, key, ...(country === undefined ? {} : { country }) }, batch)
+        yield* feeds.forward(component, country, batch)
+        return accepted
       }),
     sdkKeyRejected,
   ),
@@ -403,6 +408,15 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       }),
     new ProjectNotFound({ project }),
   ),
+  watchFeeds: served(
+    projectCalls.watchFeeds,
+    (events) =>
+      Effect.gen(function* () {
+        const feeds = yield* FeedWatch
+        yield* feeds.watch(events)
+      }),
+    new ProjectNotFound({ project }),
+  ),
 })
 
 // What the object uses of a module: its queries, its actions, its ingest writes, and its background
@@ -479,7 +493,7 @@ export class ProjectObject extends DurableObject<Env> {
     this.#activity = env.ACTIVITY
     this.#calls = new Map([...Object.entries(servedCalls(project)), ...servedModules(project)])
     this.#runtime = ManagedRuntime.make(
-      Today.layer.pipe(
+      Layer.mergeAll(Today.layer, FeedWatch.layer).pipe(
         Layer.provideMerge(Incidents.layer),
         Layer.provideMerge(
           Layer.mergeAll(

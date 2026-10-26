@@ -1,5 +1,5 @@
 import type { ModuleActions, ModuleIngests, ModuleQueries } from "@cluenori/foundation"
-import { Actor, ComponentKey, Instant, TraceId } from "@cluenori/foundation"
+import { Actor, ComponentKey, EnvelopeName, Instant, TraceId } from "@cluenori/foundation"
 import {
   AddMonitor,
   Incident,
@@ -98,6 +98,7 @@ export type EngineCallName =
   | "addMonitor"
   | "removeMonitor"
   | "today"
+  | "watchFeeds"
 
 /** A module's query, as its object serves it: `<module>.<query>`, such as `releases.list`. */
 export type ModuleCallName = `${string}.${string}`
@@ -242,6 +243,8 @@ export const projectCalls = {
     Schema.Union([ProjectNotFound, MonitorNotFound]),
   ),
   today: projectCall("today", Schema.Void, ProjectToday, ProjectNotFound),
+  // The event names the workspace's feeds watch in the project, from the workspace's object.
+  watchFeeds: projectCall("watchFeeds", Schema.Array(EnvelopeName), Schema.Void, ProjectNotFound),
 }
 
 /**

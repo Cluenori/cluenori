@@ -1,11 +1,24 @@
-import { ComponentKey, ProjectKey } from "@cluenori/foundation"
+import {
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  InstallationId,
+  ProjectKey,
+  ReleaseVersion,
+  SessionId,
+} from "@cluenori/foundation"
 import { AppVersion, ModelIdentifier, PairedPhone, PairingCode, SystemVersion } from "@cluenori/phones"
+import type { SdkKey } from "@cluenori/projects"
 import { ComponentName, ProjectName } from "@cluenori/projects"
+import type { AppBatch } from "@cluenori/signals"
+import { AppSignalId } from "@cluenori/signals"
+import { CluenoriIngestApi, SdkKeyAuthorization } from "@cluenori/worker"
 import { assert, layer } from "@effect/vitest"
-import { runDurableObjectAlarm } from "cloudflare:test"
+import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
 import { DateTime, Duration, Effect, Schedule, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { HttpApiClient, HttpApiMiddleware } from "effect/http-api"
 
 import { baseUrl, CluenoriClient } from "./cluenori-client.ts"
 import { traceExport } from "./trace-export.ts"
@@ -23,7 +36,11 @@ const Received = Schema.Array(
         alert: Schema.Struct({ title: Schema.String, body: Schema.optionalKey(Schema.String) }),
         "interruption-level": Schema.String,
       }),
-      cluenori: Schema.Struct({ level: Schema.String, incident: Schema.optionalKey(Schema.String) }),
+      cluenori: Schema.Struct({
+        level: Schema.String,
+        incident: Schema.optionalKey(Schema.String),
+        feed: Schema.optionalKey(Schema.String),
+      }),
     }),
   }),
 )
@@ -85,6 +102,55 @@ const registerPush = Effect.fn("registerPush")(function* (credential: string) {
 
 const runCheck = (project: ProjectKey) =>
   Effect.promise(() => runDurableObjectAlarm(env.PROJECT.getByName(`main/${project}`)))
+
+// A UUIDv7 made at `millis`, the `n`th.
+const uuidAt = (millis: number, n: number) => {
+  const time = Math.floor(millis).toString(16).padStart(12, "0")
+  return `${time.slice(0, 8)}-${time.slice(8)}-7000-8000-${n.toString(16).padStart(12, "0")}`
+}
+
+// What an app's SDK sends from `environment`: events named `names`, the `n`th signals, at `at`.
+const eventsOf = (environment: string, at: number, names: ReadonlyArray<string>, n: number): AppBatch => ({
+  installation: InstallationId.make(uuidAt(at, n * 100)),
+  environment: EnvironmentKey.make(environment),
+  release: ReleaseVersion.make("2.4.0+12"),
+  device: { model: "iPhone17,2", platform: "iOS", osVersion: "27.2", locale: "de-DE", timeZone: "Europe/Berlin" },
+  sdk: { name: "cluenori-swift", version: "0.1.0" },
+  sentAt: DateTime.makeUnsafe(at),
+  signals: names.map((name, index) => ({
+    _tag: "event" as const,
+    id: AppSignalId.make(uuidAt(at, n * 100 + index + 1)),
+    at: DateTime.makeUnsafe(at),
+    session: SessionId.make(uuidAt(at, n * 100 + 99)),
+    name: EnvelopeName.make(name),
+  })),
+})
+
+// A project with an iPhone app, `<key>-ios`, and its SDK key.
+const projectWithApp = Effect.fn("projectWithApp")(function* (key: string, name: string) {
+  const client = yield* CluenoriClient
+  const project = ProjectKey.make(key)
+  const component = ComponentKey.make(`${key}-ios`)
+  yield* client.projects.createProject({ payload: { key: project, name: ProjectName.make(name) } })
+  yield* client.projects.addComponent({
+    params: { project },
+    payload: { key: component, name: ComponentName.make(name) },
+  })
+  const issued = yield* client.projects.issueSdkKey({ params: { project, component } })
+  return { project, key: issued.key }
+})
+
+// Sends `batch` as an app's SDK does, with `key`.
+const send = Effect.fn("send")(function* (key: SdkKey, batch: AppBatch) {
+  const ingest = yield* HttpApiClient.make(CluenoriIngestApi, { baseUrl }).pipe(
+    Effect.provide(
+      HttpApiMiddleware.layerClient(SdkKeyAuthorization, ({ next, request }) =>
+        next(HttpClientRequest.bearerToken(request, key)),
+      ),
+    ),
+  )
+  return yield* ingest.appIngest.sendBatch({ payload: batch })
+})
 
 // Real time: the Worker counts operations by the time they started, and the queue runs on its own.
 layer(CluenoriClient.layer, { excludeTestServices: true })("alerts", (it) => {
@@ -168,6 +234,92 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("alerts", (it) => {
         [acknowledged?.payload.aps.alert.title, acknowledged?.payload.aps["interruption-level"]],
         ["Notes · Acknowledged", "passive"],
       )
+    }),
+  )
+
+  it.effect("a feed lists registrations from two projects, each naming them its own way, and alerts a phone", () =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const now = DateTime.toEpochMillis(yield* DateTime.now)
+      const earlier = (yield* receivedPushes(0)).length
+      const { key: phoneKey } = yield* pair((yield* client.phones.startPairing()).link)
+      assert.strictEqual(yield* registerPush(phoneKey), 204)
+
+      // Folio tracks a registration as `user.registered`, Atlas as `signup_completed`.
+      const folio = yield* projectWithApp("folio", "Folio")
+      const atlas = yield* projectWithApp("atlas", "Atlas")
+      const feed = yield* client.feeds.createFeed({
+        payload: {
+          name: "Registrations",
+          level: "timeSensitive",
+          sources: [
+            { project: folio.project, event: EnvelopeName.make("user.registered") },
+            { project: atlas.project, event: EnvelopeName.make("signup_completed") },
+          ],
+        },
+      })
+      const nowhere = yield* client.feeds
+        .createFeed({
+          payload: {
+            name: "Nowhere",
+            level: "none",
+            sources: [{ project: ProjectKey.make("ghost"), event: EnvelopeName.make("x") }],
+          },
+        })
+        .pipe(Effect.flip)
+      assert.strictEqual(nowhere._tag, "ProjectNotFound")
+
+      // Someone registers in Folio's production app; a tester in staging and another event don't count.
+      yield* send(folio.key, eventsOf("production", now - 2_000, ["user.registered", "card.flipped"], 1))
+      yield* send(folio.key, eventsOf("staging", now - 1_000, ["user.registered"], 2))
+      // The project's next check delivers its activity; the queue takes it to the feed, which alerts.
+      assert.isTrue(yield* runCheck(folio.project))
+      const told = (yield* receivedPushes(earlier + 1)).filter((push) => push.payload.cluenori.feed === feed.id)
+      assert.deepStrictEqual(
+        told.map((push) => [
+          push.payload.aps.alert.title,
+          push.payload.aps.alert.body,
+          push.payload.aps["interruption-level"],
+        ]),
+        [["Folio · Registrations", "folio-ios 2.4.0+12", "time-sensitive"]],
+      )
+
+      // Two register in Atlas within the minute: the feed lists them now, and their alert waits.
+      yield* send(atlas.key, eventsOf("production", now, ["signup_completed", "signup_completed"], 3))
+      assert.isTrue(yield* runCheck(atlas.project))
+      const page = yield* client.feeds.feed({ params: { feed: feed.id }, query: {} }).pipe(
+        Effect.filterOrFail(
+          (answer) => answer.entries.length === 3,
+          (answer) => `The feed has ${answer.entries.length} entries, not 3`,
+        ),
+        Effect.retry(Schedule.spaced(Duration.millis(200)).pipe(Schedule.upTo({ duration: Duration.seconds(10) }))),
+      )
+      assert.deepStrictEqual(
+        page.entries.map((entry) => [entry.project, entry.event, entry.environment]),
+        [
+          [atlas.project, "signup_completed", "production"],
+          [atlas.project, "signup_completed", "production"],
+          [folio.project, "user.registered", "production"],
+        ],
+      )
+      assert.deepStrictEqual(
+        [page.summary.lastDay, page.summary.byProject],
+        [
+          3,
+          [
+            { project: atlas.project, lastWeek: 2 },
+            { project: folio.project, lastWeek: 1 },
+          ],
+        ],
+      )
+      const alarm = yield* Effect.promise(() =>
+        runInDurableObject(env.WORKSPACE.getByName("main"), (_object, state) => state.storage.getAlarm()),
+      )
+      assert.isTrue(alarm !== null && alarm > now && alarm <= now + 70_000, `The held alert is due at ${alarm}`)
+
+      // Deleted, it lists nothing, and its projects stop forwarding.
+      yield* client.feeds.removeFeed({ params: { feed: feed.id } })
+      assert.deepStrictEqual((yield* client.feeds.feeds()).feeds, [])
     }),
   )
 })
