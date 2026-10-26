@@ -171,7 +171,7 @@ struct OperationScreen: View {
     let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
     /// The monitor being drafted, of this operation in the environment it is for; nil for none.
-    @State private var monitoring: (operation: OperationRef, draft: OperationMonitorDraft)? = nil
+    @State private var monitoring: MonitorTarget? = nil
 
     // The quiet hint about this operation, a guess that it is a job that hasn't run, when there is one.
     private var quiet: QuietOperation? {
@@ -215,12 +215,9 @@ struct OperationScreen: View {
                         .foregroundStyle(Palette.yellow)
                     Button {
                         let ref = operation.operation
-                        monitoring = (
-                            OperationRef(
-                                project: ref.project, component: quiet.component, environment: quiet.environment,
-                                name: ref.name),
-                            .job(usualGapMs: quiet.usualGapMs)
-                        )
+                        monitoring = MonitorTarget(
+                            project: ref.project, component: quiet.component, environment: quiet.environment,
+                            name: ref.name, draft: .job(ref.name, usualGapMs: quiet.usualGapMs))
                     } label: {
                         Label {
                             Text(
@@ -355,39 +352,15 @@ struct OperationScreen: View {
         .navigationTitle(operation.operation.name)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
+                MonitorThisButton {
                     let ref = operation.operation
-                    monitoring = (
-                        OperationRef(
-                            project: ref.project, component: ref.component, environment: ref.environment,
-                            name: ref.name),
-                        .first
-                    )
-                } label: {
-                    Label {
-                        Text(
-                            "Monitor this", bundle: #bundle,
-                            comment: "Opens the form that adds a monitor of what a screen shows.")
-                    } icon: {
-                        Image(systemName: "dot.radiowaves.left.and.right")
-                    }
+                    monitoring = MonitorTarget(
+                        project: ref.project, component: ref.component, environment: ref.environment, name: ref.name,
+                        draft: .first(.operation(ref.name)))
                 }
             }
         }
-        .sheet(
-            isPresented: Binding {
-                monitoring != nil
-            } set: {
-                if !$0 { monitoring = nil }
-            }
-        ) {
-            if let monitoring {
-                MonitorOperationSheet(
-                    operation: monitoring.operation, monitors: monitors,
-                    open: { id in navigation.push(.monitor(project: monitoring.operation.project, id: id)) },
-                    draft: monitoring.draft)
-            }
-        }
+        .monitorSheet($monitoring, monitors: monitors, navigation: navigation)
         .refreshable {
             async let incidents: Void = incidents.load()
             await operation.refresh()

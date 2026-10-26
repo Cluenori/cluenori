@@ -31,6 +31,7 @@ import { FilterSwitches } from "@/views/filter-switches"
 import { OccurrenceDetail, TracedOccurrence } from "@/views/line-detail"
 import type { TraceFilters } from "@/views/line-detail"
 import { Loaded } from "@/views/loaded"
+import { componentToMonitor, MonitorThis } from "@/views/monitor-this"
 import { Panel, PanelStats } from "@/views/panel"
 import { TemplateText } from "@/views/template-text"
 import { Button, buttonVariants } from "@/views/ui/button"
@@ -68,6 +69,15 @@ export function ErrorPage({
   const detail = useAtomValue(errorAtom({ project, ...filters, error }))
   const counts = useAtomValue(logCountsAtom({ project, ...filters, by: "level", level: "error", error }))
   const group = AsyncResult.isSuccess(detail) ? detail.value.group : undefined
+  const monitored =
+    group === undefined
+      ? undefined
+      : componentToMonitor(
+          component,
+          environment,
+          AsyncResult.isSuccess(detail) ? detail.value.latest[0] : undefined,
+          group,
+        )
   const parts = group === undefined ? undefined : titleParts(group)
   const isLogged = group?.kind === "log"
   const named = parts === undefined ? "Error" : shortName(parts.type)
@@ -111,6 +121,16 @@ export function ErrorPage({
             environments={environments}
             routeOf={(next) => ({ page: "error", project, ...next, error })}
           />
+          {/* More than N of it in a window, of the component it happened in where the page looks. */}
+          {group !== undefined && monitored !== undefined && (
+            <MonitorThis
+              project={project}
+              component={monitored}
+              environment={environment}
+              subject={{ _tag: "error", error }}
+              name={group.title}
+            />
+          )}
         </div>
       </header>
 

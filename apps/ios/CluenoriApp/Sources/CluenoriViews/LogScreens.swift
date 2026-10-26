@@ -195,8 +195,11 @@ struct LevelMark: View {
 /// each opening its own screen.
 struct LogMessageScreen: View {
     let message: LogMessageModel
+    /// The project's monitors, to which "Monitor this" adds one.
+    let monitors: MonitorsModel
     let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
+    @State private var monitoring: MonitorTarget? = nil
 
     var body: some View {
         List {
@@ -270,11 +273,29 @@ struct LogMessageScreen: View {
         .navigationTitle(Text("Message", bundle: #bundle, comment: "Title of one log message."))
         .toolbar {
             if let detail = message.detail.value {
+                // More than N of it in a window, of the component it happened in where the screen looks.
+                if let component = MonitorDraft.component(
+                    release: message.telemetry.release?.component,
+                    newest: message.lines.value?.lines.first?.component,
+                    lastComponent: detail.message.lastComponent, lastEnvironment: detail.message.lastEnvironment,
+                    environment: message.telemetry.environment)
+                {
+                    ToolbarItem(placement: .primaryAction) {
+                        MonitorThisButton {
+                            monitoring = MonitorTarget(
+                                project: message.telemetry.project,
+                                component: component,
+                                environment: message.telemetry.environment, name: detail.message.title,
+                                draft: .first(.message(message.id)))
+                        }
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     AskAnAgent(brief: messageBrief(message.telemetry.project, detail.message))
                 }
             }
         }
+        .monitorSheet($monitoring, monitors: monitors, navigation: navigation)
         .refreshable { await message.refresh() }
         .task { await message.refresh() }
         .safeAreaInset(edge: .bottom) {

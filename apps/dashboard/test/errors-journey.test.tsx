@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { render } from "vitest-browser-react"
 import { userEvent } from "vitest/browser"
 
@@ -152,6 +152,38 @@ describe("errors journey", () => {
           .toHaveAttribute("href", "/projects/notes/logs/messages/3"),
       )
       yield* expectAccessible()
+    }),
+  )
+
+  it.effect("monitors a log message by how many came in 15 minutes, of the component it came from", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi())
+      window.history.pushState(null, "", "/projects/notes/logs/messages/3?environment=production")
+      const screen = yield* Effect.promise(() => render(<App />))
+      yield* Effect.promise(() => expect.element(screen.getByText("7 in the last 24 hours")).toBeVisible())
+
+      yield* Effect.promise(() => screen.getByRole("button", { name: "Monitor this" }).click())
+      const dialog = screen.getByRole("dialog")
+      // Its window opens on 15 minutes, never 15 hours.
+      yield* Effect.promise(() => expect.element(dialog.getByLabelText("Within")).toHaveValue("15"))
+      yield* Effect.promise(() => expect.element(dialog.getByLabelText("Unit of the window")).toHaveValue("minutes"))
+      // An emptied count is refused, never sent as 0, which would watch every line.
+      yield* Effect.promise(() => dialog.getByLabelText("Times").clear())
+      yield* Effect.promise(() => dialog.getByRole("button", { name: "Add the monitor" }).click())
+      yield* Effect.promise(() => expect.element(dialog.getByText(/^More than/)).not.toBeInTheDocument())
+      yield* Effect.promise(() => expect.element(dialog).toBeVisible())
+      assert.isUndefined(apiCalls().find((call) => call.method === "POST" && call.path.at(-1) === "monitors"))
+      yield* Effect.promise(() => dialog.getByLabelText("Times").fill("10"))
+      yield* Effect.promise(() => dialog.getByRole("button", { name: "Add the monitor" }).click())
+
+      yield* Effect.promise(() => expect.poll(() => window.location.pathname).toMatch(/^\/projects\/notes\/uptime\//))
+      const posted = apiCalls().find((call) => call.method === "POST" && call.path.at(-1) === "monitors")
+      assert.deepStrictEqual(yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(posted?.body ?? "{}"), {
+        component: "notes-api",
+        environment: "production",
+        condition: { _tag: "moreThan", subject: { _tag: "message", message: 3 }, count: 10, minutes: 15 },
+        level: "timeSensitive",
+      })
     }),
   )
 

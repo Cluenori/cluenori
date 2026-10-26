@@ -925,52 +925,49 @@ private struct FailuresPanel: View {
     }
 }
 
-/// "Monitor this" for an operation, a form in a sheet: when it fires (nothing for, p95 above, or
-/// error rate above), its number and window, and the level of its alerts; below, the monitor in
-/// words, or what is wrong with it. Added, or already there, its monitor's screen opens.
-struct MonitorOperationSheet: View {
-    let operation: OperationRef
+/// "Monitor this", a form in a sheet, of what a screen shows: when it fires (for an operation,
+/// nothing for, latency above or error rate above; for an error or a log message, more than N), its
+/// number and window, and the level of its alerts; below, the monitor in words, or what is wrong with
+/// it. Added, or already there, its monitor's screen opens.
+struct MonitorSheet: View {
+    /// What the screen calls its subject: an operation's name, an error's or a log message's title.
+    let name: String
+    let component: String
+    /// Its environment; nil for any.
+    let environment: String?
     let monitors: MonitorsModel
     /// Opens the monitor of this ID, once the sheet is closed.
     let open: (String) -> Void
-    @State var draft: OperationMonitorDraft
+    @State var draft: MonitorDraft
     @State private var problem: MonitorsModel.Added? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
 
-    private var checked: Result<AddMonitor, OperationMonitorDraft.Refusal> {
-        draft.monitor(
-            operation: operation.name, component: operation.component, environment: operation.environment,
-            locale: locale)
+    private var checked: Result<AddMonitor, MonitorDraft.Refusal> {
+        draft.monitor(component: component, environment: environment, locale: locale)
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Picker(selection: $draft.kind) {
-                        Text(
-                            "Nothing for", bundle: #bundle,
-                            comment: "A monitor that fires when an operation doesn't run."
-                        )
-                        .tag(OperationMonitorDraft.Kind.nothingFor)
-                        Text(
-                            "Latency above", bundle: #bundle, comment: "A monitor that fires when an operation is slow."
-                        )
-                        .tag(OperationMonitorDraft.Kind.latencyAbove)
-                        Text("Errors above", bundle: #bundle, comment: "A monitor that fires when too many runs fail.")
-                            .tag(OperationMonitorDraft.Kind.errorRateAbove)
-                    } label: {
-                        Text("When it fires", bundle: #bundle, comment: "The choice of a monitor's condition.")
+                if draft.subject.kinds.count > 1 {
+                    Section {
+                        Picker(selection: $draft.kind) {
+                            ForEach(draft.subject.kinds, id: \.self) { kind in
+                                kindLabel(kind).tag(kind)
+                            }
+                        } label: {
+                            Text("When it fires", bundle: #bundle, comment: "The choice of a monitor's condition.")
+                        }
+                        .pickerStyle(.segmented)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
                     }
-                    .pickerStyle(.segmented)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
                 }
                 if draft.kind == .latencyAbove {
                     Section {
                         Picker(selection: $draft.percentile) {
-                            ForEach(OperationMonitorDraft.Percentile.allCases, id: \.self) { percentile in
+                            ForEach(MonitorDraft.Percentile.allCases, id: \.self) { percentile in
                                 Text(verbatim: "p\(Int(percentile.rawValue))").tag(percentile)
                             }
                         } label: {
@@ -1011,11 +1008,11 @@ struct MonitorOperationSheet: View {
                     }
                     Picker(selection: $draft.unit) {
                         Text("Minutes", bundle: #bundle, comment: "The unit of a monitor's window.")
-                            .tag(OperationMonitorDraft.Unit.minutes)
+                            .tag(MonitorDraft.Unit.minutes)
                         Text("Hours", bundle: #bundle, comment: "The unit of a monitor's window.")
-                            .tag(OperationMonitorDraft.Unit.hours)
+                            .tag(MonitorDraft.Unit.hours)
                         Text("Days", bundle: #bundle, comment: "The unit of a monitor's window.")
-                            .tag(OperationMonitorDraft.Unit.days)
+                            .tag(MonitorDraft.Unit.days)
                     } label: {
                         Text("Unit", bundle: #bundle, comment: "The choice of the unit of a monitor's window.")
                     }
@@ -1047,7 +1044,7 @@ struct MonitorOperationSheet: View {
                     }
                 }
             }
-            .navigationTitle(Text(verbatim: operation.name))
+            .navigationTitle(Text(verbatim: name))
             #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -1089,10 +1086,28 @@ struct MonitorOperationSheet: View {
         }
     }
 
+    private func kindLabel(_ kind: MonitorDraft.Kind) -> Text {
+        switch kind {
+        case .nothingFor:
+            Text("Nothing for", bundle: #bundle, comment: "A monitor that fires when an operation doesn't run.")
+        case .moreThan:
+            Text("More than", bundle: #bundle, comment: "A monitor that fires when something comes too often.")
+        case .latencyAbove:
+            Text("Latency above", bundle: #bundle, comment: "A monitor that fires when an operation is slow.")
+        case .errorRateAbove:
+            Text("Errors above", bundle: #bundle, comment: "A monitor that fires when too many runs fail.")
+        }
+    }
+
     private var thresholdLabel: Text {
-        draft.kind == .latencyAbove
-            ? Text("Milliseconds", bundle: #bundle, comment: "The field for a monitor's p95 threshold.")
-            : Text("Percent failed", bundle: #bundle, comment: "The field for a monitor's error-rate threshold.")
+        switch draft.kind {
+        case .latencyAbove:
+            Text("Milliseconds", bundle: #bundle, comment: "The field for a monitor's p95 threshold.")
+        case .moreThan:
+            Text("Times", bundle: #bundle, comment: "The field for how many times something may come.")
+        default:
+            Text("Percent failed", bundle: #bundle, comment: "The field for a monitor's error-rate threshold.")
+        }
     }
 
     private var windowLabel: Text {
@@ -1105,16 +1120,16 @@ struct MonitorOperationSheet: View {
     @ViewBuilder private var summary: some View {
         switch checked {
         case .success(let monitor):
-            if let environment = operation.environment {
+            if let environment {
                 Text(
-                    "\(MonitorConditionText(condition: monitor.condition).text), of \(operation.component) in \(environment). Looked at every minute; when it holds, an incident opens.",
+                    "\(MonitorConditionText(condition: monitor.condition).text), of \(component) in \(environment). Looked at every minute; when it holds, an incident opens.",
                     bundle: #bundle,
                     comment:
                         "What a monitor being added does. The variables are its condition, a component and an environment."
                 )
             } else {
                 Text(
-                    "\(MonitorConditionText(condition: monitor.condition).text), of \(operation.component) in any environment. Looked at every minute; when it holds, an incident opens.",
+                    "\(MonitorConditionText(condition: monitor.condition).text), of \(component) in any environment. Looked at every minute; when it holds, an incident opens.",
                     bundle: #bundle,
                     comment: "What a monitor being added does. The variables are its condition and a component.")
             }
@@ -1128,12 +1143,21 @@ struct MonitorOperationSheet: View {
                     comment: "A monitor's window out of range."))
                 .foregroundStyle(Palette.red)
         case .failure(.threshold(let kind)):
-            (kind == .latencyAbove
-                ? Text("Milliseconds: 1 to 600,000.", bundle: #bundle, comment: "A p95 threshold out of range.")
-                : Text(
-                    "Percent failed: more than 0, less than 100.", bundle: #bundle,
-                    comment: "An error-rate threshold out of range."))
-                .foregroundStyle(Palette.red)
+            Group {
+                switch kind {
+                case .latencyAbove:
+                    Text("Milliseconds: 1 to 600,000.", bundle: #bundle, comment: "A p95 threshold out of range.")
+                case .moreThan:
+                    Text(
+                        "Times: a whole number, 0 to 1,000,000.", bundle: #bundle,
+                        comment: "A count threshold out of range.")
+                default:
+                    Text(
+                        "Percent failed: more than 0, less than 100.", bundle: #bundle,
+                        comment: "An error-rate threshold out of range.")
+                }
+            }
+            .foregroundStyle(Palette.red)
         }
     }
 
@@ -1171,5 +1195,58 @@ struct MonitorOperationSheet: View {
 extension Result {
     fileprivate var isSuccess: Bool {
         if case .success = self { true } else { false }
+    }
+}
+
+/// What a screen's "Monitor this" opens the form on: its project, component and environment (nil for
+/// any), what the screen calls its subject, and the draft to start from.
+struct MonitorTarget {
+    let project: String
+    let component: String
+    let environment: String?
+    let name: String
+    let draft: MonitorDraft
+}
+
+/// The "Monitor this" button for a screen's toolbar, which opens its form on `target`.
+struct MonitorThisButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            Label {
+                Text(
+                    "Monitor this", bundle: #bundle,
+                    comment: "Opens the form that adds a monitor of what a screen shows.")
+            } icon: {
+                Image(systemName: "dot.radiowaves.left.and.right")
+            }
+        }
+    }
+}
+
+extension View {
+    /// Presents the "Monitor this" form while `target` is set, adding to `monitors`; once added, or
+    /// already there, the monitor's screen opens over this one.
+    func monitorSheet(_ target: Binding<MonitorTarget?>, monitors: MonitorsModel, navigation: Navigation)
+        -> some View
+    {
+        sheet(
+            isPresented: Binding {
+                target.wrappedValue != nil
+            } set: {
+                if !$0 { target.wrappedValue = nil }
+            }
+        ) {
+            if let shown = target.wrappedValue {
+                MonitorSheet(
+                    name: shown.name, component: shown.component, environment: shown.environment,
+                    monitors: monitors,
+                    open: { id in navigation.push(.monitor(project: shown.project, id: id)) },
+                    draft: shown.draft)
+            }
+        }
     }
 }

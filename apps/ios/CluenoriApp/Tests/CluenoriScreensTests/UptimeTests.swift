@@ -198,10 +198,10 @@ struct MonitorThisTests {
     let english = Locale(identifier: "en_US")
     let turkish = Locale(identifier: "tr_TR")
 
-    private func condition(_ draft: OperationMonitorDraft, _ locale: Locale) -> MonitorCondition? {
+    private func condition(_ draft: MonitorDraft, _ locale: Locale) -> MonitorCondition? {
         guard
             case .success(let monitor) = draft.monitor(
-                operation: "POST /api/export", component: "notes-api", environment: "production", locale: locale)
+                component: "notes-api", environment: "production", locale: locale)
         else { return nil }
         return monitor.condition
     }
@@ -209,7 +209,7 @@ struct MonitorThisTests {
     @Test
     func `turns the form into the API's monitor, its window in minutes and its number as the phone's locale writes it`()
     {
-        var draft = OperationMonitorDraft(kind: .errorRateAbove, minutes: 15)
+        var draft = MonitorDraft(.operation("POST /api/export"), kind: .errorRateAbove, minutes: 15)
         draft.threshold = "2,5"
         draft.amount = "2"
         draft.unit = .hours
@@ -233,7 +233,7 @@ struct MonitorThisTests {
     }
 
     @Test func `refuses what the API would: windows past a day, nothing-for past 7 days, and rates of 0 or 100`() {
-        var nothing = OperationMonitorDraft(kind: .nothingFor, minutes: 60)
+        var nothing = MonitorDraft(.operation("POST /api/export"), kind: .nothingFor, minutes: 60)
         nothing.amount = "7"
         nothing.unit = .days
         #expect(
@@ -246,19 +246,19 @@ struct MonitorThisTests {
         nothing.unit = .minutes
         #expect(condition(nothing, english) == nil)
 
-        var slow = OperationMonitorDraft(kind: .latencyAbove, minutes: 60)
+        var slow = MonitorDraft(.operation("POST /api/export"), kind: .latencyAbove, minutes: 60)
         slow.amount = "2"
         slow.unit = .days
         #expect(
-            slow.monitor(operation: "o", component: "c", environment: nil, locale: english)
+            slow.monitor(component: "c", environment: nil, locale: english)
                 == .failure(.window(.latencyAbove)))
         slow.unit = .hours
         slow.threshold = "0"
         #expect(
-            slow.monitor(operation: "o", component: "c", environment: nil, locale: english)
+            slow.monitor(component: "c", environment: nil, locale: english)
                 == .failure(.threshold(.latencyAbove)))
 
-        var failing = OperationMonitorDraft(kind: .errorRateAbove, minutes: 15)
+        var failing = MonitorDraft(.operation("POST /api/export"), kind: .errorRateAbove, minutes: 15)
         for refused in ["0", "100", "", "five"] {
             failing.threshold = refused
             #expect(condition(failing, english) == nil)
@@ -268,7 +268,7 @@ struct MonitorThisTests {
     }
 
     @Test func `reads the whole field as a number, never a number's start, and whole minutes after the unit`() {
-        var failing = OperationMonitorDraft(kind: .errorRateAbove, minutes: 15)
+        var failing = MonitorDraft(.operation("POST /api/export"), kind: .errorRateAbove, minutes: 15)
         for typed in ["25garbage", "2.5.1", "1e9999", "5 %"] {
             failing.threshold = typed
             #expect(condition(failing, english) == nil, "\(typed)")
@@ -277,7 +277,7 @@ struct MonitorThisTests {
         failing.threshold = "2.5"
         #expect(condition(failing, Locale(identifier: "pl_PL")) == nil)
 
-        var nothing = OperationMonitorDraft(kind: .nothingFor, minutes: 60)
+        var nothing = MonitorDraft(.operation("POST /api/export"), kind: .nothingFor, minutes: 60)
         nothing.amount = "60junk"
         nothing.unit = .minutes
         #expect(condition(nothing, english) == nil)
@@ -291,16 +291,61 @@ struct MonitorThisTests {
         #expect(condition(nothing, english) == nil)
     }
 
+    @Test func `monitors an error or a log message by how many came, a whole count, and nothing else`() {
+        var error = MonitorDraft.first(.error("3f9c0e2a7b1d4c58"))
+        #expect(error.kind == .moreThan && error.threshold == "10" && error.amount == "15" && error.unit == .minutes)
+        #expect(
+            error.monitor(component: "notes-api", environment: nil, locale: english)
+                == .success(
+                    AddMonitor(
+                        component: "notes-api",
+                        condition: .moreThan(
+                            MoreThan(subject: .error(ErrorSubject(error: "3f9c0e2a7b1d4c58")), count: 10, minutes: 15)),
+                        level: .timeSensitive)))
+        var message = MonitorDraft.first(.message(12))
+        message.threshold = "0"
+        #expect(
+            message.monitor(component: "notes-api", environment: "prod", locale: english).map(\.condition)
+                == .success(.moreThan(MoreThan(subject: .message(MessageSubject(message: 12)), count: 0, minutes: 15))))
+        for refused in ["2.5", "-1", "1000001", "10x"] {
+            error.threshold = refused
+            #expect(
+                error.monitor(component: "c", environment: nil, locale: english) == .failure(.threshold(.moreThan)),
+                "\(refused)")
+        }
+        // An operation's conditions never fit an error.
+        error.threshold = "10"
+        error.kind = .errorRateAbove
+        error.threshold = "5"
+        #expect(
+            error.monitor(component: "c", environment: nil, locale: english) == .failure(.threshold(.errorRateAbove)))
+        #expect(MonitorDraft.Subject.error("e").kinds == [.moreThan])
+    }
+
+    @Test func `monitors the component it happened in where the screen looks, never another environment's`() {
+        // Last in notes-worker on staging; production's newest occurrence was notes-api.
+        let component = { (release: String?, newest: String?, environment: String?) in
+            MonitorDraft.component(
+                release: release, newest: newest, lastComponent: "notes-worker", lastEnvironment: "staging",
+                environment: environment)
+        }
+        #expect(component(nil, "notes-api", "production") == "notes-api")
+        #expect(component("notes-web", "notes-api", "production") == "notes-web")
+        #expect(component(nil, nil, "production") == nil)
+        #expect(component(nil, nil, "staging") == "notes-worker")
+        #expect(component(nil, nil, nil) == "notes-worker")
+    }
+
     @Test func `drafts a quiet job's monitor as nothing for twice its usual gap, whole minutes up`() {
         // Every 31 minutes and a half: 63 minutes, not 60 or 62.
-        let job = OperationMonitorDraft.job(usualGapMs: 31.5 * 60_000)
+        let job = MonitorDraft.job("POST /api/export", usualGapMs: 31.5 * 60_000)
         #expect(job.kind == .nothingFor && job.amount == "63" && job.unit == .minutes && job.level == .timeSensitive)
-        #expect(OperationMonitorDraft.job(usualGapMs: 30 * 60_000).amount == "1")
-        #expect(OperationMonitorDraft.job(usualGapMs: 30 * 60_000).unit == .hours)
+        #expect(MonitorDraft.job("POST /api/export", usualGapMs: 30 * 60_000).amount == "1")
+        #expect(MonitorDraft.job("POST /api/export", usualGapMs: 30 * 60_000).unit == .hours)
         // A gap too long to wait for is refused, never cut to one that fits or crashing.
-        let endless = OperationMonitorDraft.job(usualGapMs: 1e30)
+        let endless = MonitorDraft.job("POST /api/export", usualGapMs: 1e30)
         #expect(
-            endless.monitor(operation: "o", component: "c", environment: nil, locale: english)
+            endless.monitor(component: "c", environment: nil, locale: english)
                 == .failure(.window(.nothingFor)))
     }
 
@@ -316,11 +361,9 @@ struct MonitorThisTests {
         let models = try #require(
             PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport).models)
         let monitors = models.monitors("notes")
-        var draft = OperationMonitorDraft.job(usualGapMs: 31.5 * 60_000)
+        var draft = MonitorDraft.job("POST /api/export", usualGapMs: 31.5 * 60_000)
         draft.level = .alarm
-        let monitor = try draft.monitor(
-            operation: "POST /api/export", component: "notes-api", environment: "production", locale: english
-        ).get()
+        let monitor = try draft.monitor(component: "notes-api", environment: "production", locale: english).get()
 
         #expect(await monitors.add(monitor) == .added("m9"))
         #expect(monitors.monitors.value?.monitors.map(\.monitor.id) == ["m9"])

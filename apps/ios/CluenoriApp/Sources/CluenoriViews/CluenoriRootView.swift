@@ -169,16 +169,16 @@ private struct ProjectRouteScreen: View {
                 navigation: navigation)
         case .error(let telemetry, let id):
             ErrorScreen(
-                error: models.error(telemetry, id: id, period: navigation.period), environments: environments,
-                navigation: navigation)
+                error: models.error(telemetry, id: id, period: navigation.period),
+                monitors: models.monitors(telemetry.project), environments: environments, navigation: navigation)
         case .logs(let telemetry):
             LogsScreen(
                 logs: models.logs(telemetry, period: navigation.period), environments: environments,
                 navigation: navigation)
         case .logMessage(let telemetry, let id):
             LogMessageScreen(
-                message: models.logMessage(telemetry, id: id, period: navigation.period), environments: environments,
-                navigation: navigation)
+                message: models.logMessage(telemetry, id: id, period: navigation.period),
+                monitors: models.monitors(telemetry.project), environments: environments, navigation: navigation)
         case .logLine(let project, let id):
             LogLineByIDScreen(line: models.logLine(project, id: id))
         case .releases(let project, let environment):

@@ -48,6 +48,7 @@ import { ErrorList } from "@/views/error-list"
 import { FilterSwitches } from "@/views/filter-switches"
 import { OccurrenceDetail, TracedOccurrence } from "@/views/line-detail"
 import { Loaded } from "@/views/loaded"
+import { componentToMonitor, MonitorThis } from "@/views/monitor-this"
 import { Panel, PanelStats } from "@/views/panel"
 import { ProjectHeader } from "@/views/project-header"
 import { Segmented } from "@/views/segmented"
@@ -534,6 +535,17 @@ export function LogMessagePage({
   const detail = useAtomValue(logMessageAtom({ project, ...filters, message: id }))
   const counts = useAtomValue(logCountsAtom({ project, ...filters, by: "level", message: id }))
   const shown = AsyncResult.isSuccess(detail) ? detail.value.message : undefined
+  // The newest of its lines where the page looks; the same answer as the first page of its lines.
+  const newest = useAtomValue(logsAtom({ project, ...filters, message: id }))
+  const monitored =
+    shown === undefined
+      ? undefined
+      : componentToMonitor(
+          component,
+          environment,
+          AsyncResult.isSuccess(newest) ? newest.value.lines[0] : undefined,
+          shown,
+        )
   const inPeriod = periodWords[period].toLowerCase()
 
   return (
@@ -567,6 +579,16 @@ export function LogMessagePage({
             environments={environments}
             routeOf={(next) => ({ page: "logMessage", project, message: id, ...next })}
           />
+          {/* More than N of it in a window, of the component it happened in where the page looks. */}
+          {shown !== undefined && monitored !== undefined && (
+            <MonitorThis
+              project={project}
+              component={monitored}
+              environment={environment}
+              subject={{ _tag: "message", message: id }}
+              name={shown.title}
+            />
+          )}
           {shown !== undefined && (
             <CopyButton text={messageBrief(project, shown, inPeriod)} label="Copy for an agent" />
           )}

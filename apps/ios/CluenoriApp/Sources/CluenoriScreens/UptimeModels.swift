@@ -127,13 +127,29 @@ extension LatencyAbove {
     }
 }
 
-/// A monitor of an operation as "Monitor this" types it: when it fires, its number as typed, its
-/// window as typed with a unit, and the level of its alerts. `monitor` checks it by the API's rules,
-/// so the form says what is wrong before sending.
-public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
-    /// When it fires: the conditions that fit an operation.
+/// A monitor as "Monitor this" types it, of what a screen shows: its subject, when it fires, its
+/// number as typed, its window as typed with a unit, and the level of its alerts. `monitor` checks it
+/// by the API's rules, so the form says what is wrong before sending.
+public nonisolated struct MonitorDraft: Equatable, Sendable {
+    /// What it watches: an operation by its name, an error group by its ID, or a log message by its.
+    public enum Subject: Equatable, Sendable {
+        case operation(String)
+        case error(String)
+        case message(Int)
+
+        /// The conditions that fit it, as the API's `MonitorCondition` allows: an operation's runs,
+        /// latency or failures; how many times an error or a log message came.
+        public var kinds: [Kind] {
+            switch self {
+            case .operation: [.nothingFor, .latencyAbove, .errorRateAbove]
+            case .error, .message: [.moreThan]
+            }
+        }
+    }
+
+    /// When it fires.
     public enum Kind: CaseIterable, Sendable {
-        case nothingFor, latencyAbove, errorRateAbove
+        case nothingFor, moreThan, latencyAbove, errorRateAbove
     }
 
     /// Which latency a monitor of latency judges, and how many runs it needs to, as the API's
@@ -167,6 +183,7 @@ public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
         case window(Kind)
     }
 
+    public let subject: Subject
     public var kind: Kind {
         didSet { if kind != oldValue { threshold = Self.firstThreshold(kind) } }
     }
@@ -177,9 +194,10 @@ public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
     public var unit: Unit
     public var level: AlertLevel
 
-    /// A draft of `kind` over `minutes`, shown in hours when they are whole hours, alerting
-    /// time-sensitive, as on the web.
-    public init(kind: Kind, minutes: Int, level: AlertLevel = .timeSensitive) {
+    /// A draft of `subject` and `kind` over `minutes`, shown in hours when they are whole hours,
+    /// alerting time-sensitive, as on the web.
+    public init(_ subject: Subject, kind: Kind, minutes: Int, level: AlertLevel = .timeSensitive) {
+        self.subject = subject
         self.kind = kind
         threshold = Self.firstThreshold(kind)
         if minutes % 60 == 0 {
@@ -192,32 +210,48 @@ public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
         self.level = level
     }
 
-    /// The draft "Monitor this" opens on: nothing for an hour.
-    public static let first = OperationMonitorDraft(kind: .nothingFor, minutes: 60)
+    /// The draft "Monitor this" opens on, as on the web: an operation's nothing for an hour; more than
+    /// 10 of an error or a log message in 15 minutes.
+    public static func first(_ subject: Subject) -> MonitorDraft {
+        switch subject {
+        case .operation: MonitorDraft(subject, kind: .nothingFor, minutes: 60)
+        case .error, .message: MonitorDraft(subject, kind: .moreThan, minutes: 15)
+        }
+    }
+
+    /// The component to monitor an error or a log message of, as on the web: the release's, else the
+    /// one its newest occurrence where the screen looks came from, else the one it last came from when
+    /// that was in the shown environment. Nil when nothing shown says which, so no monitor watches a
+    /// component where it never happened.
+    public static func component(
+        release: String?, newest: String?, lastComponent: String, lastEnvironment: String?,
+        environment: String?
+    ) -> String? {
+        release ?? newest ?? (environment == nil || lastEnvironment == environment ? lastComponent : nil)
+    }
 
     /// The draft for a quiet operation that is a job: nothing for twice its usual gap, in whole
     /// minutes, as on the web.
-    public static func job(usualGapMs: Double) -> OperationMonitorDraft {
+    public static func job(_ operation: String, usualGapMs: Double) -> MonitorDraft {
         // A gap past what a monitor may wait shows one minute past it, which the form refuses, rather
         // than a number that doesn't fit an Int or a shorter window than the job's.
         let minutes = (2 * usualGapMs / 60_000).rounded(.up)
-        return OperationMonitorDraft(kind: .nothingFor, minutes: Int(min(max(1, minutes), 10_081)))
+        return MonitorDraft(.operation(operation), kind: .nothingFor, minutes: Int(min(max(1, minutes), 10_081)))
     }
 
     private static func firstThreshold(_ kind: Kind) -> String {
         switch kind {
         case .nothingFor: ""
+        case .moreThan: "10"
         case .latencyAbove: "500"
         case .errorRateAbove: "5"
         }
     }
 
-    /// The monitor it says, of `operation` in `component`, and in `environment` when given, or why
+    /// The monitor it says, of its subject in `component`, and in `environment` when given, or why
     /// the API would refuse it: the bounds are the API's (`AddMonitor`). Numbers are read in `locale`,
     /// as the person typed them.
-    public func monitor(
-        operation: String, component: String, environment: String?, locale: Locale
-    ) -> Result<AddMonitor, Refusal> {
+    public func monitor(component: String, environment: String?, locale: Locale) -> Result<AddMonitor, Refusal> {
         // Whole minutes once in minutes: 1.5 hours is 90.
         let window = Self.number(amount, locale).map { $0 * Double(unit.rawValue) }
         let most = kind == .nothingFor ? 10_080.0 : 1_440.0
@@ -225,22 +259,38 @@ public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
             return .failure(.window(kind))
         }
         let minutes = Int(window)
-        let subject = OperationSubject(operation: operation)
+        // A kind that doesn't fit the subject never comes from the form, which offers its kinds only.
+        guard subject.kinds.contains(kind) else { return .failure(.threshold(kind)) }
         let condition: MonitorCondition
-        switch kind {
-        case .nothingFor:
-            condition = .nothingFor(NothingFor(subject: .operation(subject), minutes: minutes))
-        case .latencyAbove:
+        switch (kind, subject) {
+        case (.nothingFor, .operation(let operation)):
+            condition = .nothingFor(
+                NothingFor(subject: .operation(OperationSubject(operation: operation)), minutes: minutes))
+        case (.moreThan, _):
+            guard let count = Self.number(threshold, locale), count == count.rounded(), count >= 0, count <= 1_000_000
+            else { return .failure(.threshold(kind)) }
+            let counted: CountedSubject
+            switch subject {
+            case .error(let error): counted = .error(ErrorSubject(error: error))
+            case .message(let message): counted = .message(MessageSubject(message: message))
+            case .operation: return .failure(.threshold(kind))
+            }
+            condition = .moreThan(MoreThan(subject: counted, count: Int(count), minutes: minutes))
+        case (.latencyAbove, .operation(let operation)):
+            let subject = OperationSubject(operation: operation)
             guard let ms = Self.number(threshold, locale), ms >= 1, ms <= 600_000 else {
                 return .failure(.threshold(kind))
             }
             condition = .latencyAbove(
                 LatencyAbove(subject: subject, percentile: percentile.rawValue, ms: ms, minutes: minutes))
-        case .errorRateAbove:
+        case (.errorRateAbove, .operation(let operation)):
+            let subject = OperationSubject(operation: operation)
             guard let percent = Self.number(threshold, locale), percent > 0, percent < 100 else {
                 return .failure(.threshold(kind))
             }
             condition = .errorRateAbove(ErrorRateAbove(subject: subject, percent: percent, minutes: minutes))
+        default:
+            return .failure(.threshold(kind))
         }
         return .success(AddMonitor(component: component, environment: environment, condition: condition, level: level))
     }

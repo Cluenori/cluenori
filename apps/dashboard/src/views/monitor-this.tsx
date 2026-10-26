@@ -104,6 +104,25 @@ const thresholds: Readonly<Record<CountKind, { readonly label: string; readonly 
   errorRateAbove: { label: "Percent failed", first: "5" },
 }
 
+// A field's number; an empty field is no number, which the monitor's schema refuses, never 0.
+const numberOf = (text: string) => (text.trim() === "" ? Number.NaN : Number(text))
+
+/**
+ * The component to monitor an error or a log message of: the page's filter, else the one its newest
+ * occurrence in the shown scope came from, else the one it last came from when that was in the shown
+ * environment. Absent when nothing shown says which, so no monitor watches a component where it
+ * never happened.
+ */
+export const componentToMonitor = (
+  filter: ComponentKey | undefined,
+  environment: EnvironmentKey | undefined,
+  newest: { readonly component: ComponentKey } | undefined,
+  last: { readonly lastComponent: ComponentKey; readonly lastEnvironment?: EnvironmentKey | undefined },
+): ComponentKey | undefined =>
+  filter ??
+  newest?.component ??
+  (environment === undefined || last.lastEnvironment === environment ? last.lastComponent : undefined)
+
 /**
  * "Monitor this", a button that opens a form in a dialog: what is watched is the page's (an
  * operation, an error, a log message, an event), with the conditions that fit it, a number and a
@@ -117,6 +136,7 @@ export function MonitorThis({
   environment,
   subject,
   initial,
+  name,
   label = "Monitor this",
 }: {
   readonly project: ProjectKey
@@ -124,6 +144,8 @@ export function MonitorThis({
   readonly environment?: EnvironmentKey | undefined
   readonly subject: CountSubject
   readonly initial?: { readonly kind: CountKind; readonly minutes: number } | undefined
+  /** What the page calls its subject, such as an error's title; its ID in words when absent. */
+  readonly name?: string | undefined
   readonly label?: string
 }) {
   const id = useId()
@@ -132,11 +154,12 @@ export function MonitorThis({
   const [open, setOpen] = useState(false)
   const [kind, setKind] = useState<CountKind>(firstKind)
   const [threshold, setThreshold] = useState(thresholds[firstKind]?.first ?? "")
-  const [amount, setAmount] = useState(() => {
-    const minutes = initial?.minutes ?? (firstKind === "nothingFor" ? 60 : 15)
-    return minutes % 60 === 0 ? String(minutes / 60) : String(minutes)
-  })
-  const [unit, setUnit] = useState<Unit>(() => ((initial?.minutes ?? 60) % 60 === 0 ? "hours" : "minutes"))
+  // The window it opens on, in hours when it is whole hours: 15 minutes, 1 hour.
+  const firstMinutes = initial?.minutes ?? (firstKind === "nothingFor" ? 60 : 15)
+  const [amount, setAmount] = useState(() =>
+    firstMinutes % 60 === 0 ? String(firstMinutes / 60) : String(firstMinutes),
+  )
+  const [unit, setUnit] = useState<Unit>(() => (firstMinutes % 60 === 0 ? "hours" : "minutes"))
   const [percentile, setPercentile] = useState<PercentileName>("p95")
   const [level, setLevel] = useState<AlertLevel>("timeSensitive")
   const [saving, setSaving] = useState(false)
@@ -146,7 +169,7 @@ export function MonitorThis({
   const decoded = decodeMonitor({
     component,
     ...(environment === undefined ? {} : { environment }),
-    condition: conditionOf(subject, kind, Number(threshold), Number(amount) * units[unit], percentiles[percentile]),
+    condition: conditionOf(subject, kind, numberOf(threshold), numberOf(amount) * units[unit], percentiles[percentile]),
     level,
   })
 
@@ -164,7 +187,7 @@ export function MonitorThis({
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Monitor {subjectWords(subject)}</DialogTitle>
+          <DialogTitle className="line-clamp-2 break-words">Monitor {name ?? subjectWords(subject)}</DialogTitle>
           <DialogDescription>
             Of {component}
             {environment === undefined ? ", in any environment" : `, in ${environment}`}. Looked at every minute; when

@@ -78,8 +78,11 @@ struct ErrorGroupRow: View {
 /// span: what it said, where it happens, how often, and its latest occurrences.
 struct ErrorScreen: View {
     let error: ErrorModel
+    /// The project's monitors, to which "Monitor this" adds one.
+    let monitors: MonitorsModel
     let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
+    @State private var monitoring: MonitorTarget? = nil
 
     var body: some View {
         List {
@@ -142,6 +145,27 @@ struct ErrorScreen: View {
             }
         }
         .navigationTitle(Text("Error", bundle: #bundle, comment: "Title of one error."))
+        .toolbar {
+            // More than N of it in a window, of the component it happened in where the screen looks.
+            if let detail = error.detail.value,
+                let component = MonitorDraft.component(
+                    release: error.telemetry.release?.component, newest: detail.latest.first?.component,
+                    lastComponent: detail.group.lastComponent, lastEnvironment: detail.group.lastEnvironment,
+                    environment: error.telemetry.environment)
+            {
+                let group = detail.group
+                ToolbarItem(placement: .primaryAction) {
+                    MonitorThisButton {
+                        monitoring = MonitorTarget(
+                            project: error.telemetry.project,
+                            component: component,
+                            environment: error.telemetry.environment, name: group.title,
+                            draft: .first(.error(error.id)))
+                    }
+                }
+            }
+        }
+        .monitorSheet($monitoring, monitors: monitors, navigation: navigation)
         .refreshable { await error.detail.load() }
         .task { await error.detail.load() }
         .safeAreaInset(edge: .bottom) {
