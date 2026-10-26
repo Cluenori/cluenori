@@ -1,6 +1,6 @@
 import type { LogRecord, ResourceLogs } from "@bagatka/otlp-protobuf"
 import { decodeLogs, encodeLogs } from "@bagatka/otlp-protobuf"
-import { ComponentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import { ComponentKey, FeatureKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Duration, Effect, Layer } from "effect"
 import { Base64 } from "effect/encoding"
@@ -21,7 +21,7 @@ import {
 } from "../src/index.ts"
 import { dotnetLogs } from "./fixtures/dotnet-logs.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
-import { dropAppTables, inProject, WebCrypto } from "./in-object.ts"
+import { dropAppTables, dropFeatureSignals, inProject, WebCrypto } from "./in-object.ts"
 
 // The fixtures' records happened from 2026-10-19T22:49:43.314Z; the tests ask a minute later.
 const capturedAt = 1792442983314
@@ -249,6 +249,91 @@ describe("Signals' warnings and errors", () => {
     }),
   )
 
+  it.effect("narrows errors and the counts of warnings and errors to the feature a service named", () =>
+    Effect.gen(function* () {
+      const { export: read } = yield* readAt(now, fixtureLogs)
+      // The timeouts and the first warning were for editor.export; one record names no feature key.
+      const firstWarning = read.entries.findIndex((entry) => entry.level === "warn")
+      const tagged: LogExport = {
+        ...read,
+        entries: read.entries.map((entry, index) => {
+          if (entry.exception?.type === "TimeoutException" || index === firstWarning) {
+            return { ...entry, attributes: { ...entry.attributes, "cluenori.feature": "editor.export" } }
+          }
+          return index === 1
+            ? { ...entry, attributes: { ...entry.attributes, "cluenori.feature": "Editor Export" } }
+            : entry
+        }),
+      }
+      const { errors, counts, other } = yield* inProject(
+        "by-feature",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordLogs(api, tagged)
+          const feature = FeatureKey.make("editor.export")
+          return {
+            errors: yield* signals.errors({ period: lastHour, feature }),
+            counts: yield* signals.logCounts({ period: lastHour, step: "1h", by: "level", feature }),
+            other: yield* signals.errors({ period: lastHour, feature: FeatureKey.make("editor") }),
+          }
+        }),
+      )
+
+      assert.deepStrictEqual(
+        errors.groups.map((group) => [group.title, group.occurrences]),
+        [["TimeoutException: Notification service did not answer", 3]],
+      )
+      assert.deepStrictEqual(
+        counts.series.map((series) => [series.key, series.total]),
+        [
+          ["error", 3],
+          ["warn", 1],
+        ],
+      )
+      // A feature is its key exactly: editor isn't editor.export.
+      assert.deepStrictEqual(other.groups, [])
+    }),
+  )
+
+  it.effect("gives warnings and errors kept before features had a column theirs from their record", () =>
+    Effect.gen(function* () {
+      const { export: read } = yield* readAt(now, fixtureLogs)
+      const feature = FeatureKey.make("editor.export")
+      // A database as it was before: its warnings and errors stored, then the change undone.
+      yield* inProject(
+        "logs-before-features",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          const sql = yield* SqlClient.SqlClient
+          yield* signals.recordLogs(api, {
+            ...read,
+            entries: read.entries.map((entry) => ({
+              ...entry,
+              attributes: { ...entry.attributes, "cluenori.feature": entry.level === "warn" ? feature : 7 },
+            })),
+          })
+          yield* dropFeatureSignals
+          yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 11`
+        }).pipe(Effect.orDie),
+      )
+      const counted = yield* inProject(
+        "logs-before-features",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          return yield* signals.logCounts({ period: lastHour, step: "1h", by: "level", feature })
+        }),
+      )
+
+      assert.deepStrictEqual(
+        counted.series.map((series) => [series.key, series.total]),
+        [["warn", 3]],
+      )
+    }),
+  )
+
   it.effect("narrows errors, warnings and their counts to one release", () =>
     Effect.gen(function* () {
       const { export: read } = yield* readAt(now, fixtureLogs)
@@ -301,6 +386,7 @@ describe("Signals' warnings and errors", () => {
           const signals = yield* Signals
           const sql = yield* SqlClient.SqlClient
           yield* signals.recordLogs(api, { ...read, entries: read.entries.map((entry) => ({ ...entry, release })) })
+          yield* dropFeatureSignals
           yield* sql`DROP INDEX signals_logs_release`
           yield* sql`ALTER TABLE signals_logs DROP COLUMN release`
           yield* dropAppTables

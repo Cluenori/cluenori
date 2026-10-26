@@ -1,3 +1,4 @@
+import type { FeatureKey } from "@cluenori/foundation"
 import { ComponentKey, EnvironmentKey, Period, ReleaseVersion } from "@cluenori/foundation"
 import { DateTime, Duration, Effect, Option, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
@@ -14,6 +15,7 @@ import type {
 } from "./error-groups.ts"
 import { ErrorGroupNotFound, levelsFrom, LogLineNotFound } from "./error-groups.ts"
 import type { ErrorGroupShape } from "./exports.ts"
+import { featureAttribute, featureIn } from "./feature-attribute.ts"
 import type { LogLine } from "./log-entry.ts"
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
 import { stepMillis } from "./operation-queries.ts"
@@ -105,6 +107,7 @@ export const logStore = Effect.gen(function* () {
         category: entry.category,
         error: entry.error ?? null,
         trace: entry.trace ?? null,
+        feature: featureIn(entry.attributes[featureAttribute]) ?? "",
         text,
         entry: json,
       })}`
@@ -161,6 +164,7 @@ export const logStore = Effect.gen(function* () {
       readonly environment?: EnvironmentKey
       readonly component?: ComponentKey
       readonly release?: ReleaseVersion
+      readonly feature?: FeatureKey
     },
   ) => [
     sql`l.time >= ${covered.from}`,
@@ -168,6 +172,9 @@ export const logStore = Effect.gen(function* () {
     ...(query.environment === undefined ? [] : [sql`l.environment = ${query.environment}`]),
     ...(query.component === undefined ? [] : [sql`l.component = ${query.component}`]),
     ...(query.release === undefined ? [] : [sql`l.release = ${query.release}`]),
+    // The partial index's own predicate, said again so SQLite can use signals_logs_feature: a feature
+    // key is never empty, so it changes no answer.
+    ...(query.feature === undefined ? [] : [sql`l.feature = ${query.feature}`, sql`l.feature <> ''`]),
   ]
 
   const findGroups = (

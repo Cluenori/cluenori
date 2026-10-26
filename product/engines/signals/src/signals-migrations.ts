@@ -310,5 +310,32 @@ export const migrateSignals = Migrator.make({})({
       yield* sql`UPDATE signals_app_measures SET sketch = json_set(sketch, '$.relativeAccuracy', 0.02)
         WHERE sketch IS NOT NULL`
     }),
+    // Services' signals carry the feature they were for in `cluenori.feature` (concept/Foundation.md,
+    // "Features"): each warning and error keeps it in a column ('' for none), those kept before
+    // taking it from their record's attributes; and operations are counted by feature, day,
+    // component, operation and environment ('' when unknown), kept 15 months as hourly counts are,
+    // read by feature.
+    "0011_features": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE signals_logs ADD COLUMN feature TEXT NOT NULL DEFAULT ''`
+      yield* sql`UPDATE signals_logs SET feature = coalesce(json_extract(entry, '$.attributes."cluenori.feature"'), '')
+        WHERE json_type(entry, '$.attributes."cluenori.feature"') = 'text'`
+      yield* sql`CREATE INDEX signals_logs_feature ON signals_logs (feature, time) WHERE feature <> ''`
+      yield* sql`CREATE TABLE signals_feature_days (
+        day INTEGER NOT NULL,
+        feature TEXT NOT NULL,
+        component TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        errors INTEGER NOT NULL,
+        PRIMARY KEY (feature, day, component, operation, environment)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE INDEX signals_feature_days_day ON signals_feature_days (day)`
+      // Apps' feature use is read by feature, for a feature's whole life, and by person, for the
+      // features one person uses, so neither reads every day of every feature.
+      yield* sql`CREATE INDEX signals_app_feature_days_feature ON signals_app_feature_days (feature, day)`
+      yield* sql`CREATE INDEX signals_app_feature_days_person ON signals_app_feature_days (person, feature)`
+    }),
   }),
 })

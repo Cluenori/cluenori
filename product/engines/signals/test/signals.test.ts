@@ -1,7 +1,15 @@
 import type { ResourceSpans, Span } from "@bagatka/otlp-protobuf"
 import { decodeTraces, encodeTraces, SpanId, TraceId as OtlpTraceId } from "@bagatka/otlp-protobuf"
 import { sketchOf } from "@bagatka/quantile-sketch"
-import { ComponentKey, EnvelopeName, EnvironmentKey, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import {
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  FeatureKey,
+  Period,
+  ReleaseVersion,
+  TraceId,
+} from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Duration, Effect, Result } from "effect"
 import { Base64 } from "effect/encoding"
@@ -11,7 +19,7 @@ import { TestClock } from "effect/testing"
 import type { KeptTrace, OperationCounts, TraceExport } from "../src/index.ts"
 import { BatchDigest, readMetrics, readTraces, Signals } from "../src/index.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
-import { dropAppTables, inProject, WebCrypto } from "./in-object.ts"
+import { dropAppTables, dropFeatureSignals, inProject, WebCrypto } from "./in-object.ts"
 
 // The fixture's operations started at 2026-10-19T22:49:43Z; the tests ask a minute later.
 const capturedAt = 1792442983314
@@ -922,6 +930,7 @@ describe("Signals by release", () => {
           for (const table of ["signals_minute_counts", "signals_hour_counts"]) {
             yield* sql`UPDATE ${sql(table)} SET durations = json_remove(durations, '$.relativeAccuracy')`
           }
+          yield* dropFeatureSignals
           yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 10`
         }).pipe(Effect.orDie),
       )
@@ -973,6 +982,7 @@ describe("Signals by release", () => {
           yield* sql`ALTER TABLE signals_kept_traces DROP COLUMN release`
           yield* sql`ALTER TABLE signals_error_groups DROP COLUMN first_release`
           yield* sql`DROP TABLE signals_releases`
+          yield* dropFeatureSignals
           yield* sql`DROP INDEX signals_logs_release`
           yield* sql`ALTER TABLE signals_logs DROP COLUMN release`
           yield* dropAppTables
@@ -994,5 +1004,83 @@ describe("Signals by release", () => {
 
       assert.deepStrictEqual(counted, { all: 5, newest: 2 })
     }),
+  )
+})
+
+// A span named for `feature`, as the Cluenori helpers name it.
+const forFeature = (id: string, name: string, kind: Span["kind"], feature: string, failed = false): Span => ({
+  ...span(id, id, name, kind, undefined, failed),
+  attributes: new Map([["cluenori.feature", feature]]),
+})
+
+describe("Signals by feature", () => {
+  it.effect("counts the operations that ran for a feature by day, and only those that named its key", () =>
+    Effect.gen(function* () {
+      const body = yield* encodeTraces([
+        {
+          resource: { attributes: new Map([["service.name", "notes-api"]]), droppedAttributesCount: 0 },
+          schemaUrl: "",
+          scopeSpans: [
+            {
+              scope: { name: "Notes", version: "", attributes: new Map(), droppedAttributesCount: 0 },
+              schemaUrl: "",
+              spans: [
+                forFeature("a", "GET /export", "server", "editor.export"),
+                forFeature("b", "GET /export", "server", "editor.export", true),
+                // No feature key, and a client span, which is no operation: neither is counted for it.
+                forFeature("c", "GET /export", "server", "Editor Export"),
+                forFeature("d", "GET https://api.stripe.com", "client", "editor.export"),
+                span("e", "e", "GET /export", "server", undefined),
+              ],
+            },
+          ],
+        },
+      ])
+      const { export: batch } = yield* TestClock.setTime(now).pipe(
+        Effect.andThen(readTraces(body)),
+        Effect.provide(WebCrypto),
+      )
+      const feature = FeatureKey.make("editor.export")
+      const { every, inProd } = yield* inProject(
+        "by-feature",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          yield* signals.recordTraces(api, batch)
+          return {
+            every: yield* signals.featureOperations({ feature }),
+            inProd: yield* signals.featureOperations({ feature, environment: EnvironmentKey.make("prod") }),
+          }
+        }),
+      )
+
+      assert.deepStrictEqual(
+        every.map((row) => [row.day, row.component, row.operation, row.count, row.errors]),
+        [["2026-10-19", api, "GET /export", 2, 1]],
+      )
+      // The service didn't say its environment, so none of it is prod's.
+      assert.deepStrictEqual(inProd, [])
+    }),
+  )
+
+  it.effect("counts a feature's operation past a component's 500 as (other operations), as their counts do", () =>
+    inProject(
+      "feature-other-operations",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const feature = FeatureKey.make("editor.export")
+        const many = Array.from({ length: 500 }, (_, index) => counts(`GET /n${index}`, 1))
+        yield* signals.recordTraces(api, batchOf("a", many))
+        yield* signals.recordTraces(api, {
+          ...batchOf("b", [counts("GET /export", 2)]),
+          features: [{ day: 20745, feature, operation: EnvelopeName.make("GET /export"), count: 2, errors: 0 }],
+        })
+        assert.deepStrictEqual(
+          (yield* signals.featureOperations({ feature })).map((row) => [row.operation, row.count]),
+          [["(other operations)", 2]],
+        )
+      }),
+    ),
   )
 })

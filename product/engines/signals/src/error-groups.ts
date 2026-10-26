@@ -1,4 +1,12 @@
-import { ComponentKey, EnvironmentKey, Instant, Period, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import {
+  ComponentKey,
+  EnvironmentKey,
+  FeatureKey,
+  Instant,
+  Period,
+  ReleaseVersion,
+  TraceId,
+} from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import type { LogLevel } from "./log-entry.ts"
@@ -31,14 +39,16 @@ export type ErrorGroup = typeof ErrorGroup.Type
 
 /**
  * Which errors to show: those that happened in `period`, optionally of one environment, component,
- * or release. Warnings and errors from before October 2026 without a release in their record have
- * none, so a release finds none of them.
+ * release, or feature, as the service named it in `cluenori.feature`, that key exactly. Warnings and
+ * errors from before October 2026 without a release in their record have none, so a release finds
+ * none of them.
  */
 export const ErrorQuery = Schema.Struct({
   period: Period,
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
   release: Schema.optionalKey(ReleaseVersion),
+  feature: Schema.optionalKey(FeatureKey),
 })
 export type ErrorQuery = typeof ErrorQuery.Type
 
@@ -114,7 +124,8 @@ export type LogCountsBy = typeof LogCountsBy.Type
 
 /**
  * Which warnings and errors to count over time: those of `period` at `minimumLevel` or above (`warn`
- * when absent), with the filters given, in steps of `step`, a series for each value of `by`.
+ * when absent), with the filters given, in steps of `step`, a series for each value of `by`. A
+ * feature is the one the service named in `cluenori.feature`, that key exactly.
  */
 export const LogCountQuery = Schema.Struct({
   period: Period,
@@ -124,6 +135,7 @@ export const LogCountQuery = Schema.Struct({
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
   release: Schema.optionalKey(ReleaseVersion),
+  feature: Schema.optionalKey(FeatureKey),
   error: Schema.optionalKey(ErrorGroupId),
 })
 export type LogCountQuery = typeof LogCountQuery.Type

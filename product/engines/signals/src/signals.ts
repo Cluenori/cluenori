@@ -20,6 +20,8 @@ import type {
   LogQuery,
 } from "./error-groups.ts"
 import type { ExportSignal, LogExport, MetricsExport, TraceExport } from "./exports.ts"
+import { featureCounts } from "./feature-counts.ts"
+import type { FeatureOperationDay, FeatureQuery } from "./feature-queries.ts"
 import type { ErrorGroupId, LogLine } from "./log-entry.ts"
 import { logStore } from "./log-store.ts"
 import { BatchDigest } from "./operation-counts.ts"
@@ -59,7 +61,8 @@ export class Signals extends Context.Service<
   Signals,
   {
     /**
-     * Archives a trace export, adds its operations to the counts of `component`, and keeps those of
+     * Archives a trace export, adds its operations to the counts of `component`, and to its
+     * features' counts those that named their feature in `cluenori.feature`, and keeps those of
      * its traces that are now among the slowest or the slowest failed of their operation and hour,
      * once: an export whose digest arrived in the last hour, an exporter's retry, is skipped. Fails
      * with `ArchiveUnavailable` when it can't be archived, having counted nothing, so the exporter
@@ -116,6 +119,12 @@ export class Signals extends Context.Service<
      * `deployment.environment.name`; operations without one name none. Reads the hourly counts.
      */
     readonly environments: (period: Period) => Effect.Effect<ReadonlyArray<EnvironmentKey>>
+    /**
+     * The operations that ran for a feature, as its spans named it in `cluenori.feature`, that key
+     * exactly: by UTC day, component and operation, oldest first, every day kept (15 months),
+     * environments added up unless the query names one. Reads one row per day and operation.
+     */
+    readonly featureOperations: (query: FeatureQuery) => Effect.Effect<ReadonlyArray<FeatureOperationDay>>
     /** The errors of the query's period, most frequent first. Reads only. */
     readonly errors: (query: ErrorQuery) => Effect.Effect<ErrorTable>
     /**
@@ -155,6 +164,7 @@ export class Signals extends Context.Service<
         yield* migrateSignals.pipe(Effect.orDie)
         const counts = yield* operationStore
         const logs = yield* logStore
+        const features = yield* featureCounts
         const index = yield* archiveIndex(settings)
         const lastCleanup = yield* Ref.make(0)
 
@@ -170,6 +180,7 @@ export class Signals extends Context.Service<
             return
           }
           yield* counts.cleanUp(now)
+          yield* features.cleanUp(now)
           yield* logs.cleanUp(now)
           yield* index.cleanUp(now)
           yield* sql`DELETE FROM signals_batches WHERE received_at < ${now - Duration.toMillis(batchWindow)}`
@@ -235,7 +246,9 @@ export class Signals extends Context.Service<
             component,
             exported,
             exported.traces,
-            counts.add(component, exported.counts, exported.kept),
+            counts
+              .add(component, exported.counts, exported.kept)
+              .pipe(Effect.andThen(features.add(component, exported.features ?? []))),
           )
         })
 
@@ -257,6 +270,11 @@ export class Signals extends Context.Service<
         })
 
         const nowMillis = DateTime.now.pipe(Effect.map(DateTime.toEpochMillis))
+
+        const featureOperations = Effect.fn("Signals.featureOperations")(function* (query: FeatureQuery) {
+          const now = yield* nowMillis
+          return yield* features.days(query, now)
+        })
 
         const errors = Effect.fn("Signals.errors")(function* (query: ErrorQuery) {
           const now = yield* nowMillis
@@ -318,6 +336,7 @@ export class Signals extends Context.Service<
           minutesRan: counts.minutesRan,
           releases: counts.releases,
           environments: counts.environments,
+          featureOperations,
           errors,
           error,
           logLine,

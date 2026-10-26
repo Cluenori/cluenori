@@ -1,6 +1,7 @@
 import { Instant, TraceId } from "@cluenori/foundation"
 import { Schema } from "effect"
 
+import { FeatureOperationCounts } from "./feature-queries.ts"
 import { KeptTrace } from "./kept-trace.ts"
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
 import { BatchDigest, OperationCounts } from "./operation-counts.ts"
@@ -24,6 +25,8 @@ export const TraceExport = Schema.Struct({
   ...archived,
   spans: Count,
   counts: Schema.Array(OperationCounts),
+  /** Its operations that named their feature, counted by feature and UTC day too; absent for none. */
+  features: Schema.optionalKey(Schema.Array(FeatureOperationCounts)),
   /** Of each operation, environment and hour, its slowest traces and its slowest failed ones. */
   kept: Schema.Array(KeptTrace),
   /** The traces it holds spans of, each once: how a trace's files are found. */

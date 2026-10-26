@@ -1,11 +1,14 @@
 import type { Attributes, Span } from "@bagatka/otlp-protobuf"
 import { decodeTraces, encodeTraces } from "@bagatka/otlp-protobuf"
 import { sketchOf } from "@bagatka/quantile-sketch"
-import { EnvelopeName, EnvironmentKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import type { FeatureKey } from "@cluenori/foundation"
+import { dayNumberOf, EnvelopeName, EnvironmentKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Hex } from "effect/encoding"
 
 import type { TraceExport } from "./exports.ts"
+import { featureAttribute, featureIn } from "./feature-attribute.ts"
+import type { FeatureOperationCounts } from "./feature-queries.ts"
 import type { KeptTrace } from "./kept-trace.ts"
 import { HttpStatus, keptPerHour } from "./kept-trace.ts"
 import type { OperationCounts } from "./operation-counts.ts"
@@ -115,9 +118,19 @@ interface Group {
   readonly durations: Array<number>
 }
 
+interface FeatureGroup {
+  readonly day: number
+  readonly feature: FeatureKey
+  readonly operation: EnvelopeName
+  readonly environment: EnvironmentKey | undefined
+  count: number
+  errors: number
+}
+
 /**
  * Reads the body of an OTLP/HTTP protobuf trace export: removes credentials and personal data,
- * writes the file the archive keeps, counts its operations by name, environment, release, and minute, and
+ * writes the file the archive keeps, counts its operations by name, environment, release, and minute,
+ * and those that named their feature in `cluenori.feature` by feature and UTC day too, and
  * picks the traces that may be kept. An operation's span is a server or consumer span, or an
  * internal span that starts its trace, a job (`isOperationSpan`); its name is the operation's
  * (`GET /api/notes/{id}`, `cleanup.run`); it failed when its status is an error. Pure apart from
@@ -134,6 +147,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
   const nowMillis = DateTime.toEpochMillis(now)
 
   const groups = new Map<string, Group>()
+  const features = new Map<string, FeatureGroup>()
   const hours = new Map<string, Array<KeptTrace>>()
   let rejectedCount = 0
   let firstProblem: string | undefined
@@ -171,6 +185,15 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
           group.totalMs += durationMs
           group.durations.push(durationMs)
           groups.set(key, group)
+          const feature = featureIn(span.attributes.get(featureAttribute))
+          if (feature !== undefined) {
+            const day = dayNumberOf(start)
+            const featureKey = [day, feature, operation, environment ?? ""].join("\u0000")
+            const tally = features.get(featureKey) ?? { day, feature, operation, environment, count: 0, errors: 0 }
+            tally.count += 1
+            tally.errors += failed ? 1 : 0
+            features.set(featureKey, tally)
+          }
           if (Schema.is(TraceId)(span.traceId)) {
             const status = statusOf(span)
             const hourKey = [start - (start % hourMillis), operation, environment ?? ""].join("\u0000")
@@ -203,6 +226,14 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
     // `problemOf` refused spans that end before they start, so the sketch refuses none.
     durations: sketchOf(group.durations).sketch,
   }))
+  const byFeature: ReadonlyArray<FeatureOperationCounts> = Array.from(features.values(), (counted) => ({
+    day: counted.day,
+    feature: counted.feature,
+    operation: counted.operation,
+    ...(counted.environment === undefined ? {} : { environment: counted.environment }),
+    count: counted.count,
+    errors: counted.errors,
+  }))
   const spans = resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
   const earliest = spans.reduce(
     (least, span) => Math.min(least, Number(span.startTimeUnixNano / 1_000_000n)),
@@ -220,6 +251,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
       to: DateTime.makeUnsafe(spans.length === 0 ? nowMillis : latest),
       spans: spans.length,
       counts,
+      features: byFeature,
       kept: [...hours.values()].flatMap(toKeep),
       traces: [...traces],
     },

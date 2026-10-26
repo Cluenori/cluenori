@@ -64,8 +64,13 @@ const cohorts = yield* apps.retention({ period }) // [{ week: "2026-10-12", peop
 const { releases } = yield* apps.releases({ period }) // each with `previous`, the release before it
 const health = yield* apps.health(releases[0]) // launches cold and warm, memory, MetricKit's crashes and hangs
 const { features } = yield* apps.features({ period }) // people, events, screens and memory by feature key
+const share = yield* apps.feature({ feature: FeatureKey.make("notes.share") })
+// one feature over everything kept: each day's people, events and screens, everyone, the 20 last
+const served = yield* signals.featureOperations({ feature: FeatureKey.make("notes.share") })
+// each day's operations its services named it in `cluenori.feature` for: [{ day, component, operation, count, errors }]
 const person = yield* apps.person({ _tag: "ByUser", user: AppUserId.make("8c1f…") })
-// installations, the days they were active, and their latest 1,000 signals; PersonNotFound otherwise
+// installations, the days they were active, the features they used, and their latest 1,000
+// signals; PersonNotFound otherwise
 ```
 
 An export that isn't one fails with `OtlpInvalid`. When the archive can't take an export,
@@ -92,7 +97,11 @@ again. An error ID the project never had, or forgot 15 months after it was last 
   - each release's span, from the first minute it ran in to the end of the last
     (`signals_releases`, 15 months after last seen);
   - the traces kept to open from their operations (`signals_kept_traces`, 14 days);
-  - warnings and errors, each with its release (`signals_logs`, 90 days), and error groups
+  - operations by the feature their spans name in `cluenori.feature`, UTC day, component and
+    environment (`signals_feature_days`, 15 months), at most 500 operations of a component, the
+    rest as `(other operations)`;
+  - warnings and errors, each with its release and the feature it names in `cluenori.feature`
+    (`signals_logs`, 90 days), and error groups
     (`signals_error_groups`, 15 months after last seen), each with the release it was first and
     last seen in;
   - which archive file holds each export, by time (`signals_archive`), and the last hour's export
@@ -198,5 +207,10 @@ the ingest API's, which apps' SDKs call with an SDK key (`AppBatch` is its wire 
   anonymous person's history before they signed in on a second installation stays a person of its
   own; and sending a batch while another of the same new person is being archived may archive it
   under a person ID the database doesn't have.
-- **Not yet:** errors from failed spans of services that send no logs, and the feature and release
-  of each operation.
+- **A service names a feature** in the `cluenori.feature` attribute of a span or log record, as
+  the Cluenori helpers copy it from the app's baggage; a key that isn't a feature key is ignored.
+  It is matched exactly, as apps mark it.
+- **Not handled:** a project whose services name thousands of features keeps a row a day for each
+  of their operations; nothing bounds how many features there are.
+- **Not yet:** errors from failed spans of services that send no logs, and the release of each
+  operation's feature count.

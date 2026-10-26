@@ -382,6 +382,87 @@ describe("AppSignals", () => {
     ),
   )
 
+  it.effect("tells one feature's whole life: each day, everyone, who used it last, its releases", () =>
+    inApps(
+      "apps-feature-life",
+      now,
+      Effect.gen(function* () {
+        const apps = yield* AppSignals
+        const flip = FeatureKey.make("cards.flip")
+        const sync = FeatureKey.make("cards.sync")
+        let n = 0
+        // `count` events of `feature` at `at`, by the person of `installation`, signed in as `user`.
+        const events = (at: number, feature: FeatureKey, count: number, user?: string): ReadonlyArray<AppSignal> =>
+          Array.from({ length: count }, () => {
+            n += 1
+            return {
+              _tag: "event",
+              id: AppSignalId.make(uuidAt(at, n)),
+              at: DateTime.makeUnsafe(at),
+              session: sessionAt(at, n),
+              name: EnvelopeName.make("card.flipped"),
+              feature,
+              ...(user === undefined ? {} : { user: AppUserId.make(user) }),
+            }
+          })
+        const signedIn = installationOf(1)
+        const anonymous = installationOf(2)
+        yield* record(batchOf(signedIn, events(now - 3 * day, flip, 1, "u-1")))
+        yield* record(batchOf(anonymous, events(now - day, flip, 2), { release: "0.3.1+21" }))
+        yield* record(batchOf(anonymous, events(now - day, sync, 4), { release: "0.3.1+21" }))
+        yield* record(batchOf(signedIn, events(now - hour, flip, 1, "u-1"), { release: "0.3.1+21" }))
+        yield* record({
+          ...batchOf(installationOf(3), events(now - hour, flip, 5)),
+          environment: EnvironmentKey.make("beta"),
+        })
+
+        const life = yield* apps.feature({ feature: flip, environment: production })
+        assert.deepStrictEqual(
+          life.days.map((each) => [each.day, each.people, each.events, each.screens]),
+          [
+            ["2026-10-19", 1, 1, 0],
+            ["2026-10-21", 1, 2, 0],
+            ["2026-10-22", 1, 1, 0],
+          ],
+        )
+        assert.strictEqual(life.people, 2)
+        const signedInPerson = (yield* apps.person({ _tag: "ByUser", user: AppUserId.make("u-1") })).person
+        assert.deepStrictEqual(
+          life.latestPeople.map((each) => [
+            each.person === signedInPerson,
+            each.users.join(),
+            each.days,
+            each.events,
+            String(each.lastDay),
+          ]),
+          [
+            [true, "u-1", 2, 2, "2026-10-22"],
+            [false, "", 1, 2, "2026-10-21"],
+          ],
+        )
+        assert.deepStrictEqual(
+          life.releases.map((each) => [each.release, each.people, each.firstDay, each.lastDay]),
+          [
+            ["0.3.1+21", 2, "2026-10-21", "2026-10-22"],
+            ["0.3.0+20", 1, "2026-10-19", "2026-10-19"],
+          ],
+        )
+        assert.strictEqual(life.memory, undefined, "memory never measured in it is unknown, not zero")
+        // Every environment's, beta's person too.
+        assert.strictEqual((yield* apps.feature({ feature: flip })).people, 3)
+        // A feature the apps never marked has no day and no one; `cards` isn't `cards.flip`.
+        const never = yield* apps.feature({ feature: FeatureKey.make("cards") })
+        assert.deepStrictEqual([never.days, never.people, never.latestPeople, never.releases], [[], 0, [], []])
+
+        const person = yield* apps.person({ _tag: "ByPerson", person: signedInPerson })
+        assert.deepStrictEqual(
+          person.features.map((each) => [each.feature, each.days, each.events, String(each.lastDay)]),
+          [[flip, 2, 2, "2026-10-22"]],
+        )
+      }),
+    ),
+  )
+
   it.effect("finds a person by user ID or by ID, with their installations, days and timeline", () =>
     inApps(
       "apps-person",

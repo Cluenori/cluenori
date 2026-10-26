@@ -28,7 +28,10 @@ import type {
   AppRetention,
   AppUsage,
   CountryCode,
+  FeaturePerson,
+  FeatureRelease,
   FeatureUse,
+  FeatureUseLife,
   FeatureUseTable,
   LaunchTimes,
   MemoryUse,
@@ -39,6 +42,7 @@ import type {
 } from "./app-queries.ts"
 import { CountryCode as CountryCodeSchema, PersonNotFound, TimelineEntry } from "./app-queries.ts"
 import type { PersonSignal, Tallies } from "./app-tallies.ts"
+import type { FeatureQuery } from "./feature-queries.ts"
 import { mergedSketch } from "./merged-sketch.ts"
 
 /** How long what is counted by day is kept: 15 months, so a year compares with the one before. */
@@ -51,6 +55,10 @@ const seenRetention = Duration.days(14)
 const timelineKept = 1000
 const daysShown = 90
 const installationsShown = 50
+// How many of a feature's people and releases, and of a person's features, an answer lists.
+const featurePeopleShown = 20
+const featureReleasesShown = 20
+const personFeaturesShown = 50
 
 // Durable Objects take at most 100 parameters in one statement.
 const parametersAtOnce = 100
@@ -839,6 +847,115 @@ export const appStore = Effect.gen(function* () {
     return table
   }, Effect.orDie)
 
+  // --- One feature's life ---
+
+  const FeatureDayRow = Schema.Struct({ day: Schema.Int, people: Count, events: Count, screens: Count })
+  const FeaturePersonRow = Schema.Struct({
+    id: Schema.Int,
+    person: PersonId,
+    days: Count,
+    events: Count,
+    lastDay: Schema.Int,
+  })
+  const FeatureReleaseRow = Schema.Struct({
+    component: ComponentKey,
+    environment: EnvironmentKey,
+    release: ReleaseVersion,
+    people: Count,
+    firstDay: Schema.Int,
+    lastDay: Schema.Int,
+  })
+  const UserRow = Schema.Struct({ person: Schema.Int, user: AppUserId })
+
+  /** A feature's use over everything kept of it, at `now`; empty when the apps never marked it. */
+  const featureLife = Effect.fn("AppStore.featureLife")(function* (query: FeatureQuery, now: number) {
+    const keptFrom = dayNumberOf(now) - Duration.toDays(appDayRetention) + 1
+    const where = sql.and([
+      sql`feature = ${query.feature}`,
+      sql`day >= ${keptFrom}`,
+      ...(query.environment === undefined ? [] : [sql`environment = ${query.environment}`]),
+    ])
+    const days = yield* SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: FeatureDayRow,
+      execute: () => sql`
+        SELECT day, count(DISTINCT person) AS people, sum(events) AS events, sum(screens) AS screens
+        FROM signals_app_feature_days WHERE ${where} GROUP BY day ORDER BY day`,
+    })(undefined)
+    const everyone = yield* SqlSchema.findOne({
+      Request: Schema.Void,
+      Result: Schema.Struct({ people: Count }),
+      execute: () => sql`SELECT count(DISTINCT person) AS people FROM signals_app_feature_days WHERE ${where}`,
+    })(undefined)
+    const latest = yield* SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: FeaturePersonRow,
+      execute: () => sql`
+        SELECT p.id, p.person, u.days, u.events, u."lastDay"
+        FROM (
+          SELECT person, count(DISTINCT day) AS days, sum(events) AS events, max(day) AS "lastDay"
+          FROM signals_app_feature_days WHERE ${where} GROUP BY person
+          ORDER BY "lastDay" DESC, events DESC, person LIMIT ${featurePeopleShown}
+        ) u JOIN signals_people p ON p.id = u.person
+        ORDER BY u."lastDay" DESC, u.events DESC, p.person`,
+    })(undefined)
+    const users =
+      latest.length === 0
+        ? []
+        : yield* SqlSchema.findAll({
+            Request: Schema.Void,
+            Result: UserRow,
+            execute: () => sql`
+              SELECT person, user FROM signals_person_users
+              WHERE person IN ${sql.in(latest.map((row) => row.id))} ORDER BY user`,
+          })(undefined)
+    const releasesUsed = yield* SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: FeatureReleaseRow,
+      execute: () => sql`
+        SELECT component, environment, release, count(DISTINCT person) AS people,
+          min(day) AS "firstDay", max(day) AS "lastDay"
+        FROM signals_app_feature_days WHERE ${where}
+        GROUP BY component, environment, release
+        ORDER BY "firstDay" DESC, people DESC, component, environment, release LIMIT ${featureReleasesShown}`,
+    })(undefined)
+    const measured = yield* SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: MeasureRow,
+      execute: () => sql`
+        SELECT measure, count, sketch FROM signals_app_measures
+        WHERE ${sql.and([where, sql`measure IN ${sql.in(["memory.peak", "memory.footprint"])}`])}`,
+    })(undefined)
+    const merged = mergedOf(measured)
+    const memory = yield* memoryOf(merged.sketchOf("memory.peak"), merged.sketchOf("memory.footprint"))
+    const life: FeatureUseLife = {
+      days: days.map((row) => ({
+        day: calendarDayOfNumber(row.day),
+        people: row.people,
+        events: row.events,
+        screens: row.screens,
+      })),
+      people: everyone.people,
+      latestPeople: latest.map((row): FeaturePerson => ({
+        person: row.person,
+        users: users.filter((each) => each.person === row.id).map((each) => each.user),
+        days: row.days,
+        events: row.events,
+        lastDay: calendarDayOfNumber(row.lastDay),
+      })),
+      releases: releasesUsed.map((row): FeatureRelease => ({
+        component: row.component,
+        environment: row.environment,
+        release: row.release,
+        people: row.people,
+        firstDay: calendarDayOfNumber(row.firstDay),
+        lastDay: calendarDayOfNumber(row.lastDay),
+      })),
+      ...(memory === undefined ? {} : { memory }),
+    }
+    return life
+  }, Effect.orDie)
+
   // --- One person ---
 
   const PersonRow = Schema.Struct({ id: Schema.Int, person: PersonId, firstSeen: Schema.Int, lastSeen: Schema.Int })
@@ -854,6 +971,13 @@ export const appStore = Effect.gen(function* () {
     lastSeen: Schema.Int,
   })
   const PersonDayRow = Schema.Struct({ day: Schema.Int, sessions: Count, foregroundMs: Schema.Finite })
+  const PersonFeatureRow = Schema.Struct({
+    feature: Schema.Union([Schema.Literal(""), FeatureKey]),
+    days: Count,
+    events: Count,
+    screens: Count,
+    lastDay: Schema.Int,
+  })
 
   const findPerson = (lookup: PersonLookup) =>
     SqlSchema.findOneOption({
@@ -867,13 +991,14 @@ export const appStore = Effect.gen(function* () {
               FROM signals_person_users u JOIN signals_people p ON p.id = u.person WHERE u.user = ${lookup.user}`,
     })(undefined)
 
-  /** One person, by their ID or a user ID linked to them. Fails with `PersonNotFound`. */
-  const person = Effect.fn("AppStore.person")(function* (lookup: PersonLookup) {
+  /** One person, by their ID or a user ID linked to them, at `now`. Fails with `PersonNotFound`. */
+  const person = Effect.fn("AppStore.person")(function* (lookup: PersonLookup, now: number) {
     const found = yield* findPerson(lookup).pipe(Effect.orDie)
     if (Option.isNone(found)) {
       return yield* new PersonNotFound()
     }
     const row = found.value
+    const keptFrom = dayNumberOf(now) - Duration.toDays(appDayRetention) + 1
     const users = yield* SqlSchema.findAll({
       Request: Schema.Void,
       Result: Schema.Struct({ user: AppUserId }),
@@ -893,6 +1018,15 @@ export const appStore = Effect.gen(function* () {
       execute: () => sql`
         SELECT day, sum(sessions) AS sessions, sum(foreground_ms) AS "foregroundMs"
         FROM signals_app_days WHERE person = ${row.id} GROUP BY day ORDER BY day DESC LIMIT ${daysShown}`,
+    })(undefined).pipe(Effect.orDie)
+    const featuresUsed = yield* SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: PersonFeatureRow,
+      execute: () => sql`
+        SELECT feature, count(DISTINCT day) AS days, sum(events) AS events, sum(screens) AS screens,
+          max(day) AS "lastDay"
+        FROM signals_app_feature_days WHERE person = ${row.id} AND day >= ${keptFrom}
+        GROUP BY feature ORDER BY "lastDay" DESC, days DESC, feature LIMIT ${personFeaturesShown}`,
     })(undefined).pipe(Effect.orDie)
     const timeline = yield* SqlSchema.findAll({
       Request: Schema.Void,
@@ -922,10 +1056,17 @@ export const appStore = Effect.gen(function* () {
         sessions: day.sessions,
         foregroundMs: day.foregroundMs,
       })),
+      features: featuresUsed.map((each) => ({
+        ...(each.feature === "" ? {} : { feature: each.feature }),
+        days: each.days,
+        events: each.events,
+        screens: each.screens,
+        lastDay: calendarDayOfNumber(each.lastDay),
+      })),
       timeline: timeline.map((each) => each.entry),
     }
     return answer
   })
 
-  return { seenOf, peopleOf, write, cleanUp, usage, retention, releases, health, features, person }
+  return { seenOf, peopleOf, write, cleanUp, usage, retention, releases, health, features, featureLife, person }
 })

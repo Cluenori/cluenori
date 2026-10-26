@@ -94,3 +94,13 @@ export const dropAppTables = Effect.gen(function* () {
     yield* sql`DROP TABLE ${sql(table)}`
   }
 })
+
+/** Removes what migration 0011 made, features of services' signals, so a test can build a database from before it. */
+export const dropFeatureSignals = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`DROP INDEX signals_logs_feature`
+  yield* sql`ALTER TABLE signals_logs DROP COLUMN feature`
+  yield* sql`DROP TABLE signals_feature_days`
+  yield* sql`DROP INDEX IF EXISTS signals_app_feature_days_feature`
+  yield* sql`DROP INDEX IF EXISTS signals_app_feature_days_person`
+})

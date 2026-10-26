@@ -243,6 +243,63 @@ export const FeatureUseTable = Schema.Struct({ features: Schema.Array(FeatureUse
 })
 export type FeatureUseTable = typeof FeatureUseTable.Type
 
+/** One UTC day of a feature's use: the people who did anything in it, and its events and screens. */
+export const FeatureUseDay = Schema.Struct({
+  day: CalendarDay,
+  people: Count,
+  events: Count,
+  screens: Count,
+}).annotate({ identifier: "FeatureUseDay" })
+export type FeatureUseDay = typeof FeatureUseDay.Type
+
+/** One person who used a feature: on how many days, how many events, and the last day they did. */
+export const FeaturePerson = Schema.Struct({
+  person: PersonId,
+  /** The app's user IDs linked to them; none for someone the app never identified. */
+  users: Schema.Array(AppUserId),
+  days: Count,
+  events: Count,
+  lastDay: CalendarDay,
+}).annotate({ identifier: "FeaturePerson" })
+export type FeaturePerson = typeof FeaturePerson.Type
+
+/** One release a feature was used in: its people there, and the first and last day they used it. */
+export const FeatureRelease = Schema.Struct({
+  component: ComponentKey,
+  environment: EnvironmentKey,
+  release: ReleaseVersion,
+  people: Count,
+  firstDay: CalendarDay,
+  lastDay: CalendarDay,
+}).annotate({ identifier: "FeatureRelease" })
+export type FeatureRelease = typeof FeatureRelease.Type
+
+/**
+ * A feature's use by the apps over everything kept of it, 15 months: each UTC day it was used, the
+ * oldest first; everyone who used it; the 20 who used it last, the latest first; the releases it
+ * was used in, the latest first used first, at most 20; and the app's memory while in it. Empty
+ * days and no one when the apps never marked it.
+ */
+export const FeatureUseLife = Schema.Struct({
+  days: Schema.Array(FeatureUseDay),
+  people: Count,
+  latestPeople: Schema.Array(FeaturePerson),
+  releases: Schema.Array(FeatureRelease),
+  memory: Schema.optionalKey(MemoryUse),
+}).annotate({ identifier: "FeatureUseLife" })
+export type FeatureUseLife = typeof FeatureUseLife.Type
+
+/** One feature a person used: on how many days, its events and screens, and the last day they did. */
+export const PersonFeature = Schema.Struct({
+  /** Absent for what the app marked with no feature. */
+  feature: Schema.optionalKey(FeatureKey),
+  days: Count,
+  events: Count,
+  screens: Count,
+  lastDay: CalendarDay,
+}).annotate({ identifier: "PersonFeature" })
+export type PersonFeature = typeof PersonFeature.Type
+
 /** Which person: by Cluenori's ID for them, or by the app's own user ID. */
 export const PersonLookup = Schema.Union([
   Schema.TaggedStruct("ByPerson", { person: PersonId }),
@@ -306,8 +363,9 @@ export type TimelineEntry = typeof TimelineEntry.Type
 
 /**
  * One person: the app's user IDs linked to them, when they were first and last seen, their
- * installations, the days they were active (the latest 90, newest first), and their timeline (the
- * latest 1,000 signals kept, newest first).
+ * installations, the days they were active (the latest 90, newest first), the features they used
+ * over everything kept (15 months, the last used first, at most 50), and their timeline (the latest
+ * 1,000 signals kept, newest first).
  */
 export const AppPerson = Schema.Struct({
   person: PersonId,
@@ -316,6 +374,7 @@ export const AppPerson = Schema.Struct({
   lastSeen: Instant,
   installations: Schema.Array(AppInstallation),
   days: Schema.Array(PersonDay),
+  features: Schema.Array(PersonFeature),
   timeline: Schema.Array(TimelineEntry),
 }).annotate({ identifier: "AppPerson" })
 export type AppPerson = typeof AppPerson.Type

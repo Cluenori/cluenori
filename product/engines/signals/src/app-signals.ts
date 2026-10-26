@@ -26,6 +26,7 @@ import type {
   AppReleaseQuery,
   AppRetention,
   AppUsage,
+  FeatureUseLife,
   FeatureUseTable,
   PersonLookup,
   PersonNotFound,
@@ -39,6 +40,7 @@ import { appStore } from "./app-store.ts"
 import { keptSignalOf, talliesOf } from "./app-tallies.ts"
 import type { ArchiveSettings } from "./archive-index.ts"
 import type { ArchiveUnavailable } from "./archive-store.ts"
+import type { FeatureQuery } from "./feature-queries.ts"
 import { scrubbedText } from "./scrubbed.ts"
 import { migrateSignals } from "./signals-migrations.ts"
 
@@ -175,8 +177,15 @@ export class AppSignals extends Context.Service<
     /** Each feature's people, events, screens and memory in the query's period, and those of no feature. */
     readonly features: (query: AppQuery) => Effect.Effect<FeatureUseTable>
     /**
+     * One feature's use over everything kept of it (15 months), that key exactly, optionally in one
+     * environment: each day's people, events and screens, everyone who used it, the 20 who used it
+     * last, its releases and its memory. Empty when the apps never marked it. Reads the feature's
+     * rows by day and person.
+     */
+    readonly feature: (query: FeatureQuery) => Effect.Effect<FeatureUseLife>
+    /**
      * One person, by their ID or a user ID linked to them: their user IDs, installations, the days
-     * they were active, and their timeline. Fails with `PersonNotFound`.
+     * they were active, the features they used, and their timeline. Fails with `PersonNotFound`.
      */
     readonly person: (lookup: PersonLookup) => Effect.Effect<AppPerson, PersonNotFound>
   }
@@ -315,6 +324,16 @@ export class AppSignals extends Context.Service<
           return yield* store.features(query, now)
         })
 
+        const feature = Effect.fn("AppSignals.feature")(function* (query: FeatureQuery) {
+          const now = yield* nowMillis
+          return yield* store.featureLife(query, now)
+        })
+
+        const person = Effect.fn("AppSignals.person")(function* (lookup: PersonLookup) {
+          const now = yield* nowMillis
+          return yield* store.person(lookup, now)
+        })
+
         return AppSignals.of({
           record,
           usage,
@@ -322,7 +341,8 @@ export class AppSignals extends Context.Service<
           releases: store.releases,
           health: store.health,
           features,
-          person: store.person,
+          feature,
+          person,
         })
       }),
     )

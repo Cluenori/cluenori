@@ -45,12 +45,17 @@ export {
   AppRetention,
   AppUsage,
   CountryCode,
+  FeaturePerson,
+  FeatureRelease,
   FeatureUse,
+  FeatureUseDay,
+  FeatureUseLife,
   FeatureUseTable,
   LaunchTimes,
   MemoryUse,
   MetricKitSummary,
   PersonDay,
+  PersonFeature,
   PersonLookup,
   PersonNotFound,
   ReadyTimes,
@@ -85,6 +90,8 @@ export {
   LogQuery,
 } from "./error-groups.ts"
 export { ErrorGroupShape, ExportSignal, LogExport, MetricsExport, TraceExport } from "./exports.ts"
+export { featureAttribute } from "./feature-attribute.ts"
+export { FeatureOperationCounts, FeatureOperationDay, FeatureQuery } from "./feature-queries.ts"
 export { ErrorGroupId, LogEntry, LogException, LogLevel, LogLine, SpanId } from "./log-entry.ts"
 export type { ReadLogs } from "./read-logs.ts"
 export { logRetention, readLogs } from "./read-logs.ts"
