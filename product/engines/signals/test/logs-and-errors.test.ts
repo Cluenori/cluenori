@@ -315,6 +315,7 @@ describe("Signals' warnings and errors", () => {
             })),
           })
           yield* dropFeatureSignals
+          yield* sql`ALTER TABLE signals_operations DROP COLUMN last_seen`
           yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 11`
         }).pipe(Effect.orDie),
       )
@@ -390,6 +391,7 @@ describe("Signals' warnings and errors", () => {
           yield* sql`DROP INDEX signals_logs_release`
           yield* sql`ALTER TABLE signals_logs DROP COLUMN release`
           yield* dropAppTables
+          yield* sql`ALTER TABLE signals_operations DROP COLUMN last_seen`
           yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 8`
         }).pipe(Effect.orDie),
       )

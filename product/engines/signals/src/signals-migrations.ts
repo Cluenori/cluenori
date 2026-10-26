@@ -337,5 +337,20 @@ export const migrateSignals = Migrator.make({})({
       yield* sql`CREATE INDEX signals_app_feature_days_feature ON signals_app_feature_days (feature, day)`
       yield* sql`CREATE INDEX signals_app_feature_days_person ON signals_app_feature_days (person, feature)`
     }),
+    // Each operation keeps when it last ran, the end of the last minute it was counted in, so a
+    // period without it can say when that was. Operations counted before take the end of their
+    // newest hour, then of their newest minute, which the 14 days of minutes still know.
+    "0012_operations_last_seen": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE signals_operations ADD COLUMN last_seen INTEGER`
+      for (const [table, width] of [
+        ["signals_hour_counts", 3_600_000],
+        ["signals_minute_counts", 60_000],
+      ] as const) {
+        yield* sql`UPDATE signals_operations SET last_seen = newest.last_seen
+          FROM (SELECT operation, max(bucket) + ${width} AS last_seen FROM ${sql(table)} GROUP BY operation) AS newest
+          WHERE newest.operation = signals_operations.id`
+      }
+    }),
   }),
 })

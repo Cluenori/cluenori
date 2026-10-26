@@ -311,7 +311,9 @@ public nonisolated struct CluenoriAPI: Sendable {
     /// Every operation in a period, the most counted first, or one with `operation`: how many times
     /// it ran, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the
     /// minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months);
-    /// `covered` says which part of the period the counts cover.
+    /// `covered` says which part of the period the counts cover. `lastSeen` says when they last
+    /// ran, whatever the period, in any environment and release, so a period without them can say
+    /// when that was.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
     @concurrent
@@ -5890,6 +5892,7 @@ public nonisolated struct OperationTable: Codable, Hashable, Sendable {
     public let count: Int
     public let errors: Int
     public let dataUntil: Date?
+    public let lastSeen: Date?
 
     public init(
         covered: Period? = nil,
@@ -5897,12 +5900,14 @@ public nonisolated struct OperationTable: Codable, Hashable, Sendable {
         count: Int,
         errors: Int,
         dataUntil: Date? = nil,
+        lastSeen: Date? = nil,
     ) {
         self.covered = covered
         self.rows = rows
         self.count = count
         self.errors = errors
         self.dataUntil = dataUntil
+        self.lastSeen = lastSeen
     }
 
     private enum `JSON keys`: String, CodingKey {
@@ -5911,6 +5916,7 @@ public nonisolated struct OperationTable: Codable, Hashable, Sendable {
         case count = "count"
         case errors = "errors"
         case dataUntil = "dataUntil"
+        case lastSeen = "lastSeen"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -5920,6 +5926,7 @@ public nonisolated struct OperationTable: Codable, Hashable, Sendable {
         self.count = try container.`value at`(.count)
         self.errors = try container.`value at`(.errors)
         self.dataUntil = try container.`value if present at`(.dataUntil)
+        self.lastSeen = try container.`value if present at`(.lastSeen)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -5929,6 +5936,7 @@ public nonisolated struct OperationTable: Codable, Hashable, Sendable {
         try container.encode(self.count, forKey: .count)
         try container.encode(self.errors, forKey: .errors)
         try container.encodeIfPresent(self.dataUntil, forKey: .dataUntil)
+        try container.encodeIfPresent(self.lastSeen, forKey: .lastSeen)
     }
 }
 

@@ -86,7 +86,7 @@ export class SignalsGroup extends HttpApiGroup.make("signals")
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(
       OpenApi.Description,
-      "Every operation in a period, the most counted first, or one with `operation`: how many times it ran, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover.",
+      "Every operation in a period, the most counted first, or one with `operation`: how many times it ran, how many failed, and their average, p50, p80, p95 and p99 durations. Counted by the minute for periods of two days or less (kept 14 days), by the hour beyond (kept 15 months); `covered` says which part of the period the counts cover. `lastSeen` says when they last ran, whatever the period, in any environment and release, so a period without them can say when that was.",
     ),
   )
   .add(

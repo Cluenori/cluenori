@@ -166,6 +166,22 @@ export const operationStore = Effect.gen(function* () {
 
   const encodeSketch = Schema.encodeEffect(Schema.fromJsonString(QuantileSketch))
 
+  // When any operation the question names last ran, in any environment and release.
+  const findLastSeen = SqlSchema.findOne({
+    Request: Schema.Struct({
+      component: Schema.optionalKey(ComponentKey),
+      operation: Schema.optionalKey(EnvelopeName),
+    }),
+    Result: Schema.Struct({ lastSeen: Schema.NullOr(Schema.Int) }),
+    execute: (asked) => sql`
+      SELECT max(last_seen) AS "lastSeen" FROM signals_operations
+      WHERE ${sql.and([
+        sql`last_seen IS NOT NULL`,
+        ...(asked.component === undefined ? [] : [sql`component = ${asked.component}`]),
+        ...(asked.operation === undefined ? [] : [sql`name = ${asked.operation}`]),
+      ])}`,
+  })
+
   const findOperations = SqlSchema.findAll({
     Request: ComponentKey,
     Result: Schema.Struct({ id: Schema.Int, name: EnvelopeName }),
@@ -457,9 +473,16 @@ export const operationStore = Effect.gen(function* () {
   ) {
     const operations = yield* findOperations(component)
     const known = new Map(operations.map((operation) => [operation.name, operation.id] as const))
+    // The end of the last minute each operation ran in, in this batch.
+    const lastSeen = new Map<number, number>()
     for (const counts of batch) {
       const operation = yield* operationIdOf(component, counts.operation, known)
       yield* addTo(byMinute, operation, counts)
+      const end = floorTo(DateTime.toEpochMillis(counts.bucket), byMinute.width) + byMinute.width
+      lastSeen.set(operation, Math.max(lastSeen.get(operation) ?? end, end))
+    }
+    for (const [operation, end] of lastSeen) {
+      yield* sql`UPDATE signals_operations SET last_seen = max(coalesce(last_seen, 0), ${end}) WHERE id = ${operation}`
     }
     for (const counts of hoursOf(batch)) {
       const operation = yield* operationIdOf(component, counts.operation, known)
@@ -532,12 +555,17 @@ export const operationStore = Effect.gen(function* () {
     const byOperation = Map.groupBy(rows, (row) => [row.component, row.environment, row.operation].join("\u0000"))
     const operationRows = yield* Effect.forEach(byOperation.values(), rowOf)
     const newest = rows.reduce((latest, row) => Math.max(latest, row.bucket + resolution.width), 0)
+    const { lastSeen } = yield* findLastSeen({
+      ...(query.component === undefined ? {} : { component: query.component }),
+      ...(query.operation === undefined ? {} : { operation: query.operation }),
+    }).pipe(Effect.orDie)
     const table: OperationTable = {
       ...(covered._tag === "Some" ? { covered: covered.value } : {}),
       rows: operationRows.toSorted(byCountThenName),
       count: rows.reduce((total, row) => total + row.count, 0),
       errors: rows.reduce((total, row) => total + row.errors, 0),
       ...(rows.length === 0 ? {} : { dataUntil: DateTime.makeUnsafe(Math.min(newest, now)) }),
+      ...(lastSeen === null ? {} : { lastSeen: DateTime.makeUnsafe(Math.min(lastSeen, now)) }),
     }
     return table
   })

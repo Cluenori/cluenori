@@ -466,6 +466,53 @@ describe("Signals", () => {
     ),
   )
 
+  it.effect("says when an operation last ran, whatever the period and its environment", () =>
+    inProject(
+      "last-seen",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const minute = capturedAt - (capturedAt % 60_000)
+        const threeDaysAgo = minute - days(3)
+        yield* signals.recordTraces(
+          api,
+          batchOf("7", [
+            counts("GET /old", 1, { bucket: DateTime.makeUnsafe(threeDaysAgo) }),
+            counts("GET /old", 1, {
+              bucket: DateTime.makeUnsafe(threeDaysAgo - 60_000),
+              environment: EnvironmentKey.make("staging"),
+            }),
+            counts("GET /new", 2, { bucket: DateTime.makeUnsafe(minute - 120_000) }),
+          ]),
+        )
+        // An older batch, sent late, doesn't move it back.
+        yield* signals.recordTraces(
+          api,
+          batchOf("8", [counts("GET /new", 1, { bucket: DateTime.makeUnsafe(minute - 600_000) })]),
+        )
+        const old = yield* signals.operations({ period: lastHour, operation: EnvelopeName.make("GET /old") })
+        const staging = yield* signals.operations({
+          period: lastHour,
+          operation: EnvelopeName.make("GET /new"),
+          environment: EnvironmentKey.make("staging"),
+        })
+        const every = yield* signals.operations({ period: lastHour })
+        const never = yield* signals.operations({ period: lastHour, operation: EnvelopeName.make("GET /never") })
+        const lastSeenOf = (table: typeof old) =>
+          table.lastSeen === undefined ? undefined : DateTime.toEpochMillis(table.lastSeen)
+
+        // The end of its last minute, though the period holds none of it.
+        assert.isEmpty(old.rows)
+        assert.strictEqual(lastSeenOf(old), threeDaysAgo + 60_000)
+        // In any environment: staging never ran GET /new.
+        assert.isEmpty(staging.rows)
+        assert.strictEqual(lastSeenOf(staging), minute - 60_000)
+        assert.strictEqual(lastSeenOf(every), minute - 60_000)
+        assert.isUndefined(never.lastSeen)
+      }),
+    ),
+  )
+
   it.effect("keeps hourly counts for 15 months and answers longer questions from them", () =>
     inProject(
       "hourly-history",
@@ -931,24 +978,31 @@ describe("Signals by release", () => {
             yield* sql`UPDATE ${sql(table)} SET durations = json_remove(durations, '$.relativeAccuracy')`
           }
           yield* dropFeatureSignals
+          yield* sql`ALTER TABLE signals_operations DROP COLUMN last_seen`
           yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 10`
         }).pipe(Effect.orDie),
       )
-      // Built again on it, its percentiles read as before, and new counts merge with them.
-      const read = yield* inProject(
+      // Built again on it, its percentiles read as before, and new counts merge with them; when it
+      // last ran is taken from its counts.
+      const { read, lastSeen } = yield* inProject(
         "before-accuracy",
         now,
         Effect.gen(function* () {
           const signals = yield* Signals
+          const before = yield* signals.operations({ period: lastHour })
           yield* signals.recordTraces(api, batchOf("b", [counts("GET /a", 2)]))
           const table = yield* signals.operations({ period: lastHour })
-          return table.rows.map((row) => [row.count, row.p50Ms])
+          return {
+            read: table.rows.map((row) => [row.count, row.p50Ms]),
+            lastSeen: before.lastSeen === undefined ? undefined : DateTime.toEpochMillis(before.lastSeen),
+          }
         }),
       )
 
       assert.strictEqual(read.length, 1)
       assert.strictEqual(read[0]?.[0], 5)
       assert.closeTo(read[0]?.[1] ?? 0, 10, 10 * 0.02)
+      assert.strictEqual(lastSeen, Math.min(capturedAt - (capturedAt % 60_000) + 60_000, now))
     }),
   )
 
@@ -986,6 +1040,7 @@ describe("Signals by release", () => {
           yield* sql`DROP INDEX signals_logs_release`
           yield* sql`ALTER TABLE signals_logs DROP COLUMN release`
           yield* dropAppTables
+          yield* sql`ALTER TABLE signals_operations DROP COLUMN last_seen`
           yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 7`
         }).pipe(Effect.orDie),
       )

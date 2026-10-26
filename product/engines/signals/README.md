@@ -27,6 +27,10 @@ const line = yield* signals.logLine(detail.latest[0].id) // one occurrence by it
 const view = yield* signals.trace(detail.latest[0].trace, detail.latest[0].time) // the time is optional
 // view.spans: the trace's spans as a tree; view.logs: its logs at every level, from the archive
 
+// When it last ran, whatever the period, in any environment and release: a period without it says so.
+const quiet = yield* signals.operations({ period, operation: EnvelopeName.make("POST /api/import") })
+// rows: [], lastSeen: 2026-10-23T14:06:00Z
+
 // Traces worth opening, though they logged nothing: one operation's slowest, and its failed.
 const kept = yield* signals.keptTraces({ period, operation: EnvelopeName.make("GET /api/feed") })
 // slowest: [{ trace: "26f47ed8…", start, durationMs: 1712, status: 200, failed: false, ... }, ...]
@@ -92,8 +96,8 @@ again. An error ID the project never had, or forgot 15 months after it was last 
 - **Data,** in each project's database:
   - operations counted by name, environment and release (`''` unknown, as for every count from
     before October 2026), by the minute (`signals_minute_counts`, 14 days) and by the hour
-    (`signals_hour_counts`, 15 months), each component's operations, at most 500
-    (`signals_operations`);
+    (`signals_hour_counts`, 15 months), each component's operations, at most 500, each with the
+    end of the last minute it ran in (`signals_operations`);
   - each release's span, from the first minute it ran in to the end of the last
     (`signals_releases`, 15 months after last seen);
   - the traces kept to open from their operations (`signals_kept_traces`, 14 days);

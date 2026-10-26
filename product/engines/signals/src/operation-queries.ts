@@ -97,6 +97,12 @@ export const OperationTable = Schema.Struct({
   errors: Count,
   /** The end of the newest bucket with anything counted in it; absent when there is none. */
   dataUntil: Schema.optionalKey(Instant),
+  /**
+   * When the operations asked about last ran, whatever the period: the end of the last minute any
+   * of them was counted in, of the component and operation asked about, in any environment and
+   * release. Absent when none ever ran.
+   */
+  lastSeen: Schema.optionalKey(Instant),
 }).annotate({ identifier: "OperationTable" })
 export type OperationTable = typeof OperationTable.Type
 

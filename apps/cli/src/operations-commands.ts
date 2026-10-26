@@ -105,7 +105,9 @@ export const operation = Command.make(
       yield* Console.log(`${headline(project, target, table.covered, "counts are kept 15 months")}\n`)
       if (table.rows.length === 0) {
         return yield* Console.log(
-          `${name} didn't run in this period. Its name must match exactly, as ./cluenori operations ${project} lists it.`,
+          table.lastSeen === undefined
+            ? `${name} didn't run in this period. Its name must match exactly, as ./cluenori operations ${project} lists it.`
+            : `${name} didn't run in this period. It last ran until ${utcMinute(table.lastSeen)}, in any environment; a longer --last holds it while its counts are kept.`,
         )
       }
       for (const row of table.rows) {
