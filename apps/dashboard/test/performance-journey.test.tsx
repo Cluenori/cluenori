@@ -208,6 +208,12 @@ describe("performance journey", () => {
       yield* Effect.promise(() => expect.element(screen.getByText("Errors over time")).toBeVisible())
       yield* Effect.promise(() => expect.element(screen.getByText("NpgsqlException")).toBeVisible())
       assert.isAtMost(document.documentElement.scrollWidth, window.innerWidth)
+      // The trail keeps the page itself in sight: only the level above it and the page.
+      const trail = screen.getByRole("navigation", { name: "Where you are" })
+      const here = trail.getByText("Errors", { exact: true })
+      yield* Effect.promise(() => expect.element(here).toBeVisible())
+      assert.isAtMost(here.element().getBoundingClientRect().right, window.innerWidth)
+      yield* Effect.promise(() => expect.element(trail.getByText("Now", { exact: true })).not.toBeVisible())
       yield* expectAccessible()
       yield* Effect.promise(() => page.viewport(1280, 900))
     }),
