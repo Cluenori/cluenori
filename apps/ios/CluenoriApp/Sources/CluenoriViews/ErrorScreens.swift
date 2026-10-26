@@ -113,9 +113,7 @@ struct ErrorScreen: View {
                         .foregroundStyle(.secondary)
                     }
                     ForEach(detail.latest, id: \.id) { line in
-                        NavigationLink {
-                            LogLineScreen(line: line)
-                        } label: {
+                        NavigationLink(value: Route.logLine(project: error.telemetry.project, id: line.id)) {
                             LogLineRow(
                                 time: line.time, level: line.level, component: line.component, message: line.message)
                         }

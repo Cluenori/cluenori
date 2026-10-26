@@ -509,21 +509,18 @@ struct ReleaseTelemetryTests {
         #expect(error.detail.problem == .missing)
     }
 
-    @Test func `asks for a release's logs, older pages and filtered ones too`() async throws {
+    @Test func `asks for a release's log messages, filtered ones too`() async throws {
         let deployment = notesDeployment()
         let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
         let logs = try #require(pairing.models).logs(.release(feedRelease), period: .day)
 
         await logs.refresh()
-        deployment.answer("GET /api/projects/notes/logs", 200, logsAnswer(ids: 1...100, next: nil))
-        await logs.loadOlder()
         await logs.filter(level: .error, search: "timeout")
 
-        let queries = deployment.queries("/api/projects/notes/logs")
-        #expect(queries.count == 3)
+        let queries = deployment.queries("/api/projects/notes/logs/messages")
+        #expect(queries.count == 2)
         #expect(queries.allSatisfy { narrowing($0) == feedReleaseFilter })
-        #expect(queries[1]["before"] == "101")
-        #expect(queries[2]["level"] == "error" && queries[2]["search"] == "timeout")
+        #expect(queries[1]["level"] == "error" && queries[1]["search"] == "timeout")
     }
 
     @Test func `asks for an operation in one release, its load and its percentiles alike`() async throws {

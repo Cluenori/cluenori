@@ -233,9 +233,7 @@ struct LogsPanel: View {
                         PanelDivider()
                     }
                     ForEach(page.lines.prefix(2), id: \.id) { line in
-                        NavigationLink {
-                            LogLineScreen(line: line)
-                        } label: {
+                        NavigationLink(value: Route.logLine(project: telemetry.project, id: line.id)) {
                             HubRow(color: line.level.color) {
                                 Text(verbatim: line.message)
                                     .lineLimit(2)

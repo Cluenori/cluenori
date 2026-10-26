@@ -69,7 +69,7 @@ struct EnvironmentChoiceTests {
             period: .day
         ).refresh()
 
-        for path in ["load", "operations", "errors", "logs", "releases"] {
+        for path in ["load", "operations", "errors", "logs/messages", "releases"] {
             let sent = environments(deployment, "/api/projects/notes/\(path)")
             #expect(!sent.isEmpty && sent.allSatisfy { $0 == "staging" }, "\(path) asked \(sent)")
         }
@@ -258,7 +258,7 @@ struct ReleaseSpanTests {
 
         try await #require(pairing.models).logs(.release(build), period: .day).refresh()
 
-        let query = try #require(deployment.queries("/api/projects/notes/logs").last)
+        let query = try #require(deployment.queries("/api/projects/notes/logs/messages").last)
         #expect(query["from"] == "2026-10-21T08:00:00.000Z")
         let to = try Date(try #require(query["to"]), strategy: .iso8601)
         #expect(to >= before.addingTimeInterval(-1))

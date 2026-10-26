@@ -14,10 +14,16 @@ let incidentsAnswer = #"{"open":[],"resolved":[]}"#
 
 func logsAnswer(ids: ClosedRange<Int>, next: Int?) -> String {
     let lines = ids.reversed().map { id in
-        #"{"id":\#(id),"component":"notes-api","time":"2026-10-21T12:00:00.000Z","level":"error","category":"Notes","message":"Line \#(id)","attributes":{}}"#
+        #"{"id":\#(id),"component":"notes-api","messageId":1,"time":"2026-10-21T12:00:00.000Z","level":"error","category":"Notes","message":"Line \#(id)","attributes":{}}"#
     }
     return #"{"lines":[\#(lines.joined(separator: ","))]\#(next.map { ",\"next\":\($0)" } ?? "")}"#
 }
+
+let logMessagesAnswer = #"""
+    {"messages":[{"id":7,"level":"warn","title":"Retrying export {ExportId}","category":"Notes.Exports","lines":12,
+    "firstSeen":"2026-10-20T12:00:00.000Z","lastSeen":"2026-10-21T12:00:00.000Z","lastComponent":"notes-api"}],
+    "unshown":0,"lines":12}
+    """#
 
 /// A deployment answering every question of the notes project's screens.
 func notesDeployment() -> FakeDeployment {
@@ -27,6 +33,7 @@ func notesDeployment() -> FakeDeployment {
     deployment.answer("GET /api/projects/notes/operations", 200, operationsAnswer)
     deployment.answer("GET /api/projects/notes/errors", 200, errorsAnswer)
     deployment.answer("GET /api/projects/notes/logs", 200, logsAnswer(ids: 101...200, next: 101))
+    deployment.answer("GET /api/projects/notes/logs/messages", 200, logMessagesAnswer)
     deployment.answer("GET /api/projects/notes/releases", 200, releasesAnswer)
     // The release screens narrowed to it look over its span, from 09:12 to 13:41 on Oct 21.
     deployment.answer("GET /api/projects/notes/releases/notes-api/2026.10.21-e91f09c", 200, releaseAnswer)
@@ -49,6 +56,8 @@ struct RouteTests {
             .error(of: .project("notes"), id: "4f1c9a2e7b3d5068")
         ),
         ("cluenori://projects/notes/logs", .logs(of: .project("notes"))),
+        ("cluenori://projects/notes/logs/messages/7", .logMessage(of: .project("notes"), id: 7)),
+        ("cluenori://projects/notes/logs/lines/412", .logLine(project: "notes", id: 412)),
         ("cluenori://projects/notes/operations", .operations(of: .project("notes"))),
         ("cluenori://projects/notes/releases", .releases(project: "notes")),
         ("cluenori://projects/notes/notes-style", .notesStyle(project: "notes")),
@@ -270,25 +279,59 @@ struct ProjectModelTests {
 }
 
 struct LogsModelTests {
-    @Test func `adds older lines as the list reaches its end, and drops them when filtered`() async throws {
+    @Test func `lists log messages, and counts again by level and search when filtered`() async throws {
         let deployment = notesDeployment()
         let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
         let logs = try #require(pairing.models).logs(.project("notes"), period: .day)
         await logs.refresh()
-        #expect(logs.hasOlder)
+        #expect(logs.messages.value?.messages.map(\.title) == ["Retrying export {ExportId}"])
 
-        deployment.answer("GET /api/projects/notes/logs", 200, logsAnswer(ids: 1...100, next: nil))
-        await logs.loadOlder()
-        #expect(logs.older.count == 100)
-        #expect(logs.older.first?.message == "Line 100")
-        #expect(logs.hasOlder == false)
-
-        await logs.filter(level: .fatal, search: "  timeout ")
-        #expect(logs.older.isEmpty)
-        #expect(logs.level == .fatal)
+        await logs.filter(level: .error, search: "  timeout ")
+        #expect(logs.level == .error)
         #expect(logs.search == "timeout")
+        let asked = try #require(deployment.queries("/api/projects/notes/logs/messages").last)
+        #expect(asked["level"] == "error" && asked["search"] == "timeout")
+        // The same filter again asks nothing more.
+        let before = deployment.requests.count
+        await logs.filter(level: .error, search: "timeout")
+        #expect(deployment.requests.count == before)
+    }
+
+    @Test func `asks for a message and its lines by its ID, over the period`() async throws {
+        let deployment = notesDeployment()
+        deployment.answer(
+            "GET /api/projects/notes/logs/messages/7", 200,
+            #"{"message":\#(messageAnswer),"errors":[]}"#)
+        let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
+        let message = try #require(pairing.models).logMessage(
+            .project("notes", environment: "production"), id: 7, period: .day)
+
+        await message.refresh()
+
+        #expect(message.detail.value?.message.lines == 12)
+        #expect(message.lines.value?.lines.count == 100)
+        let lines = try #require(deployment.queries("/api/projects/notes/logs").last)
+        #expect(lines["message"] == "7" && lines["environment"] == "production")
+        #expect(deployment.queries("/api/projects/notes/logs/messages/7").last?["environment"] == "production")
+    }
+
+    @Test func `says a line is missing once it is no longer kept`() async throws {
+        let deployment = FakeDeployment()
+        deployment.answer(
+            "GET /api/projects/notes/logs/lines/412", 404, #"{"_tag":"LogLineNotFound","line":412}"#)
+        let pairing = PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport)
+        let line = try #require(pairing.models).logLine("notes", id: 412)
+
+        await line.line.load()
+
+        #expect(line.line.problem == .missing)
     }
 }
+
+let messageAnswer = #"""
+    {"id":7,"level":"warn","title":"Retrying export {ExportId}","category":"Notes.Exports","lines":12,
+    "firstSeen":"2026-10-20T12:00:00.000Z","lastSeen":"2026-10-21T12:00:00.000Z","lastComponent":"notes-api"}
+    """#
 
 struct MissingTests {
     @Test func `says an error didn't happen in the period, rather than that the answer can't be read`() async throws {

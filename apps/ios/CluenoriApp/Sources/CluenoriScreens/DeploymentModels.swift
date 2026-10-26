@@ -148,6 +148,23 @@ public final class DeploymentModels {
         }
     }
 
+    /// One log message, in a project's environment over `period`, or in one of its releases over its
+    /// span.
+    public func logMessage(_ telemetry: Telemetry, id: Int, period: PeriodKey) -> LogMessageModel {
+        model("log message \(telemetry) \(id) \(over(telemetry, period))") {
+            LogMessageModel(
+                telemetry: telemetry, id: id, period: period, release: release(of: telemetry), api: api,
+                context: context)
+        }
+    }
+
+    /// One of a project's warnings and errors, by its ID.
+    public func logLine(_ project: String, id: Int) -> LogLineModel {
+        model("log line \(project) \(id)") {
+            LogLineModel(project: project, id: id, api: api, context: context)
+        }
+    }
+
     /// The releases of a project in `environment` over `period`.
     public func releases(_ project: String, environment: String?, period: PeriodKey) -> ReleasesModel {
         model("releases \(project) \(environment ?? "") \(period)") {

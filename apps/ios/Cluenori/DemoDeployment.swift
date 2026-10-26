@@ -689,12 +689,13 @@
             let (status, body) =
                 DemoAnalytics.answer(method, path, query: query, body: request.httpBody)
                 ?? DemoFeeds.answer(method, path) ?? DemoPerformance.answer(method, path, query: query)
-                ?? answer(method, path)
+                ?? answer(method, path, message: query["message"])
             let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
             return (body, response)
         }
 
-        private static func answer(_ method: String, _ path: String) -> (Int, Data) {
+        // `message`: the log message whose lines the logs are asked of, when one is.
+        private static func answer(_ method: String, _ path: String, message: String?) -> (Int, Data) {
             let now = Date.now
             let project = "/api/projects/notes"
             switch (method, path) {
@@ -721,7 +722,10 @@
             case ("GET", "\(project)/errors"):
                 return ok(errors(now))
             case ("GET", "\(project)/logs"):
-                return ok(logs(now))
+                let lines = logs(now).lines.filter { line in message.map { "\(line.messageId)" == $0 } ?? true }
+                return ok(LogPage(lines: lines))
+            case ("GET", "\(project)/logs/messages"):
+                return ok(LogMessageTable(messages: logMessages(now), unshown: 0, lines: 61))
             case ("GET", "\(project)/releases"):
                 return ok(ReleaseList(releases: summaries(now).map(\.summary), problems: []))
             case ("GET", "\(project)/notes-style"):
@@ -735,6 +739,19 @@
                 let group = errors(now).groups.first(where: { $0.id == parts[4] })
             {
                 return ok(ErrorDetail(group: group, latest: logs(now).lines.filter { $0.level == .error }))
+            }
+            // /api/projects/notes/logs/messages/<id>: its lines, those of the demo's that are its.
+            if method == "GET", parts.count == 6, parts[3] == "logs", parts[4] == "messages",
+                let message = logMessages(now).first(where: { "\($0.id)" == parts[5] })
+            {
+                let errors = message.level == .error ? Array(errors(now).groups.prefix(1)) : []
+                return ok(LogMessageDetail(message: message, errors: errors))
+            }
+            // /api/projects/notes/logs/lines/<id>
+            if method == "GET", parts.count == 6, parts[3] == "logs", parts[4] == "lines",
+                let line = logs(now).lines.first(where: { "\($0.id)" == parts[5] })
+            {
+                return ok(line)
             }
             // /api/projects/notes/releases/<component>/<release>
             if method == "GET", parts.count == 6, parts[3] == "releases",
@@ -1209,13 +1226,40 @@
         private static func logs(_ now: Date) -> LogPage {
             LogPage(lines: [
                 LogLine(
-                    id: 3, component: "notes-api", time: now.addingTimeInterval(-12 * minute), level: .error,
-                    category: "Search", message: "Search took longer than 5 s", attributes: [:]),
+                    id: 3, component: "notes-api", messageId: 1, time: now.addingTimeInterval(-12 * minute),
+                    level: .error, category: "Notes.Search", message: "Search took longer than 5 s",
+                    release: "2026.10.21-e91f09c", trace: "5e3a1c9f0d2b4a6e8c7f1e2d3c4b5a69",
+                    exception: LogException(
+                        type: "System.TimeoutException", message: "The search index did not answer in 5 s",
+                        stack:
+                            "   at Notes.Search.Index.QueryAsync(String text) in /src/Notes.Search/Index.cs:line 88"),
+                    error: "4f1c9a2e7b3d5068", attributes: ["query.length": .number(14)]),
                 LogLine(
-                    id: 2, component: "notes-worker", time: now.addingTimeInterval(-hour), level: .warn,
-                    category: "Push",
-                    message: "APNs rejected a token; removed it", attributes: [:]),
+                    id: 2, component: "notes-worker", messageId: 2, time: now.addingTimeInterval(-hour),
+                    level: .warn, category: "Notes.Push", message: "APNs rejected a token; removed it",
+                    attributes: [:]),
             ])
+        }
+
+        // The demo's messages: the slow search, an error of its own; tokens APNs rejects; and a
+        // warning that hasn't come back for days, which the last 24 hours hold none of.
+        private static func logMessages(_ now: Date) -> [LogMessage] {
+            [
+                LogMessage(
+                    id: 1, level: .error, title: "Search took longer than {Seconds} s", category: "Notes.Search",
+                    lines: 38, firstSeen: now.addingTimeInterval(-3 * day), firstRelease: "2026.10.20-a1b2c3d",
+                    lastSeen: now.addingTimeInterval(-12 * minute), lastComponent: "notes-api",
+                    lastEnvironment: "production", lastRelease: "2026.10.21-e91f09c"),
+                LogMessage(
+                    id: 2, level: .warn, title: "APNs rejected a token; removed it", category: "Notes.Push",
+                    lines: 21, firstSeen: now.addingTimeInterval(-9 * day), lastSeen: now.addingTimeInterval(-hour),
+                    lastComponent: "notes-worker", lastEnvironment: "production"),
+                LogMessage(
+                    id: 3, level: .warn, title: "Retrying export {ExportId}, attempt {Attempt} of {Attempts}",
+                    category: "Notes.Exports", lines: 2, firstSeen: now.addingTimeInterval(-20 * day),
+                    lastSeen: now.addingTimeInterval(-5 * hour), lastComponent: "notes-api",
+                    lastEnvironment: "production", lastRelease: "2026.10.21-e91f09c"),
+            ]
         }
 
         // MARK: Encoding, as the deployment does

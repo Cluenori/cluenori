@@ -72,8 +72,8 @@ struct RouteScreen: View {
     // release, or a screen narrowed to one, looks over the release's own span.
     private static func looksOverPeriod(_ route: Route) -> Bool {
         switch route {
-        case .operations(.project), .errors(.project), .error(.project, _), .logs(.project), .releases,
-            .componentReleases:
+        case .operations(.project), .errors(.project), .error(.project, _), .logs(.project), .logMessage(.project, _),
+            .releases, .componentReleases:
             true
         case .operation(let operation): operation.release == nil
         // A project's tech follows the period in place; a project's summary is over the last day.
@@ -82,8 +82,8 @@ struct RouteScreen: View {
         // A request is one thing, whenever it happened.
         case .feeds, .feed, .project, .tech, .incidents, .incident, .delivery, .component, .release, .trace,
             .operations(.release),
-            .errors(.release), .error(.release, _), .logs(.release), .notes, .notesStyle, .analytics, .features,
-            .appHealth, .feature, .person, .personByID, .versionPolicy, .sdkKeys:
+            .errors(.release), .error(.release, _), .logs(.release), .logMessage(.release, _), .logLine, .notes,
+            .notesStyle, .analytics, .features, .appHealth, .feature, .person, .personByID, .versionPolicy, .sdkKeys:
             false
         }
     }
@@ -168,6 +168,12 @@ private struct ProjectRouteScreen: View {
             LogsScreen(
                 logs: models.logs(telemetry, period: navigation.period), environments: environments,
                 navigation: navigation)
+        case .logMessage(let telemetry, let id):
+            LogMessageScreen(
+                message: models.logMessage(telemetry, id: id, period: navigation.period), environments: environments,
+                navigation: navigation)
+        case .logLine(let project, let id):
+            LogLineByIDScreen(line: models.logLine(project, id: id))
         case .releases(let project, let environment):
             ReleasesScreen(
                 releases: models.releases(project, environment: environment, period: navigation.period),

@@ -163,6 +163,10 @@ public enum Route: Hashable, Sendable {
     case errors(of: Telemetry)
     case error(of: Telemetry, id: String)
     case logs(of: Telemetry)
+    /// One log message and its lines, over the list's period or release.
+    case logMessage(of: Telemetry, id: Int)
+    /// One warning or error, by its ID, with no period.
+    case logLine(project: String, id: Int)
     case releases(project: String, environment: String? = nil)
     /// One component's delivery: its environments in the order its releases go through them, what's
     /// in each, and the next step; its version, and what ships with it.
@@ -197,12 +201,14 @@ public enum Route: Hashable, Sendable {
         case .feeds, .feed: nil
         case .project(let key), .tech(let key, _), .incidents(let key), .incident(let key, _), .delivery(let key),
             .releases(let key, _), .notesStyle(let key), .component(let key, _), .componentReleases(let key, _),
-            .person(let key, _), .personByID(let key, _), .versionPolicy(let key, _), .sdkKeys(let key, _):
+            .person(let key, _), .personByID(let key, _), .versionPolicy(let key, _), .sdkKeys(let key, _),
+            .logLine(let key, _):
             key
         case .feature(let feature): feature.project
         case .analytics(let analytics), .features(let analytics): analytics.project
         case .appHealth(let release): release.project
-        case .operations(let telemetry), .errors(let telemetry), .error(let telemetry, _), .logs(let telemetry):
+        case .operations(let telemetry), .errors(let telemetry), .error(let telemetry, _), .logs(let telemetry),
+            .logMessage(let telemetry, _):
             telemetry.project
         case .operation(let operation): operation.project
         case .trace(let trace): trace.project
@@ -218,6 +224,7 @@ public enum Route: Hashable, Sendable {
         case .errors(.release(let release)): .errors(of: .project(release.project))
         case .error(.release(let release), let id): .error(of: .project(release.project), id: id)
         case .logs(.release(let release)): .logs(of: .project(release.project))
+        case .logMessage(.release(let release), let id): .logMessage(of: .project(release.project), id: id)
         case .operation(let operation) where operation.release != nil: .operation(operation.everyRelease)
         default: nil
         }
@@ -235,6 +242,8 @@ public enum Route: Hashable, Sendable {
         case .errors(.project(let key, _)): return .errors(of: .project(key, environment: environment))
         case .error(.project(let key, _), let id): return .error(of: .project(key, environment: environment), id: id)
         case .logs(.project(let key, _)): return .logs(of: .project(key, environment: environment))
+        case .logMessage(.project(let key, _), let id):
+            return .logMessage(of: .project(key, environment: environment), id: id)
         case .operation(let operation) where operation.release == nil && operation.environment != nil:
             return .operation(
                 OperationRef(
@@ -254,7 +263,7 @@ public enum Route: Hashable, Sendable {
         guard let project else { return self }
         return switch self {
         case .tech(_, nil), .releases(_, nil), .operations(.project(_, nil)), .errors(.project(_, nil)),
-            .error(.project(_, nil), _), .logs(.project(_, nil)):
+            .error(.project(_, nil), _), .logs(.project(_, nil)), .logMessage(.project(_, nil), _):
             showing(environment, in: project)
         case .analytics(let analytics) where analytics.environment == nil: showing(environment, in: project)
         case .features(let analytics) where analytics.environment == nil: showing(environment, in: project)
@@ -288,6 +297,9 @@ public enum Route: Hashable, Sendable {
         // A request comes from its project's operations, in the environment chosen for it.
         case .trace(let trace):
             Self.chain(of: .project(trace.project)) + [.operations(of: .project(trace.project)), self]
+        case .logMessage(let telemetry, _): Self.chain(of: telemetry) + [.logs(of: telemetry), self]
+        // A line has no period or environment: it comes from the project's logs.
+        case .logLine(let key, _): Self.chain(of: .project(key)) + [.logs(of: .project(key)), self]
         case .analytics(let analytics): [.project(analytics.project), self]
         case .features(let analytics): [.project(analytics.project), .analytics(analytics), self]
         // A release's app health comes from its component's analytics, in its environment.
@@ -333,9 +345,10 @@ public enum Route: Hashable, Sendable {
     /// `/incidents/<id>`, `/delivery`, `/operations`, and one, `/operations/<name>?component=<key>`,
     /// its name as path segments, `/traces/<trace ID>`, which takes
     /// `?around=<ISO 8601>`, `/errors`, `/errors/<id>`, `/logs`,
+    /// `/logs/messages/<id>`, `/logs/lines/<id>` (the project's alone),
     /// `/releases`, `/notes-style`, `/components/<component>` and its `/releases`, `/version-policy`
     /// and `/sdk-keys`, and `/releases/<component>/<release>`, under which `/operations`, `/errors`,
-    /// `/errors/<id>`, and `/logs` are the release's alone, and `/notes` its notes; `/analytics` and
+    /// `/errors/<id>`, `/logs` and `/logs/messages/<id>` are the release's alone, and `/notes` its notes; `/analytics` and
     /// its `/features`, which take `?component=<key>` too, and
     /// `/analytics/app-health/<component>/<release>`, `/analytics/features/<feature>` and
     /// `/analytics/people/<person ID>`; and `/people?user=<user ID>`. Each takes
@@ -436,11 +449,20 @@ public enum Route: Hashable, Sendable {
         case ("errors", 1, _): .errors(of: telemetry)
         case ("errors", 2, _): .error(of: telemetry, id: rest[1])
         case ("logs", 1, _): .logs(of: telemetry)
+        case ("logs", 3, _) where rest[1] == "messages": Self.number(rest[2]).map { .logMessage(of: telemetry, id: $0) }
+        case ("logs", 3, .project(let key, _)) where rest[1] == "lines":
+            Self.number(rest[2]).map { .logLine(project: key, id: $0) }
         case ("releases", 1, .project(let key, let environment)): .releases(project: key, environment: environment)
         case ("notes-style", 1, .project(let key, _)): .notesStyle(project: key)
         case ("notes", 1, .release(let release)): .notes(release)
         default: nil
         }
+    }
+
+    // A message's or a line's ID: a whole number from 1, as the deployment numbers them.
+    private static func number(_ text: String) -> Int? {
+        guard let value = Int(text), value >= 1 else { return nil }
+        return value
     }
 }
 

@@ -23,7 +23,7 @@ or understand, and one level deeper shows more, never everything at once (`conce
   - **Tech**, in the environment chosen on the phone, over the period: its load and busiest
     operations, its errors, its latest warnings and errors, and its incidents, each the latest few
     and the way to all of them, and on to one: an operation's percentiles, an error's stack, a log
-    line, an incident and Acknowledge.
+    message and its lines, a log line by its ID with "Ask an agent", an incident and Acknowledge.
   - **Releases**, its delivery: what release is in each component's environment and the one next
     step, leading to a component, its version and promotions, and a release: whether it works,
     its life's numbers beside the release before's, its life step by step (zoomed from a strip of
@@ -150,7 +150,8 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
   something reaches its environment. Who "you" is comes from `/api/me`, asked once a promotion names
   who started it, and kept for the pairing.
 - **Links to screens:** `cluenori://projects/<key>`, and under it `/tech`, `/incidents`,
-  `/incidents/<id>`, `/delivery`, `/operations`, `/errors`, `/errors/<id>`, `/logs`, `/releases`,
+  `/incidents/<id>`, `/delivery`, `/operations`, `/errors`, `/errors/<id>`, `/logs`, `/logs/messages/<id>`,
+  `/logs/lines/<id>`, `/releases`,
   `/notes-style`, `/components/<component>` and its every
   release, `/components/<component>/releases`, `/components/<component>/version-policy` and
   `/components/<component>/sdk-keys`, and `/releases/<component>/<release>`, under which
