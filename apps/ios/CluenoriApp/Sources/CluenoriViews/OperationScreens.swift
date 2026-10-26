@@ -166,8 +166,21 @@ struct OperationScreen: View {
     let operation: OperationModel
     /// The project's incidents, of which those about this operation show.
     let incidents: IncidentsModel
+    /// The project's monitors, to which "Monitor this" adds one.
+    let monitors: MonitorsModel
     let environments: EnvironmentChoice
     @Bindable var navigation: Navigation
+    /// The monitor being drafted, of this operation in the environment it is for; nil for none.
+    @State private var monitoring: (operation: OperationRef, draft: OperationMonitorDraft)? = nil
+
+    // The quiet hint about this operation, a guess that it is a job that hasn't run, when there is one.
+    private var quiet: QuietOperation? {
+        let ref = operation.operation
+        return incidents.incidents.value?.quiet.first { hint in
+            hint.operation == ref.name && hint.component == ref.component
+                && (ref.environment == nil || hint.environment == ref.environment)
+        }
+    }
 
     // The incidents about this operation, in its component and, when it shows one, its environment.
     private var about: [Incident] {
@@ -196,6 +209,29 @@ struct OperationScreen: View {
                 route: .operation(operation.operation),
                 navigation: navigation
             )
+            if let quiet {
+                Section {
+                    QuietWords(usualGapMs: quiet.usualGapMs, lastRanAt: quiet.lastRanAt).text
+                        .foregroundStyle(Palette.yellow)
+                    Button {
+                        let ref = operation.operation
+                        monitoring = (
+                            OperationRef(
+                                project: ref.project, component: quiet.component, environment: quiet.environment,
+                                name: ref.name),
+                            .job(usualGapMs: quiet.usualGapMs)
+                        )
+                    } label: {
+                        Label {
+                            Text(
+                                "It's a job: monitor it", bundle: #bundle,
+                                comment: "Monitors a quiet operation as a job.")
+                        } icon: {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                        }
+                    }
+                }
+            }
             if !about.isEmpty {
                 Section {
                     ForEach(about, id: \.id) { incident in
@@ -317,6 +353,41 @@ struct OperationScreen: View {
             }
         }
         .navigationTitle(operation.operation.name)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    let ref = operation.operation
+                    monitoring = (
+                        OperationRef(
+                            project: ref.project, component: ref.component, environment: ref.environment,
+                            name: ref.name),
+                        .first
+                    )
+                } label: {
+                    Label {
+                        Text(
+                            "Monitor this", bundle: #bundle,
+                            comment: "Opens the form that adds a monitor of what a screen shows.")
+                    } icon: {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                    }
+                }
+            }
+        }
+        .sheet(
+            isPresented: Binding {
+                monitoring != nil
+            } set: {
+                if !$0 { monitoring = nil }
+            }
+        ) {
+            if let monitoring {
+                MonitorOperationSheet(
+                    operation: monitoring.operation, monitors: monitors,
+                    open: { id in navigation.push(.monitor(project: monitoring.operation.project, id: id)) },
+                    draft: monitoring.draft)
+            }
+        }
         .refreshable {
             async let incidents: Void = incidents.load()
             await operation.refresh()

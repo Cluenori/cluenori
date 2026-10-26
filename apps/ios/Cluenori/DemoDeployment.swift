@@ -940,7 +940,7 @@
         // A sync the app calls about every half hour, quiet for three hours: a guess, shown as a hint.
         private static func quietSync(_ now: Date) -> QuietOperation {
             QuietOperation(
-                component: "notes-api", environment: "production", operation: "GET /api/sync",
+                component: "notes-api", environment: "prod", operation: "GET /api/sync",
                 usualGapMs: 31 * 60_000, lastRanAt: now.addingTimeInterval(-3 * hour))
         }
 

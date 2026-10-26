@@ -34,10 +34,26 @@ public final class MonitorsModel {
         case unreadable
     }
 
+    /// What adding a monitor came to.
+    public enum Added: Equatable, Sendable {
+        /// Added, with its ID.
+        case added(String)
+        /// The same subject, condition and environment is already monitored, by the monitor of this ID.
+        case exists(String)
+        /// The project has as many monitors as it may.
+        case limitReached(Int)
+        /// The deployment didn't answer: the phone may be offline.
+        case unreachable
+        /// The deployment answered in a way this app doesn't understand, or refused.
+        case unreadable
+    }
+
     public let project: String
     public let monitors: Answer<MonitorList>
     /// The monitor being removed, while it is.
     public private(set) var removing: String? = nil
+    /// Whether a monitor is being added.
+    public private(set) var adding = false
 
     @ObservationIgnored private let api: CluenoriAPI
     @ObservationIgnored private let keyRejected: () -> Void
@@ -76,6 +92,143 @@ public final class MonitorsModel {
             monitors.show(MonitorList(monitors: list.monitors.filter { $0.monitor.id != id }))
         }
         return nil
+    }
+
+    /// Adds `monitor`, for whoever paired the phone, sent once and never kept to send later; once
+    /// added, the list is asked again, so it shows it.
+    public func add(_ monitor: AddMonitor) async -> Added {
+        guard !adding else { return .unreadable }
+        adding = true
+        defer { adding = false }
+        let added: Monitor
+        do {
+            added = try await api.addMonitor(project: project, monitor)
+        } catch .unauthorized {
+            keyRejected()
+            return .unreadable
+        } catch .unreachable {
+            return .unreachable
+        } catch .monitorExists(let exists) {
+            return .exists(exists.monitor)
+        } catch .monitorLimitReached(let limit) {
+            return .limitReached(limit.limit)
+        } catch {
+            return .unreadable
+        }
+        await monitors.load()
+        return .added(added.id)
+    }
+}
+
+/// A monitor of an operation as "Monitor this" types it: when it fires, its number as typed, its
+/// window as typed with a unit, and the level of its alerts. `monitor` checks it by the API's rules,
+/// so the form says what is wrong before sending.
+public nonisolated struct OperationMonitorDraft: Equatable, Sendable {
+    /// When it fires: the conditions that fit an operation.
+    public enum Kind: CaseIterable, Sendable {
+        case nothingFor, p95Above, errorRateAbove
+    }
+
+    /// The unit of its window, in minutes.
+    public enum Unit: Int, CaseIterable, Sendable {
+        case minutes = 1
+        case hours = 60
+        case days = 1440
+    }
+
+    /// Why a draft isn't a monitor the API would add.
+    public enum Refusal: Error, Equatable, Sendable {
+        /// The number isn't one, or is out of its kind's range.
+        case threshold(Kind)
+        /// The window isn't whole minutes from 1 minute to 1 day; for nothing-for, to 7 days.
+        case window(Kind)
+    }
+
+    public var kind: Kind {
+        didSet { if kind != oldValue { threshold = Self.firstThreshold(kind) } }
+    }
+    public var threshold: String
+    public var amount: String
+    public var unit: Unit
+    public var level: AlertLevel
+
+    /// A draft of `kind` over `minutes`, shown in hours when they are whole hours, alerting
+    /// time-sensitive, as on the web.
+    public init(kind: Kind, minutes: Int, level: AlertLevel = .timeSensitive) {
+        self.kind = kind
+        threshold = Self.firstThreshold(kind)
+        if minutes % 60 == 0 {
+            amount = String(minutes / 60)
+            unit = .hours
+        } else {
+            amount = String(minutes)
+            unit = .minutes
+        }
+        self.level = level
+    }
+
+    /// The draft "Monitor this" opens on: nothing for an hour.
+    public static let first = OperationMonitorDraft(kind: .nothingFor, minutes: 60)
+
+    /// The draft for a quiet operation that is a job: nothing for twice its usual gap, in whole
+    /// minutes, as on the web.
+    public static func job(usualGapMs: Double) -> OperationMonitorDraft {
+        // A gap past what a monitor may wait shows one minute past it, which the form refuses, rather
+        // than a number that doesn't fit an Int or a shorter window than the job's.
+        let minutes = (2 * usualGapMs / 60_000).rounded(.up)
+        return OperationMonitorDraft(kind: .nothingFor, minutes: Int(min(max(1, minutes), 10_081)))
+    }
+
+    private static func firstThreshold(_ kind: Kind) -> String {
+        switch kind {
+        case .nothingFor: ""
+        case .p95Above: "500"
+        case .errorRateAbove: "5"
+        }
+    }
+
+    /// The monitor it says, of `operation` in `component`, and in `environment` when given, or why
+    /// the API would refuse it: the bounds are the API's (`AddMonitor`). Numbers are read in `locale`,
+    /// as the person typed them.
+    public func monitor(
+        operation: String, component: String, environment: String?, locale: Locale
+    ) -> Result<AddMonitor, Refusal> {
+        // Whole minutes once in minutes: 1.5 hours is 90.
+        let window = Self.number(amount, locale).map { $0 * Double(unit.rawValue) }
+        let most = kind == .nothingFor ? 10_080.0 : 1_440.0
+        guard let window, window == window.rounded(), window >= 1, window <= most else {
+            return .failure(.window(kind))
+        }
+        let minutes = Int(window)
+        let subject = OperationSubject(operation: operation)
+        let condition: MonitorCondition
+        switch kind {
+        case .nothingFor:
+            condition = .nothingFor(NothingFor(subject: .operation(subject), minutes: minutes))
+        case .p95Above:
+            guard let ms = Self.number(threshold, locale), ms >= 1, ms <= 600_000 else {
+                return .failure(.threshold(kind))
+            }
+            condition = .p95Above(P95Above(subject: subject, ms: ms, minutes: minutes))
+        case .errorRateAbove:
+            guard let percent = Self.number(threshold, locale), percent > 0, percent < 100 else {
+                return .failure(.threshold(kind))
+            }
+            condition = .errorRateAbove(ErrorRateAbove(subject: subject, percent: percent, minutes: minutes))
+        }
+        return .success(AddMonitor(component: component, environment: environment, condition: condition, level: level))
+    }
+
+    // A finite number typed in `locale`, the whole field of it, nil for anything else: `25garbage`
+    // is no number, though a parser would read 25 from it.
+    private static func number(_ text: String, _ locale: Locale) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty,
+            let (end, value) = try? FloatingPointFormatStyle<Double>.number.locale(locale).consuming(
+                trimmed, startingAt: trimmed.startIndex, in: trimmed.startIndex..<trimmed.endIndex),
+            end == trimmed.endIndex, value.isFinite
+        else { return nil }
+        return value
     }
 }
 

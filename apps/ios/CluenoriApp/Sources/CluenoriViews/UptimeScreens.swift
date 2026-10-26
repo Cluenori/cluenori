@@ -920,3 +920,231 @@ private struct FailuresPanel: View {
         }
     }
 }
+
+/// "Monitor this" for an operation, a form in a sheet: when it fires (nothing for, p95 above, or
+/// error rate above), its number and window, and the level of its alerts; below, the monitor in
+/// words, or what is wrong with it. Added, or already there, its monitor's screen opens.
+struct MonitorOperationSheet: View {
+    let operation: OperationRef
+    let monitors: MonitorsModel
+    /// Opens the monitor of this ID, once the sheet is closed.
+    let open: (String) -> Void
+    @State var draft: OperationMonitorDraft
+    @State private var problem: MonitorsModel.Added? = nil
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
+
+    private var checked: Result<AddMonitor, OperationMonitorDraft.Refusal> {
+        draft.monitor(
+            operation: operation.name, component: operation.component, environment: operation.environment,
+            locale: locale)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker(selection: $draft.kind) {
+                        Text(
+                            "Nothing for", bundle: #bundle,
+                            comment: "A monitor that fires when an operation doesn't run."
+                        )
+                        .tag(OperationMonitorDraft.Kind.nothingFor)
+                        Text("p95 above", bundle: #bundle, comment: "A monitor that fires when an operation is slow.")
+                            .tag(OperationMonitorDraft.Kind.p95Above)
+                        Text("Errors above", bundle: #bundle, comment: "A monitor that fires when too many runs fail.")
+                            .tag(OperationMonitorDraft.Kind.errorRateAbove)
+                    } label: {
+                        Text("When it fires", bundle: #bundle, comment: "The choice of a monitor's condition.")
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                }
+                Section {
+                    if draft.kind != .nothingFor {
+                        LabeledContent {
+                            TextField(text: $draft.threshold, prompt: Text(verbatim: "")) { thresholdLabel }
+                                .multilineTextAlignment(.trailing)
+                                .monospacedDigit()
+                                #if os(iOS)
+                                    .keyboardType(.decimalPad)
+                                #endif
+                        } label: {
+                            thresholdLabel
+                        }
+                    }
+                    LabeledContent {
+                        TextField(text: $draft.amount, prompt: Text(verbatim: "")) { windowLabel }
+                            .multilineTextAlignment(.trailing)
+                            .monospacedDigit()
+                            #if os(iOS)
+                                .keyboardType(.numberPad)
+                            #endif
+                    } label: {
+                        windowLabel
+                    }
+                    Picker(selection: $draft.unit) {
+                        Text("Minutes", bundle: #bundle, comment: "The unit of a monitor's window.")
+                            .tag(OperationMonitorDraft.Unit.minutes)
+                        Text("Hours", bundle: #bundle, comment: "The unit of a monitor's window.")
+                            .tag(OperationMonitorDraft.Unit.hours)
+                        Text("Days", bundle: #bundle, comment: "The unit of a monitor's window.")
+                            .tag(OperationMonitorDraft.Unit.days)
+                    } label: {
+                        Text("Unit", bundle: #bundle, comment: "The choice of the unit of a monitor's window.")
+                    }
+                } footer: {
+                    summary
+                }
+                Section {
+                    Picker(selection: $draft.level) {
+                        Text("Ring like an alarm", bundle: #bundle, comment: "A monitor's alerts ring like an alarm.")
+                            .tag(AlertLevel.alarm)
+                        Text("Time-sensitive", bundle: #bundle, comment: "A monitor's alerts come time-sensitive.")
+                            .tag(AlertLevel.timeSensitive)
+                        Text("Quiet: no push", bundle: #bundle, comment: "A monitor whose incidents send no push.")
+                            .tag(AlertLevel.quiet)
+                    } label: {
+                        Text("Alerts", bundle: #bundle, comment: "How a monitor's alerts come.")
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } header: {
+                    Text("Alerts", bundle: #bundle, comment: "How a monitor's alerts come.")
+                } footer: {
+                    levelWords
+                }
+                if let problem {
+                    Section {
+                        problemText(problem)
+                            .foregroundStyle(Palette.red)
+                    }
+                }
+            }
+            .navigationTitle(Text(verbatim: operation.name))
+            #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(role: .cancel) {
+                        dismiss()
+                    } label: {
+                        Text("Cancel", bundle: #bundle, comment: "Closes a sheet without acting.")
+                    }
+                    .disabled(monitors.adding)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        guard case .success(let monitor) = checked else { return }
+                        Task {
+                            let added = await monitors.add(monitor)
+                            switch added {
+                            case .added(let id), .exists(let id):
+                                dismiss()
+                                open(id)
+                            default:
+                                problem = added
+                            }
+                        }
+                    } label: {
+                        if monitors.adding {
+                            ProgressView()
+                                .accessibilityLabel(
+                                    Text("Adding", bundle: #bundle, comment: "The add-monitor button while it sends."))
+                        } else {
+                            Text("Add", bundle: #bundle, comment: "Adds a monitor.")
+                        }
+                    }
+                    .buttonStyle(.glassProminent)
+                    .disabled(monitors.adding || !checked.isSuccess)
+                }
+            }
+        }
+    }
+
+    private var thresholdLabel: Text {
+        draft.kind == .p95Above
+            ? Text("Milliseconds", bundle: #bundle, comment: "The field for a monitor's p95 threshold.")
+            : Text("Percent failed", bundle: #bundle, comment: "The field for a monitor's error-rate threshold.")
+    }
+
+    private var windowLabel: Text {
+        draft.kind == .nothingFor
+            ? Text("For", bundle: #bundle, comment: "The field for how long nothing may run.")
+            : Text("Over", bundle: #bundle, comment: "The field for the window a monitor looks over.")
+    }
+
+    // The monitor in words, of the component and environment; or what is wrong with the form.
+    @ViewBuilder private var summary: some View {
+        switch checked {
+        case .success(let monitor):
+            if let environment = operation.environment {
+                Text(
+                    "\(MonitorConditionText(condition: monitor.condition).text), of \(operation.component) in \(environment). Looked at every minute; when it holds, an incident opens.",
+                    bundle: #bundle,
+                    comment:
+                        "What a monitor being added does. The variables are its condition, a component and an environment."
+                )
+            } else {
+                Text(
+                    "\(MonitorConditionText(condition: monitor.condition).text), of \(operation.component) in any environment. Looked at every minute; when it holds, an incident opens.",
+                    bundle: #bundle,
+                    comment: "What a monitor being added does. The variables are its condition and a component.")
+            }
+        case .failure(.window(let kind)):
+            (kind == .nothingFor
+                ? Text(
+                    "For: whole minutes, 1 minute to 7 days.", bundle: #bundle,
+                    comment: "A nothing-for window out of range.")
+                : Text(
+                    "Over: whole minutes, 1 minute to 1 day.", bundle: #bundle,
+                    comment: "A monitor's window out of range."))
+                .foregroundStyle(Palette.red)
+        case .failure(.threshold(let kind)):
+            (kind == .p95Above
+                ? Text("Milliseconds: 1 to 600,000.", bundle: #bundle, comment: "A p95 threshold out of range.")
+                : Text(
+                    "Percent failed: more than 0, less than 100.", bundle: #bundle,
+                    comment: "An error-rate threshold out of range."))
+                .foregroundStyle(Palette.red)
+        }
+    }
+
+    private var levelWords: Text {
+        switch draft.level {
+        case .alarm:
+            Text(
+                "Rings through silent mode and Do Not Disturb.", bundle: #bundle,
+                comment: "What an alarm-level alert does.")
+        case .quiet:
+            Text("Opens an incident without a push.", bundle: #bundle, comment: "What a quiet monitor does.")
+        default:
+            Text(
+                "Breaks through a Focus that allows it.", bundle: #bundle, comment: "What a time-sensitive alert does.")
+        }
+    }
+
+    private func problemText(_ problem: MonitorsModel.Added) -> Text {
+        switch problem {
+        case .limitReached(let limit):
+            Text(
+                "Couldn't add it: a project has at most \(limit) monitors. Remove one on Uptime first.",
+                bundle: #bundle,
+                comment: "Adding a monitor refused: the project has too many. The variable is the limit.")
+        case .unreachable:
+            Text(
+                "Couldn't add it: the deployment didn't answer.", bundle: #bundle,
+                comment: "Adding a monitor failed: offline.")
+        default:
+            Text("Couldn't add it.", bundle: #bundle, comment: "Adding a monitor failed.")
+        }
+    }
+}
+
+extension Result {
+    fileprivate var isSuccess: Bool {
+        if case .success = self { true } else { false }
+    }
+}

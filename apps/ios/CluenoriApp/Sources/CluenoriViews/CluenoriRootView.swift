@@ -157,6 +157,7 @@ private struct ProjectRouteScreen: View {
             OperationScreen(
                 operation: models.operation(operation, period: navigation.period),
                 incidents: models.incidents(operation.project),
+                monitors: models.monitors(operation.project),
                 environments: environments,
                 navigation: navigation
             )

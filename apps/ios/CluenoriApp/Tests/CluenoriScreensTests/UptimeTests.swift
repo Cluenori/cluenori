@@ -193,3 +193,143 @@ struct UptimeModelTests {
         #expect(brief.contains("its alerts come timeSensitive"))
     }
 }
+
+struct MonitorThisTests {
+    let english = Locale(identifier: "en_US")
+    let turkish = Locale(identifier: "tr_TR")
+
+    private func condition(_ draft: OperationMonitorDraft, _ locale: Locale) -> MonitorCondition? {
+        guard
+            case .success(let monitor) = draft.monitor(
+                operation: "POST /api/export", component: "notes-api", environment: "production", locale: locale)
+        else { return nil }
+        return monitor.condition
+    }
+
+    @Test
+    func `turns the form into the API's monitor, its window in minutes and its number as the phone's locale writes it`()
+    {
+        var draft = OperationMonitorDraft(kind: .errorRateAbove, minutes: 15)
+        draft.threshold = "2,5"
+        draft.amount = "2"
+        draft.unit = .hours
+        // In Turkish the comma is the decimal point: 2,5%, over 120 minutes.
+        #expect(
+            condition(draft, turkish)
+                == .errorRateAbove(
+                    ErrorRateAbove(subject: OperationSubject(operation: "POST /api/export"), percent: 2.5, minutes: 120)
+                ))
+
+        draft.kind = .p95Above
+        #expect(draft.threshold == "500")
+        draft.threshold = "1500.5"
+        #expect(
+            condition(draft, english)
+                == .p95Above(
+                    P95Above(subject: OperationSubject(operation: "POST /api/export"), ms: 1500.5, minutes: 120)))
+    }
+
+    @Test func `refuses what the API would: windows past a day, nothing-for past 7 days, and rates of 0 or 100`() {
+        var nothing = OperationMonitorDraft(kind: .nothingFor, minutes: 60)
+        nothing.amount = "7"
+        nothing.unit = .days
+        #expect(
+            condition(nothing, english)
+                == .nothingFor(
+                    NothingFor(subject: .operation(OperationSubject(operation: "POST /api/export")), minutes: 10_080)))
+        nothing.amount = "8"
+        #expect(condition(nothing, english) == nil)
+        nothing.amount = "1.5"
+        nothing.unit = .minutes
+        #expect(condition(nothing, english) == nil)
+
+        var slow = OperationMonitorDraft(kind: .p95Above, minutes: 60)
+        slow.amount = "2"
+        slow.unit = .days
+        #expect(
+            slow.monitor(operation: "o", component: "c", environment: nil, locale: english)
+                == .failure(.window(.p95Above)))
+        slow.unit = .hours
+        slow.threshold = "0"
+        #expect(
+            slow.monitor(operation: "o", component: "c", environment: nil, locale: english)
+                == .failure(.threshold(.p95Above)))
+
+        var failing = OperationMonitorDraft(kind: .errorRateAbove, minutes: 15)
+        for refused in ["0", "100", "", "five"] {
+            failing.threshold = refused
+            #expect(condition(failing, english) == nil)
+        }
+        failing.threshold = "99.9"
+        #expect(condition(failing, english) != nil)
+    }
+
+    @Test func `reads the whole field as a number, never a number's start, and whole minutes after the unit`() {
+        var failing = OperationMonitorDraft(kind: .errorRateAbove, minutes: 15)
+        for typed in ["25garbage", "2.5.1", "1e9999", "5 %"] {
+            failing.threshold = typed
+            #expect(condition(failing, english) == nil, "\(typed)")
+        }
+        // In Polish the decimal point is a comma: 2.5 is no number there.
+        failing.threshold = "2.5"
+        #expect(condition(failing, Locale(identifier: "pl_PL")) == nil)
+
+        var nothing = OperationMonitorDraft(kind: .nothingFor, minutes: 60)
+        nothing.amount = "60junk"
+        nothing.unit = .minutes
+        #expect(condition(nothing, english) == nil)
+        nothing.amount = "1,5"
+        nothing.unit = .hours
+        #expect(
+            condition(nothing, Locale(identifier: "pl_PL"))
+                == .nothingFor(
+                    NothingFor(subject: .operation(OperationSubject(operation: "POST /api/export")), minutes: 90)))
+        nothing.amount = "1.01"
+        #expect(condition(nothing, english) == nil)
+    }
+
+    @Test func `drafts a quiet job's monitor as nothing for twice its usual gap, whole minutes up`() {
+        // Every 31 minutes and a half: 63 minutes, not 60 or 62.
+        let job = OperationMonitorDraft.job(usualGapMs: 31.5 * 60_000)
+        #expect(job.kind == .nothingFor && job.amount == "63" && job.unit == .minutes && job.level == .timeSensitive)
+        #expect(OperationMonitorDraft.job(usualGapMs: 30 * 60_000).amount == "1")
+        #expect(OperationMonitorDraft.job(usualGapMs: 30 * 60_000).unit == .hours)
+        // A gap too long to wait for is refused, never cut to one that fits or crashing.
+        let endless = OperationMonitorDraft.job(usualGapMs: 1e30)
+        #expect(
+            endless.monitor(operation: "o", component: "c", environment: nil, locale: english)
+                == .failure(.window(.nothingFor)))
+    }
+
+    @Test func `adds a monitor once, shows it in the list, and opens the one already there`() async throws {
+        let deployment = FakeDeployment()
+        let added = #"""
+            {"id":"m9","component":"notes-api","environment":"production","condition":{"_tag":"nothingFor","subject":{"_tag":"operation","operation":"POST /api/export"},"minutes":63},"level":"alarm","addedAt":"2026-10-26T10:00:00.000Z"}
+            """#
+        deployment.answer("POST /api/projects/notes/monitors", 201, added)
+        deployment.answer(
+            "GET /api/projects/notes/monitors", 200,
+            #"{"monitors":[{"monitor":\#(added),"days":[],"firing":false}]}"#)
+        let models = try #require(
+            PairingModel(store: MemoryStore(paired), details: details, transport: deployment.transport).models)
+        let monitors = models.monitors("notes")
+        var draft = OperationMonitorDraft.job(usualGapMs: 31.5 * 60_000)
+        draft.level = .alarm
+        let monitor = try draft.monitor(
+            operation: "POST /api/export", component: "notes-api", environment: "production", locale: english
+        ).get()
+
+        #expect(await monitors.add(monitor) == .added("m9"))
+        #expect(monitors.monitors.value?.monitors.map(\.monitor.id) == ["m9"])
+        let body = try #require(deployment.bodies("POST /api/projects/notes/monitors").first)
+        let sent = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let condition = try #require(sent["condition"] as? [String: Any])
+        #expect(sent["environment"] as? String == "production" && sent["level"] as? String == "alarm")
+        #expect(condition["_tag"] as? String == "nothingFor" && condition["minutes"] as? Int == 63)
+
+        deployment.answer("POST /api/projects/notes/monitors", 409, #"{"_tag":"MonitorExists","monitor":"m9"}"#)
+        #expect(await monitors.add(monitor) == .exists("m9"))
+        deployment.answer("POST /api/projects/notes/monitors", 409, #"{"_tag":"MonitorLimitReached","limit":30}"#)
+        #expect(await monitors.add(monitor) == .limitReached(30))
+    }
+}
