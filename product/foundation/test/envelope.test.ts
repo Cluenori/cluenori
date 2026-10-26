@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Schema } from "effect"
 
-import { Envelope } from "../src/index.ts"
+import { Actor, Caller, Envelope } from "../src/index.ts"
 
 // A product event as an SDK sends it: the scope keys it knows, and nothing it doesn't.
 const exportCompleted = {
@@ -44,8 +44,10 @@ describe("Envelope", () => {
 
   it.effect("accepts a kind a module adds, such as uptime.check", () =>
     Effect.gen(function* () {
-      const envelope = yield* Schema.decodeEffect(Envelope)({ ...exportCompleted, kind: "uptime.check" })
-      assert.strictEqual(envelope.kind, "uptime.check")
+      for (const kind of ["event", "operation", "span", "log", "error", "activity", "cost", "money", "uptime.check"]) {
+        const envelope = yield* Schema.decodeEffect(Envelope)({ ...exportCompleted, kind })
+        assert.strictEqual(envelope.kind, kind)
+      }
     }),
   )
 
@@ -61,6 +63,38 @@ describe("Envelope", () => {
       const { workspace: _, ...withoutWorkspace } = exportCompleted
       const error = yield* Schema.decodeUnknownEffect(Envelope)(withoutWorkspace).pipe(Effect.flip)
       assert.include(error.message, `at ["workspace"]`)
+    }),
+  )
+})
+
+describe("actors and callers", () => {
+  it.effect("keeps each actor's tag and identity, and refuses missing identities or unknown tags", () =>
+    Effect.gen(function* () {
+      const id = "0199f7a2-5c1e-7d3a-9b2f-4e8a1c6d0f53"
+      for (const _tag of ["Member", "Person", "AgentRun"] as const) {
+        const actor = yield* Schema.decodeEffect(Actor)({ _tag, id })
+        const encoded = yield* Schema.encodeEffect(Actor)(actor)
+        assert.deepStrictEqual(encoded, { _tag, id })
+        const refused = yield* Schema.decodeUnknownEffect(Actor)({ _tag }).pipe(Effect.flip)
+        assert.strictEqual(refused._tag, "SchemaError")
+      }
+      const system = { _tag: "System", process: "releases.store-sync" } as const
+      const actor = yield* Schema.decodeEffect(Actor)(system)
+      const encoded = yield* Schema.encodeEffect(Actor)(actor)
+      assert.deepStrictEqual(encoded, system)
+      for (const invalid of [{ _tag: "System" }, { _tag: "System", process: "Bad Process" }, { _tag: "Unknown", id }]) {
+        const refused = yield* Schema.decodeUnknownEffect(Actor)(invalid).pipe(Effect.flip)
+        assert.strictEqual(refused._tag, "SchemaError")
+      }
+    }),
+  )
+
+  it.effect("keeps known caller context and leaves unknown context absent", () =>
+    Effect.gen(function* () {
+      for (const context of [{}, { address: "192.0.2.1", country: "PL", userAgent: "Cluenori/1.0 (12) iOS/27.1" }]) {
+        const caller = yield* Schema.decodeEffect(Caller)(context)
+        assert.deepStrictEqual(caller, context)
+      }
     }),
   )
 })

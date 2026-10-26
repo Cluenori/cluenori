@@ -3,9 +3,12 @@ import { Schema } from "effect"
 
 import {
   ActivityName,
+  CalendarDay,
   EnvelopeName,
   FeatureKey,
+  ModuleKind,
   PersonId,
+  ProcessName,
   ProjectKey,
   ReleaseVersion,
   Source,
@@ -54,6 +57,8 @@ const rules = [
       "4BF92F3577B34DA6A3CE929D0E0E4736",
       "4bf92f3577b34da6a3ce929d0e0e473",
       "4bf92f35-77b3-4da6-a3ce-929d0e0e4736",
+      "!4bf92f3577b34da6a3ce929d0e0e4736",
+      "4bf92f3577b34da6a3ce929d0e0e4736!",
     ],
   },
   {
@@ -65,6 +70,8 @@ const rules = [
       "9b2f4e8a-1c6d-4f53-9b2f-4e8a1c6d0f53",
       "00000000-0000-0000-0000-000000000000",
       "user-42",
+      "!0199f7a2-5c1e-7d3a-9b2f-4e8a1c6d0f53",
+      "0199f7a2-5c1e-7d3a-9b2f-4e8a1c6d0f53!",
     ],
   },
   {
@@ -84,6 +91,35 @@ const rules = [
     schema: EnvelopeName,
     accepts: ["export.completed", "POST /api/export/{id}", "Notes.Export"],
     refuses: ["", " export.completed", "export.completed ", "line\nbreak", "x".repeat(257)],
+  },
+  {
+    name: "CalendarDay",
+    schema: CalendarDay,
+    accepts: ["1970-01-01", "2026-09-09", "2026-10-20", "2026-11-29", "2026-12-30", "2026-12-31"],
+    refuses: [
+      "!2026-10-21",
+      "2026-10-21!",
+      "6-10-21",
+      "yyyy-10-21",
+      "2026-00-21",
+      "2026-13-21",
+      "2026-10-00",
+      "2026-10-40",
+      "2026-10-2x",
+      "2026-10-32",
+    ],
+  },
+  {
+    name: "ProcessName",
+    schema: ProcessName,
+    accepts: ["releases.store-sync", "incidents", "a".repeat(100)],
+    refuses: ["", "Releases.store-sync", "releases..sync", "releases.sync-", "a".repeat(101)],
+  },
+  {
+    name: "ModuleKind",
+    schema: ModuleKind,
+    accepts: ["uptime.check", "feedback.status_changed", `a.${"b".repeat(62)}`],
+    refuses: ["", "metric", "Uptime.check", "uptime.check.again", `a.${"b".repeat(63)}`],
   },
 ]
 
