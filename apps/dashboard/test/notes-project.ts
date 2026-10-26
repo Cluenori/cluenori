@@ -1344,7 +1344,7 @@ const incidents = Effect.gen(function* () {
 const monitors = Effect.gen(function* () {
   const now = yield* Clock.currentTimeMillis
   return yield* reply(MonitorList, {
-    monitors: [{ monitor: healthMonitor, lastCheck: { at: DateTime.makeUnsafe(now - minute) } }],
+    monitors: [{ monitor: healthMonitor, lastCheck: { at: DateTime.makeUnsafe(now - minute) }, days: [] }],
   })
 })
 

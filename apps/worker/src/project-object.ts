@@ -376,6 +376,15 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       }),
     new ProjectNotFound({ project }),
   ),
+  incident: served(
+    projectCalls.incident,
+    (id) =>
+      Effect.gen(function* () {
+        const incidents = yield* Incidents
+        return yield* incidents.incident(id)
+      }),
+    new ProjectNotFound({ project }),
+  ),
   acknowledge: served(
     projectCalls.acknowledge,
     ({ actor, incident }) =>
@@ -391,6 +400,15 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       Effect.gen(function* () {
         const incidents = yield* Incidents
         return yield* incidents.monitors
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  monitor: served(
+    projectCalls.monitor,
+    (id) =>
+      Effect.gen(function* () {
+        const incidents = yield* Incidents
+        return yield* incidents.monitor(id)
       }),
     new ProjectNotFound({ project }),
   ),

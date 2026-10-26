@@ -1,6 +1,6 @@
 import { sketchOf } from "@bagatka/quantile-sketch"
 import type { Actor } from "@cluenori/foundation"
-import { ActivityLog, ComponentKey, EnvelopeName, EnvironmentKey, MemberId } from "@cluenori/foundation"
+import { ActivityLog, ComponentKey, EnvelopeName, EnvironmentKey, MemberId, ReleaseVersion } from "@cluenori/foundation"
 import { ComponentName, ProjectName, Projects } from "@cluenori/projects"
 import type { OperationCounts } from "@cluenori/signals"
 import { BatchDigest, Signals } from "@cluenori/signals"
@@ -8,7 +8,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { TestClock } from "effect/testing"
 
-import { Incidents, MonitorUrl } from "../src/index.ts"
+import { IncidentId, Incidents, MonitorUrl } from "../src/index.ts"
 import { answers, inProject } from "./in-object.ts"
 
 // 2026-10-21T10:00:00Z, on a minute.
@@ -62,6 +62,12 @@ const checkAt = (time: number) =>
     const changes = yield* incidents.check
     return changes.map((change) => [change.change, change.incident.title] as const)
   })
+
+// The same counts, run by `version`.
+const release = (entry: OperationCounts, version: string): OperationCounts => ({
+  ...entry,
+  release: ReleaseVersion.make(version),
+})
 
 // The same counts, from dev.
 const dev = (entry: OperationCounts): OperationCounts => ({ ...entry, environment: EnvironmentKey.make("dev") })
@@ -301,6 +307,144 @@ describe("Incidents", () => {
         const [resolved] = yield* log.latest
         assert.strictEqual(resolved?.name, "incident.resolved")
         assert.strictEqual(resolved?.attrs["acknowledged"], true)
+      }),
+    ),
+  )
+
+  it.effect("keeps an incident's whole life, and the release that ran where it opened", () =>
+    inProject(
+      "life",
+      start,
+      Effect.gen(function* () {
+        const incidents = yield* Incidents
+        // 1.4.0 ran days ago and 1.4.1 since; 9.0.0 ran in dev, which the incident isn't in.
+        yield* record(api, [release(counts("POST /api/export", start - 3 * day, 1000, 1), "1.4.0")])
+        yield* record(api, [release(dev(counts("GET /api/feed", start - 2 * minute, 10)), "9.0.0")])
+        yield* record(api, [release(counts("POST /api/export", start - minute, 50, 10), "1.4.1")])
+        yield* checkAt(start)
+        yield* record(api, [counts("POST /api/export", start + 2 * minute, 100, 60)])
+        yield* checkAt(start + 3 * minute)
+        const [open] = (yield* incidents.incidents).open
+        if (open === undefined) {
+          return assert.fail("The failing export opened no incident")
+        }
+        yield* TestClock.setTime(start + 4 * minute)
+        yield* incidents.acknowledge(member, open.id)
+        yield* checkAt(start + 16 * minute)
+        yield* checkAt(start + 18 * minute)
+        yield* checkAt(start + 27 * minute)
+        yield* record(api, [counts("POST /api/export", start + 30 * minute, 40, 20)])
+        yield* checkAt(start + 31 * minute)
+
+        const detail = yield* incidents.incident(open.id)
+        const missing = yield* Effect.flip(incidents.incident(IncidentId.make("019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f00")))
+
+        assert.deepStrictEqual(
+          detail.updates.map((update) => [update.change, DateTime.toEpochMillis(update.at) - start, update.title]),
+          [
+            ["opened", 0, "POST /api/export: 20% failed, usually 0.1%"],
+            ["worsened", 3 * minute, "POST /api/export: 47% failed, usually 0.1%"],
+            ["acknowledged", 4 * minute, undefined],
+            ["resolved", 27 * minute, undefined],
+            ["reopened", 31 * minute, "POST /api/export: 50% failed, usually 0.1%"],
+          ],
+        )
+        assert.deepStrictEqual(detail.releases, [
+          { environment: EnvironmentKey.make("production"), release: ReleaseVersion.make("1.4.1") },
+        ])
+        assert.strictEqual(detail.incident.resolvedAt, undefined)
+        assert.strictEqual(missing._tag, "IncidentNotFound")
+      }),
+    ),
+  )
+
+  it.effect("keeps a monitor's every check, its days, since when it is up, and its incidents", () =>
+    inProject(
+      "history",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const incidents = yield* Incidents
+        const url = MonitorUrl.make("https://history.notes.test/health")
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
+        // The API ran 2.0.0 in production and 2.1.0 in staging: a monitor's URL may be either.
+        yield* record(api, [{ ...counts("GET /health", start - 5 * minute, 5), release: ReleaseVersion.make("2.0.0") }])
+        yield* record(api, [
+          {
+            ...counts("GET /health", start - 5 * minute, 5),
+            environment: EnvironmentKey.make("staging"),
+            release: ReleaseVersion.make("2.1.0"),
+          },
+        ])
+        const monitor = yield* incidents.addMonitor(member, { component: api, url })
+
+        answers.set(url, 200)
+        yield* checkAt(start)
+        answers.set(url, 503)
+        yield* checkAt(start + minute)
+        yield* checkAt(start + 2 * minute)
+        answers.set(url, 204)
+        yield* checkAt(start + 3 * minute)
+        // A day later, it answers again: a second day.
+        yield* checkAt(start + day)
+
+        const detail = yield* incidents.monitor(monitor.id)
+        const list = yield* incidents.monitors
+        const [down] = detail.incidents
+        const opened = down === undefined ? undefined : yield* incidents.incident(down.id)
+
+        assert.deepStrictEqual(detail.state.lastCheck, { at: DateTime.makeUnsafe(start + day), status: 204, ms: 0 })
+        // Passing since it answered again, not since the check a day later.
+        assert.strictEqual(DateTime.toEpochMillis(detail.state.since ?? DateTime.makeUnsafe(0)), start + 3 * minute)
+        assert.deepStrictEqual(
+          detail.state.days.map((entry): ReadonlyArray<unknown> => [
+            entry.day,
+            entry.checks,
+            entry.failed,
+            entry.averageMs,
+          ]),
+          [
+            ["2026-10-21", 4, 2, 0],
+            ["2026-10-22", 1, 0, 0],
+          ],
+        )
+        assert.deepStrictEqual(list.monitors[0]?.days, detail.state.days)
+        // The last 24 hours, by five minutes: the check exactly a day before is out of them.
+        assert.deepStrictEqual(
+          detail.recent.map((step) => [DateTime.toEpochMillis(step.start) - start, step.checks, step.failed]),
+          [
+            [0, 3, 2],
+            [day, 1, 0],
+          ],
+        )
+        assert.deepStrictEqual(
+          detail.failures.map((check) => [DateTime.toEpochMillis(check.at) - start, check.status, check.problem]),
+          [
+            [2 * minute, 503, "HTTP 503"],
+            [minute, 503, "HTTP 503"],
+          ],
+        )
+        assert.deepStrictEqual(
+          detail.incidents.map((incident) => incident.title),
+          ["https://history.notes.test/health is down: HTTP 503"],
+        )
+        assert.deepStrictEqual(
+          opened?.releases.map((ran): ReadonlyArray<string | undefined> => [ran.environment, ran.release]),
+          [
+            ["production", "2.0.0"],
+            ["staging", "2.1.0"],
+          ],
+        )
+
+        // A week and a day on, its checks of the first day are gone, and its day stays.
+        yield* checkAt(start + 8 * day)
+        const later = yield* incidents.monitor(monitor.id)
+        assert.deepStrictEqual(later.failures, [])
+        assert.strictEqual(later.state.days.length, 3)
+
+        yield* incidents.removeMonitor(member, monitor.id)
+        assert.strictEqual((yield* Effect.flip(incidents.monitor(monitor.id)))._tag, "MonitorNotFound")
       }),
     ),
   )

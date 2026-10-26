@@ -8,7 +8,7 @@ import { apiClient, reachFailures, refuse } from "./api-client.ts"
 import type { ApiTarget } from "./api-settings.ts"
 import { apiTarget } from "./api-settings.ts"
 import { local, parsed } from "./question.ts"
-import { columns, utcMinute } from "./terminal-text.ts"
+import { columns, count, milliseconds, share, utcMinute } from "./terminal-text.ts"
 
 const projectArgument = Argument.String("project").pipe(Argument.withDescription("The project's key."))
 
@@ -62,6 +62,60 @@ export const incidents = Command.make("incidents", { project: projectArgument, l
   ),
 )
 
+// How each change in an incident's life reads.
+const changeWords = {
+  opened: "Opened",
+  reopened: "Reopened",
+  worsened: "Got worse",
+  acknowledged: "Acknowledged",
+  resolved: "Resolved",
+} as const
+
+/** `cluenori incident <project> <incident>`. */
+export const incident = Command.make(
+  "incident",
+  {
+    project: projectArgument,
+    incident: Argument.String("incident").pipe(
+      Argument.withDescription("The incident's ID, from ./cluenori incidents."),
+    ),
+    local,
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const project = yield* parsed(ProjectKey, input.project, "a project key")
+      const id = yield* parsed(IncidentId, input.incident, "an incident's ID")
+      const target = yield* apiTarget(input.local)
+      const client = yield* apiClient(target)
+      const detail = yield* client.incidents.incident({ params: { project, incident: id } }).pipe(
+        Effect.catchTags({
+          ...reachFailures(target),
+          ProjectNotFound: noProject(target, project),
+          IncidentNotFound: () => refuse(`${project} has no incident ${id}. See them: ./cluenori incidents ${project}`),
+        }),
+      )
+      const { incident: found } = detail
+      const where = found.environment === undefined ? found.component : `${found.component} (${found.environment})`
+      const about =
+        found.evidence._tag === "down"
+          ? `monitor ${found.evidence.monitor}: ./cluenori monitor show ${project} ${found.evidence.monitor}`
+          : `operation ${found.evidence.operation}: ./cluenori operation ${project} '${found.evidence.operation.replaceAll("'", "'\\''")}' --component ${found.component}${found.environment === undefined ? "" : ` --environment ${found.environment}`}`
+      yield* Console.log(`${found.title}\n${found.resolvedAt === undefined ? "Open" : "Resolved"}, in ${where}.`)
+      yield* Console.log(`About ${about}`)
+      yield* Console.log(
+        detail.releases.length === 0
+          ? "No release of it ran in the hour before it opened."
+          : `Running when it opened: ${detail.releases.map((ran) => (ran.environment === undefined ? ran.release : `${ran.release} in ${ran.environment}`)).join(", ")}.`,
+      )
+      yield* Console.log(
+        `\n${columns([
+          ["When", "What", "Said"],
+          ...detail.updates.map((update) => [utcMinute(update.at), changeWords[update.change], update.title ?? ""]),
+        ]).join("\n")}`,
+      )
+    }),
+).pipe(Command.withDescription("One incident: what it is about, the release that ran, and its whole life."))
+
 /** `cluenori acknowledge <project> <incident>`. */
 export const acknowledge = Command.make(
   "acknowledge",
@@ -78,14 +132,14 @@ export const acknowledge = Command.make(
       const id = yield* parsed(IncidentId, input.incident, "an incident's ID")
       const target = yield* apiTarget(input.local)
       const client = yield* apiClient(target)
-      const incident = yield* client.incidents.acknowledge({ params: { project, incident: id } }).pipe(
+      const acknowledged = yield* client.incidents.acknowledge({ params: { project, incident: id } }).pipe(
         Effect.catchTags({
           ...reachFailures(target),
           ProjectNotFound: noProject(target, project),
           IncidentNotFound: () => refuse(`${project} has no incident ${id}. See them: ./cluenori incidents ${project}`),
         }),
       )
-      yield* Console.log(`Acknowledged: ${incident.title}. It tells no one more.`)
+      yield* Console.log(`Acknowledged: ${acknowledged.title}. It tells no one more.`)
     }),
 ).pipe(Command.withDescription("Say you are on an incident, which stops its notifications."))
 
@@ -117,6 +171,73 @@ export const monitors = Command.make("monitors", { project: projectArgument, loc
     )
   }),
 ).pipe(Command.withDescription("A project's monitors: the URLs fetched every minute, and how each last answered."))
+
+/** `cluenori monitor show <project> <monitor>`. */
+export const monitorShow = Command.make(
+  "show",
+  {
+    project: projectArgument,
+    monitor: Argument.String("monitor").pipe(Argument.withDescription("The monitor's ID, from ./cluenori monitors.")),
+    local,
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const project = yield* parsed(ProjectKey, input.project, "a project key")
+      const id = yield* parsed(MonitorId, input.monitor, "a monitor's ID")
+      const target = yield* apiTarget(input.local)
+      const client = yield* apiClient(target)
+      const detail = yield* client.incidents.monitor({ params: { project, monitor: id } }).pipe(
+        Effect.catchTags({
+          ...reachFailures(target),
+          ProjectNotFound: noProject(target, project),
+          MonitorNotFound: () => refuse(`${project} has no monitor ${id}. See them: ./cluenori monitors ${project}`),
+        }),
+      )
+      const { monitor: shown, lastCheck, since, days } = detail.state
+      const now =
+        lastCheck === undefined
+          ? "Not checked yet."
+          : `${lastCheck.problem === undefined ? "Up" : `Down: ${lastCheck.problem}`}${since === undefined ? "" : ` since ${utcMinute(since)}`}; last checked ${utcMinute(lastCheck.at)}${lastCheck.ms === undefined ? "" : `, answered in ${milliseconds(lastCheck.ms)}`}.`
+      yield* Console.log(`${shown.url}, of ${shown.component}, checked every minute since ${utcMinute(shown.addedAt)}.`)
+      yield* Console.log(now)
+      const checks = days.reduce((sum, day) => sum + day.checks, 0)
+      const failed = days.reduce((sum, day) => sum + day.failed, 0)
+      if (checks > 0) {
+        yield* Console.log(
+          `\nUp ${share(checks - failed, checks)} of ${count(checks)} checks over its last ${count(days.length)} days with checks:`,
+        )
+        yield* Console.log(
+          columns([
+            ["Day (UTC)", "Checks", "Failed", "Average"],
+            ...days.map((day) => [
+              day.day,
+              count(day.checks),
+              count(day.failed),
+              day.averageMs === undefined ? "" : milliseconds(day.averageMs),
+            ]),
+          ]).join("\n"),
+        )
+      }
+      if (detail.failures.length > 0) {
+        yield* Console.log("\nIts latest failed checks, in the 7 days every check is kept:")
+        yield* Console.log(
+          columns(detail.failures.map((check) => [utcMinute(check.at), check.problem ?? ""])).join("\n"),
+        )
+      }
+      if (detail.incidents.length > 0) {
+        yield* Console.log("\nIts incidents, the latest first:")
+        yield* Console.log(
+          columns(
+            detail.incidents.map((found) => [
+              utcMinute(found.openedAt),
+              found.resolvedAt === undefined ? "open" : `resolved ${utcMinute(found.resolvedAt)}`,
+              found.id,
+            ]),
+          ).join("\n"),
+        )
+      }
+    }),
+).pipe(Command.withDescription("One monitor: how it is now, each day's checks, its failed checks and its incidents."))
 
 /** `cluenori monitor add <project> <component> <url>`. */
 export const monitorAdd = Command.make(
@@ -179,6 +300,6 @@ export const monitorRemove = Command.make(
 
 /** `cluenori monitor ...`. */
 export const monitor = Command.make("monitor").pipe(
-  Command.withDescription("Add and remove monitors."),
-  Command.withSubcommands([monitorAdd, monitorRemove]),
+  Command.withDescription("See, add and remove monitors."),
+  Command.withSubcommands([monitorShow, monitorAdd, monitorRemove]),
 )

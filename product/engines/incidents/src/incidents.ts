@@ -1,7 +1,9 @@
 import type { ActivityEntry, Actor } from "@cluenori/foundation"
 import {
   ActivityLog,
+  calendarDayOfNumber,
   ComponentKey,
+  dayNumberOf,
   EnvelopeName,
   EnvironmentKey,
   Instant,
@@ -30,7 +32,7 @@ import {
   usualWindow,
   worseTimes,
 } from "./detectors.ts"
-import type { Evidence, IncidentChange } from "./incident.ts"
+import type { Evidence, IncidentChange, IncidentDetail, IncidentRelease, IncidentUpdate } from "./incident.ts"
 import { Detector, Evidence as EvidenceSchema, Incident, IncidentId, IncidentNotFound } from "./incident.ts"
 import type { IncidentList } from "./incident.ts"
 import {
@@ -43,7 +45,8 @@ import {
   MonitorRemoved,
 } from "./incidents-activity.ts"
 import { migrateIncidents } from "./incidents-migrations.ts"
-import type { AddMonitor, MonitorList } from "./monitor.ts"
+import type { MonitorDetail } from "./monitor-detail.ts"
+import type { AddMonitor, MonitorCheck, MonitorDay, MonitorList, MonitorState, MonitorStep } from "./monitor.ts"
 import {
   Monitor,
   MonitorExists,
@@ -70,6 +73,21 @@ const baselinesAtOnce = Math.floor(100 / 6)
 
 // How many monitors are fetched at once.
 const checksAtOnce = 10
+
+// How long a monitor's every check is kept, and its days' counts; how many days a monitor shows.
+const checksKept = Duration.toMillis(Duration.days(7))
+const daysShown = 90
+
+// A monitor's recent checks: the last 24 hours, five minutes a step.
+const recentShown = Duration.toMillis(Duration.hours(24))
+const recentStep = Duration.toMillis(Duration.minutes(5))
+
+// How many of an incident's updates it shows, the latest; how many failed checks and incidents a
+// monitor shows; and how long before an incident opened its component's releases are looked for.
+const updatesShown = 500
+const failuresShown = 20
+const incidentsShown = 20
+const releasesBefore = hour
 
 const EnvironmentColumn = Schema.Union([Schema.Literal(""), EnvironmentKey])
 
@@ -103,8 +121,51 @@ const MonitorRow = Schema.Struct({
   failures: Schema.NullOr(Schema.Int),
   problem: Schema.NullOr(Schema.String),
   checkedAt: Schema.NullOr(Schema.Int),
+  status: Schema.NullOr(Schema.Int),
+  ms: Schema.NullOr(Schema.Finite),
+  since: Schema.NullOr(Schema.Int),
 })
 type MonitorRow = typeof MonitorRow.Type
+
+const UpdateRow = Schema.Struct({
+  change: Schema.Literals(["opened", "reopened", "worsened", "acknowledged", "resolved"]),
+  at: Instant,
+  title: Schema.NullOr(Schema.String),
+})
+
+const CheckRow = Schema.Struct({
+  at: Schema.Int,
+  status: Schema.NullOr(Schema.Int),
+  ms: Schema.NullOr(Schema.Finite),
+  problem: Schema.NullOr(Schema.String),
+})
+
+const DayRow = Schema.Struct({
+  monitor: MonitorId,
+  day: Schema.Int,
+  checks: Schema.Int,
+  failed: Schema.Int,
+  answered: Schema.Int,
+  totalMs: Schema.Finite,
+})
+type DayRow = typeof DayRow.Type
+
+const StepRow = Schema.Struct({
+  start: Schema.Int,
+  checks: Schema.Int,
+  failed: Schema.Int,
+  answered: Schema.Int,
+  totalMs: Schema.Finite,
+  slowestMs: Schema.NullOr(Schema.Finite),
+})
+
+// What one check found: the status and time of an answer, absent without one; what was wrong,
+// absent when it passed.
+interface Checked {
+  readonly status: number | undefined
+  readonly ms: number | undefined
+  readonly problem: string | undefined
+}
 
 const BaselineRow = Schema.Struct({
   component: ComponentKey,
@@ -168,6 +229,38 @@ const periodOf = (from: number, to: number) =>
 
 const iso = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis))
 
+// The first day a monitor shows at `now`, as a day number.
+const firstDayShown = (now: number) => dayNumberOf(now) - daysShown + 1
+
+const checkOf = (check: {
+  readonly at: number
+  readonly status: number | null
+  readonly ms: number | null
+  readonly problem: string | null
+}): MonitorCheck => ({
+  at: DateTime.makeUnsafe(check.at),
+  ...(check.status === null ? {} : { status: check.status }),
+  ...(check.ms === null ? {} : { ms: check.ms }),
+  ...(check.problem === null ? {} : { problem: check.problem }),
+})
+
+const dayOf = (row: DayRow): MonitorDay => ({
+  day: calendarDayOfNumber(row.day),
+  checks: row.checks,
+  failed: row.failed,
+  ...(row.answered === 0 ? {} : { averageMs: row.totalMs / row.answered }),
+})
+
+// A monitor now, from its row and its days, oldest first.
+const stateOf = (row: MonitorRow, days: ReadonlyArray<DayRow>): MonitorState => ({
+  monitor: new Monitor({ id: row.id, component: row.component, url: row.url, addedAt: row.addedAt }),
+  ...(row.checkedAt === null
+    ? {}
+    : { lastCheck: checkOf({ at: row.checkedAt, status: row.status, ms: row.ms, problem: row.problem }) }),
+  ...(row.since === null ? {} : { since: DateTime.makeUnsafe(row.since) }),
+  days: days.map(dayOf),
+})
+
 /**
  * A project's incidents, the detectors that open and resolve them, and the monitors they check.
  * Runs inside the Durable Object that holds the project's database, beside `Signals`, whose counts
@@ -189,13 +282,28 @@ export class Incidents extends Context.Service<
     /** The open incidents, and those resolved in the last 7 days. Reads only. */
     readonly incidents: Effect.Effect<IncidentList>
     /**
+     * One incident, whatever any period: its life, and the releases of its component that ran in
+     * the hour before it opened, the latest of each environment. Fails with `IncidentNotFound` when
+     * the project has no incident with that ID. Reads only: its updates, and the releases' spans.
+     */
+    readonly incident: (id: IncidentId) => Effect.Effect<IncidentDetail, IncidentNotFound>
+    /**
      * Marks an incident as being looked at, with `incident.acknowledged`, which stops its
      * notifications. Again for one acknowledged, it keeps the first time. Fails with
      * `IncidentNotFound` when the project has no incident with that ID.
      */
     readonly acknowledge: (actor: Actor, id: IncidentId) => Effect.Effect<Incident, IncidentNotFound>
-    /** The project's monitors, oldest first, each with its last check. Reads only. */
+    /**
+     * The project's monitors, oldest first, each with its last check and its last 90 days. Reads
+     * only: a row a monitor and a day.
+     */
     readonly monitors: Effect.Effect<MonitorList>
+    /**
+     * One monitor, whatever any period: how it is now, its days, its last 24 hours' checks by five
+     * minutes, its latest failed checks and its incidents. Fails with `MonitorNotFound` when the
+     * project has no monitor with that ID. Reads only: at most a day of its checks.
+     */
+    readonly monitor: (id: MonitorId) => Effect.Effect<MonitorDetail, MonitorNotFound>
     /**
      * Adds a monitor, with `monitor.added`; it is first fetched at the next check. Fails with
      * `ComponentNotFound` for a component the project doesn't have, `MonitorExists` when the
@@ -278,10 +386,62 @@ export class Incidents extends Context.Service<
         Request: Schema.Void,
         Result: MonitorRow,
         execute: () => sql`
-          SELECT m.id, m.component, m.url, m.added_at AS "addedAt", c.failures, c.problem, c.checked_at AS "checkedAt"
+          SELECT m.id, m.component, m.url, m.added_at AS "addedAt", c.failures, c.problem, c.checked_at AS "checkedAt",
+            c.status, c.ms, c.since
           FROM incidents_monitors m LEFT JOIN incidents_monitor_checks c ON c.monitor = m.id
           ORDER BY m.added_at, m.id`,
       })
+
+      const findUpdates = SqlSchema.findAll({
+        Request: IncidentId,
+        Result: UpdateRow,
+        execute: (incident) => sql`
+          SELECT change, at, title FROM incidents_updates WHERE incident = ${incident}
+          ORDER BY id DESC LIMIT ${updatesShown}`,
+      })
+
+      // Every monitor's days since `since`, a day number, oldest first.
+      const findDays = SqlSchema.findAll({
+        Request: Schema.Int,
+        Result: DayRow,
+        execute: (since) => sql`
+          SELECT monitor, day, checks, failed, answered, total_ms AS "totalMs" FROM incidents_check_days
+          WHERE day >= ${since} ORDER BY monitor, day`,
+      })
+
+      // A monitor's checks after `since`, by five minutes, oldest first.
+      const findSteps = SqlSchema.findAll({
+        Request: Schema.Struct({ monitor: MonitorId, since: Schema.Int }),
+        Result: StepRow,
+        execute: (asked) => sql`
+          SELECT at - (at % ${recentStep}) AS start, COUNT(*) AS checks,
+            SUM(CASE WHEN problem IS NULL THEN 0 ELSE 1 END) AS failed,
+            COUNT(ms) AS answered, COALESCE(SUM(ms), 0) AS "totalMs", MAX(ms) AS "slowestMs"
+          FROM incidents_check_history WHERE monitor = ${asked.monitor} AND at > ${asked.since}
+          GROUP BY start ORDER BY start`,
+      })
+
+      const findFailures = SqlSchema.findAll({
+        Request: MonitorId,
+        Result: CheckRow,
+        execute: (monitor) => sql`
+          SELECT at, status, ms, problem FROM incidents_check_history
+          WHERE monitor = ${monitor} AND problem IS NOT NULL ORDER BY at DESC LIMIT ${failuresShown}`,
+      })
+
+      // The incidents of a monitor's component and URL, the latest opened first.
+      const findMonitorIncidents = SqlSchema.findAll({
+        Request: Schema.Struct({ component: ComponentKey, url: MonitorUrl }),
+        Result: IncidentRow,
+        execute: (monitor) => sql`
+          SELECT ${incidentColumns} FROM incidents_incidents i LEFT JOIN incidents_firing f ON f.incident = i.id
+          WHERE i.detector = 'down' AND i.component = ${monitor.component} AND i.subject = ${monitor.url}
+          ORDER BY i.opened_at DESC LIMIT ${incidentsShown}`,
+      })
+
+      // The SQL that adds a change to an incident's life.
+      const updateOf = (incident: IncidentId, change: IncidentUpdate["change"], at: number, title?: string) =>
+        sql`INSERT INTO incidents_updates ${sql.insert({ incident, at: iso(at), change, title: title ?? null })}`
 
       const findBaselines = SqlSchema.findAll({
         Request: Schema.Void,
@@ -355,38 +515,83 @@ export class Incidents extends Context.Service<
         })
       })
 
-      // One check of a URL: absent when it passed; else what was wrong.
-      const problemOf = (url: MonitorUrl) =>
+      // One check of a URL: the status and time of its answer, and what was wrong, absent when it
+      // passed. The time is from sending the request to its status and headers.
+      const checkUrl = (url: MonitorUrl): Effect.Effect<Checked> =>
         client.get(url).pipe(
-          Effect.map((response) => (response.status < 400 ? undefined : `HTTP ${response.status}`)),
+          Effect.timed,
+          Effect.map(([took, response]): Checked => ({
+            status: response.status,
+            ms: Duration.toMillis(took),
+            problem: response.status < 400 ? undefined : `HTTP ${response.status}`,
+          })),
           Effect.timeoutOption(checkTimeout),
-          Effect.map(Option.getOrElse(() => `No answer in ${Duration.toSeconds(checkTimeout)} s`)),
+          Effect.map(
+            Option.getOrElse((): Checked => ({
+              status: undefined,
+              ms: undefined,
+              problem: `No answer in ${Duration.toSeconds(checkTimeout)} s`,
+            })),
+          ),
           Effect.catchTag("HttpClientError", (error) =>
-            Effect.succeed(
-              error.reason._tag === "TransportError" ? "Could not connect" : `Failed: ${error.reason._tag}`,
-            ),
+            Effect.succeed<Checked>({
+              status: undefined,
+              ms: undefined,
+              problem: error.reason._tag === "TransportError" ? "Could not connect" : `Failed: ${error.reason._tag}`,
+            }),
           ),
           Effect.provideService(HttpClient.TracerPropagationEnabled, false),
         )
 
+      // Fetches every monitor, keeps each check, its day's counts and the monitor's last check, and
+      // says which monitors are down.
       const downNow = Effect.fn("Incidents.downNow")(function* (now: number) {
         const monitors = yield* findMonitors(undefined).pipe(Effect.orDie)
         const checked = yield* Effect.forEach(
           monitors,
-          (monitor) => problemOf(monitor.url).pipe(Effect.map((problem) => ({ monitor, problem }))),
+          (monitor) => checkUrl(monitor.url).pipe(Effect.map((check) => ({ monitor, check }))),
           { concurrency: checksAtOnce },
         )
         const firings: Array<Firing> = []
-        for (const { monitor, problem } of checked) {
+        for (const { monitor, check } of checked) {
+          const { problem } = check
           const failures = problem === undefined ? 0 : (monitor.failures ?? 0) + 1
+          // Passing or failing as before keeps when that began; a first check, or a turn, starts it.
+          const turned = monitor.failures === null || monitor.failures > 0 !== failures > 0
+          const since = turned ? now : monitor.since
+          const status = check.status ?? null
+          const ms = check.ms ?? null
           yield* sql`INSERT INTO incidents_monitor_checks ${sql.insert({
             monitor: monitor.id,
             failures,
             problem: problem ?? null,
             checked_at: now,
+            status,
+            ms,
+            since,
           })}
             ON CONFLICT (monitor) DO UPDATE SET failures = excluded.failures, problem = excluded.problem,
-              checked_at = excluded.checked_at`.pipe(Effect.orDie)
+              checked_at = excluded.checked_at, status = excluded.status, ms = excluded.ms,
+              since = excluded.since`.pipe(Effect.orDie)
+          yield* sql`INSERT INTO incidents_check_history ${sql.insert({
+            monitor: monitor.id,
+            at: now,
+            status,
+            ms,
+            problem: problem ?? null,
+          })} ON CONFLICT (monitor, at) DO NOTHING`.pipe(Effect.orDie)
+          const failed = problem === undefined ? 0 : 1
+          const answered = ms === null ? 0 : 1
+          yield* sql`INSERT INTO incidents_check_days ${sql.insert({
+            monitor: monitor.id,
+            day: dayNumberOf(now),
+            checks: 1,
+            failed,
+            answered,
+            total_ms: ms ?? 0,
+          })}
+            ON CONFLICT (monitor, day) DO UPDATE SET checks = checks + 1, failed = failed + ${failed},
+              answered = answered + ${answered}, total_ms = total_ms + ${ms ?? 0}`.pipe(Effect.orDie)
           if (problem !== undefined && failures >= downAfter) {
             firings.push({
               detector: "down",
@@ -400,6 +605,16 @@ export class Incidents extends Context.Service<
         }
         return firings
       })
+
+      // Removes monitors' checks older than 7 days, and days older than 90.
+      const cleanUp = (now: number) =>
+        Effect.all(
+          [
+            sql`DELETE FROM incidents_check_history WHERE at < ${now - checksKept}`,
+            sql`DELETE FROM incidents_check_days WHERE day < ${dayNumberOf(now) - daysShown + 1}`,
+          ],
+          { discard: true },
+        ).pipe(Effect.orDie)
 
       // ---- An incident's life ---------------------------------------------------------------
 
@@ -452,6 +667,7 @@ export class Incidents extends Context.Service<
                 : changeEntries[change].make(fields),
           })
           changes.push({ change, incident: incidentOf(row) })
+          writes.push(updateOf(row.id, change, now, change === "resolved" ? undefined : row.title))
         }
 
         for (const firing of firings) {
@@ -558,6 +774,7 @@ export class Incidents extends Context.Service<
         const learnedAt = Option.match(state, { onNone: () => null, onSome: (row) => row.learnedAt })
         if (learnedAt === null || now - learnedAt >= hour) {
           yield* learn(now)
+          yield* cleanUp(now)
         }
         const baselines = yield* findBaselines(undefined).pipe(Effect.orDie)
         const open = yield* findOpen(undefined).pipe(Effect.orDie)
@@ -603,6 +820,7 @@ export class Incidents extends Context.Service<
             yield* sql`UPDATE incidents_incidents SET acknowledged_at = ${DateTime.formatIso(at)} WHERE id = ${id}`.pipe(
               Effect.orDie,
             )
+            yield* updateOf(id, "acknowledged", DateTime.toEpochMillis(at)).pipe(Effect.orDie)
             return incidentOf({ ...row, acknowledgedAt: at })
           }),
           activity: (incident) => [
@@ -618,22 +836,89 @@ export class Incidents extends Context.Service<
       })
 
       const monitors = Effect.gen(function* () {
+        const now = DateTime.toEpochMillis(yield* DateTime.now)
         const rows = yield* findMonitors(undefined).pipe(Effect.orDie)
+        const days = yield* findDays(firstDayShown(now)).pipe(Effect.orDie)
         const list: MonitorList = {
-          monitors: rows.map((row: MonitorRow) => ({
-            monitor: new Monitor({ id: row.id, component: row.component, url: row.url, addedAt: row.addedAt }),
-            ...(row.checkedAt === null
-              ? {}
-              : {
-                  lastCheck: {
-                    at: DateTime.makeUnsafe(row.checkedAt),
-                    ...(row.problem === null ? {} : { problem: row.problem }),
-                  },
-                }),
-          })),
+          monitors: rows.map((row) =>
+            stateOf(
+              row,
+              days.filter((day) => day.monitor === row.id),
+            ),
+          ),
         }
         return list
       }).pipe(Effect.withSpan("Incidents.monitors"))
+
+      const monitorDetail = Effect.fn("Incidents.monitor")(function* (id: MonitorId) {
+        const now = DateTime.toEpochMillis(yield* DateTime.now)
+        const row = (yield* findMonitors(undefined).pipe(Effect.orDie)).find((found) => found.id === id)
+        if (row === undefined) {
+          return yield* new MonitorNotFound({ monitor: id })
+        }
+        const days = yield* findDays(firstDayShown(now)).pipe(Effect.orDie)
+        const steps = yield* findSteps({ monitor: id, since: now - recentShown }).pipe(Effect.orDie)
+        const failures = yield* findFailures(id).pipe(Effect.orDie)
+        const found = yield* findMonitorIncidents({ component: row.component, url: row.url }).pipe(Effect.orDie)
+        const detail: MonitorDetail = {
+          state: stateOf(
+            row,
+            days.filter((day) => day.monitor === id),
+          ),
+          recent: steps.map((step): MonitorStep => ({
+            start: DateTime.makeUnsafe(step.start),
+            checks: step.checks,
+            failed: step.failed,
+            ...(step.answered === 0 ? {} : { averageMs: step.totalMs / step.answered }),
+            ...(step.slowestMs === null ? {} : { slowestMs: step.slowestMs }),
+          })),
+          failures: failures.map(checkOf),
+          incidents: found.map(incidentOf),
+        }
+        return detail
+      })
+
+      // The releases of an incident's component that ran in the hour before it opened, the latest
+      // of each environment: in its own, or, for a monitor's, in each.
+      const releasesOf = Effect.fn("Incidents.releasesOf")(function* (row: IncidentRow) {
+        const opened = DateTime.toEpochMillis(row.openedAt)
+        const table = yield* signals.releases({
+          period: periodOf(opened - releasesBefore, opened + 1),
+          component: row.component,
+          ...(row.environment === "" ? {} : { environment: row.environment }),
+        })
+        const latest = new Map<string, IncidentRelease>()
+        for (const ran of table.rows) {
+          const place = ran.environment ?? ""
+          // A failing or stopped incident without an environment is about operations that named none.
+          if ((row.detector !== "down" && place !== row.environment) || latest.has(place)) {
+            continue
+          }
+          latest.set(place, {
+            ...(ran.environment === undefined ? {} : { environment: ran.environment }),
+            release: ran.release,
+          })
+        }
+        return [...latest.values()]
+      })
+
+      const incidentDetail = Effect.fn("Incidents.incident")(function* (id: IncidentId) {
+        const found = yield* findIncident(id).pipe(Effect.orDie)
+        if (Option.isNone(found)) {
+          return yield* new IncidentNotFound({ incident: id })
+        }
+        const updates = yield* findUpdates(id).pipe(Effect.orDie)
+        const detail: IncidentDetail = {
+          incident: incidentOf(found.value),
+          updates: updates.toReversed().map((update): IncidentUpdate => ({
+            change: update.change,
+            at: update.at,
+            ...(update.title === null ? {} : { title: update.title }),
+          })),
+          releases: yield* releasesOf(found.value),
+        }
+        return detail
+      })
 
       // The project and the monitor's ID are settled before the transaction, which holds only SQL.
       const addMonitor = Effect.fn("Incidents.addMonitor")(function* (actor: Actor, input: AddMonitor) {
@@ -688,8 +973,11 @@ export class Incidents extends Context.Service<
                 Effect.orDie,
               )
               yield* sql`DELETE FROM incidents_firing WHERE incident = ${down.id}`.pipe(Effect.orDie)
+              yield* updateOf(down.id, "resolved", now).pipe(Effect.orDie)
             }
             yield* sql`DELETE FROM incidents_monitor_checks WHERE monitor = ${id}`.pipe(Effect.orDie)
+            yield* sql`DELETE FROM incidents_check_history WHERE monitor = ${id}`.pipe(Effect.orDie)
+            yield* sql`DELETE FROM incidents_check_days WHERE monitor = ${id}`.pipe(Effect.orDie)
             yield* sql`DELETE FROM incidents_monitors WHERE id = ${id}`.pipe(Effect.orDie)
             return down
           }),
@@ -700,7 +988,16 @@ export class Incidents extends Context.Service<
         })
       })
 
-      return { check, incidents, acknowledge, monitors, addMonitor, removeMonitor }
+      return {
+        check,
+        incidents,
+        incident: incidentDetail,
+        acknowledge,
+        monitors,
+        monitor: monitorDetail,
+        addMonitor,
+        removeMonitor,
+      }
     }),
   )
 }

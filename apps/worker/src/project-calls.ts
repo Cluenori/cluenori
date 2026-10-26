@@ -3,6 +3,7 @@ import { Actor, ComponentKey, EnvelopeName, Instant, TraceId } from "@cluenori/f
 import {
   AddMonitor,
   Incident,
+  IncidentDetail,
   IncidentId,
   IncidentList,
   IncidentNotFound,
@@ -10,6 +11,7 @@ import {
   MonitorExists,
   MonitorId,
   MonitorLimitReached,
+  MonitorDetail,
   MonitorList,
   MonitorNotFound,
 } from "@cluenori/incidents"
@@ -100,8 +102,10 @@ export type EngineCallName =
   | "logCounts"
   | "trace"
   | "incidents"
+  | "incident"
   | "acknowledge"
   | "monitors"
+  | "monitor"
   | "addMonitor"
   | "removeMonitor"
   | "today"
@@ -237,6 +241,7 @@ export const projectCalls = {
     Schema.Union([ProjectNotFound, ArchiveUnavailable]),
   ),
   incidents: projectCall("incidents", Schema.Void, IncidentList, ProjectNotFound),
+  incident: projectCall("incident", IncidentId, IncidentDetail, Schema.Union([ProjectNotFound, IncidentNotFound])),
   acknowledge: projectCall(
     "acknowledge",
     Schema.Struct({ actor: Actor, incident: IncidentId }),
@@ -244,6 +249,7 @@ export const projectCalls = {
     Schema.Union([ProjectNotFound, IncidentNotFound]),
   ),
   monitors: projectCall("monitors", Schema.Void, MonitorList, ProjectNotFound),
+  monitor: projectCall("monitor", MonitorId, MonitorDetail, Schema.Union([ProjectNotFound, MonitorNotFound])),
   addMonitor: projectCall(
     "addMonitor",
     Schema.Struct({ actor: Actor, monitor: AddMonitor }),

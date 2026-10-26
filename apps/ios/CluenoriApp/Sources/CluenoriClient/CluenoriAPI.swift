@@ -618,6 +618,22 @@ public nonisolated struct CluenoriAPI: Sendable {
         return try Self.decoded(from: `the answer`)
     }
 
+    /// One incident, whatever any period: the incident; its life, oldest first (when it opened,
+    /// reopened, got worse, was acknowledged and resolved, with the title it said when it opened,
+    /// reopened or got worse), its latest 500 updates; and the releases of its component that ran
+    /// in the hour before it opened, the latest of each environment: in its environment, or, for a
+    /// monitor's, in each.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.incidentNotFound`, or as any call can.
+    @concurrent
+    public func incident(
+        project: String,
+        incident: String,
+    ) async throws(APIError) -> IncidentDetail {
+        let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/incidents/\(Self.segment(Self.text(incident)))")
+        return try Self.decoded(from: `the answer`)
+    }
+
     /// Marks an incident as being looked at, which stops its notifications, and returns it.
     /// Acknowledging it again keeps the first time.
     ///
@@ -628,8 +644,11 @@ public nonisolated struct CluenoriAPI: Sendable {
         return try Self.decoded(from: `the answer`)
     }
 
-    /// The project's monitors, oldest first, each with its last check: the URLs fetched every
-    /// minute, which pass with a status below 400 within 10 seconds.
+    /// The project's monitors, oldest first: the URLs fetched every minute, which pass with a
+    /// status below 400 within 10 seconds. Each with its last check (its status and how long the
+    /// answer took, absent without an answer, and what was wrong, absent when it passed), since
+    /// when it has passed or failed as it does now, and its last 90 UTC days with checks: how many,
+    /// how many failed, and their average time.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
     @concurrent
@@ -649,6 +668,18 @@ public nonisolated struct CluenoriAPI: Sendable {
         _ `request body`: AddMonitor,
     ) async throws(APIError) -> Monitor {
         let `the answer` = try await self.send("POST", "/api/projects/\(Self.segment(Self.text(project)))/monitors", body: try Self.encoded(`request body`))
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// One monitor, whatever any period: how it is now and its last 90 days; its checks over the
+    /// last 24 hours, by five minutes, with how many failed and their average and slowest time; its
+    /// latest failed checks of the 7 days every check is kept, at most 20, newest first; and the
+    /// incidents of its component and URL, at most 20, the latest opened first.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.monitorNotFound`, or as any call can.
+    @concurrent
+    public func monitor(project: String, monitor: String) async throws(APIError) -> MonitorDetail {
+        let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/monitors/\(Self.segment(Self.text(monitor)))")
         return try Self.decoded(from: `the answer`)
     }
 
@@ -4387,6 +4418,38 @@ public nonisolated struct Incident: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct IncidentDetail: Codable, Hashable, Sendable {
+    public let incident: Incident
+    public let updates: [IncidentUpdate]
+    public let releases: [IncidentRelease]
+
+    public init(incident: Incident, updates: [IncidentUpdate], releases: [IncidentRelease]) {
+        self.incident = incident
+        self.updates = updates
+        self.releases = releases
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case incident = "incident"
+        case updates = "updates"
+        case releases = "releases"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.incident = try container.`value at`(.incident)
+        self.updates = try container.`value at`(.updates)
+        self.releases = try container.`value at`(.releases)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.incident, forKey: .incident)
+        try container.encode(self.updates, forKey: .updates)
+        try container.encode(self.releases, forKey: .releases)
+    }
+}
+
 public nonisolated struct IncidentItem: Codable, Hashable, Sendable {
     public let project: String
     public let incident: Incident
@@ -4476,6 +4539,80 @@ public nonisolated struct IncidentNotFound: Codable, Hashable, Sendable {
         try container.encode("IncidentNotFound", forKey: ._tag)
         try container.encode(self.incident, forKey: .incident)
     }
+}
+
+public nonisolated struct IncidentRelease: Codable, Hashable, Sendable {
+    public let environment: String?
+    public let release: String
+
+    public init(environment: String? = nil, release: String) {
+        self.environment = environment
+        self.release = release
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case environment = "environment"
+        case release = "release"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.environment = try container.`value if present at`(.environment)
+        self.release = try container.`value at`(.release)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encodeIfPresent(self.environment, forKey: .environment)
+        try container.encode(self.release, forKey: .release)
+    }
+}
+
+public nonisolated struct IncidentUpdate: Codable, Hashable, Sendable {
+    public let change: IncidentUpdateChange
+    public let at: Date
+    public let title: String?
+
+    public init(change: IncidentUpdateChange, at: Date, title: String? = nil) {
+        self.change = change
+        self.at = at
+        self.title = title
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case change = "change"
+        case at = "at"
+        case title = "title"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.change = try container.`value at`(.change)
+        self.at = try container.`value at`(.at)
+        self.title = try container.`value if present at`(.title)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.change, forKey: .change)
+        try container.encode(self.at, forKey: .at)
+        try container.encodeIfPresent(self.title, forKey: .title)
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public nonisolated struct IncidentUpdateChange: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let opened = IncidentUpdateChange(rawValue: "opened")
+    public static let reopened = IncidentUpdateChange(rawValue: "reopened")
+    public static let worsened = IncidentUpdateChange(rawValue: "worsened")
+    public static let acknowledged = IncidentUpdateChange(rawValue: "acknowledged")
+    public static let resolved = IncidentUpdateChange(rawValue: "resolved")
 }
 
 /// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
@@ -5882,28 +6019,117 @@ public nonisolated struct Monitor: Codable, Hashable, Sendable {
 
 public nonisolated struct MonitorCheck: Codable, Hashable, Sendable {
     public let at: Date
+    public let status: Int?
+    public let ms: Double?
     public let problem: String?
 
-    public init(at: Date, problem: String? = nil) {
+    public init(at: Date, status: Int? = nil, ms: Double? = nil, problem: String? = nil) {
         self.at = at
+        self.status = status
+        self.ms = ms
         self.problem = problem
     }
 
     private enum `JSON keys`: String, CodingKey {
         case at = "at"
+        case status = "status"
+        case ms = "ms"
         case problem = "problem"
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: `JSON keys`.self)
         self.at = try container.`value at`(.at)
+        self.status = try container.`value if present at`(.status)
+        self.ms = try container.`value if present at`(.ms)
         self.problem = try container.`value if present at`(.problem)
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode(self.at, forKey: .at)
+        try container.encodeIfPresent(self.status, forKey: .status)
+        try container.encodeIfPresent(self.ms, forKey: .ms)
         try container.encodeIfPresent(self.problem, forKey: .problem)
+    }
+}
+
+public nonisolated struct MonitorDay: Codable, Hashable, Sendable {
+    public let day: String
+    public let checks: Int
+    public let failed: Int
+    public let averageMs: Double?
+
+    public init(day: String, checks: Int, failed: Int, averageMs: Double? = nil) {
+        self.day = day
+        self.checks = checks
+        self.failed = failed
+        self.averageMs = averageMs
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case day = "day"
+        case checks = "checks"
+        case failed = "failed"
+        case averageMs = "averageMs"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.day = try container.`value at`(.day)
+        self.checks = try container.`value at`(.checks)
+        self.failed = try container.`value at`(.failed)
+        self.averageMs = try container.`value if present at`(.averageMs)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.day, forKey: .day)
+        try container.encode(self.checks, forKey: .checks)
+        try container.encode(self.failed, forKey: .failed)
+        try container.encodeIfPresent(self.averageMs, forKey: .averageMs)
+    }
+}
+
+public nonisolated struct MonitorDetail: Codable, Hashable, Sendable {
+    public let state: MonitorState
+    public let recent: [MonitorStep]
+    public let failures: [MonitorCheck]
+    public let incidents: [Incident]
+
+    public init(
+        state: MonitorState,
+        recent: [MonitorStep],
+        failures: [MonitorCheck],
+        incidents: [Incident],
+    ) {
+        self.state = state
+        self.recent = recent
+        self.failures = failures
+        self.incidents = incidents
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case state = "state"
+        case recent = "recent"
+        case failures = "failures"
+        case incidents = "incidents"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.state = try container.`value at`(.state)
+        self.recent = try container.`value at`(.recent)
+        self.failures = try container.`value at`(.failures)
+        self.incidents = try container.`value at`(.incidents)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.state, forKey: .state)
+        try container.encode(self.recent, forKey: .recent)
+        try container.encode(self.failures, forKey: .failures)
+        try container.encode(self.incidents, forKey: .incidents)
     }
 }
 
@@ -6018,27 +6244,90 @@ public nonisolated struct MonitorNotFound: Codable, Hashable, Sendable {
 public nonisolated struct MonitorState: Codable, Hashable, Sendable {
     public let monitor: Monitor
     public let lastCheck: MonitorCheck?
+    public let since: Date?
+    public let days: [MonitorDay]
 
-    public init(monitor: Monitor, lastCheck: MonitorCheck? = nil) {
+    public init(
+        monitor: Monitor,
+        lastCheck: MonitorCheck? = nil,
+        since: Date? = nil,
+        days: [MonitorDay],
+    ) {
         self.monitor = monitor
         self.lastCheck = lastCheck
+        self.since = since
+        self.days = days
     }
 
     private enum `JSON keys`: String, CodingKey {
         case monitor = "monitor"
         case lastCheck = "lastCheck"
+        case since = "since"
+        case days = "days"
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: `JSON keys`.self)
         self.monitor = try container.`value at`(.monitor)
         self.lastCheck = try container.`value if present at`(.lastCheck)
+        self.since = try container.`value if present at`(.since)
+        self.days = try container.`value at`(.days)
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode(self.monitor, forKey: .monitor)
         try container.encodeIfPresent(self.lastCheck, forKey: .lastCheck)
+        try container.encodeIfPresent(self.since, forKey: .since)
+        try container.encode(self.days, forKey: .days)
+    }
+}
+
+public nonisolated struct MonitorStep: Codable, Hashable, Sendable {
+    public let start: Date
+    public let checks: Int
+    public let failed: Int
+    public let averageMs: Double?
+    public let slowestMs: Double?
+
+    public init(
+        start: Date,
+        checks: Int,
+        failed: Int,
+        averageMs: Double? = nil,
+        slowestMs: Double? = nil,
+    ) {
+        self.start = start
+        self.checks = checks
+        self.failed = failed
+        self.averageMs = averageMs
+        self.slowestMs = slowestMs
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case start = "start"
+        case checks = "checks"
+        case failed = "failed"
+        case averageMs = "averageMs"
+        case slowestMs = "slowestMs"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.start = try container.`value at`(.start)
+        self.checks = try container.`value at`(.checks)
+        self.failed = try container.`value at`(.failed)
+        self.averageMs = try container.`value if present at`(.averageMs)
+        self.slowestMs = try container.`value if present at`(.slowestMs)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.start, forKey: .start)
+        try container.encode(self.checks, forKey: .checks)
+        try container.encode(self.failed, forKey: .failed)
+        try container.encodeIfPresent(self.averageMs, forKey: .averageMs)
+        try container.encodeIfPresent(self.slowestMs, forKey: .slowestMs)
     }
 }
 

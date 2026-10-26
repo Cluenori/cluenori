@@ -1,4 +1,4 @@
-import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, Uuidv7 } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, ReleaseVersion, Uuidv7 } from "@cluenori/foundation"
 import { Schema } from "effect"
 
 import { MonitorId, MonitorUrl } from "./monitor.ts"
@@ -88,6 +88,44 @@ export const IncidentList = Schema.Struct({
   checkedAt: Schema.optionalKey(Instant),
 }).annotate({ identifier: "IncidentList" })
 export type IncidentList = typeof IncidentList.Type
+
+/**
+ * One change in an incident's life: it opened; came back within 30 minutes of resolving, reopening
+ * it; got worse; someone said they are on it; or it resolved. `title` is what it said then, present
+ * when it opened, reopened or got worse. Incidents opened before November 2026 know only when they
+ * opened, were acknowledged and resolved, with their latest title.
+ */
+export const IncidentUpdate = Schema.Struct({
+  change: Schema.Literals(["opened", "reopened", "worsened", "acknowledged", "resolved"]).annotate({
+    identifier: "IncidentUpdateChange",
+  }),
+  at: Instant,
+  title: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "IncidentUpdate" })
+export type IncidentUpdate = typeof IncidentUpdate.Type
+
+/**
+ * A release of the incident's component that was running when it opened: in its environment, or,
+ * for a monitor's, which has none, in each environment the component ran in. From the component's
+ * operations in the hour before it opened; none when it sent none.
+ */
+export const IncidentRelease = Schema.Struct({
+  /** Absent when the component didn't say. */
+  environment: Schema.optionalKey(EnvironmentKey),
+  release: ReleaseVersion,
+}).annotate({ identifier: "IncidentRelease" })
+export type IncidentRelease = typeof IncidentRelease.Type
+
+/**
+ * One incident, whatever any period: the incident; its life, oldest first, its latest 500 updates;
+ * and the releases that were running when it opened.
+ */
+export const IncidentDetail = Schema.Struct({
+  incident: Incident,
+  updates: Schema.Array(IncidentUpdate),
+  releases: Schema.Array(IncidentRelease),
+}).annotate({ identifier: "IncidentDetail" })
+export type IncidentDetail = typeof IncidentDetail.Type
 
 /** The project has no incident with this ID. */
 export class IncidentNotFound extends Schema.TaggedError<IncidentNotFound>()("IncidentNotFound", {

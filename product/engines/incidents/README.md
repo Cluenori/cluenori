@@ -18,6 +18,15 @@ yield* incidents.addMonitor(actor, { component: ComponentKey.make("notes-api"), 
 
 const { open, resolved, checkedAt } = yield* incidents.incidents
 yield* incidents.acknowledge(actor, open[0].id) // stops its notifications
+
+// One incident, whatever any period: its life, and the release that ran when it opened.
+const { updates, releases } = yield* incidents.incident(open[0].id)
+// updates: [{ change: "opened", at, title: "POST /api/export: 18% failed, usually 0.1%" },
+//           { change: "acknowledged", at }, ...]; releases: [{ environment: "prod", release: "2.4.0+312" }]
+
+// One monitor: how it is now and since when, its days, its last 24 hours, its failed checks, its incidents.
+const { state, recent, failures } = yield* incidents.monitor(monitorId)
+// state: { lastCheck: { at, status: 200, ms: 84 }, since, days: [{ day: "2026-10-21", checks: 1440, failed: 2, averageMs: 91 }] }
 ```
 
 An unknown incident fails with `IncidentNotFound`, an unknown monitor with `MonitorNotFound`.
@@ -34,10 +43,18 @@ An unknown incident fails with `IncidentNotFound`, an unknown monitor with `Moni
   - An incident's life: one open for each detector and subject; resolved after 10 minutes without
     the problem; reopened by a problem back within 30 minutes of that; worse at a failure rate twice
     what was last told. Its title, which names no time, since times depend on who reads them.
+  - **An incident's life:** each change kept as an update, with the title it said when it opened,
+    reopened or got worse. **The release that ran:** the latest release of its component that ran
+    in the hour before it opened, in its environment, or, for a monitor's, in each.
+  - **A monitor's history:** every check 7 days (its status and how long the answer took, to its
+    status and headers), each UTC day's checks, failures and average time 90 days, and since when
+    it has passed or failed as it does now. A check failed counts against its day, even when it
+    didn't open an incident.
 - **Data:** incidents (`incidents_incidents`), when each open one's detector last saw its problem
-  (`incidents_firing`), monitors (`incidents_monitors`) and their last checks
-  (`incidents_monitor_checks`), what the detectors learned hourly (`incidents_baselines`), and when
-  they last learned and looked (`incidents_state`).
+  (`incidents_firing`), each incident's life (`incidents_updates`), monitors (`incidents_monitors`),
+  their last checks (`incidents_monitor_checks`), every check (`incidents_check_history`) and each
+  day's (`incidents_check_days`), what the detectors learned hourly (`incidents_baselines`), and
+  when they last learned and looked (`incidents_state`).
 
 ## Does not own
 
@@ -83,6 +100,11 @@ check starts no trace in the service it checks.
   learned from how operations ran until 2026-10-26, when an endpoint an app called about every 31
   minutes was taken for a job and alerted as stopped; a job that stopped is told only once jobs are
   declared, never guessed.
+- **A monitor's history is counts, not records.** Its checks and days are kept like its last check,
+  without activity; old ones are removed hourly. Every check of 20 monitors for 7 days is at most
+  201,600 rows; a monitor's page reads at most its last day of them.
+- **The release that ran comes from Signals, not Releases,** which depends on this engine: the
+  spans of the releases whose operations ran, as Releases' "incidents while it ran" reads them.
 - **Learned hourly, looked every minute.** Usual error rates come from a week of counts once an
   hour, so each minute reads only the last 15 minutes.
 - **A check costs one object wake-up a minute per project,** a small share of what the paid plan

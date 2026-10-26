@@ -2794,6 +2794,81 @@
         "description": "The project's open incidents, newest first, and up to 50 resolved in the last 7 days. Detectors look every minute: a monitor down two checks in a row, an operation failing at least 2% and three times its usual over 15 minutes, and a scheduled operation that missed twice its usual gap. `checkedAt` says when they last looked."
       }
     },
+    "/api/projects/{project}/incidents/{incident}": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "incidents.incident",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "incident",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "IncidentDetail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | IncidentNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/IncidentNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "One incident, whatever any period: the incident; its life, oldest first (when it opened, reopened, got worse, was acknowledged and resolved, with the title it said when it opened, reopened or got worse), its latest 500 updates; and the releases of its component that ran in the hour before it opened, the latest of each environment: in its environment, or, for a monitor's, in each."
+      }
+    },
     "/api/projects/{project}/incidents/{incident}/acknowledge": {
       "post": {
         "tags": [
@@ -2926,7 +3001,7 @@
             }
           }
         },
-        "description": "The project's monitors, oldest first, each with its last check: the URLs fetched every minute, which pass with a status below 400 within 10 seconds."
+        "description": "The project's monitors, oldest first: the URLs fetched every minute, which pass with a status below 400 within 10 seconds. Each with its last check (its status and how long the answer took, absent without an answer, and what was wrong, absent when it passed), since when it has passed or failed as it does now, and its last 90 UTC days with checks: how many, how many failed, and their average time."
       },
       "post": {
         "tags": [
@@ -3022,6 +3097,79 @@
       }
     },
     "/api/projects/{project}/monitors/{monitor}": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "operationId": "incidents.monitor",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "monitor",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "MonitorDetail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | MonitorNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MonitorNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "One monitor, whatever any period: how it is now and its last 90 days; its checks over the last 24 hours, by five minutes, with how many failed and their average and slowest time; its latest failed checks of the 7 days every check is kept, at most 20, newest first; and the incidents of its component and URL, at most 20, the latest opened first."
+      },
       "delete": {
         "tags": [
           "incidents"
@@ -10279,6 +10427,151 @@
         ],
         "additionalProperties": false
       },
+      "MonitorDetail": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/MonitorState"
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonitorStep"
+            }
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonitorCheck"
+            }
+          },
+          "incidents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Incident"
+            }
+          }
+        },
+        "required": [
+          "state",
+          "recent",
+          "failures",
+          "incidents"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorCheck": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "problem": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorStep": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checks": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "averageMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "slowestMs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "start",
+          "checks",
+          "failed"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorState": {
+        "type": "object",
+        "properties": {
+          "monitor": {
+            "$ref": "#/components/schemas/Monitor"
+          },
+          "lastCheck": {
+            "$ref": "#/components/schemas/MonitorCheck"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonitorDay"
+            }
+          }
+        },
+        "required": [
+          "monitor",
+          "days"
+        ],
+        "additionalProperties": false
+      },
+      "MonitorDay": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "$ref": "#/components/schemas/CalendarDay"
+          },
+          "checks": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "averageMs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "day",
+          "checks",
+          "failed"
+        ],
+        "additionalProperties": false
+      },
       "MonitorList": {
         "type": "object",
         "properties": {
@@ -10291,37 +10584,6 @@
         },
         "required": [
           "monitors"
-        ],
-        "additionalProperties": false
-      },
-      "MonitorState": {
-        "type": "object",
-        "properties": {
-          "monitor": {
-            "$ref": "#/components/schemas/Monitor"
-          },
-          "lastCheck": {
-            "$ref": "#/components/schemas/MonitorCheck"
-          }
-        },
-        "required": [
-          "monitor"
-        ],
-        "additionalProperties": false
-      },
-      "MonitorCheck": {
-        "type": "object",
-        "properties": {
-          "at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "problem": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "at"
         ],
         "additionalProperties": false
       },
@@ -10343,6 +10605,79 @@
           "incident"
         ],
         "additionalProperties": false
+      },
+      "IncidentDetail": {
+        "type": "object",
+        "properties": {
+          "incident": {
+            "$ref": "#/components/schemas/Incident"
+          },
+          "updates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncidentUpdate"
+            }
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncidentRelease"
+            }
+          }
+        },
+        "required": [
+          "incident",
+          "updates",
+          "releases"
+        ],
+        "additionalProperties": false
+      },
+      "IncidentRelease": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "release"
+        ],
+        "additionalProperties": false
+      },
+      "IncidentUpdate": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "$ref": "#/components/schemas/IncidentUpdateChange"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "change",
+          "at"
+        ],
+        "additionalProperties": false
+      },
+      "IncidentUpdateChange": {
+        "type": "string",
+        "enum": [
+          "opened",
+          "reopened",
+          "worsened",
+          "acknowledged",
+          "resolved"
+        ]
       },
       "IncidentList": {
         "type": "object",

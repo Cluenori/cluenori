@@ -82,6 +82,33 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("incidents", (it) => 
       const acknowledged = yield* client.incidents.acknowledge({ params: { project, incident: exporting.id } })
       assert.isDefined(acknowledged.acknowledgedAt)
 
+      // The incident opens by its ID with its life; the monitor with its failed checks and its incident.
+      const life = yield* client.incidents.incident({ params: { project, incident: exporting.id } })
+      assert.deepStrictEqual(
+        life.updates.map((update) => [update.change, update.title]),
+        [
+          ["opened", "POST /api/export: 100% failed, usually none"],
+          ["acknowledged", undefined],
+        ],
+      )
+      const watched = yield* client.incidents.monitor({ params: { project, monitor: monitor.id } })
+      assert.deepStrictEqual(
+        watched.failures.map((check) => check.problem),
+        ["Could not connect", "Could not connect"],
+      )
+      assert.deepStrictEqual(
+        watched.incidents.map((incident) => incident.title),
+        ["https://notes-api.invalid/health is down: Could not connect"],
+      )
+      // Two checks, both failed, on the UTC day they ran in (or two, around midnight).
+      assert.deepStrictEqual(
+        watched.state.days.reduce(
+          (sum, day) => ({ checks: sum.checks + day.checks, failed: sum.failed + day.failed }),
+          { checks: 0, failed: 0 },
+        ),
+        { checks: 2, failed: 2 },
+      )
+
       // Removing the monitor resolves its incident.
       yield* client.incidents.removeMonitor({ params: { project, monitor: monitor.id } })
       const third = yield* client.incidents.incidents({ params: { project } })
@@ -99,6 +126,8 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("incidents", (it) => 
       const missing = yield* Effect.flip(
         client.incidents.incidents({ params: { project: ProjectKey.make("never-made") } }),
       )
+      const removed = yield* Effect.flip(client.incidents.monitor({ params: { project, monitor: monitor.id } }))
+      assert.strictEqual(removed._tag, "MonitorNotFound")
       assert.strictEqual(unknown._tag, "IncidentNotFound")
       assert.strictEqual(missing._tag, "ProjectNotFound")
     }),

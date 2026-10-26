@@ -16,6 +16,13 @@ export const IncidentsHandlers = HttpApiBuilder.group(CluenoriApi, "incidents", 
         return yield* projects.call(member, params.project, projectCalls.incidents, undefined)
       }),
     )
+    .handle("incident", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.incident, params.incident)
+      }),
+    )
     .handle("acknowledge", ({ params }) =>
       Effect.gen(function* () {
         const member = yield* CurrentMember
@@ -32,6 +39,13 @@ export const IncidentsHandlers = HttpApiBuilder.group(CluenoriApi, "incidents", 
         const member = yield* CurrentMember
         const projects = yield* MemberProjects
         return yield* projects.call(member, params.project, projectCalls.monitors, undefined)
+      }),
+    )
+    .handle("monitor", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.monitor, params.monitor)
       }),
     )
     .handle("addMonitor", ({ params, payload }) =>
