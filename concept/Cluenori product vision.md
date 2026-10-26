@@ -4,7 +4,7 @@ Oct 18, 2026 · @Aleksandr
 
 Cluenori is the control room for my software factory, and my go-to tool for every project, app and business that I run. It helps me decide where my next hour and euro go, carry out that decision, and see whether it worked. It covers both sides of each project: the product side (users, value, money, messages) and the engineering side (speed, errors, releases). I build it for my own needs first. Other founders can use it when they see that it works.
 
-This tab is the vision. Foundation lists the primitives that all modules share. Modules describes the full module catalog, with a phase for each module. Platform covers hosting, payments, privacy and the license.
+This tab is the vision. Experience says how every screen behaves. Foundation lists the primitives that all modules share. Modules describes the full module catalog, with a phase for each module. Platform covers hosting, payments, privacy and the license.
 
 ## The problem
 
@@ -39,12 +39,13 @@ The engineering loop starts with a regression and ends when the number recovers.
 
 ## Principles
 
-Eleven rules control what goes into Cluenori and what stays out.
+Twelve rules control what goes into Cluenori and what stays out.
 
 - **Built for me first.** Each module solves a problem that I have in my own projects. Features that only other teams need wait until other teams use Cluenori.
 - **Answers, not builders.** Each page answers fixed questions without setup. To change a view, edit its code or tell an agent to edit it. Journeys and messages use step lists and templates, not a drag-and-drop canvas.
 - **Evidence shows its coverage.** Each answer shows its population, period, freshness and gaps. Missing data never shows as zero users, zero errors or good health.
 - **Link what is known.** Each record has a source, a project and a time. It links to a customer, feature, release or trace only when that link is known.
+- **Each product alone, better together.** Any combination of Cluenori's products is useful, and each one is worth using on its own: logs without traces, analytics without anything else. Used together, they link through the shared scope without setup (Experience).
 - **One model for all modules.** Each module uses the same scope, features, people, audiences, activity, actions and ledger. Thus a new module works with all other modules from its first day.
 - **Each action has an outcome.** A decision record keeps the question, the action and the result, so neither I nor an agent repeats a failed attempt.
 - **The factory contract.** Each new project reports to Cluenori from its first deploy, and Cluenori checks that the data arrives.

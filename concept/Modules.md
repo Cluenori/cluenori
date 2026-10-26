@@ -11,9 +11,11 @@ Cluenori is a tree of levels, the same on the web and on the phone (decided on 2
 
 Each level shows only the summary that I need to act or to understand, and one level deeper shows more. A module from the table below goes behind the door where it fits when it is built.
 
+Every level follows Experience: lists, groups and items, the answer first, and each product's own screens inside the shared tree (decided on 2026-10-26). First on it: Errors as a list, a group and an item, then Feeds.
+
 Built so far (2026-10-23): Now, a project and Tech, on the web and on the phone; Product and Releases still show their earlier pages. Next, in this order: the words (jobs are not "requests", and nothing is called "runs"; proposed: Requests and Jobs as two sections of Tech, Load for the chart, and "operation" only in code); on the web, Tech without its Components and Production panels, Releases as a short line, and a quieter Logs chart; then Product and its features; then making a release ("Making a release", below).
 
-Above the sidebar are a workspace switcher, a project switcher (the portfolio or one project) and search (⌘K). Above the content is the shared filter bar: component (ran in or started from), environment, release, feature, person or account, and period. The filters stay when I move between modules, so "Export in the iOS app" stays selected from Analytics to Logs.
+Above the sidebar are a workspace switcher, a project switcher (the portfolio or one project) and search (⌘K). Above the content is the shared filter bar: component (ran in or started from), environment, release, feature, person or account, and period. The filters stay when I move between modules, so "Export in the iOS app" stays selected from Analytics to Logs. Lists and groups have the filter bar; an item's page has none, because it shows one thing whole (Experience, "Lists, groups and items").
 
 | Group | Module | Use it to | Contains | Phase |
 | --- | --- | --- | --- | --- |
@@ -21,6 +23,7 @@ Above the sidebar are a workspace switcher, a project switcher (the portfolio or
 |  | Portfolio | Compare all projects | Purpose, stage, spend, revenue, value, quality, coverage, next decision | v1 |
 |  | Customers | See each person and account | List, customer page, accounts | v1 |
 |  | Decisions | Track questions, actions and outcomes | Open decisions, review dates, outcomes | v1 |
+|  | Feeds | Watch chosen events live, across projects | Feeds, their entries, alerts | v1 |
 | Product | Analytics | See how people use your apps | Value events, funnels, retention, paths, acquisition, web traffic | v1 |
 | Product | Features | See one feature across all modules | Catalog, scorecard, feature pages | v1 |
 | Product | Feedback | Collect bugs, ideas and questions from users | Inbox, ideas board, votes, replies | v2 |
@@ -55,7 +58,7 @@ A module stays hidden until its phase ships, so version 1 shows only what is rea
 
 ### How modules link
 
-These links are why Cluenori exists. Alone, no module is worth much, OpenTelemetry aside. Linked through the shared scope (release, component, feature, person), releases, performance, logs, features, flags and analytics give a developer, a product person or an agent the full context, fast. So each page filters by and links to the others, the API offers agents the same joins, and a module's first slice says which modules it links to and which links wait for modules not built yet.
+Each module is worth using alone (Experience, "Each product alone, better together"); these links are what makes them better together. Linked through the shared scope (release, component, feature, person), releases, performance, logs, features, flags and analytics give a developer, a product person or an agent the full context, fast. A link appears by itself when both sides have the data, and a page never shows an empty section because another module isn't used. So each page filters by and links to the others, the API offers agents the same joins, and a module's first slice says which modules it links to and which links wait for modules not built yet.
 
 Each object has its own page and a permanent URL. Objects are projects, components, flags, releases, errors, customers, features, issues, incidents, decisions, agent runs, ideas, feedback items, changelog entries, campaigns, journeys and version policies. In other modules, an object shows as a chip.
 
@@ -89,6 +92,20 @@ Today uses a fixed set of detectors, not a query builder. Each item shows the ev
 | A decision is due for review | The decision record and the new data | Record the outcome: helped, harmed, inconclusive or abandoned. |
 
 Each item links to its evidence. Today marks results from small samples and never shows missing data as zero.
+
+## Feeds: chosen events, live
+
+Decided on 2026-10-26. A feed is a live list of events that I chose, across my projects, with an alert on my phone for each one if I want it. "Registrations" shows everyone who signs up in any project; "Purchases" every purchase.
+
+The same moment has a different name in each project: `user.registered` in Notes, `signup_completed` in Folio. So a feed has a name, its sources (one or more pairs of a project and the name of the event its apps send there), and its alert level: none, quiet, or time sensitive. A feed never rings like an alarm; alarms are for things that are broken.
+
+- **The feed's page** shows its entries, newest first, as they arrive: the project, the event, when, the component and release it came from, the country, and the person, who opens their page. New entries appear within about a minute of reaching Cluenori, without a reload. Above them: how many arrived today and in the last 7 days, by project.
+- **Alerts** name the feed, the project and what is known without personal data: "Folio · Registration, Germany, iOS 2.4.0". One alert for each entry, and at most one a minute for each feed: more in that minute become one alert, "12 Registrations: Notes 9, Folio 3".
+- **Sources** are the events that apps send with `track`, now. Events from backends and payments (a Stripe purchase) join the same feeds when Cluenori receives them.
+- **Who:** the owner makes, changes and deletes feeds. Each member sees the entries of the projects that they see, and gets their alerts.
+- **Kept:** each feed's entries for 90 days. A feed only watches: it changes nothing in its projects, and stopping it loses no events, which stay in Analytics.
+
+A feed is the first use of one meaning with many names across projects. Portfolio numbers (registrations per project per week) and agents' questions ("which projects got purchases this week?") read the same definitions later.
 
 ## Customer and feature pages
 

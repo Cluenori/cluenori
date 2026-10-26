@@ -133,6 +133,8 @@ export default defineModule({
   id: 'feedback',
   scope: 'project',                                         // or 'workspace'
   nav: { area: 'Product', label: 'Feedback' },
+  objects: { item: { level: 'item', title, lifetime, links } },  // URLs, chips, search, Related
+  summary: feedbackLine,                                    // its line on Now and the project
   records: { item: FeedbackItem, vote: Vote },              // tables in the project's database
   migrations: './migrations',
   activity: ['feedback.submitted', 'feedback.status_changed', 'feedback.merged'],
@@ -159,12 +161,14 @@ A module can also declare its own signal kinds with a namespace, for example `up
 
 From this definition, the module gets these parts without more work:
 
-- a sidebar entry, the filter bar, and chips and Related links on other pages,
+- a place in the tree, its line on Now and the project, the filter bar on its lists and groups, and for each object a permanent URL, a chip and Related links on other pages,
 - entries in the customer timeline, and items in Today,
 - triggers and steps in workflows, and conditions in audiences,
 - API routes and MCP tools for each query and action,
 - the audit log, undo and policy checks for each action,
 - search, and the export and deletion of one person's data.
+
+The definition doesn't describe the module's screens. Each module draws its own, on the web and on the phone, designed for its data (a waterfall, a log list, counters, a live feed), with the shared look, and inside the shared tree (Experience, "Shared connections, each product's own screens").
 
 Four rules keep the modules independent:
 

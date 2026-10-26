@@ -102,7 +102,7 @@ apart.
 
 ```
 AGENTS.md, ARCHITECTURE.md, PATTERNS.md, GLOSSARY.md, README.md
-concept/                       the product: vision, foundation, modules, platform
+concept/                       the product: vision, experience, foundation, modules, platform
 flake.nix, flake.lock          the pinned toolchain
 dev, run, setup, update        entry points: check Nix, enter the toolchain, run a program in apps/cli
 cluenori                       the cluenori command: projects, components, and questions about them

@@ -695,7 +695,7 @@ conflict.
 - **System map:** `ARCHITECTURE.md`
 - **Pattern registry:** `PATTERNS.md`
 - **Glossary:** `GLOSSARY.md`; product terms are defined in `concept/` until code owns them
-- **Product:** `concept/` (vision, foundation, modules, platform)
+- **Product:** `concept/` (vision, experience, foundation, modules, platform)
 - **Package maps:** `<package>/README.md`, from `docs/templates/package-readme.md`
 - **Contracts and enforcement:**
   - A package's contract is its `src/index.ts`. Its `package.json` `exports` names only that file.
