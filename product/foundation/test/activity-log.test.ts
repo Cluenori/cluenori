@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Cause, DateTime, Effect, Exit, Schema } from "effect"
-import { SqlClient } from "effect/sql"
+import { SqlClient, SqlError } from "effect/sql"
 
 import type { Actor } from "../src/index.ts"
 import {
@@ -135,6 +135,35 @@ describe("ActivityLog", () => {
     ),
   )
 
+  it.effect("rolls back a database failure as a defect, not a recoverable write error", () =>
+    inObject(
+      "sql-fails",
+      inNotes,
+      Effect.gen(function* () {
+        yield* createNotes
+        const sql = yield* SqlClient.SqlClient
+        const log = yield* ActivityLog
+        const exit = yield* log
+          .commit({
+            source,
+            actor: member,
+            write: sql`INSERT INTO notes (id, title) VALUES ('n1', 'First')`.pipe(
+              Effect.andThen(sql`INSERT INTO notes (id, title) VALUES ('n1', 'Duplicate')`),
+            ),
+            activity: () => [{ payload: NoteAdded.make({ note: "n1", title: "First" }) }],
+          })
+          .pipe(Effect.exit)
+        const notes = yield* countNotes
+        const activity = yield* log.latest
+        assert.isTrue(
+          Exit.isFailure(exit) && Cause.hasDies(exit.cause) && SqlError.isSqlError(Cause.squash(exit.cause)),
+        )
+        assert.strictEqual(notes, 0)
+        assert.isEmpty(activity)
+      }),
+    ),
+  )
+
   it.effect("records a commit's entries in order with one time, and lists the newest first", () =>
     inObject(
       "order",
@@ -195,6 +224,10 @@ describe("ActivityLog", () => {
         Effect.gen(function* () {
           yield* createNotes
           yield* addNote("n1", "Before the restart")
+          const sql = yield* SqlClient.SqlClient
+          // The persisted history's name is stable across versions and separate from other packages'.
+          const history = yield* sql`SELECT 1 FROM foundation_migrations LIMIT 1`
+          assert.isNotEmpty(history)
         }),
       )
       const activity = yield* inObject(
@@ -215,6 +248,90 @@ describe("ActivityLog", () => {
 })
 
 describe("ActivityLog.deliver", () => {
+  it.effect("leaves activity committed while sending a partial batch for the next delivery", () =>
+    inObject(
+      "delivery-during-write",
+      inNotes,
+      Effect.gen(function* () {
+        yield* createNotes
+        const log = yield* ActivityLog
+        const sql = yield* SqlClient.SqlClient
+        yield* addNote("first", "Before delivery")
+        const sent: Array<unknown> = []
+        const delivered = yield* log.deliver((batch) =>
+          Effect.gen(function* () {
+            sent.push(...batch.map((entry) => entry.attrs["note"]))
+            yield* log.commit({
+              source,
+              actor: member,
+              write: writeNote(sql, "later", "During delivery"),
+              activity: (note) => [{ payload: NoteAdded.make({ note, title: "During delivery" }) }],
+            })
+          }),
+        )
+        assert.strictEqual(delivered, 1)
+        assert.deepStrictEqual(sent, ["first"])
+        const next = yield* log.deliver((batch) =>
+          Effect.sync(() => {
+            sent.push(...batch.map((entry) => entry.attrs["note"]))
+          }),
+        )
+        assert.strictEqual(next, 1)
+        assert.deepStrictEqual(sent, ["first", "later"])
+      }),
+    ),
+  )
+
+  it.effect("delivers at most ten batches of 100, preserving the remainder for the next call", () =>
+    inObject(
+      "delivery-limits",
+      inNotes,
+      Effect.gen(function* () {
+        const log = yield* ActivityLog
+        yield* log.commit({
+          source,
+          actor: member,
+          write: Effect.void,
+          activity: () => [
+            { payload: NoteAdded.make({ note: "0", title: "First" }) },
+            ...Array.from({ length: 1100 }, (_, index) => ({
+              payload: NoteAdded.make({ note: String(index + 1), title: "Another" }),
+            })),
+          ],
+        })
+        const batches: Array<ReadonlyArray<unknown>> = []
+        const send = (batch: ReadonlyArray<Envelope>) =>
+          Effect.sync(() => {
+            batches.push(batch.map((envelope) => envelope.attrs["note"]))
+          })
+        const first = yield* log.deliver(send)
+        assert.strictEqual(first, 1000)
+        assert.deepStrictEqual(
+          batches.map((batch) => batch.length),
+          Array.from({ length: 10 }, () => 100),
+        )
+        const next = yield* log.deliver(send)
+        assert.strictEqual(next, 101)
+        assert.deepStrictEqual(
+          batches.map((batch) => batch.length),
+          [...Array.from({ length: 11 }, () => 100), 1],
+        )
+        assert.deepStrictEqual(
+          batches.flat(),
+          Array.from({ length: 1101 }, (_, index) => String(index)),
+        )
+        const empty = yield* log.deliver(send)
+        assert.strictEqual(empty, 0)
+        assert.strictEqual(batches.length, 12)
+        const latest = yield* log.latest
+        assert.deepStrictEqual(
+          latest.map((entry) => entry.attrs["note"]),
+          Array.from({ length: 100 }, (_, index) => String(1100 - index)),
+        )
+      }),
+    ),
+  )
+
   it.effect("sends what was committed since, oldest first, once, and only what came after delivery began", () =>
     inObject(
       "delivers",

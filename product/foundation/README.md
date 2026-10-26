@@ -92,6 +92,9 @@ object leaves `project` out.
 
 ## Decisions and constraints
 
+- **What it trusts:** the host and in-process callers supply the verified actor, source and database
+  scope. Values from outside are untrusted and decoded through the exported Schemas; the log relies
+  on the platform's SQL transactions and cryptography.
 - **Every ID is a lowercase UUIDv7,** so IDs sort by time and compare as text. Person, installation
   and account IDs are pseudonyms Cluenori assigns, never the app's own IDs, so deleting the link to a
   person leaves their signals pointing to no one.
