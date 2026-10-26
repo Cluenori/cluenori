@@ -184,6 +184,24 @@ public enum UptimeBriefs {
         String(format: "%.1f%%", locale: Locale(identifier: "en_US_POSIX"), share * 100)
     }
 
+    // An uptime, already rounded down to a hundredth of a percent (`UptimeFacts.passedShare`), with
+    // both its decimals: one failed check of 14,400 reads 99.99%, never 100.0%.
+    private static func uptime(_ share: Double) -> String {
+        String(format: "%.2f%%", locale: Locale(identifier: "en_US_POSIX"), share * 100)
+    }
+
+    /// A monitor's URL as a brief names it: without its user, password, query or fragment, where
+    /// tokens go, so a brief handed to an agent carries none; `?…` says a query was left out. Other
+    /// secrets in a URL's path are not recognized, and stay.
+    public static func briefURL(_ url: String) -> String {
+        guard let parts = URLComponents(string: url), let scheme = parts.scheme, let host = parts.host else {
+            return url
+        }
+        let port = parts.port.map { ":\($0)" } ?? ""
+        let left = parts.query != nil || parts.fragment != nil ? "?…" : ""
+        return "\(scheme)://\(host)\(port)\(parts.path)\(left)"
+    }
+
     private static func milliseconds(_ ms: Double) -> String {
         ms >= 1000
             ? String(format: "%.1f s", locale: Locale(identifier: "en_US_POSIX"), ms / 1000) : "\(Int(ms.rounded())) ms"
@@ -224,6 +242,11 @@ public enum UptimeBriefs {
     public static func incident(project: String, detail: IncidentDetail) -> String {
         let incident = detail.incident
         let environment = incident.environment
+        let title: String =
+            switch incident.evidence {
+            case .down(let down): incident.title.replacing(down.url, with: briefURL(down.url))
+            default: incident.title
+            }
         let place = incident.component + (environment.map { " (\($0))" } ?? "")
         let about: String =
             switch incident.evidence {
@@ -245,7 +268,7 @@ public enum UptimeBriefs {
                 .joined(separator: ", ") + "."
         let life = detail.updates.map { "\(changeWords[$0.change] ?? $0.change.rawValue) \(iso($0.at))" }
         return [
-            "Look into this \(kind(incident.evidence)) incident in Cluenori project \(project): \(incident.title)",
+            "Look into this \(kind(incident.evidence)) incident in Cluenori project \(project): \(title)",
             "Incident \(incident.id), in \(place), opened \(iso(incident.openedAt))"
                 + (incident.resolvedAt.map { ", resolved \(iso($0))." } ?? ", still open."),
             "What its detector saw: \(saw(incident.evidence)).",
@@ -267,14 +290,14 @@ public enum UptimeBriefs {
     public static func monitor(project: String, detail: MonitorDetail, now: Date) -> String {
         let state = detail.state
         let monitor = state.monitor
-        let week = UptimeFacts.passedShare(UptimeFacts.lastDays(of: state, now: now, days: 7)).map(percent)
-        let all = UptimeFacts.passedShare(state.days).map(percent)
+        let week = UptimeFacts.passedShare(UptimeFacts.lastDays(of: state, now: now, days: 7)).map(uptime)
+        let all = UptimeFacts.passedShare(state.days).map(uptime)
         let failures = detail.failures.prefix(5).map { check in
             "\(iso(check.at)) \(check.problem ?? "")\(check.ms.map { " in \(milliseconds($0))" } ?? "")"
         }
         return
             ([
-                "Look into this monitor in Cluenori project \(project): \(monitor.url), of \(monitor.component), fetched every minute since \(iso(monitor.addedAt)); a check passes with a status below 400 within 10 seconds.",
+                "Look into this monitor in Cluenori project \(project): \(briefURL(monitor.url)), of \(monitor.component), fetched every minute since \(iso(monitor.addedAt)); a check passes with a status below 400 within 10 seconds.",
                 "Now: \(standing(state))\(state.lastCheck.map { ", last checked \(iso($0.at))" } ?? "").",
                 "Up \(week ?? "unknown") over the last 7 days, \(all ?? "unknown") over its last \(state.days.count) days with checks.",
             ]

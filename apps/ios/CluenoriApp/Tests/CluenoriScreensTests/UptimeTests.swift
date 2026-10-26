@@ -139,7 +139,23 @@ struct UptimeModelTests {
         #expect(detail.state.status == .down)
         let brief = UptimeBriefs.monitor(project: "notes", detail: detail, now: date("2026-10-26T00:30:00Z"))
         #expect(brief.contains("Now: Down since 2026-10-26T00:25:00Z: HTTP 503, last checked 2026-10-26T00:29:00Z."))
-        #expect(brief.contains("Up 99.7% over the last 7 days"))
+        #expect(brief.contains("Up 99.72% over the last 7 days"))
         #expect(brief.contains("Its latest failed checks: 2026-10-26T00:29:00Z HTTP 503 in 120 ms."))
+    }
+
+    @Test func `hands an agent a monitor's URL without its token, and never rounds a failed check to 100%`() {
+        let detail = MonitorDetail(
+            state: MonitorState(
+                monitor: Monitor(
+                    id: "m1", component: "notes-api", url: "https://ops:pw@notes.example/health?token=s3cret",
+                    addedAt: date("2026-10-01T00:00:00Z")),
+                days: [MonitorDay(day: "2026-10-25", checks: 14_400, failed: 1)]),
+            recent: [], failures: [], incidents: [])
+
+        let brief = UptimeBriefs.monitor(project: "notes", detail: detail, now: date("2026-10-26T00:30:00Z"))
+
+        #expect(brief.contains("https://notes.example/health?…, of notes-api"))
+        #expect(!brief.contains("s3cret") && !brief.contains("pw@"))
+        #expect(brief.contains("Up 99.99% over the last 7 days"))
     }
 }

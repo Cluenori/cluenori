@@ -1,7 +1,17 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
-import { columns, count, milliseconds, printable, share, utcClock, utcMinute, utcSecond } from "../src/terminal-text.ts"
+import {
+  columns,
+  count,
+  milliseconds,
+  printable,
+  share,
+  uptime,
+  utcClock,
+  utcMinute,
+  utcSecond,
+} from "../src/terminal-text.ts"
 
 describe("terminal text", () => {
   it("writes out what a terminal would act on, and keeps lines, tabs and every other character", () => {
@@ -27,6 +37,8 @@ describe("terminal text", () => {
     assert.strictEqual(count(12_408.6), "12,409")
     assert.strictEqual(share(1, 8), "12.5%")
     assert.strictEqual(share(7, 0), "0%")
+    // One failed check of 14,400 is 99.993%: never read as 100%.
+    assert.strictEqual(uptime(14_399, 14_400), "99.99%")
   })
 
   it("changes duration units and precision at each boundary", () => {

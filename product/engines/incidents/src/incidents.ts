@@ -545,15 +545,30 @@ export class Incidents extends Context.Service<
 
       // Fetches every monitor, keeps each check, its day's counts and the monitor's last check, and
       // says which monitors are down.
-      const downNow = Effect.fn("Incidents.downNow")(function* (now: number) {
+      // Fetches every monitor's URL: the network part of a check, which stores nothing.
+      const fetchMonitors = Effect.gen(function* () {
         const monitors = yield* findMonitors(undefined).pipe(Effect.orDie)
-        const checked = yield* Effect.forEach(
+        return yield* Effect.forEach(
           monitors,
-          (monitor) => checkUrl(monitor.url).pipe(Effect.map((check) => ({ monitor, check }))),
+          (monitor) => checkUrl(monitor.url).pipe(Effect.map((check) => [monitor.id, check] as const)),
           { concurrency: checksAtOnce },
         )
+      })
+
+      // Stores the checks fetched and says which monitors are down, against the monitors as they
+      // are now: one removed while its URL was fetched keeps nothing, and a monitor already checked
+      // at this very millisecond isn't counted twice.
+      const downNow = Effect.fn("Incidents.downNow")(function* (
+        now: number,
+        fetched: ReadonlyArray<readonly [MonitorId, Checked]>,
+      ) {
+        const monitors = new Map((yield* findMonitors(undefined)).map((row) => [row.id, row] as const))
         const firings: Array<Firing> = []
-        for (const { monitor, check } of checked) {
+        for (const [id, check] of fetched) {
+          const monitor = monitors.get(id)
+          if (monitor === undefined || monitor.checkedAt === now) {
+            continue
+          }
           const { problem } = check
           const failures = problem === undefined ? 0 : (monitor.failures ?? 0) + 1
           // Passing or failing as before keeps when that began; a first check, or a turn, starts it.
@@ -572,14 +587,14 @@ export class Incidents extends Context.Service<
           })}
             ON CONFLICT (monitor) DO UPDATE SET failures = excluded.failures, problem = excluded.problem,
               checked_at = excluded.checked_at, status = excluded.status, ms = excluded.ms,
-              since = excluded.since`.pipe(Effect.orDie)
+              since = excluded.since`
           yield* sql`INSERT INTO incidents_check_history ${sql.insert({
             monitor: monitor.id,
             at: now,
             status,
             ms,
             problem: problem ?? null,
-          })} ON CONFLICT (monitor, at) DO NOTHING`.pipe(Effect.orDie)
+          })} ON CONFLICT (monitor, at) DO NOTHING`
           const failed = problem === undefined ? 0 : 1
           const answered = ms === null ? 0 : 1
           yield* sql`INSERT INTO incidents_check_days ${sql.insert({
@@ -591,7 +606,7 @@ export class Incidents extends Context.Service<
             total_ms: ms ?? 0,
           })}
             ON CONFLICT (monitor, day) DO UPDATE SET checks = checks + 1, failed = failed + ${failed},
-              answered = answered + ${answered}, total_ms = total_ms + ${ms ?? 0}`.pipe(Effect.orDie)
+              answered = answered + ${answered}, total_ms = total_ms + ${ms ?? 0}`
           if (problem !== undefined && failures >= downAfter) {
             firings.push({
               detector: "down",
@@ -604,7 +619,7 @@ export class Incidents extends Context.Service<
           }
         }
         return firings
-      })
+      }, Effect.orDie)
 
       // Removes monitors' checks older than 7 days, and days older than 90.
       const cleanUp = (now: number) =>
@@ -776,14 +791,24 @@ export class Incidents extends Context.Service<
           yield* learn(now)
           yield* cleanUp(now)
         }
-        const baselines = yield* findBaselines(undefined).pipe(Effect.orDie)
-        const open = yield* findOpen(undefined).pipe(Effect.orDie)
-        const firings = [...(yield* downNow(now)), ...(yield* failingNow(now, baselines))]
+        // The network first; then everything else at once in one transaction, from the monitors and
+        // incidents as they are after it, so a monitor removed or an incident acknowledged meanwhile
+        // is seen.
+        const fetched = yield* fetchMonitors
         const settings = yield* settingsNow
-        const changes = yield* settle(now, open, firings, settings)
-        yield* sql`INSERT INTO incidents_state (id, checked_at) VALUES (1, ${now})
-          ON CONFLICT (id) DO UPDATE SET checked_at = excluded.checked_at`.pipe(Effect.orDie)
-        return changes
+        return yield* sql
+          .withTransaction(
+            Effect.gen(function* () {
+              const baselines = yield* findBaselines(undefined).pipe(Effect.orDie)
+              const firings = [...(yield* downNow(now, fetched)), ...(yield* failingNow(now, baselines))]
+              const open = yield* findOpen(undefined).pipe(Effect.orDie)
+              const changes = yield* settle(now, open, firings, settings)
+              yield* sql`INSERT INTO incidents_state (id, checked_at) VALUES (1, ${now})
+                ON CONFLICT (id) DO UPDATE SET checked_at = excluded.checked_at`
+              return changes
+            }),
+          )
+          .pipe(Effect.orDie)
       }).pipe(Effect.withSpan("Incidents.check"))
 
       // ---- Questions and actions ------------------------------------------------------------
@@ -878,28 +903,46 @@ export class Incidents extends Context.Service<
         return detail
       })
 
-      // The releases of an incident's component that ran in the hour before it opened, the latest
-      // of each environment: in its own, or, for a monitor's, in each.
+      // The releases of an incident's component that ran in the hour before it opened, the one that
+      // ran last before it opened in each environment: in its own, or, for a monitor's, in each. Not
+      // the release first seen latest: after a rollback, the older release is the one that ran.
       const releasesOf = Effect.fn("Incidents.releasesOf")(function* (row: IncidentRow) {
         const opened = DateTime.toEpochMillis(row.openedAt)
+        const period = periodOf(opened - releasesBefore, opened + 1)
         const table = yield* signals.releases({
-          period: periodOf(opened - releasesBefore, opened + 1),
+          period,
           component: row.component,
           ...(row.environment === "" ? {} : { environment: row.environment }),
         })
-        const latest = new Map<string, IncidentRelease>()
+        const latest = new Map<string, { readonly ran: IncidentRelease; readonly at: number }>()
         for (const ran of table.rows) {
           const place = ran.environment ?? ""
           // A failing or stopped incident without an environment is about operations that named none.
-          if ((row.detector !== "down" && place !== row.environment) || latest.has(place)) {
+          if (row.detector !== "down" && place !== row.environment) {
+            continue
+          }
+          // When it last ran before the incident opened: its last step of the counts, by the minute
+          // while they are kept, by the hour after.
+          const load = yield* signals.loadOverTime(
+            {
+              period,
+              component: row.component,
+              release: ran.release,
+              ...(ran.environment === undefined ? {} : { environment: ran.environment }),
+            },
+            "1m",
+          )
+          const at = load.points.map((point) => DateTime.toEpochMillis(point.start)).at(-1)
+          const earlier = latest.get(place)
+          if (at === undefined || (earlier !== undefined && earlier.at >= at)) {
             continue
           }
           latest.set(place, {
-            ...(ran.environment === undefined ? {} : { environment: ran.environment }),
-            release: ran.release,
+            ran: { ...(ran.environment === undefined ? {} : { environment: ran.environment }), release: ran.release },
+            at,
           })
         }
-        return [...latest.values()]
+        return [...latest.values()].map((found) => found.ran)
       })
 
       const incidentDetail = Effect.fn("Incidents.incident")(function* (id: IncidentId) {

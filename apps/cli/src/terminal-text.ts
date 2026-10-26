@@ -4,9 +4,17 @@ import { DateTime } from "effect"
 // machine's locale or time zone: numbers are written the en-US way, and times in UTC.
 const wholeNumbers = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 })
 const percent = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 })
+const percentDown = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 2,
+  roundingMode: "floor",
+})
 
 /** `12,408`. */
 export const count = (value: number) => wholeNumbers.format(value)
+
+/** The share of checks that passed, rounded down so one failed check never reads 100%: `99.99%`. */
+export const uptime = (passed: number, checks: number) => percentDown.format(passed / checks)
 
 /** `0.4%` of `whole`, or `0%` when there is no whole. */
 export const share = (part: number, whole: number) => percent.format(whole === 0 ? 0 : part / whole)

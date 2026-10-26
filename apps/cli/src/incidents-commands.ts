@@ -8,7 +8,7 @@ import { apiClient, reachFailures, refuse } from "./api-client.ts"
 import type { ApiTarget } from "./api-settings.ts"
 import { apiTarget } from "./api-settings.ts"
 import { local, parsed } from "./question.ts"
-import { columns, count, milliseconds, share, utcMinute } from "./terminal-text.ts"
+import { columns, count, milliseconds, uptime, utcMinute } from "./terminal-text.ts"
 
 const projectArgument = Argument.String("project").pipe(Argument.withDescription("The project's key."))
 
@@ -204,7 +204,7 @@ export const monitorShow = Command.make(
       const failed = days.reduce((sum, day) => sum + day.failed, 0)
       if (checks > 0) {
         yield* Console.log(
-          `\nUp ${share(checks - failed, checks)} of ${count(checks)} checks over its last ${count(days.length)} days with checks:`,
+          `\nUp ${uptime(checks - failed, checks)} of ${count(checks)} checks over its last ${count(days.length)} days with checks:`,
         )
         yield* Console.log(
           columns([

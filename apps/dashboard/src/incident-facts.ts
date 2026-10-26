@@ -12,6 +12,25 @@ import { detectorWords, evidenceWords } from "@/project-facts"
 
 const dayMillis = 86_400_000
 
+/**
+ * A monitor's URL as a brief names it: without its user, password, query or fragment, where tokens
+ * go, so a brief handed to an agent carries none; `?…` says a query was left out. The URL fetched is
+ * unchanged. Other secrets in a URL's path are not recognized, and stay.
+ */
+export const briefUrlOf = (url: string) => {
+  const parsed = URL.parse(url)
+  if (parsed === null) {
+    return url
+  }
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search === "" && parsed.hash === "" ? "" : "?…"}`
+}
+
+// An incident's title as a brief says it: its monitor's URL as `briefUrlOf` names it.
+const briefTitleOf = (incident: IncidentDetail["incident"]) =>
+  incident.evidence._tag === "down"
+    ? incident.title.replaceAll(incident.evidence.url, briefUrlOf(incident.evidence.url))
+    : incident.title
+
 // ---- Incidents -------------------------------------------------------------------------------------
 
 /** Each change in an incident's life, in a word or two. */
@@ -60,7 +79,7 @@ export const incidentBriefOf = (project: ProjectKey, detail: IncidentDetail) => 
       ? `Its monitor: ./cluenori monitor show ${project} ${incident.evidence.monitor}, or GET /api/projects/${project}/monitors/${incident.evidence.monitor}.`
       : `Its operation over time: ./cluenori operation ${project} '${incident.evidence.operation.replaceAll("'", "'\\''")}' --component ${incident.component}${incident.environment === undefined ? "" : ` --environment ${incident.environment}`}.`
   return [
-    `Look into this ${detectorWords[incident.evidence._tag].toLowerCase()} incident in Cluenori project ${project}: ${incident.title}`,
+    `Look into this ${detectorWords[incident.evidence._tag].toLowerCase()} incident in Cluenori project ${project}: ${briefTitleOf(incident)}`,
     `Incident ${incident.id}, in ${where}, opened ${DateTime.formatIso(incident.openedAt)}${incident.resolvedAt === undefined ? ", still open" : `, resolved ${DateTime.formatIso(incident.resolvedAt)}`}.`,
     `What its detector saw: ${evidenceWords(incident.evidence, DateTime.toEpochMillis(incident.openedAt))}.`,
     detail.releases.length === 0
@@ -188,7 +207,7 @@ export const monitorBriefOf = (project: ProjectKey, detail: MonitorDetail, now: 
   const { monitor } = detail.state
   const failures = detail.failures.slice(0, 5)
   return [
-    `Look into this monitor in Cluenori project ${project}: ${monitor.url}, of ${monitor.component}, fetched every minute since ${DateTime.formatIso(monitor.addedAt)}; a check passes with a status below 400 within 10 seconds.`,
+    `Look into this monitor in Cluenori project ${project}: ${briefUrlOf(monitor.url)}, of ${monitor.component}, fetched every minute since ${DateTime.formatIso(monitor.addedAt)}; a check passes with a status below 400 within 10 seconds.`,
     `Now: ${standingWordsOf(detail.state)}${detail.state.lastCheck === undefined ? "" : `, last checked ${DateTime.formatIso(detail.state.lastCheck.at)}`}.`,
     `Up ${uptimeOf(lastDaysOf(detail.state, now, 7)) ?? "unknown"} over the last 7 days, ${uptimeOf(detail.state.days) ?? "unknown"} over its last ${count(detail.state.days.length)} days with checks.`,
     ...(failures.length === 0

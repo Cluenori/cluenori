@@ -1,10 +1,10 @@
-import { CalendarDay, ComponentKey } from "@cluenori/foundation"
+import { CalendarDay, ComponentKey, ProjectKey } from "@cluenori/foundation"
 import type { MonitorState } from "@cluenori/incidents"
 import { Monitor, MonitorId, MonitorUrl } from "@cluenori/incidents"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
-import { standingWordsOf, stripOf, uptimeAnswerOf, uptimeOf } from "@/incident-facts"
+import { monitorBriefOf, standingWordsOf, stripOf, uptimeAnswerOf, uptimeOf } from "@/incident-facts"
 
 const day = 86_400_000
 // 2026-10-21T10:00:00Z.
@@ -71,5 +71,30 @@ describe("uptimeAnswerOf", () => {
     assert.strictEqual(standingWordsOf(monitor("1", [])), "Up")
     assert.strictEqual(standingWordsOf({ ...monitor("2", [], "HTTP 503") }), "Down: HTTP 503")
     assert.match(standingWordsOf({ ...monitor("1", []), since: DateTime.makeUnsafe(now - 3 * day) }), /^Up for 3 \S+$/)
+  })
+})
+
+describe("monitorBriefOf", () => {
+  it("hands an agent a monitor's URL without the token in its query", () => {
+    const state = monitor("1", [counted("2026-10-21", 10, 0)])
+    const secret: MonitorState = {
+      ...state,
+      monitor: new Monitor({
+        id: state.monitor.id,
+        component: state.monitor.component,
+        addedAt: state.monitor.addedAt,
+        url: MonitorUrl.make("https://ops:pw@notes.example/health?token=s3cret"),
+      }),
+    }
+
+    const brief = monitorBriefOf(
+      ProjectKey.make("notes"),
+      { state: secret, recent: [], failures: [], incidents: [] },
+      now,
+    )
+
+    assert.include(brief, "https://notes.example/health?…, of notes-api")
+    assert.notInclude(brief, "s3cret")
+    assert.notInclude(brief, "pw@")
   })
 })

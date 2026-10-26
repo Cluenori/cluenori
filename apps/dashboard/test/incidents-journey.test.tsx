@@ -99,7 +99,9 @@ describe("incidents journey", () => {
           .toBeVisible(),
       )
       yield* Effect.promise(() =>
-        expect.element(screen.getByRole("region", { name: "Last 24 hours" }).getByText(/ms average$/)).toBeVisible(),
+        expect
+          .element(screen.getByRole("region", { name: "Last 24 hours" }).getByText("average, every 5 min"))
+          .toBeVisible(),
       )
       yield* Effect.promise(() =>
         expect

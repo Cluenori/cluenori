@@ -17,17 +17,21 @@ import { Incidents } from "../src/index.ts"
  */
 export const answers = new Map<string, number>()
 
+/** What the fake web does first for a URL here, before answering it: a test pauses a fetch with it. */
+export const before = new Map<string, Effect.Effect<void>>()
+
 const fakeWeb = Layer.succeed(
   HttpClient.HttpClient,
   HttpClient.make((request, url) => {
     const status = answers.get(url.href)
+    const first = before.get(url.href) ?? Effect.void
     return status === undefined
       ? Effect.fail(
           new HttpClientError.HttpClientError({
             reason: new HttpClientError.TransportError({ request, description: "No route in the test" }),
           }),
         )
-      : Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status })))
+      : first.pipe(Effect.as(HttpClientResponse.fromWeb(request, new Response(null, { status }))))
   }),
 )
 

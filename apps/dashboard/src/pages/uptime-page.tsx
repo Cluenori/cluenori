@@ -179,12 +179,8 @@ function RecentPanel({ detail, now }: { readonly detail: MonitorDetail; readonly
   const checks = detail.recent.reduce((sum, point) => sum + point.checks, 0)
   const failed = detail.recent.reduce((sum, point) => sum + point.failed, 0)
   const slowest = largestOf(detail.recent.map((point) => point.slowestMs))
-  const answered = detail.recent.filter((point) => point.averageMs !== undefined)
-  const average =
-    answered.length === 0
-      ? undefined
-      : answered.reduce((sum, point) => sum + (point.averageMs ?? 0) * point.checks, 0) /
-        answered.reduce((sum, point) => sum + point.checks, 0)
+  // No average over the day: a step's average is of its answered checks, which the steps don't count.
+  const answered = detail.recent.some((point) => point.averageMs !== undefined)
   const ticks = [0, 72, 144, 216].map((column) => ({ column, label: axisTime(from + column * step) }))
   const timeOf = (span: ColumnSpan) =>
     `${axisTime(from + span.first * step)}–${axisTime(from + (span.last + 1) * step)}`
@@ -204,7 +200,7 @@ function RecentPanel({ detail, now }: { readonly detail: MonitorDetail; readonly
             rows={[
               {
                 label: "Answer time",
-                note: average === undefined ? "no answer" : `${duration(average)} average`,
+                note: answered ? "average, every 5 min" : "no answer",
                 color: "var(--mint)",
                 values: points.map((point) => point?.averageMs),
               },

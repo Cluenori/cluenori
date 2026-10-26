@@ -5,11 +5,11 @@ import { ComponentName, ProjectName, Projects } from "@cluenori/projects"
 import type { OperationCounts } from "@cluenori/signals"
 import { BatchDigest, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Deferred, Effect } from "effect"
 import { TestClock } from "effect/testing"
 
 import { IncidentId, Incidents, MonitorUrl } from "../src/index.ts"
-import { answers, inProject } from "./in-object.ts"
+import { answers, before, inProject } from "./in-object.ts"
 
 // 2026-10-21T10:00:00Z, on a minute.
 const start = 1792576800000
@@ -311,16 +311,18 @@ describe("Incidents", () => {
     ),
   )
 
-  it.effect("keeps an incident's whole life, and the release that ran where it opened", () =>
+  it.effect("keeps an incident's whole life, and the release that ran last where it opened", () =>
     inProject(
       "life",
       start,
       Effect.gen(function* () {
         const incidents = yield* Incidents
-        // 1.4.0 ran days ago and 1.4.1 since; 9.0.0 ran in dev, which the incident isn't in.
+        // 1.4.0 ran days ago, 1.4.1 half an hour ago, then 1.4.0 again, rolled back, when it failed;
+        // 9.0.0 ran in dev, which the incident isn't in.
         yield* record(api, [release(counts("POST /api/export", start - 3 * day, 1000, 1), "1.4.0")])
+        yield* record(api, [release(counts("POST /api/export", start - 30 * minute, 10), "1.4.1")])
         yield* record(api, [release(dev(counts("GET /api/feed", start - 2 * minute, 10)), "9.0.0")])
-        yield* record(api, [release(counts("POST /api/export", start - minute, 50, 10), "1.4.1")])
+        yield* record(api, [release(counts("POST /api/export", start - minute, 50, 10), "1.4.0")])
         yield* checkAt(start)
         yield* record(api, [counts("POST /api/export", start + 2 * minute, 100, 60)])
         yield* checkAt(start + 3 * minute)
@@ -350,7 +352,7 @@ describe("Incidents", () => {
           ],
         )
         assert.deepStrictEqual(detail.releases, [
-          { environment: EnvironmentKey.make("production"), release: ReleaseVersion.make("1.4.1") },
+          { environment: EnvironmentKey.make("production"), release: ReleaseVersion.make("1.4.0") },
         ])
         assert.strictEqual(detail.incident.resolvedAt, undefined)
         assert.strictEqual(missing._tag, "IncidentNotFound")
@@ -445,6 +447,99 @@ describe("Incidents", () => {
 
         yield* incidents.removeMonitor(member, monitor.id)
         assert.strictEqual((yield* Effect.flip(incidents.monitor(monitor.id)))._tag, "MonitorNotFound")
+      }),
+    ),
+  )
+
+  it.effect("keeps nothing of a monitor removed while its URL is fetched, and counts a repeated check once", () =>
+    inProject(
+      "fetch-races",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const incidents = yield* Incidents
+        const url = MonitorUrl.make("https://races.notes.test/health")
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
+        const monitor = yield* incidents.addMonitor(member, { component: api, url })
+        answers.set(url, 503)
+        yield* checkAt(start)
+        // Checked again in the same millisecond, it counts once, in its checks and its day alike.
+        yield* incidents.check
+        const once = yield* incidents.monitor(monitor.id)
+
+        // The second failed check is fetched; meanwhile the monitor is removed.
+        const fetching = yield* Deferred.make<void>()
+        const removed = yield* Deferred.make<void>()
+        before.set(url, Deferred.succeed(fetching, undefined).pipe(Effect.andThen(Deferred.await(removed))))
+        yield* TestClock.setTime(start + minute)
+        const [changes] = yield* Effect.all(
+          [
+            incidents.check,
+            Deferred.await(fetching).pipe(
+              Effect.andThen(incidents.removeMonitor(member, monitor.id)),
+              Effect.andThen(Deferred.succeed(removed, undefined)),
+            ),
+          ],
+          { concurrency: 2 },
+        )
+        before.delete(url)
+
+        assert.deepStrictEqual(
+          [once.recent.reduce((sum, step) => sum + step.checks, 0), once.state.days.map((each) => each.checks)],
+          [1, [1]],
+        )
+        assert.deepStrictEqual(changes, [])
+        assert.deepStrictEqual((yield* incidents.incidents).open, [])
+        assert.strictEqual((yield* Effect.flip(incidents.monitor(monitor.id)))._tag, "MonitorNotFound")
+      }),
+    ),
+  )
+
+  it.effect("tells an acknowledgment made while URLs are fetched when the incident resolves", () =>
+    inProject(
+      "fetch-acknowledged",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const incidents = yield* Incidents
+        const log = yield* ActivityLog
+        const url = MonitorUrl.make("https://acknowledged.notes.test/health")
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
+        yield* incidents.addMonitor(member, { component: api, url })
+        answers.set(url, 503)
+        yield* checkAt(start)
+        yield* checkAt(start + minute)
+        const [open] = (yield* incidents.incidents).open
+        if (open === undefined) {
+          return assert.fail("The monitor down twice opened no incident")
+        }
+
+        // It answers again, 11 minutes on; while that check fetches it, someone acknowledges it.
+        answers.set(url, 200)
+        const fetching = yield* Deferred.make<void>()
+        const acknowledged = yield* Deferred.make<void>()
+        before.set(url, Deferred.succeed(fetching, undefined).pipe(Effect.andThen(Deferred.await(acknowledged))))
+        yield* TestClock.setTime(start + 12 * minute)
+        const [changes] = yield* Effect.all(
+          [
+            incidents.check,
+            Deferred.await(fetching).pipe(
+              Effect.andThen(incidents.acknowledge(member, open.id)),
+              Effect.andThen(Deferred.succeed(acknowledged, undefined)),
+            ),
+          ],
+          { concurrency: 2 },
+        )
+        before.delete(url)
+        const resolved = (yield* log.latest).find((entry) => entry.name === "incident.resolved")
+
+        assert.deepStrictEqual(
+          changes.map((change) => [change.change, change.incident.acknowledgedAt !== undefined]),
+          [["resolved", true]],
+        )
+        assert.strictEqual(resolved?.attrs["acknowledged"], true)
       }),
     ),
   )
