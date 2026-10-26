@@ -213,4 +213,11 @@ describe("rateOf", () => {
     // A life of minutes counts as an hour, not as a rate it never kept up.
     assert.strictEqual(rateOf(30, life(0.1), 3_600_000), 30)
   })
+
+  it("counts warnings of a long life over the part whose logs are kept, not its whole life", () => {
+    // 180 days, logs kept for the last 90: 900 warnings are 10 a day, not 5.
+    const long = life(180 * 24)
+    const logsFrom = DateTime.makeUnsafe(Date.parse("2026-10-20T00:00:00Z") + 90 * 86_400_000)
+    assert.strictEqual(rateOf(900, long, 86_400_000, logsFrom), 10)
+  })
 })

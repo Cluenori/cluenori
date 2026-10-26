@@ -2,7 +2,7 @@ import { ReleaseList } from "@cluenori/releases"
 import { assert, describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { render } from "vitest-browser-react"
-import { page } from "vitest/browser"
+import { page, userEvent } from "vitest/browser"
 
 import { App } from "@/app"
 
@@ -113,6 +113,12 @@ describe("releases journey", () => {
         expect.element(life.getByRole("slider", { name: /^Its life by 5 minutes/ })).toBeVisible(),
       )
       yield* Effect.promise(() => expect.element(life.getByRole("slider", { name: /^Its whole life/ })).toBeVisible())
+      // Narrowed by a step at each end, the zoom keeps its width as the arrow keys move it to the end.
+      const strip = life.getByRole("slider", { name: /^Its whole life/ })
+      yield* Effect.promise(() => strip.click())
+      yield* Effect.promise(() => userEvent.keyboard("{Escape}+{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}"))
+      yield* Effect.promise(() => expect.element(strip).toHaveAttribute("aria-valuenow", "2"))
+      yield* Effect.promise(() => userEvent.keyboard("{Escape}"))
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("button", { name: "Copy for an agent" })).toBeVisible(),
       )

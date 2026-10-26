@@ -366,9 +366,17 @@ export const rateUnitOf = (totals: LifeTotals) =>
     ? { words: "an hour", ms: hourMs }
     : { words: "a day", ms: dayMs }
 
-/** How much of a count a life had in each `unitMs`, over how long it lived: at least an hour. */
-export const rateOf = (value: number, totals: LifeTotals, unitMs: number) =>
-  (value * unitMs) / Math.max(hourMs, DateTime.toEpochMillis(totals.to) - DateTime.toEpochMillis(totals.from))
+/**
+ * How much of a count a life had in each `unitMs`, over the part of its life it was counted in, from
+ * `since` (its warnings and errors are kept 90 days) or else its start: at least an hour.
+ */
+export const rateOf = (value: number, totals: LifeTotals, unitMs: number, since?: DateTime.Utc) =>
+  (value * unitMs) /
+  Math.max(
+    hourMs,
+    DateTime.toEpochMillis(totals.to) -
+      Math.max(DateTime.toEpochMillis(totals.from), since === undefined ? 0 : DateTime.toEpochMillis(since)),
+  )
 
 /** How long a release lived, from its first operation or signal to its last: "3 h", "6 days". */
 export const livedWords = (totals: LifeTotals) => {

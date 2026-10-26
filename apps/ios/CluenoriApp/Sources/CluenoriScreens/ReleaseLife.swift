@@ -27,6 +27,13 @@ extension LifeTotals {
         Double(value) * unit.seconds / max(RateUnit.hour.seconds, lived)
     }
 
+    /// How many of its warnings or errors, `value`, it had in each `unit`, over the part of its life
+    /// whose logs are kept (90 days), so an older release's isn't spread over days nothing was kept.
+    public func logRate(_ value: Int, per unit: RateUnit) -> Double {
+        let since = max(from, logsFrom ?? from)
+        return Double(value) * unit.seconds / max(RateUnit.hour.seconds, to.timeIntervalSince(since))
+    }
+
     /// The share of its requests that failed; nil without requests.
     public var failedShare: Double? {
         guard let requests, let failed, requests > 0 else { return nil }
@@ -73,6 +80,21 @@ public struct LifeWindow: Equatable, Sendable {
         }
         let first = max(0, min(low, steps - width))
         return LifeWindow(first: first, last: first + width - 1)
+    }
+
+    /// It within a life of `steps` steps, as wide as it is where it fits; the whole life when it no
+    /// longer fits, as when the life is shown in other steps.
+    public func within(steps: Int) -> LifeWindow {
+        last < steps ? self : .whole(steps: steps)
+    }
+
+    /// It a third narrower or, out, a third wider about its middle, kept within a life of `steps`
+    /// steps and at least three steps wide.
+    public func zoomed(in zoomIn: Bool, steps: Int) -> LifeWindow {
+        let change = max(1, (last - first + 1) / 3)
+        return zoomIn
+            ? .within(from: first + change / 2, to: last - (change - change / 2), steps: steps)
+            : .within(from: first - change, to: last + change, steps: steps)
     }
 
     /// Whether it shows all of a life of `steps` steps.

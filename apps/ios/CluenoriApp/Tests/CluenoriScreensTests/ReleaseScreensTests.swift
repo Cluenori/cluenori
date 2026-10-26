@@ -412,6 +412,24 @@ struct ReleaseSourcesTests {
         #expect(LifeWindow.within(from: 19, to: 19, steps: 20) == LifeWindow(first: 17, last: 19))
         #expect(LifeWindow.within(from: -3, to: 40, steps: 20).isWhole(steps: 20))
         #expect(LifeWindow.within(from: 1, to: 1, steps: 2) == LifeWindow(first: 0, last: 1))
+        // A zoom of 72 five-minute steps doesn't fit the same life in 7 hours: it shows it whole.
+        #expect(LifeWindow(first: 60, last: 71).within(steps: 7) == .whole(steps: 7))
+        #expect(LifeWindow(first: 2, last: 4).within(steps: 7) == LifeWindow(first: 2, last: 4))
+        // VoiceOver zooms in and out about the middle, as far as the life and three steps allow.
+        #expect(LifeWindow.whole(steps: 10).zoomed(in: true, steps: 10) == LifeWindow(first: 1, last: 7))
+        #expect(LifeWindow(first: 4, last: 6).zoomed(in: true, steps: 10) == LifeWindow(first: 4, last: 6))
+        #expect(LifeWindow(first: 4, last: 6).zoomed(in: false, steps: 10) == LifeWindow(first: 3, last: 7))
+        #expect(LifeWindow.whole(steps: 10).zoomed(in: false, steps: 10).isWhole(steps: 10))
+    }
+
+    @Test func `counts warnings of a long life over the part whose logs are kept`() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let day: TimeInterval = 86_400
+        let long = LifeTotals(
+            from: start, to: start.addingTimeInterval(180 * day), warnings: 900,
+            logsFrom: start.addingTimeInterval(90 * day))
+        #expect(long.logRate(900, per: .day) == 10)
+        #expect(long.rate(900, per: .day) == 5)
     }
 
     @Test func `briefs an agent on a release with the commands and calls that read it whole`() async throws {

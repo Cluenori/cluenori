@@ -400,6 +400,26 @@ describe("Releases", () => {
     ),
   )
 
+  it.effect("says a short life's requests are unknown once its minute counts are gone", () =>
+    inProject(
+      "life-past-minute-counts",
+      start,
+      Effect.gen(function* () {
+        const day = 24 * hour
+        yield* record([
+          counts(newer, "GET /api/notes", start - 20 * day, 300),
+          counts(newer, "GET /api/notes", start - 20 * day + 2 * hour, 200),
+        ])
+        const { life } = yield* detail
+
+        assert.strictEqual(life?.step, "5m")
+        assert.notProperty(life?.totals, "requests")
+        assert.notProperty(life?.totals, "failed")
+        assert.deepInclude(life?.totals, { warnings: 0, errors: 0 })
+      }),
+    ),
+  )
+
   it.effect("counts an app's people on a release by UTC day, from its app's signals alone", () =>
     inProject(
       "life-of-an-app",
@@ -410,15 +430,8 @@ describe("Releases", () => {
         const day = 24 * hour
         const apps = yield* AppSignals
         const sender = { component: ios, key: SdkKey.make("cluenori-sdk.notes.notes-ios.R2d2C3poBb8Wq0Lk5Xz7Aa") }
-        // One installation each day from 4 days ago, a second only 2 days ago.
-        yield* apps.record(
-          sender,
-          sessions(
-            release,
-            1,
-            [4, 3, 2, 1].map((ago) => start - ago * day),
-          ),
-        )
+        // One installation 4 days ago and last at midnight today, a second 2 days ago; nobody between.
+        yield* apps.record(sender, sessions(release, 1, [start - 4 * day, start - 10 * hour]))
         yield* apps.record(sender, sessions(release, 2, [start - 2 * day]))
         yield* releasesModule.ingest.report.run(ios, {
           release,
@@ -432,9 +445,12 @@ describe("Releases", () => {
           life?.points.map((point) => [DateTime.formatIso(point.start).slice(0, 10), point.people, point.requests]),
           [
             ["2026-10-17", 1, undefined],
-            ["2026-10-18", 1, undefined],
-            ["2026-10-19", 2, undefined],
-            ["2026-10-20", 1, undefined],
+            // A day nobody used it is unknown, not 0.
+            ["2026-10-18", undefined, undefined],
+            ["2026-10-19", 1, undefined],
+            ["2026-10-20", undefined, undefined],
+            // Its last signal, at midnight, is in its life.
+            ["2026-10-21", 1, undefined],
           ],
         )
         assert.deepStrictEqual(life?.totals.people, 2)

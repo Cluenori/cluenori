@@ -20,15 +20,22 @@ const stepOf = (ms: number) => {
 }
 
 // When a release did anything, from its operations' first minute and its app's first signal to the
-// last of either; none for a release with neither.
+// end of the last of either, exclusive: an operation's `lastSeen` already ends its minute, and an
+// app's is the instant of its last signal, so it ends a millisecond later. Never empty, so a release
+// with one signal still has a life. None for a release with neither.
 const spanOf = (release: KnownRelease, sent: AppRelease | undefined) => {
   const starts = [release.ran?.firstSeen, sent?.firstSeen].flatMap((time) =>
     time === undefined ? [] : [DateTime.toEpochMillis(time)],
   )
-  const ends = [release.ran?.lastSeen, sent?.lastSeen].flatMap((time) =>
-    time === undefined ? [] : [DateTime.toEpochMillis(time)],
-  )
-  return starts.length === 0 ? undefined : { from: Math.min(...starts), to: Math.max(...ends) }
+  const ends = [
+    ...(release.ran === undefined ? [] : [DateTime.toEpochMillis(release.ran.lastSeen)]),
+    ...(sent === undefined ? [] : [DateTime.toEpochMillis(sent.lastSeen) + 1]),
+  ]
+  if (starts.length === 0) {
+    return undefined
+  }
+  const from = Math.min(...starts)
+  return { from, to: Math.max(from + 1, ...ends) }
 }
 
 /**
@@ -84,7 +91,8 @@ export const lifeOf = Effect.fn("Releases.lifeOf")(function* (release: KnownRele
     ]),
   )
   const logsFrom = logs?.covered === undefined ? undefined : DateTime.toEpochMillis(logs.covered.from)
-  const people = new Map((usage?.days ?? []).map((each) => [each.day, each.people]))
+  // Usage fills the days nobody was active with 0; a day the app sent nothing is unknown, not 0.
+  const people = new Map((usage?.days ?? []).flatMap((each) => (each.people > 0 ? [[each.day, each.people]] : [])))
   const countOf = (level: string, start: number) => levels.get(level)?.get(start) ?? 0
 
   const points = Array.from({ length: Math.round((to - from) / width) }, (_, index): LifePoint => {
@@ -107,7 +115,11 @@ export const lifeOf = Effect.fn("Releases.lifeOf")(function* (release: KnownRele
   const totals: LifeTotals = {
     from: DateTime.makeUnsafe(span.from),
     to: DateTime.makeUnsafe(span.to),
-    ...(ran ? { requests: sum((point) => point.requests), failed: sum((point) => point.failed) } : {}),
+    // Known only when the counts cover its whole life: minute counts, which a life under two days
+    // is read from, are kept 14 days, so an older short life's requests are unknown, not 0.
+    ...(load?.covered !== undefined && DateTime.toEpochMillis(load.covered.from) <= from
+      ? { requests: sum((point) => point.requests), failed: sum((point) => point.failed) }
+      : {}),
     ...(logsFrom === undefined
       ? {}
       : {

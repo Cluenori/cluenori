@@ -252,9 +252,11 @@ export const LifePoint = Schema.Struct({
 export type LifePoint = typeof LifePoint.Type
 
 /**
- * A release's whole life in numbers: from its first operation or signal to its last, its requests
- * and failures, its warnings and errors, and its app's people. A number is absent when nothing of
- * it was sent: requests and failures without service telemetry, people without an app's.
+ * A release's whole life in numbers: from its first operation or signal to the end of its last
+ * (`to` is exclusive, and always after `from`, so the two make a period), its requests and failures,
+ * its warnings and errors, and its app's people. A number is absent when it isn't known: requests
+ * and failures without service telemetry or once the counts of a short life are gone, warnings and
+ * errors without logs, people without an app's signals.
  */
 export const LifeTotals = Schema.Struct({
   from: Instant,

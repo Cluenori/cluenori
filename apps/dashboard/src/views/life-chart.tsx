@@ -87,10 +87,15 @@ function Overview({
     return Math.min(steps - 1, Math.max(0, Math.floor(((event.clientX - bounds.left) / bounds.width) * steps)))
   }
   const width = zoom.last - zoom.first + 1
+  // The zoom moved by `by` steps, as wide as it is, kept within the life.
+  const moved = (by: number) => {
+    const first = Math.min(Math.max(0, zoom.first + by), Math.max(0, steps - width))
+    return { first, last: first + width - 1 }
+  }
   const key = (event: KeyboardEvent<HTMLDivElement>) => {
     const moves: Record<string, () => LifeWindow> = {
-      ArrowLeft: () => windowWithin(zoom.first - 1, zoom.first - 1 + width - 1, steps),
-      ArrowRight: () => windowWithin(zoom.last + 1 - (width - 1), zoom.last + 1, steps),
+      ArrowLeft: () => moved(-1),
+      ArrowRight: () => moved(1),
       "+": () => windowWithin(zoom.first + 1, zoom.last - 1, steps),
       "=": () => windowWithin(zoom.first + 1, zoom.last - 1, steps),
       "-": () => windowWithin(zoom.first - 1, zoom.last + 1, steps),
@@ -99,13 +104,7 @@ function Overview({
     const next = moves[event.key]
     if (next !== undefined) {
       event.preventDefault()
-      const moved = next()
-      // Moving keeps the zoom's width at the ends of the life.
-      onZoom(
-        event.key.startsWith("Arrow") && moved.last - moved.first + 1 < width
-          ? windowWithin(moved.first, moved.first + width - 1, steps)
-          : moved,
-      )
+      onZoom(next())
     }
   }
   return (

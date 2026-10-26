@@ -104,9 +104,9 @@ struct ReleaseAnswerSection: View {
                     label: unit == .hour
                         ? Text("Warnings an hour", bundle: #bundle, comment: "A release's warnings in an hour.")
                         : Text("Warnings a day", bundle: #bundle, comment: "A release's warnings in a day."),
-                    value: rateText(totals.rate(warnings, per: unit)),
+                    value: rateText(totals.logRate(warnings, per: unit)),
                     tint: warnings > 0 ? Palette.yellow : nil,
-                    before: before.map { b in b.warnings.map { rateText(b.rate($0, per: unit)) } })
+                    before: before.map { b in b.warnings.map { rateText(b.logRate($0, per: unit)) } })
             }
         }
         if let errors = totals.errors {
@@ -115,9 +115,9 @@ struct ReleaseAnswerSection: View {
                     label: unit == .hour
                         ? Text("Errors an hour", bundle: #bundle, comment: "A release's errors in an hour.")
                         : Text("Errors a day", bundle: #bundle, comment: "A release's errors in a day."),
-                    value: rateText(totals.rate(errors, per: unit)),
+                    value: rateText(totals.logRate(errors, per: unit)),
                     tint: errors > 0 ? Palette.pink : nil,
-                    before: before.map { b in b.errors.map { rateText(b.rate($0, per: unit)) } })
+                    before: before.map { b in b.errors.map { rateText(b.logRate($0, per: unit)) } })
             }
         }
         ComparedNumber(
@@ -197,7 +197,8 @@ struct ReleaseLifeSection: View {
 
     var body: some View {
         let points = life.points
-        let shown = window ?? .whole(steps: points.count)
+        // A zoom of the life before it was shown in other steps may not fit it now.
+        let shown = (window ?? .whole(steps: points.count)).within(steps: points.count)
         Section {
             VStack(alignment: .leading, spacing: 14) {
                 if points.contains(where: { $0.people != nil }) {
@@ -252,6 +253,7 @@ struct ReleaseLifeSection: View {
                 }
             }
             .padding(.vertical, 6)
+            .onChange(of: life.step) { window = nil }
         } header: {
             HStack {
                 Text("Its life", bundle: #bundle, comment: "Section of a release's life, step by step.")
@@ -367,6 +369,12 @@ struct LifeOverview: View {
         .accessibilityLabel(
             Text("Its whole life", bundle: #bundle, comment: "The strip that zooms a release's life chart.")
         )
+        .accessibilityAction(named: Text("Zoom in", bundle: #bundle, comment: "Narrows a release's life chart.")) {
+            zoom(window.zoomed(in: true, steps: points.count))
+        }
+        .accessibilityAction(named: Text("Zoom out", bundle: #bundle, comment: "Widens a release's life chart.")) {
+            zoom(window.zoomed(in: false, steps: points.count))
+        }
         .accessibilityAdjustableAction { direction in
             // Moves the zoom a step later or earlier, as wide as it is.
             let width = window.last - window.first

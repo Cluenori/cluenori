@@ -213,6 +213,9 @@ const comparedOf = (
   const unit = rateUnitOf(totals)
   const rate = (of: LifeTotals, value: number | undefined) =>
     value === undefined ? undefined : rateText(rateOf(value, of, unit.ms))
+  // Warnings and errors over the part of its life whose logs are still kept.
+  const logRate = (of: LifeTotals, value: number | undefined) =>
+    value === undefined ? undefined : rateText(rateOf(value, of, unit.ms, of.logsFrom))
   const failed = failedShareOf
   const numbers: ReadonlyArray<Compared | undefined> = [
     totals.people === undefined
@@ -244,8 +247,8 @@ const comparedOf = (
       ? undefined
       : {
           label: `Warnings ${unit.words}`,
-          value: rate(totals, totals.warnings) ?? "",
-          ...beside(previous === undefined ? undefined : rate(previous, previous.warnings)),
+          value: logRate(totals, totals.warnings) ?? "",
+          ...beside(previous === undefined ? undefined : logRate(previous, previous.warnings)),
           ...(totals.warnings > 0 ? { color: warningColor } : {}),
           to: routes.logs,
         },
@@ -253,8 +256,8 @@ const comparedOf = (
       ? undefined
       : {
           label: `Errors ${unit.words}`,
-          value: rate(totals, totals.errors) ?? "",
-          ...beside(previous === undefined ? undefined : rate(previous, previous.errors)),
+          value: logRate(totals, totals.errors) ?? "",
+          ...beside(previous === undefined ? undefined : logRate(previous, previous.errors)),
           ...(totals.errors > 0 ? { color: failureColor } : {}),
           to: routes.logs,
         },
@@ -327,12 +330,15 @@ function AnswerPanel({
   live,
   routes,
   onOpen,
+  outlivesPeriods,
 }: {
   readonly project: ProjectKey
   readonly detail: ReleaseDetail
   readonly live: boolean
   readonly routes: Parameters<typeof comparedOf>[1]
   readonly onOpen: () => void
+  /** Whether it started longer ago than the longest period the pages its numbers open show. */
+  readonly outlivesPeriods: boolean
 }) {
   const { summary, life } = detail
   const verdict = verdictOf(summary)
@@ -371,6 +377,11 @@ function AnswerPanel({
         )}
       </div>
       {life !== undefined && <ComparedNumbers numbers={comparedOf(life, routes)} previous={previous} onOpen={onOpen} />}
+      {outlivesPeriods && (
+        <p className="border-t border-border px-5 py-3 text-xs text-muted-foreground">
+          It started more than 90 days ago, so its numbers open its last 90 days: the longest period those pages show.
+        </p>
+      )}
     </Panel>
   )
 }
@@ -1208,7 +1219,17 @@ export function ReleasePage({
             return (
               <div className="flex flex-col gap-4">
                 {following && promotionsPanel}
-                <AnswerPanel project={project} detail={detail} live={live} routes={routes} onOpen={coverIt} />
+                <AnswerPanel
+                  project={project}
+                  detail={detail}
+                  live={live}
+                  routes={routes}
+                  onOpen={coverIt}
+                  outlivesPeriods={
+                    life !== undefined &&
+                    DateTime.toEpochMillis(asOf) - DateTime.toEpochMillis(life.totals.from) > 90 * 86_400_000
+                  }
+                />
                 {life !== undefined && (
                   <Panel
                     icon={ActivityIcon}
