@@ -16,6 +16,7 @@ import type {
   TraceId,
 } from "@cluenori/foundation"
 import type { ConnectGitHub } from "@cluenori/github-app"
+import type { IncidentId, MonitorId } from "@cluenori/incidents"
 import type { Email, InviteCode, SignInId } from "@cluenori/members"
 import type { PhoneId } from "@cluenori/phones"
 import type { ComponentLinks, ProjectSettings, SdkKey } from "@cluenori/projects"
@@ -372,7 +373,42 @@ export const loadAtom = Atom.family((scope: Scope) =>
   ),
 )
 
-/** The project's monitors, oldest first, each with its last check: what the Down detector watches. */
+/** One incident, whatever any period: its life, and the releases that ran when it opened. */
+export const incidentAtom = Atom.family((key: { readonly project: ProjectKey; readonly incident: IncidentId }) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.incidents.incident({ params: key })
+      }),
+    ),
+  ),
+)
+
+/** Says the member is on an incident, then asks for it, and the incidents, again. */
+export const acknowledgeAtom = CluenoriClient.runtime.fn(
+  (key: { readonly project: ProjectKey; readonly incident: IncidentId }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      yield* client.incidents.acknowledge({ params: key })
+      yield* Atom.refresh(incidentAtom(key))
+      yield* Atom.refresh(incidentsAtom(key.project))
+    }),
+)
+
+/** One monitor, whatever any period: how it is now, its days, its last 24 hours, and its incidents. */
+export const monitorAtom = Atom.family((key: { readonly project: ProjectKey; readonly monitor: MonitorId }) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.incidents.monitor({ params: key })
+      }),
+    ),
+  ),
+)
+
+/** The project's monitors, oldest first, each with its last check and its last 90 days: Uptime. */
 export const monitorsAtom = Atom.family((project: ProjectKey) =>
   kept(
     CluenoriClient.runtime.atom(

@@ -71,8 +71,16 @@ open from. Above every page but Now, its trail: each level above it, one click a
                                                  lines over time, its errors, its lines
         /projects/notes/logs/lines/<id>          one log line by its ID, no period: its exception, operation,
                                                  what it was sent with, and a brief for an agent
-      /projects/notes/incidents                  every open incident, those resolved in the last 7 days, and the monitors,
-                                                 each with its last check
+      /projects/notes/incidents                  how many are open and whether someone is on each, whether every
+                                                 monitor is up, then every open incident and those resolved in
+                                                 the last 7 days
+        /projects/notes/incidents/<id>           one incident (an item), no period: where it stands, what it is
+                                                 about (its monitor, or its operation at the moment it opened),
+                                                 its life, the release that ran, Acknowledge, a brief for an agent
+      /projects/notes/uptime                     whether every monitor is up, then each with how it is now and
+                                                 since when, its last 30 days a cell each, and its uptime
+        /projects/notes/uptime/<id>              one monitor (an item), no period: its last 24 hours, its 90 days,
+                                                 its failed checks and its incidents, a brief for an agent
       /projects/notes/traces/<trace id>[?around=<ISO 8601>]
                                                  one request and its trace (an item), from the archive, with no
                                                  period: how it ended, its steps as a waterfall, its log lines, and
@@ -140,7 +148,7 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
 - **What needs the founder,** the things behind the lines (`needsYouOf`): Today's
   items, in Today's order and in the environments each project calls production, each said in
   words with its kind, project, what it is, a line of evidence and when, one click from what it is
-  about (an incident's operation, or the project's monitors for one that is Down; the error; the
+  about (the incident's own page; the error; the
   operation; the release). A release that needs a member is Today's too (`promotionWords`): one App
   Store review approved, to release; one waiting on GitHub for its environment to be approved; and,
   in red, one that failed, was rejected in review, or couldn't be followed, until something reaches

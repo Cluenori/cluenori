@@ -345,23 +345,11 @@ export const operationSpanOf = (view: TraceView, span: SpanId | undefined): Trac
 const occurrencesText = (occurrences: number) =>
   `${count(occurrences)} ${occurrences === 1 ? "occurrence" : "occurrences"}`
 
-/**
- * Where an incident's evidence is, as a link: its operation's page, in the incident's environment;
- * for a monitor, the project's incidents and monitors, with its last check.
- */
-export const incidentActionOf = (project: ProjectKey, incident: Incident) =>
-  incident.evidence._tag === "down"
-    ? { label: "Open the monitors", to: { page: "incidents" as const, project } }
-    : {
-        label: "Open the operation",
-        to: {
-          page: "operation" as const,
-          project,
-          component: incident.component,
-          ...(incident.environment === undefined ? {} : { environment: incident.environment }),
-          operation: incident.evidence.operation,
-        },
-      }
+/** Where an incident leads: its own page, which shows its life and links to what it is about. */
+export const incidentActionOf = (project: ProjectKey, incident: Incident) => ({
+  label: "Open the incident",
+  to: { page: "incident" as const, project, incident: incident.id },
+})
 
 /** What found an incident, in a word: "Down", "Failing", "Stopped". */
 export const detectorWords: Readonly<Record<Incident["evidence"]["_tag"], string>> = {

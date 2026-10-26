@@ -125,7 +125,7 @@ describe("now journey", () => {
       yield* Effect.promise(() => expect.element(incidents.getByText(/^Failing: POST \/api\/export/)).toBeVisible())
       yield* expectAccessible()
 
-      // Every incident, and the monitors the Down detector checks.
+      // Every incident, and whether every monitor is up.
       yield* Effect.promise(() => incidents.getByRole("link", { name: "All incidents" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Incidents" })).toBeVisible(),
@@ -138,7 +138,7 @@ describe("now journey", () => {
           .toBeVisible(),
       )
       yield* Effect.promise(() =>
-        expect.element(screen.getByRole("region", { name: "Monitors" }).getByText(/^Passed at/)).toBeVisible(),
+        expect.element(screen.getByRole("link", { name: /^Uptime:\s*The monitor is up/ })).toBeVisible(),
       )
       yield* expectAccessible()
 

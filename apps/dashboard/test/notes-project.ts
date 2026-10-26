@@ -13,7 +13,20 @@ import {
   TraceId,
   Uuidv7,
 } from "@cluenori/foundation"
-import { Incident, IncidentId, IncidentList, Monitor, MonitorId, MonitorList, MonitorUrl } from "@cluenori/incidents"
+import {
+  Incident,
+  IncidentDetail,
+  IncidentId,
+  IncidentList,
+  IncidentNotFound,
+  Monitor,
+  MonitorDetail,
+  MonitorId,
+  MonitorList,
+  MonitorNotFound,
+  MonitorUrl,
+} from "@cluenori/incidents"
+import type { MonitorDay, MonitorState } from "@cluenori/incidents"
 import { Email, Member, MemberList } from "@cluenori/members"
 import {
   BundleId,
@@ -1304,7 +1317,7 @@ const healthMonitor = new Monitor({
 
 // The export has failed since 40 minutes ago, which the detectors saw: one open incident. Two days
 // ago the health endpoint was down for 14 minutes.
-const incidentsAt = (now: number): IncidentList => ({
+const incidentsAt = (now: number, acknowledgedAt?: DateTime.Utc): IncidentList => ({
   open: [
     new Incident({
       id: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64"),
@@ -1320,6 +1333,7 @@ const incidentsAt = (now: number): IncidentList => ({
         usualRate: 0.001,
       },
       openedAt: DateTime.makeUnsafe(now - 40 * minute),
+      ...(acknowledgedAt === undefined ? {} : { acknowledgedAt }),
     }),
   ],
   resolved: [
@@ -1337,16 +1351,91 @@ const incidentsAt = (now: number): IncidentList => ({
   checkedAt: DateTime.makeUnsafe(now),
 })
 
-const incidents = Effect.gen(function* () {
-  return yield* reply(IncidentList, incidentsAt(yield* Clock.currentTimeMillis))
+// Each incident's life and the release that ran when it opened: the export failed in the latest
+// release, and got worse 10 minutes after it opened; the health endpoint was down, someone was on it,
+// and it came back.
+const incidentDetailOf = (incident: Incident, now: number): IncidentDetail => {
+  const opened = DateTime.toEpochMillis(incident.openedAt)
+  return incident.evidence._tag === "failing"
+    ? {
+        incident,
+        updates: [
+          { change: "opened", at: incident.openedAt, title: "POST /api/export: 8% failed, usually 0.1%" },
+          { change: "worsened", at: DateTime.makeUnsafe(opened + 10 * minute), title: incident.title },
+          ...(incident.acknowledgedAt === undefined
+            ? []
+            : [{ change: "acknowledged" as const, at: incident.acknowledgedAt }]),
+        ],
+        releases: [{ environment: EnvironmentKey.make("production"), release: worseRelease }],
+      }
+    : {
+        incident,
+        updates: [
+          { change: "opened", at: incident.openedAt, title: incident.title },
+          { change: "acknowledged", at: DateTime.makeUnsafe(opened + 3 * minute) },
+          { change: "resolved", at: DateTime.makeUnsafe(now - 2 * day + 14 * minute) },
+        ],
+        releases: [
+          { environment: EnvironmentKey.make("production"), release: betterRelease },
+          { environment: EnvironmentKey.make("staging"), release: worseRelease },
+        ],
+      }
+}
+
+// The health endpoint's days since it was added: every minute checked, answering in about 84 ms;
+// 14 checks failed two days ago, and ten days ago Cluenori didn't check it.
+const monitorDaysAt = (now: number): ReadonlyArray<MonitorDay> => {
+  const today = Math.floor(now / day)
+  const first = Math.max(Math.floor(DateTime.toEpochMillis(created) / day), today - 89)
+  return Array.from({ length: today - first + 1 }, (_, index) => first + index)
+    .filter((number) => number !== today - 10)
+    .map((number) => ({
+      day: calendarDayOf(DateTime.makeUnsafe(number * day)),
+      checks: number === today ? Math.max(1, Math.floor((now % day) / minute)) : 1440,
+      failed: number === today - 2 ? 14 : 0,
+      averageMs: 80 + (number % 7),
+    }))
+}
+
+const monitorStateAt = (now: number): MonitorState => ({
+  monitor: healthMonitor,
+  lastCheck: { at: DateTime.makeUnsafe(now - minute), status: 200, ms: 84 },
+  since: DateTime.makeUnsafe(now - 2 * day + 14 * minute),
+  days: monitorDaysAt(now),
 })
 
 const monitors = Effect.gen(function* () {
   const now = yield* Clock.currentTimeMillis
-  return yield* reply(MonitorList, {
-    monitors: [{ monitor: healthMonitor, lastCheck: { at: DateTime.makeUnsafe(now - minute) }, days: [] }],
-  })
+  return yield* reply(MonitorList, { monitors: [monitorStateAt(now)] })
 })
+
+const monitorDetail = (id: string) =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis
+    if (id !== healthMonitor.id) {
+      return yield* reply(MonitorNotFound, new MonitorNotFound({ monitor: MonitorId.make(id) }), 404)
+    }
+    const step = 5 * minute
+    const last = Math.floor(now / step) * step
+    const down = now - 2 * day
+    return yield* reply(MonitorDetail, {
+      state: monitorStateAt(now),
+      recent: Array.from({ length: 288 }, (_, index) => last - (287 - index) * step).map((start, index) => ({
+        start: DateTime.makeUnsafe(start),
+        checks: 5,
+        failed: 0,
+        averageMs: 70 + ((index * 37) % 50),
+        slowestMs: 120 + ((index * 53) % 90),
+      })),
+      failures: Array.from({ length: 14 }, (_, index) => ({
+        at: DateTime.makeUnsafe(down + (13 - index) * minute),
+        status: 503,
+        ms: 31,
+        problem: "HTTP 503",
+      })),
+      incidents: incidentsAt(now).resolved,
+    })
+  })
 
 // Today's answer, as the API encodes it. Its schema is the Today engine's, which the dashboard
 // reaches only through the API's definition, so this one is made of the same parts, and the compiler
@@ -1991,6 +2080,11 @@ export const notesApi = ({
   let style: string | undefined
   let settings: ProjectSettings = { productionEnvironments: world.production }
   let promotions: ReadonlyArray<Promotion> | undefined
+  // When someone acknowledged the open incident here, once they did.
+  let acknowledgedAt: DateTime.Utc | undefined
+  const incidentsNow = (now: number): IncidentList => {
+    return incidentsAt(now, acknowledgedAt)
+  }
   // How many times each promotion started here was asked about since.
   const timesAsked = new Map<string, number>()
   // A promotion started here, as Cluenori follows it: the next of `following`, with its run once it
@@ -2087,10 +2181,23 @@ export const notesApi = ({
         )
       }
       if (area === "incidents") {
-        return yield* incidents
+        const now = yield* Clock.currentTimeMillis
+        const list = incidentsNow(now)
+        if (id === undefined) {
+          return yield* reply(IncidentList, list)
+        }
+        if (call.method === "POST" && more === "acknowledge" && id === list.open[0]?.id) {
+          acknowledgedAt ??= DateTime.makeUnsafe(now)
+          const [acknowledged] = incidentsNow(now).open
+          return yield* reply(Incident, acknowledged)
+        }
+        const found = [...list.open, ...list.resolved].find((incident) => incident.id === id)
+        return found === undefined
+          ? yield* reply(IncidentNotFound, new IncidentNotFound({ incident: IncidentId.make(id) }), 404)
+          : yield* reply(IncidentDetail, incidentDetailOf(found, now))
       }
       if (call.method === "GET" && area === "monitors") {
-        return yield* monitors
+        return yield* id === undefined ? monitors : monitorDetail(id)
       }
       if (call.method === "POST" && area === "components" && id !== undefined && more === "promotions") {
         // A commit that has no release: numbered as the component's next, then promoted.

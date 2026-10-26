@@ -10,6 +10,11 @@ const whole = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 })
 const compactNumber = new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 })
 const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 })
 const percentFine = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 })
+const percentDown = new Intl.NumberFormat(locale, {
+  style: "percent",
+  maximumFractionDigits: 2,
+  roundingMode: "floor",
+})
 const signedPercent = new Intl.NumberFormat(locale, {
   style: "percent",
   maximumFractionDigits: 0,
@@ -71,6 +76,9 @@ export const share = (part: number, total: number) => {
   const ratio = part / total
   return ratio > 0 && ratio < 0.001 ? percentFine.format(ratio) : percent.format(ratio)
 }
+
+/** The share of checks that passed: 100%, 99.86%, rounded down, so one failed never reads 100%. */
+export const uptime = (passed: number, checks: number) => percentDown.format(passed / checks)
 
 /** How much something moved, as a share of what it was: +6%, −2%, 0%. */
 export const change = (ratio: number) => signedPercent.format(ratio)

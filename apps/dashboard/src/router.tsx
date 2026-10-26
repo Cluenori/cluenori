@@ -10,6 +10,7 @@ import {
   ReleaseVersion,
   TraceId,
 } from "@cluenori/foundation"
+import { IncidentId, MonitorId } from "@cluenori/incidents"
 import { AppUserId, ErrorGroupId, LogMessageId } from "@cluenori/signals"
 import { DateTime, Option, Schema } from "effect"
 import type { ComponentProps, MouseEvent } from "react"
@@ -63,7 +64,9 @@ export type GitHubReturn =
  * releases page leads to one release, by its component and version, and its environment when it has
  * one (`/projects/notes/releases/notes-api/2.4.0+312?environment=production`); a trace is a page of
  * its own, by its ID, with the time it happened when a link knows it (`?around=<ISO 8601>`), keeping
- * the environment and release of the page it came from; the GitHub page says what GitHub sent the
+ * the environment and release of the page it came from; an incident opens by its ID from the
+ * incidents (`/projects/notes/incidents/<incident>`), and a monitor from Uptime, every monitor
+ * (`/projects/notes/uptime/<monitor>`), neither with a period; the GitHub page says what GitHub sent the
  * browser back with (`GitHubReturn`). `hrefOf` and `routeOf` convert to and from URLs. An address is
  * untrusted input, so its keys are decoded here, once: one that isn't a page's is `missing`.
  */
@@ -73,6 +76,9 @@ export type Route =
   | { readonly page: "project"; readonly project: ProjectKey }
   | { readonly page: "tech"; readonly project: ProjectKey; readonly environment?: EnvironmentKey }
   | { readonly page: "incidents"; readonly project: ProjectKey }
+  | { readonly page: "incident"; readonly project: ProjectKey; readonly incident: IncidentId }
+  | { readonly page: "uptime"; readonly project: ProjectKey }
+  | { readonly page: "monitor"; readonly project: ProjectKey; readonly monitor: MonitorId }
   | ({ readonly page: "performance"; readonly project: ProjectKey; readonly at?: DateTime.Utc } & Filters)
   | ({
       readonly page: "operation"
@@ -209,6 +215,12 @@ export const hrefOf = (route: Route): string => {
       return withQuery(`${projectPath(route.project)}/tech`, route)
     case "incidents":
       return `${projectPath(route.project)}/incidents`
+    case "incident":
+      return `${projectPath(route.project)}/incidents/${route.incident}`
+    case "uptime":
+      return `${projectPath(route.project)}/uptime`
+    case "monitor":
+      return `${projectPath(route.project)}/uptime/${route.monitor}`
     case "performance":
     case "errors":
     case "logs":
@@ -371,8 +383,8 @@ export const routeOf = (path: string, search: string): Route => {
   if (page === "tech" && id === undefined) {
     return { page: "tech", project: project.value, ...ofEnvironment }
   }
-  if (page === "incidents" && id === undefined) {
-    return { page: "incidents", project: project.value }
+  if (page === "incidents" || page === "uptime") {
+    return incidentsRouteOf(project.value, page, id)
   }
   const ofMoment = Option.isSome(at) ? { at: at.value } : {}
   if (page === "logs" && id === undefined) {
@@ -470,6 +482,9 @@ export const doorOf = (route: Route): Door | undefined => {
   switch (route.page) {
     case "tech":
     case "incidents":
+    case "incident":
+    case "uptime":
+    case "monitor":
     case "performance":
     case "operation":
     case "errors":
@@ -509,6 +524,9 @@ export const doorOf = (route: Route): Door | undefined => {
 const pageNames: Readonly<Record<Exclude<Route["page"], "now" | "project" | "missing">, string>> = {
   tech: "Tech",
   incidents: "Incidents",
+  incident: "Incident",
+  uptime: "Uptime",
+  monitor: "Monitor",
   performance: "Performance",
   operation: "Operation",
   errors: "Errors",
@@ -583,6 +601,12 @@ const betweenOf = (route: Route): ReadonlyArray<TrailStep> => {
   if (route.page === "feed") {
     return [{ label: pageNames.feeds, to: { page: "feeds" } }]
   }
+  if (route.page === "incident") {
+    return [{ label: pageNames.incidents, to: { page: "incidents", project: route.project } }]
+  }
+  if (route.page === "monitor") {
+    return [{ label: pageNames.uptime, to: { page: "uptime", project: route.project } }]
+  }
   if (route.page === "appRelease") {
     const { release: _, ...shown } = route
     return [{ label: pageNames.appReleases, to: { ...shown, page: "appReleases" } }]
@@ -617,6 +641,19 @@ export const trailOf = (route: Route, projectName: (project: ProjectKey) => stri
   // The door's own page is the last step on it.
   const doorStep = doorPage === undefined || doorPage.to.page === route.page ? [] : [doorPage]
   return [now, project, ...doorStep, ...betweenOf(route), here]
+}
+
+// The incidents and one by its ID, and Uptime, every monitor, and one by its ID; none has a period.
+const incidentsRouteOf = (project: ProjectKey, page: "incidents" | "uptime", id: string | undefined): Route => {
+  if (id === undefined) {
+    return { page, project }
+  }
+  if (page === "incidents") {
+    const incident = keyOf(IncidentId, id)
+    return Option.isSome(incident) ? { page: "incident", project, incident: incident.value } : { page: "missing" }
+  }
+  const monitor = keyOf(MonitorId, id)
+  return Option.isSome(monitor) ? { page: "monitor", project, monitor: monitor.value } : { page: "missing" }
 }
 
 // The analytics pages: the summary, its releases' app health and one release's, every feature and

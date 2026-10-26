@@ -51,6 +51,10 @@ const LogMessagePage = lazy(() => logsPage.then((module) => ({ default: module.L
 const LogLinePage = lazy(() => logsPage.then((module) => ({ default: module.LogLinePage })))
 const incidentsPage = import("@/pages/incidents-page")
 const IncidentsPage = lazy(() => incidentsPage.then((module) => ({ default: module.IncidentsPage })))
+const IncidentPage = lazy(() => incidentsPage.then((module) => ({ default: module.IncidentPage })))
+const uptimePage = import("@/pages/uptime-page")
+const UptimePage = lazy(() => uptimePage.then((module) => ({ default: module.UptimePage })))
+const MonitorPage = lazy(() => uptimePage.then((module) => ({ default: module.MonitorPage })))
 const operationPage = import("@/pages/operation-page")
 const OperationPage = lazy(() => operationPage.then((module) => ({ default: module.OperationPage })))
 const errorPage = import("@/pages/error-page")
@@ -160,6 +164,24 @@ function PageOf({ route, projects }: { readonly route: Route; readonly projects:
       return (
         <Suspense fallback={opening}>
           <IncidentsPage project={route.project} />
+        </Suspense>
+      )
+    case "incident":
+      return (
+        <Suspense fallback={opening}>
+          <IncidentPage key={route.incident} project={route.project} incident={route.incident} />
+        </Suspense>
+      )
+    case "uptime":
+      return (
+        <Suspense fallback={opening}>
+          <UptimePage project={route.project} />
+        </Suspense>
+      )
+    case "monitor":
+      return (
+        <Suspense fallback={opening}>
+          <MonitorPage key={route.monitor} project={route.project} monitor={route.monitor} />
         </Suspense>
       )
     case "performance":

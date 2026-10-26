@@ -7,6 +7,7 @@ import {
   ProjectKey,
   ReleaseVersion,
 } from "@cluenori/foundation"
+import { IncidentId, MonitorId } from "@cluenori/incidents"
 import { AppUserId, LogMessageId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
@@ -204,10 +205,12 @@ describe("routeOf", () => {
   it("opens a page that says so for an address with a key that isn't one", () => {
     assert.deepStrictEqual(routeOf("/projects/Folio!/errors", ""), { page: "missing" })
     assert.deepStrictEqual(routeOf("/projects/folio/errors/not-an-id", ""), { page: "missing" })
+    assert.deepStrictEqual(routeOf("/projects/folio/incidents/not-an-id", ""), { page: "missing" })
+    assert.deepStrictEqual(routeOf("/projects/folio/uptime/not-an-id", ""), { page: "missing" })
     assert.deepStrictEqual(routeOf("/folio/errors", ""), { page: "missing" })
   })
 
-  it("reads each level of the tree back: Now, a project, its Tech and its incidents", () => {
+  it("reads each level of the tree back: Now, a project, its Tech, its incidents and Uptime", () => {
     const project = ProjectKey.make("folio")
     const levels: ReadonlyArray<Route> = [
       { page: "now" },
@@ -215,6 +218,9 @@ describe("routeOf", () => {
       { page: "tech", project },
       { page: "tech", project, environment: EnvironmentKey.make("staging") },
       { page: "incidents", project },
+      { page: "incident", project, incident: IncidentId.make("019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f53") },
+      { page: "uptime", project },
+      { page: "monitor", project, monitor: MonitorId.make("019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f54") },
     ]
     for (const level of levels) {
       assert.deepStrictEqual(readBack(level), level)
@@ -260,6 +266,14 @@ describe("trailOf", () => {
     assert.deepStrictEqual(labelsOf(operation("GET /api/feed")), ["Now", "Folio", "Tech", "Performance", "Operation"])
     assert.deepStrictEqual(labelsOf({ page: "analytics", project }), ["Now", "Folio", "Product"])
     assert.deepStrictEqual(labelsOf({ page: "releases", project }), ["Now", "Folio", "Releases"])
+    assert.deepStrictEqual(
+      labelsOf({ page: "incident", project, incident: IncidentId.make("019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f53") }),
+      ["Now", "Folio", "Tech", "Incidents", "Incident"],
+    )
+    assert.deepStrictEqual(
+      labelsOf({ page: "monitor", project, monitor: MonitorId.make("019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f54") }),
+      ["Now", "Folio", "Tech", "Uptime", "Monitor"],
+    )
     assert.deepStrictEqual(labelsOf({ page: "phones" }), ["Now", "Phones"])
   })
 

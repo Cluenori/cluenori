@@ -24,8 +24,8 @@ import { defineConfig } from "vite"
 // sidebar's entry and Now's panel; the pages, and the rows Now shows, load after start. And to 257 KB
 // with a feature's story (255.7 KB to 256.5 KB): its endpoint and Schemas in the typed client, its
 // route and its atom; its page, and a person's, load after start. And to 258 KB when an incident and
-// a monitor opened by their IDs (256.5 KB to 257.2 KB): their endpoints and Schemas, an incident's
-// life and a monitor's checks, in the typed client.
+// a monitor became items (256.5 KB to 257.6 KB): their endpoints and Schemas, an incident's life
+// and a monitor's checks, in the typed client, their routes and atoms; the pages load after start.
 const firstLoadBudget = { scriptKb: 258, styleKb: 36 }
 
 const gzippedKb = (text: string) =>

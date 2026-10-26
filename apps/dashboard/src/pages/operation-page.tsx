@@ -1,16 +1,17 @@
-import type { ComponentKey, EnvelopeName, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import type { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
 import type { KeptTraceRow } from "@cluenori/signals"
 import { operationKeyOf, slowerOf, usualOf } from "@cluenori/signals"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { ActivityIcon, ArrowLeftIcon, CircleXIcon, GaugeIcon, SearchXIcon, TimerIcon } from "lucide-react"
+import { ActivityIcon, ArrowLeftIcon, CircleXIcon, GaugeIcon, SearchXIcon, SirenIcon, TimerIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { failureColor } from "@/lib/colors"
 import { ago, count, duration, moment, share } from "@/lib/format"
 import type { Scope } from "@/project-data"
 import {
+  incidentsAtom,
   operationsAtom,
   keptTracesAtom,
   periodAtom,
@@ -24,6 +25,7 @@ import {
   colorOf,
   columnTimesOf,
   endOf,
+  incidentActionOf,
   keptOverOf,
   loadColumnsOf,
   periodCovering,
@@ -37,6 +39,7 @@ import { Link, navigate } from "@/router"
 import type { ColumnSpan } from "@/views/bar-rows"
 import { BarRows, largestOf } from "@/views/bar-rows"
 import { FilterSwitches } from "@/views/filter-switches"
+import { IncidentRow } from "@/views/incident-row"
 import { Loaded } from "@/views/loaded"
 import { holdingOf, MomentPanel, momentOf } from "@/views/moment-panel"
 import { OperationName } from "@/views/operation-name"
@@ -131,6 +134,53 @@ function KeptTracePanels({ scope, p95Ms }: { readonly scope: Scope; readonly p95
         )
       }}
     </Loaded>
+  )
+}
+
+/**
+ * The incidents about an operation, of its component and environment when the page shows one: those
+ * open, and those resolved in the last 7 days, each opening its own page; nothing when it has none.
+ */
+function OperationIncidents({
+  project,
+  operation,
+  component,
+  environment,
+}: {
+  readonly project: ProjectKey
+  readonly operation: EnvelopeName
+  readonly component?: ComponentKey
+  readonly environment?: EnvironmentKey
+}) {
+  const incidents = useAtomValue(incidentsAtom(project))
+  if (!AsyncResult.isSuccess(incidents)) {
+    return null
+  }
+  const about = [...incidents.value.open, ...incidents.value.resolved].filter(
+    (incident) =>
+      incident.evidence._tag !== "down" &&
+      incident.evidence.operation === operation &&
+      (component === undefined || incident.component === component) &&
+      (environment === undefined || incident.environment === environment),
+  )
+  if (about.length === 0) {
+    return null
+  }
+  const looked = incidents.value.checkedAt
+  return (
+    <Panel icon={SirenIcon} title="Incidents" subtitle="About this operation: open, and resolved in the last 7 days">
+      <ul className="divide-y">
+        {about.map((incident) => (
+          <li key={incident.id}>
+            <IncidentRow
+              incident={incident}
+              now={DateTime.toEpochMillis(looked ?? incident.openedAt)}
+              to={incidentActionOf(project, incident).to}
+            />
+          </li>
+        ))}
+      </ul>
+    </Panel>
   )
 }
 
@@ -379,6 +429,13 @@ export function OperationPage({
                   onClose={() => open(undefined)}
                 />
               )}
+
+              <OperationIncidents
+                project={project}
+                operation={operation}
+                {...(component === undefined ? {} : { component })}
+                {...(environment === undefined ? {} : { environment })}
+              />
 
               <KeptTracePanels scope={scope} p95Ms={row.p95Ms} />
             </div>

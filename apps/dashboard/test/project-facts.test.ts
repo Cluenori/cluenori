@@ -292,11 +292,9 @@ describe("needsYouOf", () => {
       `${share(10, 50)} of 50 failed in the last 15 minutes, usually ${share(0.001, 1)}`,
     )
     assert.deepStrictEqual(failing?.to, {
-      page: "operation",
+      page: "incident",
       project,
-      component: api,
-      environment: production,
-      operation: EnvelopeName.make("POST /api/export"),
+      incident: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64"),
     })
     assert.deepStrictEqual(ongoing?.to, {
       page: "error",
@@ -311,7 +309,7 @@ describe("needsYouOf", () => {
     assert.deepStrictEqual(silent?.to, { page: "tech", project: landing })
   })
 
-  it("opens a monitor's incident on the project's incidents, where its checks are", () => {
+  it("opens a monitor's incident on its own page, which leads to the monitor", () => {
     const down = needsYouOf(
       today([
         {
@@ -336,7 +334,13 @@ describe("needsYouOf", () => {
     )
     assert.deepStrictEqual(
       down.map((item) => [item.kind, item.detail, item.to]),
-      [["Down", "3 checks failed in a row, the last: HTTP 503", { page: "incidents", project }]],
+      [
+        [
+          "Down",
+          "3 checks failed in a row, the last: HTTP 503",
+          { page: "incident", project, incident: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a70") },
+        ],
+      ],
     )
   })
 })
