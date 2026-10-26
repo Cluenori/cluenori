@@ -1,9 +1,28 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime } from "effect"
 
-import { columns, count, milliseconds, share, utcClock, utcMinute, utcSecond } from "../src/terminal-text.ts"
+import { columns, count, milliseconds, printable, share, utcClock, utcMinute, utcSecond } from "../src/terminal-text.ts"
 
 describe("terminal text", () => {
+  it("writes out what a terminal would act on, and keeps lines, tabs and every other character", () => {
+    // Clear the screen, set the clipboard (OSC 52, ended by BEL), go back to the line's start, a
+    // C1 CSI, and a right-to-left override.
+    const hostile = "Sign\u001b[2J\u001b[Hups\u001b]52;c;dG9rZW4=\u0007\rFake\u009b31m \u202Etxt.exe"
+    assert.strictEqual(
+      printable(hostile),
+      String.raw`Sign\u001b[2J\u001b[Hups\u001b]52;c;dG9rZW4=\u0007\u000dFake\u009b31m \u202etxt.exe`,
+    )
+    assert.strictEqual(printable("Café ✓ 注册\n\tuser-1842"), "Café ✓ 注册\n\tuser-1842")
+    // In columns, a cell is measured as it is printed, so the next column still lines up.
+    assert.deepStrictEqual(
+      columns([
+        ["A\rB", "x"],
+        ["C-D", "y"],
+      ]),
+      [String.raw`A\u000dB  x`, "C-D       y"],
+    )
+  })
+
   it("writes rounded counts and percentages independently of the machine's locale", () => {
     assert.strictEqual(count(12_408.6), "12,409")
     assert.strictEqual(share(1, 8), "12.5%")

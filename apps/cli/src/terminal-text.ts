@@ -34,8 +34,10 @@ export const utcSecond = (time: DateTime.Utc) => `${DateTime.formatIso(time).sli
 /** `08:15:30.250`: the time of day in UTC, to the millisecond, for lines of one trace. */
 export const utcClock = (time: DateTime.Utc) => DateTime.formatIso(time).slice(11, 23)
 
-/** Rows of text as columns: the first left-aligned, the others right-aligned, two spaces apart. */
-export const columns = (rows: ReadonlyArray<ReadonlyArray<string>>) => {
+/** Rows of text as columns, each cell as `printable` writes it: the first left-aligned, the others right-aligned, two spaces apart. */
+export const columns = (given: ReadonlyArray<ReadonlyArray<string>>) => {
+  // Measured as printed, so a cell with characters written out lines up with the rest.
+  const rows = given.map((row) => row.map(printable))
   const widths = rows.reduce<Array<number>>(
     (most, row) => row.map((cell, index) => Math.max(most[index] ?? 0, cell.length)),
     [],
@@ -47,3 +49,27 @@ export const columns = (rows: ReadonlyArray<ReadonlyArray<string>>) => {
       .trimEnd(),
   )
 }
+
+// Whether a terminal acts on `code` rather than shows it: C0 controls but the line feed and tab,
+// DEL, C1 controls, and those that reorder or break text (bidirectional marks, embeddings,
+// overrides and isolates, the line and paragraph separators).
+const isActed = (code: number) =>
+  (code < 0x20 && code !== 0x0a && code !== 0x09) ||
+  (code >= 0x7f && code <= 0x9f) ||
+  code === 0x061c ||
+  code === 0x200e ||
+  code === 0x200f ||
+  (code >= 0x2028 && code <= 0x202e) ||
+  (code >= 0x2066 && code <= 0x2069)
+
+/**
+ * `text` with every character a terminal would act on written out instead, `\\u001b` for an escape,
+ * so what apps and owners named can't clear the screen, set the clipboard, or hide or reorder
+ * what is printed. Line feeds and tabs stay. Every line the CLI prints goes through it (main.ts).
+ * Linear in the text's length.
+ */
+export const printable = (text: string) =>
+  Array.from(text, (character) => {
+    const code = character.codePointAt(0) ?? 0
+    return isActed(code) ? `\\u${code.toString(16).padStart(4, "0")}` : character
+  }).join("")
