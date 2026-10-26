@@ -224,6 +224,10 @@ describe("ActivityLog", () => {
         Effect.gen(function* () {
           yield* createNotes
           yield* addNote("n1", "Before the restart")
+          const sql = yield* SqlClient.SqlClient
+          // The persisted history's name is stable across versions and separate from other packages'.
+          const history = yield* sql`SELECT 1 FROM foundation_migrations LIMIT 1`
+          assert.isNotEmpty(history)
         }),
       )
       const activity = yield* inObject(
