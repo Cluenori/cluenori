@@ -4,6 +4,7 @@ import type { AppStoreTarget } from "@cluenori/projects"
 import type {
   AppStoreSubmission,
   ComparedOperation,
+  LifeTotals,
   Promotion,
   PromotionFix,
   NextStep,
@@ -12,7 +13,7 @@ import type {
   StoreBuild,
 } from "@cluenori/releases"
 import { PromotionId, PromotionReason } from "@cluenori/releases"
-import { Console, Effect, Option } from "effect"
+import { Console, DateTime, Effect, Option } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 
 import { apiClient, reachFailures, refuse } from "./api-client.ts"
@@ -51,6 +52,48 @@ const verdictText = (release: ReleaseSummary) => {
     case "unmeasured":
       return "No telemetry yet"
   }
+}
+
+// A count, or nothing when it isn't known.
+const knownCount = (value: number | undefined) => (value === undefined ? undefined : count(value))
+
+// The share of a life's requests that failed; unknown without requests.
+const failedShare = (each: LifeTotals) =>
+  each.requests === undefined || each.failed === undefined ? undefined : share(each.failed, each.requests)
+
+// How long a life was, in hours: at least one.
+const ranFor = (each: LifeTotals) =>
+  `${count(Math.max(1, Math.round((DateTime.toEpochMillis(each.to) - DateTime.toEpochMillis(each.from)) / 3_600_000)))} hours`
+
+// A release's life in a few lines, each number beside the release before's: "Requests 12,400 (before 11,900)".
+const lifeLines = (totals: LifeTotals, previous: string | undefined, before: LifeTotals | undefined) => {
+  const beside = (of: (each: LifeTotals) => string | undefined) => {
+    const was = before === undefined ? undefined : of(before)
+    return was === undefined ? "" : ` (${previous ?? "before"}: ${was})`
+  }
+  const known = knownCount
+  const failed = failedShare
+  return [
+    `Its life: ${utcMinute(totals.from)} to ${utcMinute(totals.to)}, ${ranFor(totals)}${beside(ranFor)}.`,
+    ...(totals.people === undefined
+      ? []
+      : [`  People   ${count(totals.people)}${beside((each) => known(each.people))}`]),
+    ...(totals.requests === undefined
+      ? []
+      : [
+          `  Requests ${count(totals.requests)}${beside((each) => known(each.requests))}`,
+          `  Failed   ${failed(totals) ?? ""}${beside(failed)}`,
+        ]),
+    ...(totals.warnings === undefined || totals.errors === undefined
+      ? []
+      : [
+          `  Warnings ${count(totals.warnings)}${beside((each) => known(each.warnings))}`,
+          `  Errors   ${count(totals.errors)}${beside((each) => known(each.errors))}`,
+          ...(totals.logsFrom === undefined
+            ? []
+            : [`  Warnings and errors from ${utcMinute(totals.logsFrom)}: older ones aren't kept.`]),
+        ]),
+  ]
 }
 
 // Where an app's build stands, in words.
@@ -338,6 +381,12 @@ export const release = Command.make(
     component: componentArgument,
     release: releaseArgument,
     environment: filters.environment,
+    life: Flag.Boolean("life").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription(
+        "Also list its life step by step, by 5 minutes under 6 hours, by the hour under 3 days, else by UTC day: requests, failed, p95, warnings, errors and people.",
+      ),
+    ),
     local: filters.local,
   },
   (input) =>
@@ -407,12 +456,38 @@ export const release = Command.make(
           yield* Console.log(`\n${title}:\n${comparedLines(rows).join("\n")}`)
         }
       }
-      if (detail.newErrors.length > 0) {
+      const life = detail.life
+      if (life !== undefined) {
+        yield* Console.log(`\n${lifeLines(life.totals, summary.previous, life.previous).join("\n")}`)
+        if (input.life) {
+          const known = (value: number | undefined) => knownCount(value) ?? "unknown"
+          yield* Console.log(
+            `\n${columns([
+              [life.step === "1d" ? "Day" : "Start", "Requests", "Failed", "p95", "Warnings", "Errors", "People"],
+              ...life.points.map((point) => [
+                life.step === "1d" ? DateTime.formatIso(point.start).slice(0, 10) : utcMinute(point.start),
+                known(point.requests),
+                known(point.failed),
+                point.p95Ms === undefined ? "" : milliseconds(point.p95Ms),
+                known(point.warnings),
+                known(point.errors),
+                point.people === undefined ? "" : count(point.people),
+              ]),
+            ]).join("\n")}`,
+          )
+        }
+      }
+      if (detail.errors.length > 0) {
         yield* Console.log(
-          `\nNew errors:\n${columns([
-            ["Error", "Occurrences", "ID"],
-            ...detail.newErrors.map((error) => [error.title, count(error.occurrences), error.id]),
-          ]).join("\n")}`,
+          `\nErrors it logged, the most frequent first:\n${columns([
+            ["Error", "Occurrences", "New", "ID"],
+            ...detail.errors.map((error) => [
+              error.title,
+              count(error.occurrences),
+              error.firstRelease === version ? "new" : "",
+              error.id,
+            ]),
+          ]).join("\n")}\nOne of them: ./cluenori error ${project} <ID>`,
         )
       }
       if (detail.incidents.length > 0) {
@@ -499,7 +574,7 @@ export const release = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "One release compared with the release before it: what got slower and what changed; its notes, its promotions, and where it can be promoted.",
+    "One release, its whole life compared with the release before it: its people, requests, failures, warnings and errors, what got slower, the errors it logged, and what changed; its notes, its promotions, and where it can be promoted.",
   ),
 )
 

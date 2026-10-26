@@ -10,9 +10,11 @@ import type {
   ComponentVersion,
   Delivery,
   EnvironmentDelivery,
+  LifeTotals,
   NextStep,
   Promotion,
   PromotionState,
+  ReleaseDetail,
 } from "@cluenori/releases"
 import { hasEnded } from "@cluenori/releases"
 import { DateTime } from "effect"
@@ -324,3 +326,94 @@ export const isDelivering = (delivery: Delivery) =>
   delivery.components.some((component) =>
     component.environments.some((stage) => stage.promotion !== undefined && !hasEnded(stage.promotion.state)),
   )
+
+// ---- A release's life ------------------------------------------------------------------------------
+
+const hourMs = 3_600_000
+const dayMs = 24 * hourMs
+
+/** The steps of a release's life a chart shows: all of them, or a run of them it zoomed to. */
+export type LifeWindow = { readonly first: number; readonly last: number }
+
+/** The whole life of a release whose life has `steps` steps. */
+export const wholeLife = (steps: number): LifeWindow => ({ first: 0, last: Math.max(0, steps - 1) })
+
+/**
+ * A window kept within a life of `steps` steps and at least `narrowest` steps wide (or the whole
+ * life, when it is shorter), whichever way it was dragged.
+ */
+export const windowWithin = (from: number, to: number, steps: number, narrowest = 3): LifeWindow => {
+  const last = Math.max(0, steps - 1)
+  const low = Math.min(Math.max(0, Math.min(from, to)), last)
+  const high = Math.min(Math.max(0, Math.max(from, to)), last)
+  const width = Math.min(steps, narrowest)
+  if (high - low + 1 >= width) {
+    return { first: low, last: high }
+  }
+  const first = Math.max(0, Math.min(low, steps - width))
+  return { first, last: first + width - 1 }
+}
+
+/** Whether a window shows a release's whole life. */
+export const isWhole = (window: LifeWindow, steps: number) => window.first === 0 && window.last >= steps - 1
+
+/**
+ * How a release's life is measured beside the one before's: by the hour under a day, else by the
+ * day, so lives of different lengths compare. "an hour", "a day".
+ */
+export const rateUnitOf = (totals: LifeTotals) =>
+  DateTime.toEpochMillis(totals.to) - DateTime.toEpochMillis(totals.from) < dayMs
+    ? { words: "an hour", ms: hourMs }
+    : { words: "a day", ms: dayMs }
+
+/** How much of a count a life had in each `unitMs`, over how long it lived: at least an hour. */
+export const rateOf = (value: number, totals: LifeTotals, unitMs: number) =>
+  (value * unitMs) / Math.max(hourMs, DateTime.toEpochMillis(totals.to) - DateTime.toEpochMillis(totals.from))
+
+/** How long a release lived, from its first operation or signal to its last: "3 h", "6 days". */
+export const livedWords = (totals: LifeTotals) => {
+  const ms = DateTime.toEpochMillis(totals.to) - DateTime.toEpochMillis(totals.from)
+  if (ms < dayMs) {
+    return `${Math.max(1, Math.round(ms / hourMs))} h`
+  }
+  const days = Math.round(ms / dayMs)
+  return `${days} ${days === 1 ? "day" : "days"}`
+}
+
+/**
+ * What an agent needs to dig into a release: which one, its life against the one before, and how to
+ * read everything behind the page, through the CLI and the API.
+ */
+export const releaseBriefOf = (project: string, detail: ReleaseDetail) => {
+  const { summary, life } = detail
+  const where = summary.environment === undefined ? "" : ` (${summary.environment})`
+  const scope = [
+    `component=${encodeURIComponent(summary.component)}`,
+    ...(summary.environment === undefined ? [] : [`environment=${encodeURIComponent(summary.environment)}`]),
+    `release=${encodeURIComponent(summary.release)}`,
+    ...(life === undefined
+      ? []
+      : [
+          `from=${encodeURIComponent(DateTime.formatIso(life.totals.from))}`,
+          `to=${encodeURIComponent(DateTime.formatIso(life.totals.to))}`,
+        ]),
+  ].join("&")
+  const environment = summary.environment === undefined ? "" : ` --environment ${summary.environment}`
+  return [
+    `Find out whether release ${summary.release} of ${summary.component}${where} works, in Cluenori project ${project}.`,
+    summary.previous === undefined
+      ? "There is no release before it to compare with."
+      : `Compare it with the release before it, ${summary.previous}: Cluenori says "${summary.verdict}".`,
+    life === undefined
+      ? "It hasn't run or sent anything yet."
+      : `It ran from ${DateTime.formatIso(life.totals.from)} to ${DateTime.formatIso(life.totals.to)}.`,
+    `Read it whole, step by step: ./cluenori release ${project} ${summary.component} ${summary.release}${environment} --life`,
+    ...(life === undefined
+      ? []
+      : [
+          `Its operations: GET /api/projects/${project}/operations?${scope}`,
+          `Its errors: GET /api/projects/${project}/errors?${scope}`,
+          `Its warnings and errors: GET /api/projects/${project}/logs?${scope}`,
+        ]),
+  ].join("\n")
+}

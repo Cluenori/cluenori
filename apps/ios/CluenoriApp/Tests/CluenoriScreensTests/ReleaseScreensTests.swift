@@ -51,7 +51,7 @@ let changedReleaseAnswer = #"""
       "firstSeen":"2026-10-21T09:12:00.000Z","lastSeen":"2026-10-21T13:41:00.000Z","count":12400,"errors":52,
       "previous":"2026.10.20-a1b2c3d","verdict":"worse","slower":2,"failingMore":0,"newErrors":1,
       "commit":{"sha":"e91f09c4b2a7d1e8f3c6b5a49d0e2f7a1c3b5d8e","tag":"v1.4.2"}},
-    "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"newErrors":[],"incidents":[],
+    "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"errors":[],"incidents":[],
     "changes":{"totalCommits":3,
       "commits":[
         {"sha":"e91f09c4b2a7d1e8f3c6b5a49d0e2f7a1c3b5d8e","message":"Cache the feed (#41)","author":"sam",
@@ -75,7 +75,7 @@ let storeOnlyReleaseAnswer = #"""
       "slower":0,"failingMore":0,"newErrors":0,
       "store":{"version":"2.5.0","buildNumber":"318","uploadedAt":"2026-10-21T08:00:00.000Z","stage":"inReview",
         "appStoreState":"IN_REVIEW","internalTesting":"IN_BETA_TESTING","externalTesting":"WAITING_FOR_BETA_REVIEW"}},
-    "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"newErrors":[],"incidents":[],
+    "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"errors":[],"incidents":[],
     "problems":[],"promotions":[],"deployTargets":[],"notes":[]}
     """#
 
@@ -96,7 +96,7 @@ let releaseAnswer = #"""
     ],
     "failingLess":[],
     "newOperations":["POST /api/notes/{id}/share"],
-    "newErrors":[{"id":"4f1c9a2e7b3d5068","kind":"exception","title":"NpgsqlException: Failed to connect",
+    "errors":[{"id":"4f1c9a2e7b3d5068","kind":"exception","title":"NpgsqlException: Failed to connect",
       "culprit":"Notes.Store.Save","occurrences":7,"firstSeen":"2026-10-21T09:20:00.000Z",
       "firstRelease":"2026.10.21-e91f09c","lastSeen":"2026-10-21T11:00:00.000Z","lastComponent":"notes-api",
       "lastEnvironment":"production","lastRelease":"2026.10.21-e91f09c"}],
@@ -204,7 +204,7 @@ struct ReleaseModelTests {
         #expect(detail.failingMore.isEmpty)
         #expect(detail.faster.first?.previousP95Ms == 260)
         #expect(detail.newOperations == ["POST /api/notes/{id}/share"])
-        #expect(detail.newErrors.map(\.id) == ["4f1c9a2e7b3d5068"])
+        #expect(detail.errors.map(\.id) == ["4f1c9a2e7b3d5068"])
         #expect(detail.incidents.first?.resolvedAt != nil)
         // The same release is one screen, whatever the period.
         #expect(try #require(pairing.models).release(feedRelease) === release)
@@ -377,7 +377,7 @@ struct ReleaseSourcesTests {
         #expect(detail.summary.store?.stage == .inReview)
         #expect(detail.summary.store?.externalTesting == "WAITING_FOR_BETA_REVIEW")
         #expect(detail.changes == nil)
-        #expect(detail.slower.isEmpty && detail.newErrors.isEmpty && detail.incidents.isEmpty)
+        #expect(detail.slower.isEmpty && detail.errors.isEmpty && detail.incidents.isEmpty)
     }
 
     @Test func `opens only https pages from an answer's links`() {
@@ -485,7 +485,7 @@ struct ReleaseTelemetryTests {
             {"summary":{"component":"notes-ios","release":"2.4.0+312","firstSeen":"2026-10-14T10:00:00.000Z",
               "lastSeen":"2026-10-21T13:40:00.000Z","count":950,"errors":3,"verdict":"first","slower":0,
               "failingMore":0,"newErrors":0},
-            "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"newErrors":[],
+            "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"errors":[],
             "incidents":[],"problems":[],"promotions":[],"deployTargets":[],"notes":[]}
             """#
         )

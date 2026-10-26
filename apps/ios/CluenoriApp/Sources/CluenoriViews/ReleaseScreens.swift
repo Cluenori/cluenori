@@ -425,9 +425,10 @@ struct ReleaseScreen: View {
                     operations: detail.failingMore,
                     change: .failingMore
                 )
-                if !detail.newErrors.isEmpty {
+                let newErrors = detail.errors.filter { $0.firstRelease == summary.release }
+                if !newErrors.isEmpty {
                     Section {
-                        ForEach(detail.newErrors, id: \.id) { group in
+                        ForEach(newErrors, id: \.id) { group in
                             NavigationLink(value: Route.error(of: .project(release.release.project), id: group.id)) {
                                 ErrorGroupRow(
                                     title: group.title, culprit: group.culprit, occurrences: group.occurrences)

@@ -225,26 +225,90 @@ export const ComparedOperation = Schema.Struct({
 export type ComparedOperation = typeof ComparedOperation.Type
 
 /**
- * One release compared with the one before it: what moved, each list the biggest change first.
- * Operations compare once they ran 100 times in both releases. Incidents are those the project
- * keeps, the open ones and those resolved in the last 7 days, that opened while it ran.
+ * How wide each step of a release's life is: 5 minutes while it ran under 6 hours, an hour under 3
+ * days, else a UTC day.
  */
+export const LifeStep = Schema.Literals(["5m", "1h", "1d"]).annotate({ identifier: "LifeStep" })
+export type LifeStep = typeof LifeStep.Type
+
+/**
+ * One step of a release's life. Each number is absent when its telemetry didn't say, never 0:
+ * requests in a step nothing of it was counted in, warnings and errors of a release that sent no
+ * service telemetry or older than the 90 days they are kept, people by the hour or of an app that
+ * sent nothing that day.
+ */
+export const LifePoint = Schema.Struct({
+  start: Instant,
+  /** The operations it ran, how many failed, and their p95. */
+  requests: Schema.optionalKey(Count),
+  failed: Schema.optionalKey(Count),
+  p95Ms: Schema.optionalKey(Milliseconds),
+  /** What it logged at warn, and at error or fatal. */
+  warnings: Schema.optionalKey(Count),
+  errors: Schema.optionalKey(Count),
+  /** The people of its app on it that UTC day; only in steps of a day. */
+  people: Schema.optionalKey(Count),
+}).annotate({ identifier: "LifePoint" })
+export type LifePoint = typeof LifePoint.Type
+
+/**
+ * A release's whole life in numbers: from its first operation or signal to its last, its requests
+ * and failures, its warnings and errors, and its app's people. A number is absent when nothing of
+ * it was sent: requests and failures without service telemetry, people without an app's.
+ */
+export const LifeTotals = Schema.Struct({
+  from: Instant,
+  to: Instant,
+  requests: Schema.optionalKey(Count),
+  failed: Schema.optionalKey(Count),
+  warnings: Schema.optionalKey(Count),
+  errors: Schema.optionalKey(Count),
+  /** When its warnings and errors are counted from, when that is after it started: older ones aren't kept. */
+  logsFrom: Schema.optionalKey(Instant),
+  /** The people its app was used by, each once. */
+  people: Schema.optionalKey(Count),
+}).annotate({ identifier: "LifeTotals" })
+export type LifeTotals = typeof LifeTotals.Type
+
+/**
+ * A release's whole life, whatever any period: a point for every step from its first to its last,
+ * oldest first, and its totals; and the totals of the release before it, which it is compared with.
+ */
+export const ReleaseLife = Schema.Struct({
+  step: LifeStep,
+  points: Schema.Array(LifePoint),
+  totals: LifeTotals,
+  /** The release before's whole life; absent for the first, or one that neither ran nor sent. */
+  previous: Schema.optionalKey(LifeTotals),
+}).annotate({ identifier: "ReleaseLife" })
+export type ReleaseLife = typeof ReleaseLife.Type
+
 /** A release's page on its repository's Releases page on GitHub, and when Cluenori last published it. */
 export const GitHubReleasePage = Schema.Struct({ url: Schema.String, publishedAt: Instant }).annotate({
   identifier: "GitHubReleasePage",
 })
 export type GitHubReleasePage = typeof GitHubReleasePage.Type
 
+/**
+ * One release, its whole life compared with the one before it: what moved, each list the biggest
+ * change first. Operations compare once they ran 100 times in both releases. Incidents are those
+ * the project keeps, the open ones and those resolved in the last 7 days, that opened while it ran.
+ */
 export const ReleaseDetail = Schema.Struct({
   summary: ReleaseSummary,
+  /** Its life step by step, beside the release before's totals; absent while it neither ran nor sent. */
+  life: Schema.optionalKey(ReleaseLife),
   slower: Schema.Array(ComparedOperation),
   failingMore: Schema.Array(ComparedOperation),
   faster: Schema.Array(ComparedOperation),
   failingLess: Schema.Array(ComparedOperation),
   /** Operations it ran that the release before it didn't. */
   newOperations: Schema.Array(EnvelopeName),
-  /** Errors first seen in it, with how often they happened while it ran. */
-  newErrors: Schema.Array(ErrorGroup),
+  /**
+   * The errors it logged, the most frequent first, at most 20, with how often each happened while it
+   * ran; those first seen in it have it as their `firstRelease`.
+   */
+  errors: Schema.Array(ErrorGroup),
   incidents: Schema.Array(Incident),
   /** What changed in the repository since the release before; absent until both commits are found. */
   changes: Schema.optionalKey(ReleaseChanges),

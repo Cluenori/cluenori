@@ -38,6 +38,8 @@ import type {
   ReleaseNote,
   ReleaseSummary,
   SourceProblem,
+  LifePoint,
+  ReleaseLife,
 } from "@cluenori/releases"
 import {
   AppStoreSubmission,
@@ -1002,6 +1004,56 @@ const changesOf = (now: number, summary: ReleaseSummary): ReleaseChanges | undef
   return undefined
 }
 
+// A release's life as the API counts it: by the hour while it ran under 3 days, else by UTC day,
+// its runs and failures spread over its steps, a few warnings and errors with them, and the people
+// of the iPhone app's releases; the API's release before the latest left one hour uncounted.
+const lifeOf = (summary: ReleaseSummary): ReleaseLife | undefined => {
+  if (summary.firstSeen === undefined || summary.lastSeen === undefined || summary.count === undefined) {
+    return undefined
+  }
+  const from = DateTime.toEpochMillis(summary.firstSeen)
+  const to = DateTime.toEpochMillis(summary.lastSeen)
+  const stepping = [
+    ["5m", 6 * hour, 5 * minute],
+    ["1h", 3 * day, hour],
+  ] as const
+  const [step, , width] = stepping.find(([, under]) => to - from < under) ?? (["1d", Infinity, day] as const)
+  const first = from - (from % width)
+  const steps = Math.max(1, Math.ceil((to - first) / width))
+  const weights = Array.from(
+    { length: steps },
+    (_, index) => 1.1 + Math.sin(index * 0.9) * 0.6 + Math.cos(index * 0.37) * 0.3,
+  )
+  const total = weights.reduce((sum, weight) => sum + weight, 0)
+  const spread = (value: number) => weights.map((weight) => Math.round((value * weight) / total))
+  const requests = spread(summary.count)
+  const failed = spread(summary.errors ?? 0)
+  const app = summary.component === ios
+  const uncounted = summary.release === betterRelease ? 6 : -1
+  const points = requests.map((count, index): LifePoint => ({
+    start: DateTime.makeUnsafe(first + index * width),
+    ...(index === uncounted ? {} : { requests: count, failed: failed[index] ?? 0, p95Ms: 180 + ((index * 37) % 90) }),
+    warnings: Math.round(count / 400),
+    // Only the API's latest logged errors.
+    errors: summary.release === worseRelease ? Math.round((failed[index] ?? 0) / 3) : 0,
+    ...(app && step === "1d" ? { people: Math.round(count / 9) } : {}),
+  }))
+  const sum = (of: (point: LifePoint) => number | undefined) => points.reduce((all, point) => all + (of(point) ?? 0), 0)
+  return {
+    step,
+    points,
+    totals: {
+      from: summary.firstSeen,
+      to: summary.lastSeen,
+      requests: sum((point) => point.requests),
+      failed: sum((point) => point.failed),
+      warnings: sum((point) => point.warnings),
+      errors: sum((point) => point.errors),
+      ...(app ? { people: Math.round(summary.count / 6) } : {}),
+    },
+  }
+}
+
 // What moved in a release against the one before it, each the biggest change first: in the API's
 // latest, in production, and in the one before it; nothing in the others.
 const movedIn = (now: number, summary: ReleaseSummary) => {
@@ -1017,7 +1069,7 @@ const movedIn = (now: number, summary: ReleaseSummary) => {
       failingMore: [compared("POST /api/export", [410, 13, 4_300], [2_600, 10, 4_100])],
       faster: [compared("GET /api/notes", [5_900, 6, 62], [38_000, 40, 180])],
       newOperations: [EnvelopeName.make("POST /api/notes/{id}/share")],
-      newErrors: groupsOf(ran).filter((group) => group.id === fresh),
+      errors: groupsOf(ran).map((group) => (group.id === fresh ? { ...group, firstRelease: worseRelease } : group)),
       incidents: [
         releaseIncident(now, "0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a64", "POST /api/export: 20% failed, usually 0.1%", [
           40 * minute,
@@ -1076,13 +1128,24 @@ const releaseDetail = (
     faster: [],
     failingLess: [],
     newOperations: [],
-    newErrors: [],
+    errors: [],
     incidents: [],
   }
   const changes = changesOf(now, summary)
+  const life = lifeOf(summary)
+  const previous = world
+    .releasesAt(now)
+    .find(
+      (entry) =>
+        entry.component === summary.component &&
+        entry.environment === summary.environment &&
+        entry.release === summary.previous,
+    )
+  const before = previous === undefined ? undefined : lifeOf(previous)
   const linkedRepository = links.get(summary.component)?.repository
   return reply(ReleaseDetail, {
     summary,
+    ...(life === undefined ? {} : { life: { ...life, ...(before === undefined ? {} : { previous: before.totals }) } }),
     ...none,
     ...movedIn(now, summary),
     ...(changes === undefined ? {} : { changes }),

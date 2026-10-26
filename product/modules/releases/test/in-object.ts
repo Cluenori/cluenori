@@ -2,7 +2,7 @@ import { ActivityLog, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
 import { GitHub, GitHubRefused } from "@cluenori/github"
 import { Incidents } from "@cluenori/incidents"
 import { Projects } from "@cluenori/projects"
-import { ArchiveStore, Signals } from "@cluenori/signals"
+import { AppBatchStore, AppSignals, ArchiveStore, Signals } from "@cluenori/signals"
 import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
@@ -93,6 +93,7 @@ export const inProject = <A, E>(
     E,
     | Incidents
     | Signals
+    | AppSignals
     | Projects
     | ActivityLog
     | ReleaseRecords
@@ -115,6 +116,9 @@ export const inProject = <A, E>(
                 Layer.mergeAll(
                   Projects.layer({ project: ProjectKey.make(project) }),
                   Signals.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }),
+                  AppSignals.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }).pipe(
+                    Layer.provide(AppBatchStore.layerMemory()),
+                  ),
                 ),
               ),
               Layer.provideMerge(

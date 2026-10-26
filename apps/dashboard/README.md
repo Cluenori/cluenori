@@ -86,14 +86,16 @@ open from. Above every page but Now, its trail: each level above it, one click a
                                                  first, each against the release before it; sources that failed
                                                  lately; how AI drafts of release notes read
       /projects/notes/releases/notes-api/2.4.0+312?environment=production
-                                                 one release against the one before, one click from its performance,
-                                                 errors and logs: its commit, where it runs now ("In dev since 13:57 ·
-                                                 not in prod yet"), its one next step when an environment's is it,
-                                                 promoting it to another environment, its App Store build, its
-                                                 promotions, releasing one App Store review approved, its notes for its
-                                                 users (drafted with AI, edited, saved), the pull requests or commits
-                                                 since, what got slower or fails more, its new errors, the incidents
-                                                 while it ran, what got faster or fails less, new operations
+                                                 one release, an item with no period: its commit, where it runs now
+                                                 ("In dev since 13:57 · not in prod yet"), its one next step, promoting
+                                                 it elsewhere, and a brief to copy for an agent; the answer, its verdict
+                                                 and its people, requests, failures, warnings and errors over its whole
+                                                 life beside the release before's, each opening its page; its life by
+                                                 5 minutes, hour or UTC day, zoomed by dragging its overview; every
+                                                 error it logged, the new ones marked; its operations that moved; the
+                                                 pull requests or commits since; the incidents while it ran; its
+                                                 promotions (first while one moves), releasing one App Store review
+                                                 approved, its notes (drafted with AI, edited, saved), its App Store build
 /phones                                          the paired phones, removing one, and adding one by its QR code
 /browsers                                        the browsers signed in with passkeys, signing one out, and adding a passkey
 /members                                         owners: the members, the projects each sees, inviting and removing

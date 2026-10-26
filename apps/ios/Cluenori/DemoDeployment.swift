@@ -1079,7 +1079,7 @@
                 endedAt: now.addingTimeInterval(-2 * hour - 5 * minute))
             return ReleaseDetail(
                 summary: summary, slower: [], failingMore: [], faster: [], failingLess: [],
-                newOperations: summary.component == "notes-api" ? ["GET /api/feed/offline"] : [], newErrors: [],
+                newOperations: summary.component == "notes-api" ? ["GET /api/feed/offline"] : [], errors: [],
                 incidents: [], changes: changes, problems: [], promotions: [deployed], deployTargets: targets,
                 notes: [ReleaseNote(locale: "en-US", text: "Read your feed offline.")], repository: repository)
         }

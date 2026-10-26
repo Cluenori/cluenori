@@ -430,7 +430,7 @@ struct ReleasePlacesTests {
             "GET /api/projects/notes/releases/notes-api/1.4.0%2B55", 200,
             #"""
             {"summary":\#(summaryJSON("notes-api", "prod", "1.4.0+55")),
-              "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"newErrors":[],
+              "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"errors":[],
               "incidents":[],"problems":[],"promotions":[],"deployTargets":[],"notes":[],"repository":"acme/notes"}
             """#)
         let release = models.release(

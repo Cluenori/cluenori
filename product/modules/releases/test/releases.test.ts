@@ -1,10 +1,20 @@
 import { sketchOf } from "@bagatka/quantile-sketch"
 import type { Actor } from "@cluenori/foundation"
-import { ComponentKey, EnvelopeName, EnvironmentKey, MemberId, Period, ReleaseVersion } from "@cluenori/foundation"
+import {
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  InstallationId,
+  MemberId,
+  Period,
+  ReleaseVersion,
+  SessionId,
+} from "@cluenori/foundation"
+import { CommitSha } from "@cluenori/github"
 import { Incidents, MonitorUrl } from "@cluenori/incidents"
-import { ComponentName, ProjectName, Projects } from "@cluenori/projects"
-import type { OperationCounts } from "@cluenori/signals"
-import { BatchDigest, ErrorGroupId, Signals } from "@cluenori/signals"
+import { ComponentName, ProjectName, Projects, SdkKey } from "@cluenori/projects"
+import type { AppSignal, OperationCounts } from "@cluenori/signals"
+import { AppSignalId, AppSignals, BatchDigest, ErrorGroupId, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { TestClock } from "effect/testing"
@@ -94,6 +104,33 @@ const recordError = (release: ReleaseVersion, id: string, at: number) =>
     })
   })
 
+// Records a warning that `release` logged at `at`.
+const recordWarning = (release: ReleaseVersion, at: number) =>
+  Effect.gen(function* () {
+    const signals = yield* Signals
+    const time = DateTime.makeUnsafe(at)
+    yield* signals.recordLogs(api, {
+      digest: digest(),
+      archive: new Uint8Array(0),
+      from: time,
+      to: time,
+      records: 1,
+      entries: [
+        {
+          time,
+          level: "warn",
+          category: "Notes.Export",
+          message: "Export took a second try",
+          environment: production,
+          release,
+          attributes: {},
+        },
+      ],
+      errors: [],
+      traces: [],
+    })
+  })
+
 // Two hours of the older release, then `then` from the newer one, an hour after.
 const twoReleases = (then: ReadonlyArray<OperationCounts>) =>
   record([
@@ -102,6 +139,36 @@ const twoReleases = (then: ReadonlyArray<OperationCounts>) =>
     counts(older, "POST /api/export", start - 2 * hour, 200),
     ...then,
   ])
+
+// A UUID version 7 of time `millis`, the `index`th of it.
+const uuidAt = (millis: number, index: number) => {
+  const time = millis.toString(16).padStart(12, "0")
+  return `${time.slice(0, 8)}-${time.slice(8)}-7000-8000-${index.toString(16).padStart(12, "0")}`
+}
+
+// A batch of `release`'s app from installation `n`: a session at each of `times`.
+const sessions = (release: ReleaseVersion, n: number, times: ReadonlyArray<number>) => {
+  return {
+    installation: InstallationId.make(uuidAt(start - 400 * 24 * hour, n)),
+    environment: production,
+    release,
+    device: {
+      model: "iPhone17,2",
+      platform: "iOS" as const,
+      osVersion: "27.2",
+      locale: "en-US",
+      timeZone: "Europe/Warsaw",
+    },
+    sdk: { name: "cluenori-swift", version: "0.1.0" },
+    sentAt: DateTime.makeUnsafe(start),
+    signals: times.map((at, index): AppSignal => ({
+      _tag: "session.started",
+      id: AppSignalId.make(uuidAt(at, n * 100 + index)),
+      at: DateTime.makeUnsafe(at),
+      session: SessionId.make(uuidAt(at, 10_000 + n * 100 + index)),
+    })),
+  }
+}
 
 const today = new Period({ from: DateTime.makeUnsafe(start - 6 * hour), to: DateTime.makeUnsafe(start) })
 const list = releasesModule.queries.list.run({ period: today })
@@ -173,13 +240,18 @@ describe("Releases", () => {
         yield* recordError(older, "aaaaaaaaaaaaaaaa", start - 2 * hour)
         yield* recordError(newer, "aaaaaaaaaaaaaaaa", start - 30 * minute)
         yield* recordError(newer, "bbbbbbbbbbbbbbbb", start - 20 * minute)
+        yield* recordError(newer, "bbbbbbbbbbbbbbbb", start - 15 * minute)
         const { releases } = yield* list
         const compared = yield* detail
 
         assert.deepInclude(releases[0], { verdict: "worse", newErrors: 1 })
+        // Every error it logged, the most frequent first; the new one is first seen in it.
         assert.deepStrictEqual(
-          compared.newErrors.map((error) => [error.id, error.occurrences]),
-          [[ErrorGroupId.make("bbbbbbbbbbbbbbbb"), 1]],
+          compared.errors.map((error) => [error.id, error.occurrences, error.firstRelease]),
+          [
+            [ErrorGroupId.make("bbbbbbbbbbbbbbbb"), 2, newer],
+            [ErrorGroupId.make("aaaaaaaaaaaaaaaa"), 1, older],
+          ],
         )
       }),
     ),
@@ -260,6 +332,115 @@ describe("Releases", () => {
           compared.incidents.map((incident) => incident.subject),
           ["https://notes.test/health"],
         )
+      }),
+    ),
+  )
+
+  it.effect("shows a release's whole life by the hour, beside the release before's totals", () =>
+    inProject(
+      "life-by-hour",
+      start,
+      Effect.gen(function* () {
+        yield* record([
+          counts(older, "GET /api/notes", start - 12 * hour, 300),
+          counts(newer, "GET /api/notes", start - 10 * hour, 100, { errors: 3 }),
+          // Nothing of it is counted in the hours between.
+          counts(newer, "GET /api/notes", start - 4 * hour + 30 * minute, 200),
+        ])
+        yield* recordError(newer, "cccccccccccccccc", start - 10 * hour + 30 * minute)
+        yield* recordWarning(newer, start - 4 * hour + 35 * minute)
+        const { life } = yield* detail
+
+        assert.strictEqual(life?.step, "1h")
+        assert.deepStrictEqual(
+          life?.points.map((point) => [
+            (DateTime.toEpochMillis(point.start) - start) / hour,
+            point.requests,
+            point.failed,
+            point.warnings,
+            point.errors,
+          ]),
+          [
+            [-10, 100, 3, 0, 1],
+            // A step nothing was counted in is unknown, not zero; it logged nothing then.
+            [-9, undefined, undefined, 0, 0],
+            [-8, undefined, undefined, 0, 0],
+            [-7, undefined, undefined, 0, 0],
+            [-6, undefined, undefined, 0, 0],
+            [-5, undefined, undefined, 0, 0],
+            [-4, 200, 0, 1, 0],
+          ],
+        )
+        assert.deepInclude(life?.totals, { requests: 300, failed: 3, warnings: 1, errors: 1 })
+        assert.notProperty(life?.totals, "people")
+        assert.deepInclude(life?.previous, { requests: 300, failed: 0, warnings: 0, errors: 0 })
+      }),
+    ),
+  )
+
+  it.effect("shows a release that ran under 6 hours by 5 minutes", () =>
+    inProject(
+      "life-by-five-minutes",
+      start,
+      Effect.gen(function* () {
+        yield* twoReleases([
+          counts(newer, "GET /api/notes", start - hour, 300),
+          counts(newer, "GET /api/notes", start - 10 * minute, 300),
+        ])
+        const { life } = yield* detail
+
+        assert.strictEqual(life?.step, "5m")
+        // From the 5 minutes it started in to the end of those it last ran in: 11 steps.
+        assert.strictEqual(life?.points.length, 11)
+        assert.deepStrictEqual(
+          [life?.points[0]?.requests, life?.points[1]?.requests, life?.points.at(-1)?.requests],
+          [300, undefined, 300],
+        )
+      }),
+    ),
+  )
+
+  it.effect("counts an app's people on a release by UTC day, from its app's signals alone", () =>
+    inProject(
+      "life-of-an-app",
+      start,
+      Effect.gen(function* () {
+        const ios = ComponentKey.make("notes-ios")
+        const release = ReleaseVersion.make("0.6.0+2")
+        const day = 24 * hour
+        const apps = yield* AppSignals
+        const sender = { component: ios, key: SdkKey.make("cluenori-sdk.notes.notes-ios.R2d2C3poBb8Wq0Lk5Xz7Aa") }
+        // One installation each day from 4 days ago, a second only 2 days ago.
+        yield* apps.record(
+          sender,
+          sessions(
+            release,
+            1,
+            [4, 3, 2, 1].map((ago) => start - ago * day),
+          ),
+        )
+        yield* apps.record(sender, sessions(release, 2, [start - 2 * day]))
+        yield* releasesModule.ingest.report.run(ios, {
+          release,
+          environment: production,
+          commit: CommitSha.make("a".repeat(40)),
+        })
+        const { life } = yield* releasesModule.queries.release.run({ component: ios, environment: production, release })
+
+        assert.strictEqual(life?.step, "1d")
+        assert.deepStrictEqual(
+          life?.points.map((point) => [DateTime.formatIso(point.start).slice(0, 10), point.people, point.requests]),
+          [
+            ["2026-10-17", 1, undefined],
+            ["2026-10-18", 1, undefined],
+            ["2026-10-19", 2, undefined],
+            ["2026-10-20", 1, undefined],
+          ],
+        )
+        assert.deepStrictEqual(life?.totals.people, 2)
+        // An app that sends no service telemetry has no requests or logs: unknown, not zero.
+        assert.notProperty(life?.totals, "requests")
+        assert.notProperty(life?.totals, "warnings")
       }),
     ),
   )

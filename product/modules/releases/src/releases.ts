@@ -7,6 +7,7 @@ import { DateTime, Effect, Option } from "effect"
 
 import type { KnownRelease } from "./catalog.ts"
 import { knownRelease, knownReleases, previousOf } from "./catalog.ts"
+import { lifeOf, sentOf } from "./life.ts"
 import { ReleaseRecords } from "./records.ts"
 import type {
   ReleaseDetail,
@@ -22,6 +23,9 @@ import { compare, verdictOf } from "./verdict.ts"
 // The most releases one list compares, the latest first.
 const listed = 30
 
+// The most errors a release's detail lists, the most frequent first.
+const errorsShown = 20
+
 const spanOf = (ran: ReleaseRow) => new Period({ from: ran.firstSeen, to: ran.lastSeen })
 
 // A release's operations, and, beside the release before it, what moved and the errors first seen
@@ -29,10 +33,13 @@ const spanOf = (ran: ReleaseRow) => new Period({ from: ran.firstSeen, to: ran.la
 interface Compared {
   readonly current: Option.Option<OperationTable>
   readonly comparison: Option.Option<Comparison>
+  /** The errors it logged, the most frequent first. */
+  readonly errors: ReadonlyArray<ErrorGroup>
+  /** Those first seen in it, beside a release before it; none for the first. */
   readonly newErrors: ReadonlyArray<ErrorGroup>
 }
 
-const unmeasured: Compared = { current: Option.none(), comparison: Option.none(), newErrors: [] }
+const unmeasured: Compared = { current: Option.none(), comparison: Option.none(), errors: [], newErrors: [] }
 
 // One release compared with the one before it that ran. Not handled: a component that reports no
 // environment beside one that does, whose release would count both; that takes counts that filter
@@ -51,16 +58,22 @@ const compareRelease = Effect.fn("Releases.compareRelease")(function* (
     ...(release.environment === undefined ? {} : { environment: release.environment }),
   }
   const current = yield* signals.operations({ period: spanOf(ran), ...scope, release: release.release })
+  const errors = yield* signals.errors({ period: spanOf(ran), ...scope, release: release.release })
   const before = baseline?.ran
   if (baseline === undefined || before === undefined) {
-    const alone: Compared = { current: Option.some(current), comparison: Option.none(), newErrors: [] }
+    const alone: Compared = {
+      current: Option.some(current),
+      comparison: Option.none(),
+      errors: errors.groups,
+      newErrors: [],
+    }
     return alone
   }
   const previous = yield* signals.operations({ period: spanOf(before), ...scope, release: baseline.release })
-  const errors = yield* signals.errors({ period: spanOf(ran), ...scope, release: release.release })
   const compared: Compared = {
     current: Option.some(current),
     comparison: Option.some(compare(current, previous)),
+    errors: errors.groups,
     newErrors: errors.groups.filter((group) => group.firstRelease === release.release),
   }
   return compared
@@ -173,7 +186,8 @@ export const listReleases = Effect.fn("Releases.list")(function* (query: Release
 })
 
 /**
- * One release compared with the one before it: what moved, the errors first seen in it, the
+ * One release compared with the one before it: its whole life step by step beside the release
+ * before's totals, what moved, the errors it logged, the
  * incidents that opened while it ran, what changed in its repository since, its promotions, and
  * where it can be promoted; without an environment, of the one it last ran in. Fails with `ReleaseNotFound` for a release the module
  * doesn't know. Reads only.
@@ -194,14 +208,18 @@ export const releaseDetail = Effect.fn("Releases.detail")(function* (key: Releas
   const components = yield* projects.components.pipe(Effect.catchTag("ProjectNotFound", () => Effect.succeed([])))
   const linked = components.find((component) => component.key === release.component)
   const ran = release.ran
+  const life = yield* lifeOf(release, yield* sentOf(release))
+  const before =
+    life === undefined || previous === undefined ? undefined : yield* lifeOf(previous, yield* sentOf(previous))
   const detail: ReleaseDetail = {
     summary,
+    ...(life === undefined ? {} : { life: { ...life, ...(before === undefined ? {} : { previous: before.totals }) } }),
     slower: comparison?.slower ?? [],
     failingMore: comparison?.failingMore ?? [],
     faster: comparison?.faster ?? [],
     failingLess: comparison?.failingLess ?? [],
     newOperations: comparison?.newOperations ?? [],
-    newErrors: compared.newErrors,
+    errors: compared.errors.slice(0, errorsShown),
     incidents:
       ran === undefined
         ? []

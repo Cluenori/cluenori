@@ -43,6 +43,7 @@ export function ErrorList({
   colorOf,
   stepsOf,
   linkOf,
+  isNew,
 }: {
   readonly groups: ReadonlyArray<ErrorGroup>
   /**
@@ -55,12 +56,15 @@ export function ErrorList({
   readonly stepsOf: (group: ErrorGroup) => ReadonlyArray<number | undefined> | undefined
   /** The page each row opens. */
   readonly linkOf: (group: ErrorGroup) => Route
+  /** Which groups are new, when not by `now`: such as those first seen in one release. */
+  readonly isNew?: (group: ErrorGroup) => boolean
 }) {
   return (
     <ul className="divide-y">
       {groups.map((group) => {
         const { type, message } = titleParts(group)
-        const status = now === undefined ? { ongoing: false, isNew: false } : errorStatusOf(group, now)
+        const timely = now === undefined ? { ongoing: false, isNew: false } : errorStatusOf(group, now)
+        const status = isNew === undefined ? timely : { ...timely, isNew: isNew(group) }
         const steps = stepsOf(group)
         return (
           <li key={group.id}>

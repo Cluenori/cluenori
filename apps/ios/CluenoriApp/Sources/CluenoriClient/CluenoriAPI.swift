@@ -815,11 +815,16 @@ public nonisolated struct CluenoriAPI: Sendable {
         return try Self.decoded(from: `the answer`)
     }
 
-    /// One release compared with the one before it, in `environment`, or without it the environment
-    /// it last ran in: the operations that got slower, fail more, got faster, or fail less, each
-    /// the biggest change first; the operations new in it; the errors first seen in it; the
-    /// incidents that opened while it ran, of those the project keeps; its promotions; and the
-    /// environments it can be promoted to, its component's deploy workflows.
+    /// One release, whatever any period, compared with the one before it, in `environment`, or
+    /// without it the environment it last ran in: its whole life (`life`), a point for each 5
+    /// minutes while it ran under 6 hours, each hour under 3 days, else each UTC day, with its
+    /// requests, failures and p95, its warnings and errors, and its app's people by day, each
+    /// absent when nothing of it was sent, never 0, and its totals beside the release before's; the
+    /// operations that got slower, fail more, got faster, or fail less, each the biggest change
+    /// first; the operations new in it; the errors it logged, the most frequent first, at most 20,
+    /// those first seen in it with it as `firstRelease`; the incidents that opened while it ran, of
+    /// those the project keeps; its promotions; and the environments it can be promoted to, its
+    /// component's deploy workflows.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, `.releaseNotFound`, or as any call can.
     @concurrent
@@ -4774,6 +4779,145 @@ public nonisolated struct LaunchTimes: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct LifePoint: Codable, Hashable, Sendable {
+    public let start: Date
+    public let requests: Int?
+    public let failed: Int?
+    public let p95Ms: Double?
+    public let warnings: Int?
+    public let errors: Int?
+    public let people: Int?
+
+    public init(
+        start: Date,
+        requests: Int? = nil,
+        failed: Int? = nil,
+        p95Ms: Double? = nil,
+        warnings: Int? = nil,
+        errors: Int? = nil,
+        people: Int? = nil,
+    ) {
+        self.start = start
+        self.requests = requests
+        self.failed = failed
+        self.p95Ms = p95Ms
+        self.warnings = warnings
+        self.errors = errors
+        self.people = people
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case start = "start"
+        case requests = "requests"
+        case failed = "failed"
+        case p95Ms = "p95Ms"
+        case warnings = "warnings"
+        case errors = "errors"
+        case people = "people"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.start = try container.`value at`(.start)
+        self.requests = try container.`value if present at`(.requests)
+        self.failed = try container.`value if present at`(.failed)
+        self.p95Ms = try container.`value if present at`(.p95Ms)
+        self.warnings = try container.`value if present at`(.warnings)
+        self.errors = try container.`value if present at`(.errors)
+        self.people = try container.`value if present at`(.people)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.start, forKey: .start)
+        try container.encodeIfPresent(self.requests, forKey: .requests)
+        try container.encodeIfPresent(self.failed, forKey: .failed)
+        try container.encodeIfPresent(self.p95Ms, forKey: .p95Ms)
+        try container.encodeIfPresent(self.warnings, forKey: .warnings)
+        try container.encodeIfPresent(self.errors, forKey: .errors)
+        try container.encodeIfPresent(self.people, forKey: .people)
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public nonisolated struct LifeStep: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let `5m` = LifeStep(rawValue: "5m")
+    public static let `1h` = LifeStep(rawValue: "1h")
+    public static let `1d` = LifeStep(rawValue: "1d")
+}
+
+public nonisolated struct LifeTotals: Codable, Hashable, Sendable {
+    public let from: Date
+    public let to: Date
+    public let requests: Int?
+    public let failed: Int?
+    public let warnings: Int?
+    public let errors: Int?
+    public let logsFrom: Date?
+    public let people: Int?
+
+    public init(
+        from: Date,
+        to: Date,
+        requests: Int? = nil,
+        failed: Int? = nil,
+        warnings: Int? = nil,
+        errors: Int? = nil,
+        logsFrom: Date? = nil,
+        people: Int? = nil,
+    ) {
+        self.from = from
+        self.to = to
+        self.requests = requests
+        self.failed = failed
+        self.warnings = warnings
+        self.errors = errors
+        self.logsFrom = logsFrom
+        self.people = people
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case from = "from"
+        case to = "to"
+        case requests = "requests"
+        case failed = "failed"
+        case warnings = "warnings"
+        case errors = "errors"
+        case logsFrom = "logsFrom"
+        case people = "people"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.from = try container.`value at`(.from)
+        self.to = try container.`value at`(.to)
+        self.requests = try container.`value if present at`(.requests)
+        self.failed = try container.`value if present at`(.failed)
+        self.warnings = try container.`value if present at`(.warnings)
+        self.errors = try container.`value if present at`(.errors)
+        self.logsFrom = try container.`value if present at`(.logsFrom)
+        self.people = try container.`value if present at`(.people)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.from, forKey: .from)
+        try container.encode(self.to, forKey: .to)
+        try container.encodeIfPresent(self.requests, forKey: .requests)
+        try container.encodeIfPresent(self.failed, forKey: .failed)
+        try container.encodeIfPresent(self.warnings, forKey: .warnings)
+        try container.encodeIfPresent(self.errors, forKey: .errors)
+        try container.encodeIfPresent(self.logsFrom, forKey: .logsFrom)
+        try container.encodeIfPresent(self.people, forKey: .people)
+    }
+}
+
 public nonisolated struct LoadPoint: Codable, Hashable, Sendable {
     public let start: Date
     public let count: Int
@@ -7688,12 +7832,13 @@ public nonisolated struct ReleaseCommit: Codable, Hashable, Sendable {
 
 public nonisolated struct ReleaseDetail: Codable, Hashable, Sendable {
     public let summary: ReleaseSummary
+    public let life: ReleaseLife?
     public let slower: [ComparedOperation]
     public let failingMore: [ComparedOperation]
     public let faster: [ComparedOperation]
     public let failingLess: [ComparedOperation]
     public let newOperations: [String]
-    public let newErrors: [ErrorGroup]
+    public let errors: [ErrorGroup]
     public let incidents: [Incident]
     public let changes: ReleaseChanges?
     public let problems: [SourceProblem]
@@ -7705,12 +7850,13 @@ public nonisolated struct ReleaseDetail: Codable, Hashable, Sendable {
 
     public init(
         summary: ReleaseSummary,
+        life: ReleaseLife? = nil,
         slower: [ComparedOperation],
         failingMore: [ComparedOperation],
         faster: [ComparedOperation],
         failingLess: [ComparedOperation],
         newOperations: [String],
-        newErrors: [ErrorGroup],
+        errors: [ErrorGroup],
         incidents: [Incident],
         changes: ReleaseChanges? = nil,
         problems: [SourceProblem],
@@ -7721,12 +7867,13 @@ public nonisolated struct ReleaseDetail: Codable, Hashable, Sendable {
         gitHubRelease: GitHubReleasePage? = nil,
     ) {
         self.summary = summary
+        self.life = life
         self.slower = slower
         self.failingMore = failingMore
         self.faster = faster
         self.failingLess = failingLess
         self.newOperations = newOperations
-        self.newErrors = newErrors
+        self.errors = errors
         self.incidents = incidents
         self.changes = changes
         self.problems = problems
@@ -7739,12 +7886,13 @@ public nonisolated struct ReleaseDetail: Codable, Hashable, Sendable {
 
     private enum `JSON keys`: String, CodingKey {
         case summary = "summary"
+        case life = "life"
         case slower = "slower"
         case failingMore = "failingMore"
         case faster = "faster"
         case failingLess = "failingLess"
         case newOperations = "newOperations"
-        case newErrors = "newErrors"
+        case errors = "errors"
         case incidents = "incidents"
         case changes = "changes"
         case problems = "problems"
@@ -7758,12 +7906,13 @@ public nonisolated struct ReleaseDetail: Codable, Hashable, Sendable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: `JSON keys`.self)
         self.summary = try container.`value at`(.summary)
+        self.life = try container.`value if present at`(.life)
         self.slower = try container.`value at`(.slower)
         self.failingMore = try container.`value at`(.failingMore)
         self.faster = try container.`value at`(.faster)
         self.failingLess = try container.`value at`(.failingLess)
         self.newOperations = try container.`value at`(.newOperations)
-        self.newErrors = try container.`value at`(.newErrors)
+        self.errors = try container.`value at`(.errors)
         self.incidents = try container.`value at`(.incidents)
         self.changes = try container.`value if present at`(.changes)
         self.problems = try container.`value at`(.problems)
@@ -7777,12 +7926,13 @@ public nonisolated struct ReleaseDetail: Codable, Hashable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode(self.summary, forKey: .summary)
+        try container.encodeIfPresent(self.life, forKey: .life)
         try container.encode(self.slower, forKey: .slower)
         try container.encode(self.failingMore, forKey: .failingMore)
         try container.encode(self.faster, forKey: .faster)
         try container.encode(self.failingLess, forKey: .failingLess)
         try container.encode(self.newOperations, forKey: .newOperations)
-        try container.encode(self.newErrors, forKey: .newErrors)
+        try container.encode(self.errors, forKey: .errors)
         try container.encode(self.incidents, forKey: .incidents)
         try container.encodeIfPresent(self.changes, forKey: .changes)
         try container.encode(self.problems, forKey: .problems)
@@ -7869,6 +8019,48 @@ public nonisolated struct ReleaseHealth: Codable, Hashable, Sendable {
         try container.encode(self.verdict, forKey: .verdict)
         try container.encode(self.worse, forKey: .worse)
         try container.encode(self.better, forKey: .better)
+    }
+}
+
+public nonisolated struct ReleaseLife: Codable, Hashable, Sendable {
+    public let step: LifeStep
+    public let points: [LifePoint]
+    public let totals: LifeTotals
+    public let previous: LifeTotals?
+
+    public init(
+        step: LifeStep,
+        points: [LifePoint],
+        totals: LifeTotals,
+        previous: LifeTotals? = nil,
+    ) {
+        self.step = step
+        self.points = points
+        self.totals = totals
+        self.previous = previous
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case step = "step"
+        case points = "points"
+        case totals = "totals"
+        case previous = "previous"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.step = try container.`value at`(.step)
+        self.points = try container.`value at`(.points)
+        self.totals = try container.`value at`(.totals)
+        self.previous = try container.`value if present at`(.previous)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.step, forKey: .step)
+        try container.encode(self.points, forKey: .points)
+        try container.encode(self.totals, forKey: .totals)
+        try container.encodeIfPresent(self.previous, forKey: .previous)
     }
 }
 

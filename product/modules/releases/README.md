@@ -15,6 +15,11 @@ store build, deploys, performance and errors meet.
 ```ts
 // Inside the project's Durable Object; the host serves these.
 const { releases, problems } = yield* releasesModule.queries.list.run({ period: lastMonth })
+// One release, whatever any period: its whole life step by step, beside the release before's totals.
+const { life, errors } = yield* releasesModule.queries.release.run({ component, environment, release: "1.4.0+58" })
+// life: { step: "1h", points: [{ start, requests: 820, failed: 3, p95Ms: 210, warnings: 2, errors: 1 }, ...],
+//         totals: { from, to, requests: 9640, failed: 51, warnings: 24, errors: 18 }, previous: { ... } }
+// errors: every error it logged, the most frequent first; a new one has it as its firstRelease.
 // [{ release: "1.4.0+58", component: "notes-api", environment: "prod", previous: "1.4.0+57",
 //    verdict: "worse", slower: 1, failingMore: 1, newErrors: 0, commit: { sha, tag: "v1.4.0+58", ... } },
 //  { release: "0.6.0+2", component: "notes-ios", environment: "production", verdict: "unmeasured",
@@ -63,6 +68,7 @@ const items = yield* promotionItems
 
 - **Rules** (`src/verdict.ts`, `src/identity.ts`, `src/catalog.ts`, `src/numbering.ts`, `src/promote.ts`, `src/notes.ts`):
   - **The release before:** the latest before it, of the same component and environment, known from telemetry, a deploy, or a store build.
+  - **A release's life** (`src/life.ts`): from its first operation or its app's first signal to the last of either, whatever any period; a step of 5 minutes while that is under 6 hours, an hour under 3 days, else a UTC day; in each, its requests, failures and p95, its warnings and errors, and, by the day, its app's people; each absent where its telemetry said nothing, never 0; with its totals, and the release before's, which it is compared with.
   - **When an operation compares:** 100 runs in both releases.
   - **Slower and faster:** Today's rule, a p95 at least 1.5 times the other's, and 100 ms more.
   - **Fails more and less:** at least 5 failures, 2%, three times the other's rate.
@@ -96,7 +102,7 @@ const items = yield* promotionItems
 
 ## Does not own
 
-- **Counting by release, each release's span, and errors by release:** `@cluenori/signals`.
+- **Counting by release, each release's span, errors by release, and apps' people by release:** `@cluenori/signals` (`Signals`, `AppSignals`).
 - **Which repository and deploy targets a component has:** `@cluenori/projects`, its links.
 - **GitHub's credentials:** `@cluenori/github-app` keeps the workspace's app; the host gives this module the `GitHub` client that acts as it.
 - **Which model writes drafts:** the host provides `effect/ai`'s `LanguageModel`.
@@ -122,7 +128,7 @@ const items = yield* promotionItems
 ## Depends on
 
 - **Engines:**
-  - `@cluenori/signals`: releases, operations and errors by release;
+  - `@cluenori/signals`: releases, operations, load, errors and warnings by release, and apps' releases and people by day;
   - `@cluenori/incidents`: incidents while a release ran;
   - `@cluenori/projects`: components' links and deploy targets, the project's production environments, and their keys for CI's writes;
   - `@cluenori/manifest`: the version policy's Schemas, `StoreVersion` and `VersionPolicy`;
@@ -183,3 +189,4 @@ A source that refuses or fails is noted for the list, logged when its problem is
   - GitHub not answering a dispatch it may have started: asking again may start a second run;
   - pausing or resuming a phased release from Cluenori (the client can; no action uses it yet).
 - **A list compares at most 30 releases,** two operation tables and an error table each, read in the project's object.
+- **A release's detail also reads its life and the release before's:** a load series, warnings and errors counts, and, of an app, its releases and usage, each; up to about 450 daily steps for a release that ran 15 months. Not handled: a release that ran longer than the 15 months counts are kept shows the part kept.

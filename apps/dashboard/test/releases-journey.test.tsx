@@ -85,10 +85,42 @@ describe("releases journey", () => {
       )
       yield* Effect.promise(() => expect.element(screen.getByRole("heading", { level: 1, name: worse })).toBeVisible())
       yield* Effect.promise(() => expect.element(screen.getByText(`Against ${better}`)).toBeVisible())
-      const slower = screen.getByRole("region", { name: "Slower" })
+      // The answer first: its numbers over its whole life, each beside the release before's, each
+      // opening what is behind it, over a period that covers the release.
+      const answer = screen.getByRole("region", { name: `Against ${better}` })
+      yield* Effect.promise(() => expect.element(answer.getByText("Requests an hour")).toBeVisible())
+      yield* Effect.promise(() => expect.element(answer.getByText(/^before /).first()).toBeVisible())
+      yield* Effect.promise(() =>
+        expect
+          .element(
+            answer
+              .getByRole("link")
+              .filter({ hasText: /^[\d.,]+$/ })
+              .first(),
+          )
+          .toHaveAttribute(
+            "href",
+            `/projects/notes/performance?component=notes-api&environment=production&release=${encodeURIComponent(worse)}`,
+          ),
+      )
+      // Its life, step by step, from when it started: no period hides any of it.
+      const life = screen.getByRole("region", { name: "Its life" })
+      yield* Effect.promise(() =>
+        expect.element(life.getByText("By 5 minutes, from when it started to now")).toBeVisible(),
+      )
+      // The chart reads out each step; under it, the whole life, which zooms it.
+      yield* Effect.promise(() =>
+        expect.element(life.getByRole("slider", { name: /^Its life by 5 minutes/ })).toBeVisible(),
+      )
+      yield* Effect.promise(() => expect.element(life.getByRole("slider", { name: /^Its whole life/ })).toBeVisible())
+      yield* Effect.promise(() =>
+        expect.element(screen.getByRole("button", { name: "Copy for an agent" })).toBeVisible(),
+      )
+      const requests = screen.getByRole("region", { name: "Requests" })
+      const slower = requests.getByRole("region", { name: "Slower" })
       yield* Effect.promise(() => expect.element(slower.getByText("620 ms")).toBeVisible())
       yield* Effect.promise(() => expect.element(slower.getByText("was 290 ms")).toBeVisible())
-      const failing = screen.getByRole("region", { name: "Fails more" })
+      const failing = requests.getByRole("region", { name: "Fails more" })
       yield* Effect.promise(() => expect.element(failing.getByText(/3[.,]2/)).toBeVisible())
       yield* Effect.promise(() => expect.element(failing.getByText(/was %?0[.,]4/)).toBeVisible())
       yield* Effect.promise(() =>
@@ -96,23 +128,24 @@ describe("releases journey", () => {
           .element(screen.getByRole("region", { name: "Incidents while it ran" }).getByText(/, opened .*, resolved /))
           .toBeVisible(),
       )
-      yield* Effect.promise(() => expect.element(screen.getByRole("region", { name: "Faster" })).toBeVisible())
+      yield* Effect.promise(() => expect.element(requests.getByRole("region", { name: "Faster" })).toBeVisible())
       yield* Effect.promise(() =>
-        expect.element(screen.getByRole("region", { name: "New operations" }).getByText(/share$/)).toBeVisible(),
+        expect.element(requests.getByRole("region", { name: "New operations" }).getByText(/share$/)).toBeVisible(),
       )
       // A part with nothing in it isn't shown.
       yield* Effect.promise(() =>
-        expect.element(screen.getByRole("region", { name: "Fails less" })).not.toBeInTheDocument(),
+        expect.element(requests.getByRole("region", { name: "Fails less" })).not.toBeInTheDocument(),
       )
       yield* expectAccessible()
 
-      // Its new error opens the error's page.
+      // Every error it logged, the one first seen in it marked new; it opens the error's page.
+      const errors = screen.getByRole("region", { name: "Errors and warnings" })
+      // Its two errors, and the ways to all of its errors and of its lines.
+      yield* Effect.promise(() => expect.element(errors.getByRole("link")).toHaveLength(4))
       yield* Effect.promise(() =>
-        screen
-          .getByRole("region", { name: "New errors" })
-          .getByRole("link", { name: /TimeoutException/ })
-          .click(),
+        expect.element(errors.getByRole("link", { name: /TimeoutException/ }).getByText("new")).toBeVisible(),
       )
+      yield* Effect.promise(() => errors.getByRole("link", { name: /TimeoutException/ }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "TimeoutException" })).toBeVisible(),
       )
@@ -160,14 +193,14 @@ describe("releases journey", () => {
 
       // The release before was only reported from CI: its tag, and the commits its report listed,
       // without GitHub's pull requests, files, or comparison.
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Open the release before" }).click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: `Open ${better}` }).click())
       yield* Effect.promise(() => expect.element(screen.getByRole("heading", { level: 1, name: better })).toBeVisible())
       yield* Effect.promise(() => expect.element(screen.getByText("prod-2026.10.20-7b2c4d1")).toBeVisible())
       const reported = screen.getByRole("region", { name: "Changes since 2026.10.17-c3d9a02" })
       yield* Effect.promise(() => expect.element(reported.getByText("3 commits", { exact: true })).toBeVisible())
       yield* Effect.promise(() => expect.element(reported.getByText("Cache the notes list per account")).toBeVisible())
       yield* Effect.promise(() => expect.element(reported.getByRole("link")).not.toBeInTheDocument())
-      yield* Effect.promise(() => expect.element(screen.getByText("Deployed", { exact: true })).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByText(/^Deployed /)).toBeVisible())
       yield* expectAccessible()
     }),
   )
@@ -247,7 +280,7 @@ describe("releases journey", () => {
       const screen = yield* Effect.promise(() => render(<App />))
 
       // Its errors, one click from its page: the release a chip beside the switches.
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Errors of this release" }).click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Open in Errors" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Errors" })).toBeVisible(),
       )
@@ -280,7 +313,7 @@ describe("releases journey", () => {
 
       // Its logs: a line opens in place, with a link back to the release it was written in.
       open(`/projects/notes/releases/notes-api/${worse}?environment=production`)
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Logs of this release" }).click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Open in Logs" }).click())
       yield* Effect.promise(() => expect.element(screen.getByRole("heading", { level: 1, name: "Logs" })).toBeVisible())
       yield* Effect.promise(() => screen.getByRole("button", { name: /Retrying the export/ }).click())
       assert.deepStrictEqual([...new Set(releasesAsked("logs"))], [worse])
@@ -289,7 +322,7 @@ describe("releases journey", () => {
 
       // The release before ran 24 hours, until 3 hours ago: its performance is over the last 7 days.
       open(`/projects/notes/releases/notes-api/${better}?environment=production`)
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Performance of this release" }).click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Open in Performance" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "Performance" })).toBeVisible(),
       )
@@ -396,7 +429,7 @@ describe("releases journey", () => {
         [[`notes-ios/${appRelease}`, "production"]],
       )
 
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Open the release before" }).click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Open 1.8.1+398" }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "1.8.1+398" })).toBeVisible(),
       )

@@ -131,7 +131,7 @@ describe("environments journey", () => {
       window.history.pushState(null, "", `/projects/notes/releases/notes-api/${worse}?environment=production`)
       const screen = yield* Effect.promise(() => render(<App />))
 
-      yield* Effect.promise(() => screen.getByRole("link", { name: "Errors of this release" }).click())
+      yield* Effect.promise(() => screen.getByRole("link", { name: "Open in Errors" }).click())
       yield* Effect.promise(() => screen.getByRole("link", { name: /NpgsqlException/ }).click())
       yield* Effect.promise(() =>
         expect.element(screen.getByRole("heading", { level: 1, name: "NpgsqlException" })).toBeVisible(),

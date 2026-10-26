@@ -19,7 +19,7 @@ func promotedReleaseAnswer(
         {"summary":{"component":"notes-api","environment":"production","release":"2026.10.21-e91f09c",
           "firstSeen":"2026-10-21T09:12:00.000Z","lastSeen":"2026-10-21T13:41:00.000Z","count":12400,"errors":52,
           "previous":"2026.10.20-a1b2c3d","verdict":"same","slower":0,"failingMore":0,"newErrors":0},
-        "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"newErrors":[],"incidents":[],
+        "slower":[],"failingMore":[],"faster":[],"failingLess":[],"newOperations":[],"errors":[],"incidents":[],
         "problems":[],
         "promotions":[\#(promotions)],
         "deployTargets":\#(targets),"notes":[\#(notes)]\#(repository)}

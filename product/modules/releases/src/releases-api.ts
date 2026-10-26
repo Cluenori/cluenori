@@ -55,7 +55,7 @@ export class ReleasesGroup extends HttpApiGroup.make("releases")
       error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ReleaseNotFound.pipe(HttpApiSchema.status(404))],
     }).annotate(
       OpenApi.Description,
-      "One release compared with the one before it, in `environment`, or without it the environment it last ran in: the operations that got slower, fail more, got faster, or fail less, each the biggest change first; the operations new in it; the errors first seen in it; the incidents that opened while it ran, of those the project keeps; its promotions; and the environments it can be promoted to, its component's deploy workflows.",
+      "One release, whatever any period, compared with the one before it, in `environment`, or without it the environment it last ran in: its whole life (`life`), a point for each 5 minutes while it ran under 6 hours, each hour under 3 days, else each UTC day, with its requests, failures and p95, its warnings and errors, and its app's people by day, each absent when nothing of it was sent, never 0, and its totals beside the release before's; the operations that got slower, fail more, got faster, or fail less, each the biggest change first; the operations new in it; the errors it logged, the most frequent first, at most 20, those first seen in it with it as `firstRelease`; the incidents that opened while it ran, of those the project keeps; its promotions; and the environments it can be promoted to, its component's deploy workflows.",
     ),
   )
   .add(

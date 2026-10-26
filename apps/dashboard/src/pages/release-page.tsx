@@ -1,19 +1,23 @@
 import type { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import { Period } from "@cluenori/foundation"
 import type { Incident } from "@cluenori/incidents"
 import type { Member } from "@cluenori/members"
 import type { Component, DeployTarget } from "@cluenori/projects"
 import type {
   ChangedCommit,
   ComparedOperation,
+  LifeTotals,
   MergedPullRequest,
   Promotion,
   ReleaseChanges,
   ReleaseDetail,
+  ReleaseLife,
   ReleaseNote,
   StoreBuild,
   Verdict,
 } from "@cluenori/releases"
 import { comparedFrom, DraftUnavailable, failingMoreRule, judgedAfterMs } from "@cluenori/releases"
+import type { ErrorGroupId } from "@cluenori/signals"
 import { slowerRule } from "@cluenori/signals"
 import { useAtom, useAtomRefresh, useAtomValue, useAtomSet } from "@effect/atom-react"
 import { cn } from "cn"
@@ -27,26 +31,21 @@ import {
   BugIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  CircleCheckIcon,
-  CircleXIcon,
   GaugeIcon,
   GitCompareArrowsIcon,
   GitPullRequestIcon,
   NotebookPenIcon,
-  PlusIcon,
   RocketIcon,
-  ScrollTextIcon,
   SearchXIcon,
   SmartphoneIcon,
   TriangleAlertIcon,
-  ZapIcon,
 } from "lucide-react"
 import type { ReactNode } from "react"
 import { Fragment, lazy, Suspense, useEffect, useState } from "react"
 
 import { useEnvironments } from "@/hooks/use-environments"
-import { liveColor } from "@/lib/colors"
-import { count, duration, moment, share } from "@/lib/format"
+import { failureColor, warningColor } from "@/lib/colors"
+import { count, duration, moment, ratio, share } from "@/lib/format"
 import type { ReleaseScope } from "@/project-data"
 import {
   deliveryAtom,
@@ -61,7 +60,6 @@ import {
   releaseAtom,
   saveNotesAtom,
 } from "@/project-data"
-import type { Ran } from "@/project-facts"
 import {
   appleWords,
   changesCountOf,
@@ -73,6 +71,7 @@ import {
   releaseRouteOf,
   storeStageOf,
   verdictOf,
+  zoneOf,
 } from "@/project-facts"
 import type { ThereNow, WherePart } from "@/release-facts"
 import {
@@ -83,6 +82,10 @@ import {
   promotionStates,
   promotionsAskedEveryMs,
   promotionsShown,
+  rateOf,
+  rateUnitOf,
+  livedWords,
+  releaseBriefOf,
   shipsWithOptionsOf,
   sinceWords,
   starterOf,
@@ -96,13 +99,14 @@ import { AttentionList } from "@/views/attention-list"
 import { CommitName } from "@/views/commit-name"
 import type { Moved } from "@/views/compared-table"
 import { ComparedTable } from "@/views/compared-table"
+import { CopyButton } from "@/views/copy-button"
 import { ErrorList } from "@/views/error-list"
+import { LifeChart, stepWords } from "@/views/life-chart"
 import { LinksDialog } from "@/views/links-dialog"
 import { failureText, Loaded } from "@/views/loaded"
 import type { DraftOutcome, SaveOutcome } from "@/views/notes-editor"
 import { NotesEditor } from "@/views/notes-editor"
 import { OperationName } from "@/views/operation-name"
-import type { Stat } from "@/views/panel"
 import { Panel, PanelStats } from "@/views/panel"
 import { PromotionList } from "@/views/promotion-list"
 import { verdictClass } from "@/views/release-list"
@@ -165,65 +169,356 @@ const incidentWhen = (incident: Incident) => {
 
 const at = (time: DateTime.Utc) => moment(DateTime.toEpochMillis(time))
 
-// What a release's numbers are: when it ran and how much, once it has telemetry; and when its deploy
-// was reported. A build's upload is the store panel's.
-const statsOf = (detail: ReleaseDetail, ran: Ran | undefined, live: boolean): ReadonlyArray<Stat> => {
-  const { summary } = detail
-  const { count: runs, errors } = summary
-  return [
-    ...(ran === undefined
-      ? []
-      : [
-          { label: "From", value: at(ran.firstSeen) },
-          live ? { label: "Until", value: "Live", color: liveColor } : { label: "Until", value: at(ran.lastSeen) },
-        ]),
-    ...(runs === undefined || errors === undefined
-      ? []
-      : [
-          { label: "Runs", value: count(runs) },
-          { label: "Error rate", value: share(errors, runs) },
-        ]),
-    ...(summary.deployedAt === undefined ? [] : [{ label: "Deployed", value: at(summary.deployedAt) }]),
-  ]
+/** A number of the release beside the release before's, and the page that shows what is behind it. */
+type Compared = {
+  readonly label: string
+  readonly value: string
+  /** The release before's, in the same unit; absent without one. */
+  readonly before?: string
+  readonly color?: string
+  readonly to?: Route
 }
 
-/** The release's verdict against the one before it, what it means, and when and how much it ran. */
-function VerdictPanel({
+// A rate a person reads at a glance: "4,130", "12", "0.4".
+const rateText = (value: number) => (value > 0 && value < 10 ? ratio(value) : count(Math.round(value)))
+
+// The share of a life's requests that failed; unknown without requests.
+const failedShareOf = (of: LifeTotals) =>
+  of.requests === undefined || of.failed === undefined ? undefined : share(of.failed, of.requests)
+
+// The release before's number, when there is one.
+const beside = (before: string | undefined) => (before === undefined ? {} : { before })
+
+// Why an answer covers what it does, under its title.
+const answerSubtitle = (lived: string | undefined, previous: string | undefined) => {
+  if (lived !== undefined) {
+    return `Its whole life, ${lived}${previous === undefined ? "" : ", beside the release before's"}`
+  }
+  return previous === undefined
+    ? "No release of it was known before this one"
+    : "The release before it, of the same component and environment"
+}
+
+/**
+ * A release's numbers over its whole life, each beside the release before's over its own: its
+ * app's people, its requests and how many failed, its warnings and errors, each counted an hour or
+ * a day of its life so lives of different lengths compare, and how long it ran; each only when its
+ * telemetry sent it, and each leading to what is behind it.
+ */
+const comparedOf = (
+  life: ReleaseLife,
+  routes: { readonly people?: Route; readonly requests: Route; readonly logs: Route },
+) => {
+  const { totals, previous } = life
+  const unit = rateUnitOf(totals)
+  const rate = (of: LifeTotals, value: number | undefined) =>
+    value === undefined ? undefined : rateText(rateOf(value, of, unit.ms))
+  const failed = failedShareOf
+  const numbers: ReadonlyArray<Compared | undefined> = [
+    totals.people === undefined
+      ? undefined
+      : {
+          label: "People",
+          value: count(totals.people),
+          ...beside(previous?.people === undefined ? undefined : count(previous.people)),
+          ...(routes.people === undefined ? {} : { to: routes.people }),
+        },
+    totals.requests === undefined
+      ? undefined
+      : {
+          label: `Requests ${unit.words}`,
+          value: rate(totals, totals.requests) ?? "",
+          ...beside(previous === undefined ? undefined : rate(previous, previous.requests)),
+          to: routes.requests,
+        },
+    failed(totals) === undefined
+      ? undefined
+      : {
+          label: "Failed",
+          value: failed(totals) ?? "",
+          ...beside(previous === undefined ? undefined : failed(previous)),
+          ...((totals.failed ?? 0) > 0 ? { color: failureColor } : {}),
+          to: routes.requests,
+        },
+    totals.warnings === undefined
+      ? undefined
+      : {
+          label: `Warnings ${unit.words}`,
+          value: rate(totals, totals.warnings) ?? "",
+          ...beside(previous === undefined ? undefined : rate(previous, previous.warnings)),
+          ...(totals.warnings > 0 ? { color: warningColor } : {}),
+          to: routes.logs,
+        },
+    totals.errors === undefined
+      ? undefined
+      : {
+          label: `Errors ${unit.words}`,
+          value: rate(totals, totals.errors) ?? "",
+          ...beside(previous === undefined ? undefined : rate(previous, previous.errors)),
+          ...(totals.errors > 0 ? { color: failureColor } : {}),
+          to: routes.logs,
+        },
+    {
+      label: "Ran for",
+      value: livedWords(totals),
+      ...beside(previous === undefined ? undefined : livedWords(previous)),
+    },
+  ]
+  return numbers.filter((number) => number !== undefined)
+}
+
+/** The release's numbers in a strip, each over the release before's, each a link to what is behind it. */
+function ComparedNumbers({
+  numbers,
+  previous,
+  onOpen,
+}: {
+  readonly numbers: ReadonlyArray<Compared>
+  readonly previous: string | undefined
+  /** Before a number's page opens: its period is set to cover the release. */
+  readonly onOpen: () => void
+}) {
+  return (
+    <dl className="mt-auto grid grid-cols-2 border-t sm:auto-cols-fr sm:grid-flow-col sm:grid-cols-none [&>div]:border-b sm:[&>div]:border-b-0 sm:[&>div+div]:border-l">
+      {numbers.map((number) => {
+        const value = (
+          <span
+            className="truncate font-mono text-lg"
+            style={number.color === undefined ? {} : { color: number.color }}
+          >
+            {number.value}
+          </span>
+        )
+        return (
+          <div key={number.label} className="flex min-w-0 flex-col gap-1 px-5 py-4 odd:border-r sm:odd:border-r-0">
+            <dt className="truncate text-sm text-muted-foreground">{number.label}</dt>
+            <dd className="flex min-w-0 flex-col">
+              {number.to === undefined ? (
+                value
+              ) : (
+                <Link
+                  to={number.to}
+                  onClick={onOpen}
+                  className="flex min-w-0 underline-offset-4 outline-none hover:underline focus-visible:underline"
+                >
+                  {value}
+                </Link>
+              )}
+              {number.before !== undefined && previous !== undefined && (
+                <span className="truncate font-mono text-[13px] text-muted-foreground" title={`In ${previous}`}>
+                  before {number.before}
+                </span>
+              )}
+            </dd>
+          </div>
+        )
+      })}
+    </dl>
+  )
+}
+
+/**
+ * The answer first: how the release compares with the one before it, in words and what that means;
+ * then its numbers over its whole life beside the release before's.
+ */
+function AnswerPanel({
   project,
   detail,
   live,
+  routes,
+  onOpen,
 }: {
   readonly project: ProjectKey
   readonly detail: ReleaseDetail
   readonly live: boolean
+  readonly routes: Parameters<typeof comparedOf>[1]
+  readonly onOpen: () => void
 }) {
-  const { summary } = detail
+  const { summary, life } = detail
   const verdict = verdictOf(summary)
   const previous = summary.previous
-  const stats = statsOf(detail, ranOf(summary), live)
+  const lived = life === undefined ? undefined : `${at(life.totals.from)} to ${live ? "now" : at(life.totals.to)}`
   return (
     <Panel
       icon={GitCompareArrowsIcon}
       title={previous === undefined ? "Nothing to compare with" : `Against ${previous}`}
-      subtitle={
-        previous === undefined
-          ? "No release of it was known before this one"
-          : "The release before it, of the same component and environment"
+      subtitle={answerSubtitle(lived, previous)}
+      action={
+        previous !== undefined && (
+          <Link
+            to={releaseRouteOf(project, { ...summary, release: previous })}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "hidden sm:inline-flex")}
+          >
+            Open {previous.length > 18 ? "the release before" : previous}
+          </Link>
+        )
       }
     >
       <div className="flex flex-col gap-1.5 px-5 py-5">
         <p className={cn("text-xl font-medium tracking-[-0.01em]", verdictClass[verdict.tone])}>{verdict.words}</p>
-        <p className="max-w-3xl text-sm text-muted-foreground">{verdictMeaning[summary.verdict]}</p>
+        <p className="max-w-3xl text-sm text-pretty text-muted-foreground">
+          {summary.verdict === "unmeasured" && life !== undefined
+            ? "It sent no operations, so there is nothing to compare: its app's people are counted below."
+            : verdictMeaning[summary.verdict]}
+        </p>
         {previous !== undefined && (
           <Link
             to={releaseRouteOf(project, { ...summary, release: previous })}
-            className={buttonVariants({ variant: "outline", size: "sm", className: "mt-2.5 self-start" })}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-2.5 self-start sm:hidden")}
           >
             Open the release before
           </Link>
         )}
       </div>
-      {stats.length > 0 && <PanelStats stats={stats} />}
+      {life !== undefined && <ComparedNumbers numbers={comparedOf(life, routes)} previous={previous} onOpen={onOpen} />}
+    </Panel>
+  )
+}
+
+/**
+ * The errors a release logged over its whole life, the most frequent first, those first seen in it
+ * marked new, each opening its error; then how many warnings it logged, one click from its lines.
+ * A release that logged nothing says so.
+ */
+function ErrorsPanel({
+  detail,
+  colorOf: colorOfComponent,
+  routes,
+  linkOf,
+  onOpen,
+}: {
+  readonly detail: ReleaseDetail
+  readonly colorOf: (component: string) => string
+  readonly routes: { readonly errors: Route; readonly logs: Route }
+  readonly linkOf: (error: ErrorGroupId) => Route
+  readonly onOpen: () => void
+}) {
+  const { summary, life, errors } = detail
+  const totals = life?.totals
+  const fresh = errors.filter((group) => group.firstRelease === summary.release).length
+  return (
+    <Panel
+      icon={BugIcon}
+      title="Errors and warnings"
+      subtitle={
+        errors.length === 0
+          ? "Over its whole life"
+          : `${count(errors.length)} ${errors.length === 1 ? "error" : "errors"}${fresh > 0 ? `, ${count(fresh)} new in it` : ""}, the most frequent first`
+      }
+      action={
+        <Link to={routes.errors} onClick={onOpen} className={buttonVariants({ variant: "outline", size: "sm" })}>
+          Open in Errors
+        </Link>
+      }
+    >
+      {errors.length === 0 ? (
+        <p className="px-5 py-5 text-sm text-muted-foreground">No errors logged in its whole life.</p>
+      ) : (
+        // Each error opens over a period that covers the release.
+        <div onClickCapture={onOpen}>
+          <ErrorList
+            groups={errors}
+            now={undefined}
+            isNew={(group) => group.firstRelease === summary.release}
+            colorOf={colorOfComponent}
+            stepsOf={() => undefined}
+            linkOf={(group) => linkOf(group.id)}
+          />
+        </div>
+      )}
+      {totals?.warnings !== undefined && (
+        <p className="mt-auto flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t px-5 py-3 text-sm text-muted-foreground">
+          <span>
+            {totals.warnings === 0
+              ? "No warnings"
+              : `${count(totals.warnings)} ${totals.warnings === 1 ? "warning" : "warnings"}`}
+            {totals.logsFrom === undefined
+              ? " in its whole life."
+              : ` since ${at(totals.logsFrom)}: older ones aren't kept.`}
+          </span>
+          <Link
+            to={routes.logs}
+            onClick={onOpen}
+            className="text-foreground underline-offset-4 outline-none hover:underline focus-visible:underline"
+          >
+            Open in Logs
+          </Link>
+        </p>
+      )}
+    </Panel>
+  )
+}
+
+/**
+ * Its operations against the release before: those that got slower or fail more first, in color,
+ * then those that got faster or fail less, and those new in it, each opening its operation; or, when
+ * nothing moved, that nothing did, with the rule.
+ */
+function OperationsPanel({
+  detail,
+  linkOf,
+  requests,
+  onOpen,
+}: {
+  readonly detail: ReleaseDetail
+  readonly linkOf: (operation: EnvelopeName) => Route
+  readonly requests: Route
+  readonly onOpen: () => void
+}) {
+  const previous = detail.summary.previous
+  const groups: ReadonlyArray<{
+    readonly title: string
+    readonly rows: ReadonlyArray<ComparedOperation>
+    readonly moved: Moved
+  }> = [
+    { title: "Slower", rows: detail.slower, moved: { measure: "p95", worse: true } },
+    { title: "Fails more", rows: detail.failingMore, moved: { measure: "errorRate", worse: true } },
+    { title: "Faster", rows: detail.faster, moved: { measure: "p95", worse: false } },
+    { title: "Fails less", rows: detail.failingLess, moved: { measure: "errorRate", worse: false } },
+  ]
+  const moved = groups.filter((group) => group.rows.length > 0)
+  return (
+    <Panel
+      icon={GaugeIcon}
+      title="Requests"
+      subtitle={previous === undefined ? "Its operations" : `Its operations against ${previous}`}
+      action={
+        <Link to={requests} onClick={onOpen} className={buttonVariants({ variant: "outline", size: "sm" })}>
+          Open in Performance
+        </Link>
+      }
+    >
+      {moved.map((group) => (
+        <section key={group.title} aria-label={group.title} className="border-b last:border-b-0">
+          <p className="px-5 pt-3 text-sm font-medium text-muted-foreground">{group.title}</p>
+          <ComparedTable rows={group.rows} moved={group.moved} linkOf={(row) => linkOf(row.operation)} />
+        </section>
+      ))}
+      {detail.newOperations.length > 0 && (
+        <section aria-label="New operations" className="border-b last:border-b-0">
+          <p className="px-5 pt-3 text-sm font-medium text-muted-foreground">New operations</p>
+          <ul className="divide-y">
+            {detail.newOperations.map((operation) => (
+              <li key={operation}>
+                <Link
+                  to={linkOf(operation)}
+                  className="flex items-center gap-4 px-5 py-3 outline-none hover:bg-accent/60 focus-visible:bg-accent"
+                >
+                  <OperationName name={operation} className="flex-1 text-[15px]" />
+                  <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {moved.length === 0 && detail.newOperations.length === 0 && (
+        <p className="px-5 py-5 text-sm text-pretty text-muted-foreground">
+          {previous === undefined
+            ? "There is no release before it to compare its operations with."
+            : `Nothing moved against ${previous}: no operation's p95 is ${slowerWords} than before, or fails ${failingWords}, or the other way.`}
+        </p>
+      )}
     </Panel>
   )
 }
@@ -621,21 +916,13 @@ function WithMembers({ children }: { readonly children: (members: ReadonlyArray<
   return children(AsyncResult.isSuccess(members) ? members.value.members : undefined)
 }
 
-// The areas a release opens in, filtered to it.
-const areasOut = [
-  { page: "performance", label: "Performance", icon: ActivityIcon },
-  { page: "errors", label: "Errors", icon: BugIcon },
-  { page: "logs", label: "Logs", icon: ScrollTextIcon },
-] as const
-
 /**
- * One release full screen, against the release before it: how it shipped (its commit, its store
- * build), each area of the project filtered to it and its environment one click away, its verdict,
- * when and how much it ran, the sources that failed lately for its component, and what changed in
- * its repository since; then what moved, each part shown only when
- * something did: the operations slower and failing more, the errors first seen in it, the incidents
- * that opened while it ran, the operations faster and failing less, and the operations new in it.
- * Each opens its own page.
+ * One release, an item: its whole life, whatever any period, against the release before it
+ * (`concept/Experience.md`). The answer first, how it compares and its numbers beside the release
+ * before's; then its life step by step, its errors and warnings, its requests, and what changed;
+ * then how it ships: its promotions (first while one moves), notes, store build and the sources
+ * that failed. Each number opens what is behind it, and "Copy for an agent" hands the release to an
+ * agent with the commands that read all of it.
  */
 export function ReleasePage({
   project,
@@ -683,13 +970,10 @@ export function ReleasePage({
   const ran = shown === undefined ? undefined : ranOf(shown.detail.summary)
   const commit = shown?.detail.summary.commit
   const gitHubRelease = shown?.detail.gitHubRelease
-  // The release's own environment, which the areas it opens show.
+  // The release's own environment, which the pages its numbers open show.
   const ranIn = shown?.detail.summary.environment
   const releaseEnvironment = ranIn === undefined ? {} : { environment: ranIn }
   const operationOf = (operation: EnvelopeName): Route => ({ page: "operation", project, component, operation })
-  const compared = (rows: ReadonlyArray<ComparedOperation>, moved: Moved) => (
-    <ComparedTable rows={rows} moved={moved} linkOf={(row) => operationOf(row.operation)} />
-  )
   const startLinking = () => {
     // A save from an earlier dialog isn't this one's.
     link(Atom.Reset)
@@ -804,6 +1088,9 @@ export function ReleasePage({
                 <ArrowUpRightIcon aria-hidden className="size-3.5" />
               </a>
             )}
+            {shown?.detail.summary.deployedAt !== undefined && (
+              <span>Deployed {at(shown.detail.summary.deployedAt)}</span>
+            )}
           </p>
           {/* Where it runs now, and what can be done with it: its one next step, and promoting it elsewhere. */}
           {!notFound && (
@@ -851,22 +1138,10 @@ export function ReleasePage({
             </div>
           )}
         </div>
-        {/* Each area of the project, filtered to this release, over the shortest period that covers it. */}
-        {shown !== undefined && ran !== undefined && (
-          <nav aria-label="This release in each area" className="flex flex-wrap gap-2">
-            {areasOut.map((area) => (
-              <Link
-                key={area.page}
-                to={{ page: area.page, project, component, release, ...releaseEnvironment }}
-                onClick={() => setPeriod(periodCovering(ran.firstSeen, shown.asOf))}
-                className={buttonVariants({ variant: "outline" })}
-              >
-                <area.icon data-icon="inline-start" />
-                {area.label}
-                <span className="sr-only"> of this release</span>
-              </Link>
-            ))}
-          </nav>
+        {shown !== undefined && (
+          <div className="flex flex-wrap items-center gap-2">
+            <CopyButton text={releaseBriefOf(project, shown.detail)} label="Copy for an agent" />
+          </div>
         )}
       </header>
 
@@ -887,82 +1162,84 @@ export function ReleasePage({
         <Loaded result={answer}>
           {({ detail, asOf }) => {
             const live = isLive(detail.summary, asOf)
-            const previous = detail.summary.previous ?? "the release before"
             const { store } = detail.summary
+            const filters = { project, component, release, ...releaseEnvironment }
+            const routes = {
+              requests: { page: "performance", ...filters } satisfies Route,
+              errors: { page: "errors", ...filters } satisfies Route,
+              logs: { page: "logs", ...filters } satisfies Route,
+              ...(detail.life?.totals.people === undefined
+                ? {}
+                : { people: { page: "appRelease", ...filters } satisfies Route }),
+            }
+            // A page of numbers opened from here shows the whole release: the shortest period that covers it.
+            const life = detail.life
+            const coverIt = () => {
+              if (life !== undefined) {
+                setPeriod(periodCovering(life.totals.from, asOf))
+              }
+            }
+            const promotionsPanel =
+              owner && byOthers ? (
+                <WithMembers>
+                  {(members) => (
+                    <PromotionsPanel
+                      hasTargets={detail.deployTargets.length > 0}
+                      shipsWithAnother={shipsWith !== undefined}
+                      promotions={promotions}
+                      asOf={asOf}
+                      starterOf={(promotion) => starterOf(promotion.startedBy, myself?.id, members)}
+                      onReleaseNow={startReleasing}
+                      onLink={linked === undefined ? undefined : startLinking}
+                    />
+                  )}
+                </WithMembers>
+              ) : (
+                <PromotionsPanel
+                  hasTargets={detail.deployTargets.length > 0}
+                  shipsWithAnother={shipsWith !== undefined}
+                  promotions={promotions}
+                  asOf={asOf}
+                  starterOf={(promotion) => starterOf(promotion.startedBy, myself?.id, undefined)}
+                  onReleaseNow={startReleasing}
+                  onLink={linked === undefined ? undefined : startLinking}
+                />
+              )
             return (
               <div className="flex flex-col gap-4">
-                <VerdictPanel project={project} detail={detail} live={live} />
-                {owner && byOthers ? (
-                  <WithMembers>
-                    {(members) => (
-                      <PromotionsPanel
-                        hasTargets={detail.deployTargets.length > 0}
-                        shipsWithAnother={shipsWith !== undefined}
-                        promotions={promotions}
-                        asOf={asOf}
-                        starterOf={(promotion) => starterOf(promotion.startedBy, myself?.id, members)}
-                        onReleaseNow={startReleasing}
-                        onLink={linked === undefined ? undefined : startLinking}
-                      />
-                    )}
-                  </WithMembers>
-                ) : (
-                  <PromotionsPanel
-                    hasTargets={detail.deployTargets.length > 0}
-                    shipsWithAnother={shipsWith !== undefined}
-                    promotions={promotions}
-                    asOf={asOf}
-                    starterOf={(promotion) => starterOf(promotion.startedBy, myself?.id, undefined)}
-                    onReleaseNow={startReleasing}
-                    onLink={linked === undefined ? undefined : startLinking}
-                  />
-                )}
-                {(detail.notes.length > 0 || detail.deployTargets.some((target) => target.appStore !== undefined)) && (
-                  <NotesPanel notes={detail.notes} targets={detail.deployTargets} onDraft={draft} onSave={save} />
-                )}
-                {store !== undefined && <StorePanel store={store} />}
-                {detail.problems.length > 0 && (
+                {following && promotionsPanel}
+                <AnswerPanel project={project} detail={detail} live={live} routes={routes} onOpen={coverIt} />
+                {life !== undefined && (
                   <Panel
-                    icon={TriangleAlertIcon}
-                    title="Sources that failed"
-                    subtitle="Until these are fixed, this release may lack its commit, what changed, or its store build"
+                    icon={ActivityIcon}
+                    title="Its life"
+                    subtitle={`${stepWords[life.step]}, from when it started to ${live ? "now" : "when it stopped"}`}
+                    badge={
+                      life.step === "1d"
+                        ? "UTC"
+                        : zoneOf({ covered: new Period({ from: life.totals.from, to: life.totals.to }) })
+                    }
                   >
-                    <SourceProblems
-                      problems={detail.problems}
-                      asOf={asOf}
-                      colorOf={(of) => colorOf(of, components)}
-                      {...(linked === undefined ? {} : { onChangeLinks: startLinking })}
-                    />
+                    <LifeChart life={life} />
                   </Panel>
                 )}
-                {detail.changes !== undefined && <ChangesPanel previous={previous} changes={detail.changes} />}
+                {ran !== undefined && (
+                  <>
+                    <ErrorsPanel
+                      detail={detail}
+                      colorOf={(of) => colorOf(of, components)}
+                      routes={routes}
+                      linkOf={(error) => ({ page: "error", ...filters, error })}
+                      onOpen={coverIt}
+                    />
+                    <OperationsPanel detail={detail} linkOf={operationOf} requests={routes.requests} onOpen={coverIt} />
+                  </>
+                )}
+                {detail.changes !== undefined && (
+                  <ChangesPanel previous={detail.summary.previous ?? "the release before"} changes={detail.changes} />
+                )}
                 {detail.changes === undefined && detail.summary.previous !== undefined && linked !== undefined && (
                   <ChangesUnknown previous={detail.summary.previous} component={linked} onLink={startLinking} />
-                )}
-                {detail.slower.length > 0 && (
-                  <Panel icon={GaugeIcon} title="Slower" subtitle={`p95 ${slowerWords} than in ${previous}`}>
-                    {compared(detail.slower, { measure: "p95", worse: true })}
-                  </Panel>
-                )}
-                {detail.failingMore.length > 0 && (
-                  <Panel icon={CircleXIcon} title="Fails more" subtitle={`Failed ${failingWords} as in ${previous}`}>
-                    {compared(detail.failingMore, { measure: "errorRate", worse: true })}
-                  </Panel>
-                )}
-                {detail.newErrors.length > 0 && (
-                  <Panel
-                    icon={BugIcon}
-                    title="New errors"
-                    subtitle="First seen in this release, with how often they happened while it ran"
-                  >
-                    <ErrorList
-                      groups={detail.newErrors}
-                      now={live ? DateTime.toEpochMillis(asOf) : undefined}
-                      colorOf={(of) => colorOf(of, components)}
-                      stepsOf={() => undefined}
-                      linkOf={(group) => ({ page: "error", project, component, error: group.id })}
-                    />
-                  </Panel>
                 )}
                 {detail.incidents.length > 0 && (
                   <Panel
@@ -981,31 +1258,23 @@ export function ReleasePage({
                     />
                   </Panel>
                 )}
-                {detail.faster.length > 0 && (
-                  <Panel icon={ZapIcon} title="Faster" subtitle={`p95 in ${previous} was ${slowerWords}`}>
-                    {compared(detail.faster, { measure: "p95", worse: false })}
-                  </Panel>
+                {!following && promotionsPanel}
+                {(detail.notes.length > 0 || detail.deployTargets.some((target) => target.appStore !== undefined)) && (
+                  <NotesPanel notes={detail.notes} targets={detail.deployTargets} onDraft={draft} onSave={save} />
                 )}
-                {detail.failingLess.length > 0 && (
-                  <Panel icon={CircleCheckIcon} title="Fails less" subtitle={`${previous} failed ${failingWords}`}>
-                    {compared(detail.failingLess, { measure: "errorRate", worse: false })}
-                  </Panel>
-                )}
-                {detail.newOperations.length > 0 && (
-                  <Panel icon={PlusIcon} title="New operations" subtitle={`Ran in this release, not in ${previous}`}>
-                    <ul className="divide-y">
-                      {detail.newOperations.map((operation) => (
-                        <li key={operation}>
-                          <Link
-                            to={operationOf(operation)}
-                            className="flex items-center gap-4 px-5 py-3 outline-none hover:bg-accent/60 focus-visible:bg-accent"
-                          >
-                            <OperationName name={operation} className="flex-1 text-[15px]" />
-                            <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
+                {store !== undefined && <StorePanel store={store} />}
+                {detail.problems.length > 0 && (
+                  <Panel
+                    icon={TriangleAlertIcon}
+                    title="Sources that failed"
+                    subtitle="Until these are fixed, this release may lack its commit, what changed, or its store build"
+                  >
+                    <SourceProblems
+                      problems={detail.problems}
+                      asOf={asOf}
+                      colorOf={(of) => colorOf(of, components)}
+                      {...(linked === undefined ? {} : { onChangeLinks: startLinking })}
+                    />
                   </Panel>
                 )}
               </div>

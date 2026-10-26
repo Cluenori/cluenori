@@ -9,9 +9,12 @@ import {
   deliveryGroupsOf,
   nextStepWords,
   promotionNextOf,
+  rateOf,
+  rateUnitOf,
   shipsWithOptionsOf,
   stageNoteOf,
   whereItRunsOf,
+  windowWithin,
 } from "@/release-facts"
 
 const api = ComponentKey.make("notes-api")
@@ -179,5 +182,35 @@ describe("shipsWithOptionsOf", () => {
     assert.deepStrictEqual(shipsWithOptionsOf(components, api), [ios])
     assert.deepStrictEqual(shipsWithOptionsOf(components, worker), [api, ios])
     assert.deepStrictEqual(shipsWithOptionsOf(components, ios), [api, worker, jobs])
+  })
+})
+
+describe("windowWithin", () => {
+  it("keeps a zoom inside the life whichever way it was dragged, and at least 3 steps wide", () => {
+    // Dragged right to left, past the end.
+    assert.deepStrictEqual(windowWithin(12, 4, 10), { first: 4, last: 9 })
+    // One step, at the end, widens back into the life rather than past it.
+    assert.deepStrictEqual(windowWithin(9, 9, 10), { first: 7, last: 9 })
+    assert.deepStrictEqual(windowWithin(-2, 0, 10), { first: 0, last: 2 })
+    // A life shorter than that is shown whole.
+    assert.deepStrictEqual(windowWithin(1, 1, 2), { first: 0, last: 1 })
+  })
+})
+
+// A life of `hours`, from midnight UTC on October 20.
+const life = (hours: number) => ({
+  from: DateTime.makeUnsafe("2026-10-20T00:00:00Z"),
+  to: DateTime.makeUnsafe(Date.parse("2026-10-20T00:00:00Z") + hours * 3_600_000),
+})
+
+describe("rateOf", () => {
+  it("counts a life by the day once it ran a day, else by the hour, so lives of different lengths compare", () => {
+    assert.strictEqual(rateUnitOf(life(30)).words, "a day")
+    assert.strictEqual(rateUnitOf(life(3)).words, "an hour")
+    // 600 over 3 days is 200 a day; over 12 hours, 50 an hour.
+    assert.strictEqual(rateOf(600, life(72), rateUnitOf(life(72)).ms), 200)
+    assert.strictEqual(rateOf(600, life(12), rateUnitOf(life(12)).ms), 50)
+    // A life of minutes counts as an hour, not as a rate it never kept up.
+    assert.strictEqual(rateOf(30, life(0.1), 3_600_000), 30)
   })
 })
