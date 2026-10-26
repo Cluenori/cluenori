@@ -107,7 +107,7 @@ describe("testedPaths", () => {
         'import { assert, it } from "@effect/vitest"\n\nimport { Today } from "../src/index.ts"\n',
       ],
       ["src/index.ts", 'export * from "./today.ts"\nexport { pulseOf } from "./project-pulse.ts"\n'],
-      ["src/today.ts", 'import "./detectors.ts"\nconst api = await import("./today-api.ts")\n'],
+      ["src/today.ts", 'import "./detectors.ts"\nconst api = await import("./today-api.ts")\nconst label = "today"\n'],
       ["src/project-pulse.ts", 'import {\n  Effect,\n  Schema,\n} from "effect"\n'],
       ["src/detectors.ts", ""],
       ["src/today-api.ts", ""],
