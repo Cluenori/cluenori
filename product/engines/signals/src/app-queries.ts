@@ -1,6 +1,7 @@
 import {
   CalendarDay,
   ComponentKey,
+  EnvelopeName,
   EnvironmentKey,
   FeatureKey,
   InstallationId,
@@ -306,6 +307,18 @@ export const PersonLookup = Schema.Union([
   Schema.TaggedStruct("ByUser", { user: AppUserId }),
 ]).annotate({ identifier: "PersonLookup" })
 export type PersonLookup = typeof PersonLookup.Type
+
+/**
+ * Which event to count: those named `event` that the apps of `component` sent in `period`,
+ * optionally in one environment.
+ */
+export const EventCountQuery = Schema.Struct({
+  period: Period,
+  component: ComponentKey,
+  environment: Schema.optionalKey(EnvironmentKey),
+  event: EnvelopeName,
+}).annotate({ identifier: "EventCountQuery" })
+export type EventCountQuery = typeof EventCountQuery.Type
 
 /** One app on one device, as its last batch said. */
 export const AppInstallation = Schema.Struct({

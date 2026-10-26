@@ -321,7 +321,11 @@ describe("Releases", () => {
           counts(newer, "GET /api/notes", start - hour, 300),
           counts(newer, "GET /api/notes", start - 5 * minute, 300),
         ])
-        yield* incidents.addMonitor(member, { component: api, url: MonitorUrl.make("https://notes.test/health") })
+        yield* incidents.addMonitor(member, {
+          component: api,
+          condition: { _tag: "noAnswer", subject: { _tag: "url", url: MonitorUrl.make("https://notes.test/health") } },
+          level: "alarm",
+        })
         yield* incidents.check
         yield* TestClock.setTime(start - 29 * minute)
         yield* incidents.check

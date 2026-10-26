@@ -45,6 +45,7 @@ export {
   AppRetention,
   AppUsage,
   CountryCode,
+  EventCountQuery,
   FeaturePerson,
   FeatureRelease,
   FeatureUse,

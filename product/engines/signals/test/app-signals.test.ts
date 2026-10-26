@@ -382,6 +382,52 @@ describe("AppSignals", () => {
     ),
   )
 
+  it.effect("counts one event of a component in a period, of one environment if asked, up to a limit", () =>
+    inApps(
+      "apps-event-count",
+      now,
+      Effect.gen(function* () {
+        const apps = yield* AppSignals
+        let n = 0
+        const events = (at: number, name: string, count: number): ReadonlyArray<AppSignal> =>
+          Array.from({ length: count }, () => {
+            n += 1
+            return {
+              _tag: "event",
+              id: AppSignalId.make(uuidAt(at, n)),
+              at: DateTime.makeUnsafe(at),
+              session: sessionAt(at, n),
+              name: EnvelopeName.make(name),
+            }
+          })
+        // Three registrations in the last hour, one just before it, one in beta, and other events.
+        yield* record(batchOf(installationOf(1), events(now - 30 * 60_000, "user.registered", 3)))
+        yield* record(batchOf(installationOf(2), events(now - hour - 60_000, "user.registered", 1)))
+        yield* record(batchOf(installationOf(3), events(now - 10 * 60_000, "card.flipped", 4)))
+        yield* record({
+          ...batchOf(installationOf(4), events(now - 5 * 60_000, "user.registered", 2)),
+          environment: EnvironmentKey.make("beta"),
+        })
+        const lastHour = new Period({ from: DateTime.makeUnsafe(now - hour), to: DateTime.makeUnsafe(now) })
+        const registered = EnvelopeName.make("user.registered")
+        const counted = [
+          yield* apps.eventCount({ period: lastHour, component: ios, environment: production, event: registered }, 100),
+          yield* apps.eventCount({ period: lastHour, component: ios, event: registered }, 100),
+          yield* apps.eventCount({ period: lastHour, component: ios, event: registered }, 2),
+          yield* apps.eventCount(
+            { period: lastDays(1), component: ios, environment: production, event: registered },
+            100,
+          ),
+          yield* apps.eventCount(
+            { period: lastHour, component: ComponentKey.make("notes-web"), event: registered },
+            100,
+          ),
+        ]
+        assert.deepStrictEqual(counted, [3, 5, 2, 4, 0])
+      }),
+    ),
+  )
+
   it.effect("tells one feature's whole life: each day, everyone, who used it last, its releases", () =>
     inApps(
       "apps-feature-life",

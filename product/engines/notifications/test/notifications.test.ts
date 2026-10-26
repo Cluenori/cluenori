@@ -298,6 +298,62 @@ describe("Notifications", () => {
       }),
   )
 
+  it.effect(
+    "tells a monitor's incidents at the monitor's level, titled with its subject and numbers, never a stopped one",
+    () =>
+      Effect.gen(function* () {
+        const settings = yield* settingsWithKey
+        const apns = fakeApns(accepts)
+        yield* inWorkspace(
+          "monitor-levels",
+          start + 20 * minute,
+          settings,
+          apns.layer,
+          Effect.gen(function* () {
+            yield* withProjects
+            yield* phoneWith(phoneToken)
+            const job = { ...fields, detector: "monitor" as const, subject: "cleanup.run" }
+            yield* notify([
+              activityOf(
+                IncidentOpened.make({ ...job, title: "cleanup.run hasn't run for 30 minutes", level: "timeSensitive" }),
+                start + 19 * minute,
+              ),
+              activityOf(
+                IncidentOpened.make({ ...job, title: "GET /api/card p95 820 ms, above 500 ms", level: "alarm" }),
+                start + 19 * minute,
+              ),
+              activityOf(
+                IncidentOpened.make({ ...job, title: "POST /api/sync: 12% failed, above 5%", level: "quiet" }),
+                start + 19 * minute,
+              ),
+              activityOf(
+                IncidentReopened.make({ ...job, title: "POST /api/sync: 12% failed, above 5%", level: "quiet" }),
+              ),
+              // A URL's monitor someone made quiet.
+              activityOf(IncidentOpened.make({ ...fields, level: "quiet" }), start + 19 * minute),
+              // A guessed stopped incident says nothing, whatever level an entry claims.
+              activityOf(
+                IncidentOpened.make({ ...fields, detector: "stopped", title: "cleanup.run stopped", level: "alarm" }),
+                start + 19 * minute,
+              ),
+            ])
+          }),
+        )
+        const told = yield* Effect.forEach(apns.accepted, (push) =>
+          decodePayload(push.payload).pipe(
+            Effect.map((payload) => [payload.aps.alert.title, payload.cluenori.level, payload.aps.alert.body ?? ""]),
+          ),
+        )
+        assert.deepStrictEqual(told, [
+          ["Notes · cleanup.run hasn't run for 30 minutes", "timeSensitive", ""],
+          ["Notes · GET /api/card p95 820 ms, above 500 ms", "alarm", ""],
+          ["Notes · POST /api/sync: 12% failed, above 5%", "quiet", ""],
+          ["Notes · POST /api/sync: 12% failed, above 5% again", "quiet", ""],
+          ["Notes · Down", "quiet", fields.title],
+        ])
+      }),
+  )
+
   it.effect("forgets a token APNs says is gone, and leaves what it couldn't send for the next delivery", () =>
     Effect.gen(function* () {
       const settings = yield* settingsWithKey

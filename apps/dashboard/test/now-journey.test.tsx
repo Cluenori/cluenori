@@ -138,7 +138,7 @@ describe("now journey", () => {
           .toBeVisible(),
       )
       yield* Effect.promise(() =>
-        expect.element(screen.getByRole("link", { name: /^Uptime:\s*The monitor is up/ })).toBeVisible(),
+        expect.element(screen.getByRole("link", { name: /^Uptime:\s*All 2 monitors are fine/ })).toBeVisible(),
       )
       yield* expectAccessible()
 

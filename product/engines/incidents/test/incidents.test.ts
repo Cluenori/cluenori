@@ -1,14 +1,24 @@
 import { sketchOf } from "@bagatka/quantile-sketch"
 import type { Actor } from "@cluenori/foundation"
-import { ActivityLog, ComponentKey, EnvelopeName, EnvironmentKey, MemberId, ReleaseVersion } from "@cluenori/foundation"
-import { ComponentName, ProjectName, Projects } from "@cluenori/projects"
+import {
+  ActivityLog,
+  ComponentKey,
+  EnvelopeName,
+  EnvironmentKey,
+  InstallationId,
+  MemberId,
+  ReleaseVersion,
+  SessionId,
+} from "@cluenori/foundation"
+import { ComponentName, ProjectName, Projects, SdkKey } from "@cluenori/projects"
 import type { OperationCounts } from "@cluenori/signals"
-import { BatchDigest, Signals } from "@cluenori/signals"
+import { AppSignalId, AppSignals, BatchDigest, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Deferred, Effect } from "effect"
+import { DateTime, Deferred, Effect, Result, Schema } from "effect"
 import { TestClock } from "effect/testing"
 
-import { IncidentId, Incidents, MonitorUrl } from "../src/index.ts"
+import type { Monitor } from "../src/index.ts"
+import { AddMonitor, IncidentId, Incidents, monitorLimit, MonitorUrl } from "../src/index.ts"
 import { answers, before, inProject } from "./in-object.ts"
 
 // 2026-10-21T10:00:00Z, on a minute.
@@ -32,8 +42,36 @@ const counts = (operation: string, at: number, count: number, errors = 0): Opera
   durations: sketchOf(Array.from({ length: count }, () => 20)).sketch,
 })
 
+// The same counts, each run taking `ms`.
+const taking = (entry: OperationCounts, ms: number): OperationCounts => ({
+  ...entry,
+  totalMs: entry.count * ms,
+  durations: sketchOf(Array.from({ length: entry.count }, () => ms)).sketch,
+})
+
 // The URL of the `index`th of many monitors.
 const healthUrl = (index: number) => MonitorUrl.make(`https://notes.test/health/${index}`)
+
+// A monitor of a URL, ringing as an alarm.
+const urlMonitor = (component: ComponentKey, url: MonitorUrl) => ({
+  component,
+  condition: { _tag: "noAnswer" as const, subject: { _tag: "url" as const, url } },
+  level: "alarm" as const,
+})
+const urlOfMonitor = (monitor: Monitor) =>
+  monitor.condition._tag === "noAnswer" ? monitor.condition.subject.url : undefined
+
+const operation = (name: string) => ({ _tag: "operation" as const, operation: EnvelopeName.make(name) })
+
+// A UUIDv7 made at `at`, the `n`th: IDs of an app's signals, sessions and installations.
+const uuidAt = (at: number, n: number) => {
+  const time = at.toString(16).padStart(12, "0")
+  return `${time.slice(0, 8)}-${time.slice(8)}-7000-8000-${n.toString(16).padStart(12, "0")}`
+}
+
+// Whether a monitor to add decodes, and one of the API's shape with `condition`.
+const decoded = (input: unknown) => Result.isSuccess(Schema.decodeUnknownResult(AddMonitor)(input))
+const of = (condition: unknown, more: object = {}) => ({ component: "notes-api", condition, level: "alarm", ...more })
 
 let batches = 0
 
@@ -247,7 +285,7 @@ describe("Incidents", () => {
           const url = MonitorUrl.make("https://down.notes.test/health")
           yield* projects.create(member, ProjectName.make("Notes"))
           yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
-          yield* incidents.addMonitor(member, { component: api, url })
+          yield* incidents.addMonitor(member, urlMonitor(api, url))
           answers.set(url, 503)
 
           const once = yield* checkAt(start)
@@ -261,7 +299,7 @@ describe("Incidents", () => {
           assert.deepStrictEqual(twice, [["opened", "https://down.notes.test/health is down: HTTP 503"]])
           assert.deepStrictEqual(answered, [])
           assert.deepStrictEqual(
-            monitors.monitors.map((entry) => [entry.monitor.url, entry.lastCheck?.problem]),
+            monitors.monitors.map((entry) => [urlOfMonitor(entry.monitor), entry.lastCheck?.problem]),
             [[url, undefined]],
           )
           assert.deepStrictEqual(resolved, [["resolved", "https://down.notes.test/health is down: HTTP 503"]])
@@ -278,7 +316,7 @@ describe("Incidents", () => {
         const incidents = yield* Incidents
         yield* projects.create(member, ProjectName.make("Notes"))
         yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
-        yield* incidents.addMonitor(member, { component: api, url: MonitorUrl.make("https://nowhere.notes.test/") })
+        yield* incidents.addMonitor(member, urlMonitor(api, MonitorUrl.make("https://nowhere.notes.test/")))
 
         yield* checkAt(start)
         const down = yield* checkAt(start + minute)
@@ -397,7 +435,7 @@ describe("Incidents", () => {
             release: ReleaseVersion.make("2.1.0"),
           },
         ])
-        const monitor = yield* incidents.addMonitor(member, { component: api, url })
+        const monitor = yield* incidents.addMonitor(member, urlMonitor(api, url))
 
         answers.set(url, 200)
         yield* checkAt(start)
@@ -479,7 +517,7 @@ describe("Incidents", () => {
         const url = MonitorUrl.make("https://races.notes.test/health")
         yield* projects.create(member, ProjectName.make("Notes"))
         yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
-        const monitor = yield* incidents.addMonitor(member, { component: api, url })
+        const monitor = yield* incidents.addMonitor(member, urlMonitor(api, url))
         answers.set(url, 503)
         yield* checkAt(start)
         // Checked again in the same millisecond, it counts once, in its checks and its day alike.
@@ -525,7 +563,7 @@ describe("Incidents", () => {
         const url = MonitorUrl.make("https://acknowledged.notes.test/health")
         yield* projects.create(member, ProjectName.make("Notes"))
         yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
-        yield* incidents.addMonitor(member, { component: api, url })
+        yield* incidents.addMonitor(member, urlMonitor(api, url))
         answers.set(url, 503)
         yield* checkAt(start)
         yield* checkAt(start + minute)
@@ -572,17 +610,17 @@ describe("Incidents", () => {
         yield* projects.create(member, ProjectName.make("Notes"))
         yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
 
-        const unknown = yield* Effect.flip(incidents.addMonitor(member, { component: jobs, url: healthUrl(0) }))
-        for (let index = 0; index < 20; index += 1) {
-          yield* incidents.addMonitor(member, { component: api, url: healthUrl(index) })
+        const unknown = yield* Effect.flip(incidents.addMonitor(member, urlMonitor(jobs, healthUrl(0))))
+        for (let index = 0; index < monitorLimit; index += 1) {
+          yield* incidents.addMonitor(member, urlMonitor(api, healthUrl(index)))
         }
-        const twice = yield* Effect.flip(incidents.addMonitor(member, { component: api, url: healthUrl(0) }))
-        const tooMany = yield* Effect.flip(incidents.addMonitor(member, { component: api, url: healthUrl(20) }))
+        const twice = yield* Effect.flip(incidents.addMonitor(member, urlMonitor(api, healthUrl(0))))
+        const tooMany = yield* Effect.flip(incidents.addMonitor(member, urlMonitor(api, healthUrl(monitorLimit))))
 
         assert.strictEqual(unknown._tag, "ComponentNotFound")
         assert.strictEqual(twice._tag, "MonitorExists")
         assert.strictEqual(tooMany._tag, "MonitorLimitReached")
-        assert.strictEqual((yield* incidents.monitors).monitors.length, 20)
+        assert.strictEqual((yield* incidents.monitors).monitors.length, monitorLimit)
       }),
     ),
   )
@@ -597,7 +635,7 @@ describe("Incidents", () => {
         const url = MonitorUrl.make("https://removed.notes.test/health")
         yield* projects.create(member, ProjectName.make("Notes"))
         yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
-        const monitor = yield* incidents.addMonitor(member, { component: api, url })
+        const monitor = yield* incidents.addMonitor(member, urlMonitor(api, url))
         answers.set(url, 500)
         yield* checkAt(start)
         yield* checkAt(start + minute)
@@ -615,4 +653,185 @@ describe("Incidents", () => {
       }),
     ),
   )
+
+  it.effect("opens a declared job's stopped incident, at its level, once it hasn't run for its minutes", () =>
+    inProject(
+      "monitor-nothing-for",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const incidents = yield* Incidents
+        const log = yield* ActivityLog
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* projects.addComponent(member, { key: jobs, name: ComponentName.make("Notes jobs") })
+        yield* record(jobs, [counts("cleanup.run", start - 5 * minute, 1)])
+        const monitor = yield* incidents.addMonitor(member, {
+          component: jobs,
+          environment: EnvironmentKey.make("production"),
+          condition: {
+            _tag: "nothingFor",
+            subject: { _tag: "operation", operation: EnvelopeName.make("cleanup.run") },
+            minutes: 30,
+          },
+          level: "timeSensitive",
+        })
+
+        // Not judged before its 30 minutes have passed since it was added.
+        const early = yield* checkAt(start + 29 * minute)
+        const due = yield* checkAt(start + 30 * minute)
+        const opened = (yield* log.latest).filter((entry) => entry.name === "incident.opened")
+        const measured = (yield* incidents.monitors).monitors.map((state) => [state.measured?.value, state.firing])
+        yield* TestClock.setTime(start + 35 * minute)
+        yield* record(jobs, [counts("cleanup.run", start + 35 * minute, 1)])
+        const ran = yield* checkAt(start + 36 * minute)
+        const resolved = yield* checkAt(start + 41 * minute)
+        const detail = yield* incidents.monitor(monitor.id)
+
+        assert.deepStrictEqual(early, [])
+        assert.deepStrictEqual(due, [["opened", "cleanup.run hasn't run for 30 minutes"]])
+        assert.deepStrictEqual(
+          opened.map((entry) => [entry.attrs["detector"], entry.attrs["level"], entry.attrs["subject"]]),
+          [["monitor", "timeSensitive", "cleanup.run"]],
+        )
+        assert.deepStrictEqual(measured, [[0, true]])
+        assert.deepStrictEqual(ran, [])
+        assert.deepStrictEqual(resolved, [["resolved", "cleanup.run hasn't run for 30 minutes"]])
+        assert.deepStrictEqual(
+          detail.incidents.map((incident) => incident.title),
+          ["cleanup.run hasn't run for 30 minutes"],
+        )
+      }),
+    ),
+  )
+
+  it.effect("fires a monitor of an operation's p95 or error rate above its numbers, and resolves it when removed", () =>
+    inProject(
+      "monitor-thresholds",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const incidents = yield* Incidents
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
+        // 10 card reads at 820 ms, and 20 syncs with 4 failed: 20%, too few for the failing detector.
+        yield* record(api, [taking(counts("GET /api/card", start - minute, 10), 820)])
+        yield* record(api, [counts("POST /api/sync", start - minute, 20, 4)])
+        // An export of 4 slow runs: too few to judge.
+        yield* record(api, [taking(counts("POST /api/export", start - minute, 4), 9000)])
+        const slow = yield* incidents.addMonitor(member, {
+          component: api,
+          condition: { _tag: "p95Above", subject: operation("GET /api/card"), ms: 500, minutes: 15 },
+          level: "alarm",
+        })
+        yield* incidents.addMonitor(member, {
+          component: api,
+          condition: { _tag: "errorRateAbove", subject: operation("POST /api/sync"), percent: 5, minutes: 15 },
+          level: "quiet",
+        })
+        yield* incidents.addMonitor(member, {
+          component: api,
+          condition: { _tag: "p95Above", subject: operation("POST /api/export"), ms: 500, minutes: 15 },
+          level: "alarm",
+        })
+        // Not above: the same numbers, set higher.
+        yield* incidents.addMonitor(member, {
+          component: api,
+          condition: { _tag: "errorRateAbove", subject: operation("POST /api/sync"), percent: 20, minutes: 15 },
+          level: "alarm",
+        })
+
+        const fired = (yield* checkAt(start)).map(([change, title]) => [
+          change,
+          title.replace(/p95 \d+ ms/, "p95 ~ ms"),
+        ])
+        const p95 = (yield* incidents.monitors).monitors.find((state) => state.monitor.id === slow.id)?.measured?.value
+        yield* incidents.removeMonitor(member, slow.id)
+        const list = yield* incidents.incidents
+
+        assert.deepStrictEqual(
+          fired.toSorted(([, left], [, right]) => String(left).localeCompare(String(right))),
+          [
+            ["opened", "GET /api/card p95 ~ ms, above 500 ms"],
+            ["opened", "POST /api/sync: 20% failed, above 5%"],
+          ],
+        )
+        assert.isTrue(p95 !== undefined && Math.abs(p95 - 820) <= 820 * 0.02)
+        assert.deepStrictEqual(
+          list.open.map((incident) => incident.title),
+          ["POST /api/sync: 20% failed, above 5%"],
+        )
+        assert.deepStrictEqual(
+          list.resolved.map((incident) => incident.subject),
+          ["GET /api/card"],
+        )
+      }),
+    ),
+  )
+
+  it.effect("fires a monitor of an app's event that came more times than its number in its window", () =>
+    inProject(
+      "monitor-event",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const incidents = yield* Incidents
+        const apps = yield* AppSignals
+        const ios = ComponentKey.make("notes-ios")
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* projects.addComponent(member, { key: ios, name: ComponentName.make("Notes for iPhone") })
+        yield* apps.record(
+          { component: ios, key: SdkKey.make("cluenori-sdk.notes.notes-ios.R2d2C3poBb8Wq0Lk5Xz7Aa") },
+          {
+            installation: InstallationId.make(uuidAt(start - day, 1)),
+            environment: EnvironmentKey.make("production"),
+            release: ReleaseVersion.make("1.0.0+1"),
+            device: { model: "iPhone17,2", platform: "iOS", osVersion: "27.2", locale: "en-US", timeZone: "UTC" },
+            sdk: { name: "cluenori-swift", version: "0.1.0" },
+            sentAt: DateTime.makeUnsafe(start),
+            signals: [1, 2, 3].map((n) => ({
+              _tag: "event" as const,
+              id: AppSignalId.make(uuidAt(start - 10 * minute, n + 1)),
+              at: DateTime.makeUnsafe(start - 10 * minute),
+              session: SessionId.make(uuidAt(start - 10 * minute, n + 10)),
+              name: EnvelopeName.make("payment.failed"),
+            })),
+          },
+        )
+        const event = { _tag: "event" as const, event: EnvelopeName.make("payment.failed") }
+        yield* incidents.addMonitor(member, {
+          component: ios,
+          condition: { _tag: "moreThan", subject: event, count: 2, minutes: 60 },
+          level: "timeSensitive",
+        })
+        yield* incidents.addMonitor(member, {
+          component: ios,
+          condition: { _tag: "moreThan", subject: event, count: 3, minutes: 60 },
+          level: "timeSensitive",
+        })
+
+        assert.deepStrictEqual(yield* checkAt(start), [["opened", "payment.failed: 3 in 1 hour, more than 2"]])
+      }),
+    ),
+  )
+
+  it("refuses a monitor with numbers out of bounds, or a URL's with an environment", () => {
+    const job = { _tag: "operation", operation: "cleanup.run" }
+    const url = { _tag: "noAnswer", subject: { _tag: "url", url: "https://notes.test/health" } }
+    assert.deepStrictEqual(
+      [
+        of({ _tag: "nothingFor", subject: job, minutes: 30 }),
+        of({ _tag: "nothingFor", subject: job, minutes: 0 }),
+        of({ _tag: "nothingFor", subject: job, minutes: 10_081 }),
+        of({ _tag: "p95Above", subject: job, ms: 500, minutes: 1441 }),
+        of({ _tag: "p95Above", subject: job, ms: Number.POSITIVE_INFINITY, minutes: 15 }),
+        of({ _tag: "errorRateAbove", subject: job, percent: 100, minutes: 15 }),
+        of({ _tag: "moreThan", subject: job, count: 3, minutes: 15 }),
+        of({ _tag: "moreThan", subject: { _tag: "error", error: "DROP TABLE" }, count: 3, minutes: 15 }),
+        of(url, { environment: "production" }),
+        of(url, { level: "loud" }),
+        of({ _tag: "noAnswer", subject: { _tag: "url", url: "https://notes.test/\u0007" } }),
+      ].map(decoded),
+      [true, false, false, false, false, false, false, false, false, false, false],
+    )
+  })
 })

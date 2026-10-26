@@ -15,17 +15,20 @@ import type { ProjectNotFound } from "@cluenori/projects"
 import type { ProjectSettings } from "@cluenori/projects"
 import { ComponentNotFound, defaultProjectSettings, isProduction, Projects } from "@cluenori/projects"
 import type { OperationRow } from "@cluenori/signals"
-import { Signals } from "@cluenori/signals"
+import { AppSignals, Signals } from "@cluenori/signals"
 import { Context, Crypto, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import type { SqlError } from "effect/sql"
 import { SqlClient, SqlSchema } from "effect/sql"
 
+import type { CountCondition } from "./detectors.ts"
 import {
   checkTimeout,
   downAfter,
   failingWindow,
+  firesOn,
   isFailing,
+  measuredOf,
   quietAt,
   reopenWithin,
   resolveAfter,
@@ -49,15 +52,24 @@ import {
 } from "./incidents-activity.ts"
 import { migrateIncidents } from "./incidents-migrations.ts"
 import type { MonitorDetail } from "./monitor-detail.ts"
-import type { AddMonitor, MonitorCheck, MonitorDay, MonitorList, MonitorState, MonitorStep } from "./monitor.ts"
+import type {
+  AddMonitor,
+  MonitorCheck,
+  MonitorDay,
+  MonitorList,
+  MonitorState,
+  MonitorStep,
+  MonitorUrl,
+} from "./monitor.ts"
 import {
+  AlertLevel,
   Monitor,
+  MonitorCondition,
   MonitorExists,
   MonitorId,
   MonitorLimitReached,
   monitorLimit,
   MonitorNotFound,
-  MonitorUrl,
 } from "./monitor.ts"
 
 const source = Source.make("engine:incidents")
@@ -120,7 +132,9 @@ type IncidentRow = typeof IncidentRow.Type
 const MonitorRow = Schema.Struct({
   id: MonitorId,
   component: ComponentKey,
-  url: MonitorUrl,
+  environment: EnvironmentColumn,
+  condition: Schema.fromJsonString(MonitorCondition),
+  level: AlertLevel,
   addedAt: Instant,
   failures: Schema.NullOr(Schema.Int),
   problem: Schema.NullOr(Schema.String),
@@ -128,8 +142,14 @@ const MonitorRow = Schema.Struct({
   status: Schema.NullOr(Schema.Int),
   ms: Schema.NullOr(Schema.Finite),
   since: Schema.NullOr(Schema.Int),
+  measuredAt: Schema.NullOr(Schema.Int),
+  value: Schema.NullOr(Schema.Finite),
 })
 type MonitorRow = typeof MonitorRow.Type
+
+// A monitor's URL, when it fetches one.
+const urlOf = (row: { readonly condition: MonitorCondition }) =>
+  row.condition._tag === "noAnswer" ? row.condition.subject.url : undefined
 
 const UpdateRow = Schema.Struct({
   change: Schema.Literals(["opened", "reopened", "worsened", "acknowledged", "resolved"]),
@@ -208,16 +228,23 @@ interface Firing {
   readonly evidence: Evidence
   /** How bad it is: a failure rate, else 0. */
   readonly level: number
+  /** How its alert reaches phones, as its monitor says; absent for a detector's own. */
+  readonly alert: AlertLevel | undefined
 }
 
-// An incident's identity: at most one is open for each. Keys hold no control characters, so NUL
+// An incident's identity: at most one is open for each: a monitor of counts's own, else its
+// detector's, component's, environment's and subject's. Keys hold no control characters, so NUL
 // separates them unambiguously.
 const keyOf = (incident: {
   readonly detector: Detector
   readonly component: ComponentKey
   readonly environment: EnvironmentKey | "" | undefined
   readonly subject: string
-}) => [incident.detector, incident.component, incident.environment ?? "", incident.subject].join("\u0000")
+  readonly evidence: Evidence
+}) =>
+  incident.evidence._tag === "monitor"
+    ? ["monitor", incident.evidence.monitor].join("\u0000")
+    : [incident.detector, incident.component, incident.environment ?? "", incident.subject].join("\u0000")
 
 const operationKeyOf = (row: {
   readonly component: ComponentKey
@@ -265,14 +292,33 @@ const dayOf = (row: DayRow): MonitorDay => ({
   ...(row.answered === 0 ? {} : { averageMs: row.totalMs / row.answered }),
 })
 
-// A monitor now, from its row and its days, oldest first.
-const stateOf = (row: MonitorRow, days: ReadonlyArray<DayRow>): MonitorState => ({
-  monitor: new Monitor({ id: row.id, component: row.component, url: row.url, addedAt: row.addedAt }),
+const monitorOf = (row: MonitorRow) =>
+  new Monitor({
+    id: row.id,
+    component: row.component,
+    ...(row.environment === "" ? {} : { environment: row.environment }),
+    condition: row.condition,
+    level: row.level,
+    addedAt: row.addedAt,
+  })
+
+// A monitor now, from its row, its days, oldest first, and whether it has an open incident.
+const stateOf = (row: MonitorRow, days: ReadonlyArray<DayRow>, firing: boolean): MonitorState => ({
+  monitor: monitorOf(row),
   ...(row.checkedAt === null
     ? {}
     : { lastCheck: checkOf({ at: row.checkedAt, status: row.status, ms: row.ms, problem: row.problem }) }),
   ...(row.since === null ? {} : { since: DateTime.makeUnsafe(row.since) }),
   days: days.map(dayOf),
+  ...(row.measuredAt === null
+    ? {}
+    : {
+        measured: {
+          at: DateTime.makeUnsafe(row.measuredAt),
+          ...(row.value === null ? {} : { value: row.value }),
+        },
+      }),
+  firing,
 })
 
 /**
@@ -344,12 +390,14 @@ export class Incidents extends Context.Service<
       const sql = yield* SqlClient.SqlClient
       const log = yield* ActivityLog
       const signals = yield* Signals
+      const apps = yield* AppSignals
       const projects = yield* Projects
       const crypto = yield* Crypto.Crypto
       const client = yield* HttpClient.HttpClient
       yield* migrateIncidents.pipe(Effect.orDie)
 
       const encodeEvidence = Schema.encodeEffect(Schema.fromJsonString(EvidenceSchema))
+      const encodeCondition = Schema.encodeEffect(Schema.fromJsonString(MonitorCondition))
 
       const incidentColumns = sql`i.id, i.detector, i.component, i.environment, i.subject, i.title, i.evidence,
         i.level, i.opened_at AS "openedAt", i.resolved_at AS "resolvedAt",
@@ -400,9 +448,10 @@ export class Incidents extends Context.Service<
         Request: Schema.Void,
         Result: MonitorRow,
         execute: () => sql`
-          SELECT m.id, m.component, m.url, m.added_at AS "addedAt", c.failures, c.problem, c.checked_at AS "checkedAt",
-            c.status, c.ms, c.since
+          SELECT m.id, m.component, m.environment, m.condition, m.level, m.added_at AS "addedAt", c.failures,
+            c.problem, c.checked_at AS "checkedAt", c.status, c.ms, c.since, x.at AS "measuredAt", x.value
           FROM incidents_monitors m LEFT JOIN incidents_monitor_checks c ON c.monitor = m.id
+            LEFT JOIN incidents_monitor_measures x ON x.monitor = m.id
           ORDER BY m.added_at, m.id`,
       })
 
@@ -443,14 +492,32 @@ export class Incidents extends Context.Service<
           WHERE monitor = ${monitor} AND problem IS NOT NULL ORDER BY at DESC LIMIT ${failuresShown}`,
       })
 
-      // The incidents of a monitor's component and URL, the latest opened first.
+      // A monitor's incidents, the latest opened first: a URL's, those of its component and URL,
+      // whichever monitor of them found them; one of counts, its own.
       const findMonitorIncidents = SqlSchema.findAll({
-        Request: Schema.Struct({ component: ComponentKey, url: MonitorUrl }),
+        Request: Schema.Struct({ id: MonitorId, component: ComponentKey, url: Schema.NullOr(Schema.String) }),
         Result: IncidentRow,
-        execute: (monitor) => sql`
+        execute: (monitor) =>
+          monitor.url === null
+            ? sql`
+          SELECT ${incidentColumns} FROM incidents_incidents i LEFT JOIN incidents_firing f ON f.incident = i.id
+          WHERE i.detector = 'monitor' AND json_extract(i.evidence, '$.monitor') = ${monitor.id}
+          ORDER BY i.opened_at DESC LIMIT ${incidentsShown}`
+            : sql`
           SELECT ${incidentColumns} FROM incidents_incidents i LEFT JOIN incidents_firing f ON f.incident = i.id
           WHERE i.detector = 'down' AND i.component = ${monitor.component} AND i.subject = ${monitor.url}
           ORDER BY i.opened_at DESC LIMIT ${incidentsShown}`,
+      })
+
+      // The latest incident of a monitor of counts resolved since `since`, which it firing so soon reopens.
+      const findMonitorRecentlyResolved = SqlSchema.findOneOption({
+        Request: Schema.Struct({ monitor: MonitorId, since: Schema.String }),
+        Result: IncidentRow,
+        execute: (key) => sql`
+          SELECT ${incidentColumns} FROM incidents_incidents i LEFT JOIN incidents_firing f ON f.incident = i.id
+          WHERE i.detector = 'monitor' AND json_extract(i.evidence, '$.monitor') = ${key.monitor}
+            AND i.resolved_at >= ${key.since}
+          ORDER BY i.resolved_at DESC LIMIT 1`,
       })
 
       // The SQL that adds a change to an incident's life.
@@ -590,6 +657,7 @@ export class Incidents extends Context.Service<
                     usualRate,
                   },
                   level: row.errors / row.count,
+                  alert: undefined,
                 },
               ]
             : []
@@ -624,13 +692,14 @@ export class Incidents extends Context.Service<
           Effect.provideService(HttpClient.TracerPropagationEnabled, false),
         )
 
-      // Fetches every monitor, keeps each check, its day's counts and the monitor's last check, and
-      // says which monitors are down.
-      // Fetches every monitor's URL: the network part of a check, which stores nothing.
+      // Fetches every URL monitors fetch: the network part of a check, which stores nothing.
       const fetchMonitors = Effect.gen(function* () {
         const monitors = yield* findMonitors(undefined).pipe(Effect.orDie)
         return yield* Effect.forEach(
-          monitors,
+          monitors.flatMap((monitor) => {
+            const url = urlOf(monitor)
+            return url === undefined ? [] : [{ id: monitor.id, url }]
+          }),
           (monitor) => checkUrl(monitor.url).pipe(Effect.map((check) => [monitor.id, check] as const)),
           { concurrency: checksAtOnce },
         )
@@ -647,7 +716,8 @@ export class Incidents extends Context.Service<
         const firings: Array<Firing> = []
         for (const [id, check] of fetched) {
           const monitor = monitors.get(id)
-          if (monitor === undefined || monitor.checkedAt === now) {
+          const url = monitor === undefined ? undefined : urlOf(monitor)
+          if (monitor === undefined || url === undefined || monitor.checkedAt === now) {
             continue
           }
           const { problem } = check
@@ -693,11 +763,113 @@ export class Incidents extends Context.Service<
               detector: "down",
               component: monitor.component,
               environment: undefined,
-              subject: monitor.url,
-              evidence: { _tag: "down", monitor: monitor.id, url: monitor.url, failures, problem },
+              subject: url,
+              evidence: { _tag: "down", monitor: monitor.id, url, failures, problem },
               level: 0,
+              alert: monitor.level,
             })
           }
+        }
+        return firings
+      }, Effect.orDie)
+
+      // What a monitor of counts reads over its window: how many ran or came, how many failed, and
+      // the p95. One read, through an index, of the subject's counts: Signals' minute counts of one
+      // operation, the warnings and errors of one error or log message, or one event's signals.
+      const readCounts = Effect.fn("Incidents.readCounts")(function* (
+        monitor: MonitorRow,
+        condition: CountCondition,
+        now: number,
+      ) {
+        const minutes = condition._tag === "nothingFor" ? condition.minutes : condition.minutes
+        const period = periodOf(now - minutes * 60_000, now)
+        const environment = monitor.environment === "" ? {} : { environment: monitor.environment }
+        const place = { component: monitor.component, ...environment }
+        const subject = condition.subject
+        switch (subject._tag) {
+          case "operation": {
+            const table = yield* signals.operations({ period, ...place, operation: subject.operation })
+            // Environments added up when the monitor names none; the p95 the highest of those that
+            // ran at least 5 times, so one environment slow is seen.
+            const judged = table.rows.filter((row) => row.count >= 5)
+            return {
+              count: table.rows.reduce((total, row) => total + row.count, 0),
+              errors: table.rows.reduce((total, row) => total + row.errors, 0),
+              p95Ms: judged.reduce((highest, row) => Math.max(highest, row.p95Ms), 0),
+            }
+          }
+          case "event": {
+            const atMost = condition._tag === "moreThan" ? condition.count + 1 : 1
+            const count = yield* apps.eventCount({ period, ...place, event: subject.event }, atMost)
+            return { count, errors: 0, p95Ms: 0 }
+          }
+          case "error":
+          case "message": {
+            const counts = yield* signals.logCounts({
+              period,
+              step: "1d",
+              by: subject._tag,
+              ...place,
+              ...(subject._tag === "error" ? { error: subject.error } : { message: subject.message }),
+            })
+            return { count: counts.series.reduce((total, series) => total + series.total, 0), errors: 0, p95Ms: 0 }
+          }
+        }
+      })
+
+      // What a monitor's subject is called, for its incident: an operation's or event's name, an
+      // error's or log message's title, else its ID. Read only when it fires.
+      const nameOf = Effect.fn("Incidents.nameOf")(function* (condition: CountCondition, now: number) {
+        const subject = condition.subject
+        const period = periodOf(now - Duration.toMillis(Duration.days(90)), now)
+        switch (subject._tag) {
+          case "operation":
+            return subject.operation
+          case "event":
+            return subject.event
+          case "error":
+            return yield* signals.error(subject.error, { period }).pipe(
+              Effect.map((detail) => detail.group.title),
+              Effect.catchTag("ErrorGroupNotFound", () => Effect.succeed(`error ${subject.error}`)),
+            )
+          case "message":
+            return yield* signals.logMessage(subject.message, { period }).pipe(
+              Effect.map((detail) => detail.message.title),
+              Effect.catchTag("LogMessageNotFound", () => Effect.succeed(`log message ${subject.message}`)),
+            )
+        }
+      })
+
+      // Measures every monitor of counts, keeps what each measured, and says which fire. A monitor
+      // whose condition is "nothing for N" is first judged N after it was added.
+      const countsNow = Effect.fn("Incidents.countsNow")(function* (now: number) {
+        const monitors = yield* findMonitors(undefined)
+        const firings: Array<Firing> = []
+        for (const monitor of monitors) {
+          const condition = monitor.condition
+          if (condition._tag === "noAnswer") {
+            continue
+          }
+          const added = DateTime.toEpochMillis(monitor.addedAt)
+          if (condition._tag === "nothingFor" && now - added < condition.minutes * 60_000) {
+            continue
+          }
+          const value = measuredOf(condition, yield* readCounts(monitor, condition, now))
+          yield* sql`INSERT INTO incidents_monitor_measures ${sql.insert({ monitor: monitor.id, at: now, value: value ?? null })}
+            ON CONFLICT (monitor) DO UPDATE SET at = excluded.at, value = excluded.value`
+          if (value === undefined || !firesOn(condition, value)) {
+            continue
+          }
+          const name = yield* nameOf(condition, now)
+          firings.push({
+            detector: "monitor",
+            component: monitor.component,
+            environment: monitor.environment === "" ? undefined : monitor.environment,
+            subject: name,
+            evidence: { _tag: "monitor", monitor: monitor.id, condition, value, name },
+            level: 0,
+            alert: monitor.level,
+          })
         }
         return firings
       }, Effect.orDie)
@@ -744,7 +916,7 @@ export class Incidents extends Context.Service<
         const writes: Array<Effect.Effect<unknown, SqlError.SqlError>> = []
         const entries: Array<ActivityEntry> = []
         const changes: Array<IncidentChange> = []
-        const record = (change: IncidentChange["change"], row: IncidentRow) => {
+        const record = (change: IncidentChange["change"], row: IncidentRow, alert?: AlertLevel) => {
           const fields = {
             incident: row.id,
             detector: row.detector,
@@ -753,18 +925,30 @@ export class Incidents extends Context.Service<
             title: row.title,
             ...placeOf(row.environment, settings),
           }
-          entries.push({
-            payload:
-              change === "worsened" || change === "resolved"
-                ? changeEntries[change].make({
-                    ...fields,
-                    ...(row.acknowledgedAt === null ? {} : { acknowledged: true }),
-                  })
-                : changeEntries[change].make(fields),
-          })
+          const level = alert === undefined ? {} : { level: alert }
+          const acknowledged = row.acknowledgedAt === null ? {} : { acknowledged: true as const }
+          if (change === "resolved") {
+            entries.push({ payload: changeEntries.resolved.make({ ...fields, ...acknowledged }) })
+          } else if (change === "worsened") {
+            entries.push({ payload: changeEntries.worsened.make({ ...fields, ...acknowledged, ...level }) })
+          } else {
+            entries.push({ payload: changeEntries[change].make({ ...fields, ...level }) })
+          }
           changes.push({ change, incident: incidentOf(row) })
           writes.push(updateOf(row.id, change, now, change === "resolved" ? undefined : row.title))
         }
+
+        // The incident a firing so soon after it resolved reopens: its monitor's own, or its key's.
+        const reopenable = (firing: Firing, since: string) =>
+          firing.evidence._tag === "monitor"
+            ? findMonitorRecentlyResolved({ monitor: firing.evidence.monitor, since })
+            : findRecentlyResolved({
+                detector: firing.detector,
+                component: firing.component,
+                environment: firing.environment ?? "",
+                subject: firing.subject,
+                since,
+              })
 
         for (const firing of firings) {
           const key = keyOf(firing)
@@ -780,18 +964,13 @@ export class Incidents extends Context.Service<
                 sql`UPDATE incidents_incidents SET title = ${title}, evidence = ${evidence}, level = ${firing.level}
                   WHERE id = ${current.id}`,
               )
-              record("worsened", { ...current, title, evidence: firing.evidence, level: firing.level })
+              record("worsened", { ...current, title, evidence: firing.evidence, level: firing.level }, firing.alert)
             }
             continue
           }
           const environment = firing.environment ?? ""
-          const recent = yield* findRecentlyResolved({
-            detector: firing.detector,
-            component: firing.component,
-            environment,
-            subject: firing.subject,
-            since: iso(now - Duration.toMillis(reopenWithin)),
-          }).pipe(Effect.orDie)
+          const since = iso(now - Duration.toMillis(reopenWithin))
+          const recent = yield* reopenable(firing, since).pipe(Effect.orDie)
           if (Option.isSome(recent)) {
             const row = recent.value
             writes.push(
@@ -799,14 +978,18 @@ export class Incidents extends Context.Service<
                 evidence = ${evidence}, level = ${firing.level} WHERE id = ${row.id}`,
               sql`INSERT INTO incidents_firing ${sql.insert({ incident: row.id, last_firing_at: now })}`,
             )
-            record("reopened", {
-              ...row,
-              title,
-              evidence: firing.evidence,
-              level: firing.level,
-              resolvedAt: null,
-              acknowledgedAt: null,
-            })
+            record(
+              "reopened",
+              {
+                ...row,
+                title,
+                evidence: firing.evidence,
+                level: firing.level,
+                resolvedAt: null,
+                acknowledgedAt: null,
+              },
+              firing.alert,
+            )
             continue
           }
           const id = IncidentId.make(yield* newId)
@@ -825,20 +1008,24 @@ export class Incidents extends Context.Service<
             })}`,
             sql`INSERT INTO incidents_firing ${sql.insert({ incident: id, last_firing_at: now })}`,
           )
-          record("opened", {
-            id,
-            detector: firing.detector,
-            component: firing.component,
-            environment,
-            subject: firing.subject,
-            title,
-            evidence: firing.evidence,
-            level: firing.level,
-            openedAt,
-            resolvedAt: null,
-            acknowledgedAt: null,
-            lastFiringAt: now,
-          })
+          record(
+            "opened",
+            {
+              id,
+              detector: firing.detector,
+              component: firing.component,
+              environment,
+              subject: firing.subject,
+              title,
+              evidence: firing.evidence,
+              level: firing.level,
+              openedAt,
+              resolvedAt: null,
+              acknowledgedAt: null,
+              lastFiringAt: now,
+            },
+            firing.alert,
+          )
         }
 
         for (const row of open) {
@@ -881,7 +1068,11 @@ export class Incidents extends Context.Service<
           .withTransaction(
             Effect.gen(function* () {
               const baselines = yield* findBaselines(undefined).pipe(Effect.orDie)
-              const firings = [...(yield* downNow(now, fetched)), ...(yield* failingNow(now, baselines))]
+              const firings = [
+                ...(yield* downNow(now, fetched)),
+                ...(yield* failingNow(now, baselines)),
+                ...(yield* countsNow(now)),
+              ]
               yield* confirmQuiet(now)
               const open = yield* findOpen(undefined).pipe(Effect.orDie)
               const changes = yield* settle(now, open, firings, settings)
@@ -953,15 +1144,28 @@ export class Incidents extends Context.Service<
         })
       })
 
+      // A monitor's open incident: a URL's, the down incident of its component and URL; one of
+      // counts, its own.
+      const openOf = (row: MonitorRow, open: ReadonlyArray<IncidentRow>) => {
+        const url = urlOf(row)
+        return open.find((incident) =>
+          url === undefined
+            ? incident.evidence._tag === "monitor" && incident.evidence.monitor === row.id
+            : incident.detector === "down" && incident.component === row.component && incident.subject === url,
+        )
+      }
+
       const monitors = Effect.gen(function* () {
         const now = DateTime.toEpochMillis(yield* DateTime.now)
         const rows = yield* findMonitors(undefined).pipe(Effect.orDie)
         const days = yield* findDays(firstDayShown(now)).pipe(Effect.orDie)
+        const open = yield* findOpen(undefined).pipe(Effect.orDie)
         const list: MonitorList = {
           monitors: rows.map((row) =>
             stateOf(
               row,
               days.filter((day) => day.monitor === row.id),
+              openOf(row, open) !== undefined,
             ),
           ),
         }
@@ -977,11 +1181,14 @@ export class Incidents extends Context.Service<
         const days = yield* findDays(firstDayShown(now)).pipe(Effect.orDie)
         const steps = yield* findSteps({ monitor: id, since: now - recentShown }).pipe(Effect.orDie)
         const failures = yield* findFailures(id).pipe(Effect.orDie)
-        const found = yield* findMonitorIncidents({ component: row.component, url: row.url }).pipe(Effect.orDie)
+        const found = yield* findMonitorIncidents({ id, component: row.component, url: urlOf(row) ?? null }).pipe(
+          Effect.orDie,
+        )
         const detail: MonitorDetail = {
           state: stateOf(
             row,
             days.filter((day) => day.monitor === id),
+            found.some((incident) => incident.resolvedAt === null),
           ),
           recent: steps.map((step): MonitorStep => ({
             start: DateTime.makeUnsafe(step.start),
@@ -1063,13 +1270,21 @@ export class Incidents extends Context.Service<
           return yield* new ComponentNotFound({ component: input.component })
         }
         const id = MonitorId.make(yield* newId)
+        const condition = yield* encodeCondition(input.condition).pipe(Effect.orDie)
         return yield* log.commit({
           source,
           actor,
           write: Effect.gen(function* () {
+            const environment = input.environment ?? ""
             const existing = yield* findMonitors(undefined).pipe(Effect.orDie)
-            if (existing.some((monitor) => monitor.component === input.component && monitor.url === input.url)) {
-              return yield* new MonitorExists({ component: input.component, url: input.url })
+            // The same condition encodes to the same JSON, which the table keeps unique.
+            const same = yield* sql<{ readonly id: MonitorId }>`SELECT id FROM incidents_monitors
+              WHERE component = ${input.component} AND environment = ${environment} AND condition = ${condition}`.pipe(
+              Effect.orDie,
+            )
+            const [first] = same
+            if (first !== undefined) {
+              return yield* new MonitorExists({ monitor: first.id })
             }
             if (existing.length >= monitorLimit) {
               return yield* new MonitorLimitReached({ limit: monitorLimit })
@@ -1078,13 +1293,30 @@ export class Incidents extends Context.Service<
             yield* sql`INSERT INTO incidents_monitors ${sql.insert({
               id,
               component: input.component,
-              url: input.url,
+              environment,
+              condition,
+              level: input.level,
               added_at: DateTime.formatIso(addedAt),
             })}`.pipe(Effect.orDie)
-            return new Monitor({ id, component: input.component, url: input.url, addedAt })
+            return new Monitor({
+              id,
+              component: input.component,
+              ...(input.environment === undefined ? {} : { environment: input.environment }),
+              condition: input.condition,
+              level: input.level,
+              addedAt,
+            })
           }),
           activity: (monitor) => [
-            { payload: MonitorAdded.make({ monitor: monitor.id, component: monitor.component, url: monitor.url }) },
+            {
+              payload: MonitorAdded.make({
+                monitor: monitor.id,
+                component: monitor.component,
+                ...(monitor.environment === undefined ? {} : { environment: monitor.environment }),
+                condition: monitor.condition,
+                level: monitor.level,
+              }),
+            },
           ],
         })
       })
@@ -1100,10 +1332,7 @@ export class Incidents extends Context.Service<
             if (monitor === undefined) {
               return yield* new MonitorNotFound({ monitor: id })
             }
-            const open = yield* findOpen(undefined).pipe(Effect.orDie)
-            const down = open.find(
-              (row) => row.detector === "down" && row.component === monitor.component && row.subject === monitor.url,
-            )
+            const down = openOf(monitor, yield* findOpen(undefined).pipe(Effect.orDie))
             if (down !== undefined) {
               yield* sql`UPDATE incidents_incidents SET resolved_at = ${iso(now)} WHERE id = ${down.id}`.pipe(
                 Effect.orDie,
@@ -1112,6 +1341,7 @@ export class Incidents extends Context.Service<
               yield* updateOf(down.id, "resolved", now).pipe(Effect.orDie)
             }
             yield* sql`DELETE FROM incidents_monitor_checks WHERE monitor = ${id}`.pipe(Effect.orDie)
+            yield* sql`DELETE FROM incidents_monitor_measures WHERE monitor = ${id}`.pipe(Effect.orDie)
             yield* sql`DELETE FROM incidents_check_history WHERE monitor = ${id}`.pipe(Effect.orDie)
             yield* sql`DELETE FROM incidents_check_days WHERE monitor = ${id}`.pipe(Effect.orDie)
             yield* sql`DELETE FROM incidents_monitors WHERE id = ${id}`.pipe(Effect.orDie)

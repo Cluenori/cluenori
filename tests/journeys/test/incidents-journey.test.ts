@@ -1,4 +1,4 @@
-import { ComponentKey, ProjectKey } from "@cluenori/foundation"
+import { ComponentKey, EnvelopeName, ProjectKey } from "@cluenori/foundation"
 import { IncidentId, MonitorUrl } from "@cluenori/incidents"
 import { ComponentName, ProjectName } from "@cluenori/projects"
 import { assert, layer } from "@effect/vitest"
@@ -36,7 +36,25 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("incidents", (it) => 
       })
       const monitor = yield* client.incidents.addMonitor({
         params: { project },
-        payload: { component: api, url: unreachable },
+        payload: {
+          component: api,
+          condition: { _tag: "noAnswer", subject: { _tag: "url", url: unreachable } },
+          level: "alarm",
+        },
+      })
+      // And a monitor someone chose: more than half of the exports failing over 15 minutes.
+      yield* client.incidents.addMonitor({
+        params: { project },
+        payload: {
+          component: api,
+          condition: {
+            _tag: "errorRateAbove",
+            subject: { _tag: "operation", operation: EnvelopeName.make("POST /api/export") },
+            percent: 50,
+            minutes: 15,
+          },
+          level: "quiet",
+        },
       })
 
       // The API's exporter sends ten exports that all failed.
@@ -59,8 +77,13 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("incidents", (it) => 
       assert.isTrue(yield* runCheck(project))
       const first = yield* client.incidents.incidents({ params: { project } })
       assert.deepStrictEqual(
-        first.open.map((incident) => [incident.evidence._tag, incident.title]),
-        [["failing", "POST /api/export: 100% failed, usually none"]],
+        first.open
+          .map((incident) => [incident.evidence._tag, incident.title])
+          .toSorted(([left], [right]) => (left ?? "").localeCompare(right ?? "")),
+        [
+          ["failing", "POST /api/export: 100% failed, usually none"],
+          ["monitor", "POST /api/export: 100% failed, above 50%"],
+        ],
       )
       assert.isDefined(first.checkedAt)
 
@@ -68,6 +91,7 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("incidents", (it) => 
       assert.isTrue(yield* runCheck(project))
       const second = yield* client.incidents.incidents({ params: { project } })
       assert.deepStrictEqual(second.open.map((incident) => incident.title).toSorted(), [
+        "POST /api/export: 100% failed, above 50%",
         "POST /api/export: 100% failed, usually none",
         "https://notes-api.invalid/health is down: Could not connect",
       ])

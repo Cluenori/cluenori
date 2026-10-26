@@ -30,7 +30,12 @@ export { Incidents } from "./incidents.ts"
 export { MonitorDetail } from "./monitor-detail.ts"
 export {
   AddMonitor,
+  AlertLevel,
+  ErrorSubject,
+  EventSubject,
+  MessageSubject,
   Monitor,
+  MonitorCondition,
   MonitorCheck,
   MonitorDay,
   MonitorExists,
@@ -42,4 +47,6 @@ export {
   MonitorState,
   MonitorStep,
   MonitorUrl,
+  OperationSubject,
+  UrlSubject,
 } from "./monitor.ts"

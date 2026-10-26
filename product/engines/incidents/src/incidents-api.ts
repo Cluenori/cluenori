@@ -23,7 +23,7 @@ export class IncidentsGroup extends HttpApiGroup.make("incidents")
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(
       OpenApi.Description,
-      "The project's open incidents, newest first, and up to 50 resolved in the last 7 days. Detectors look every minute: a monitor down two checks in a row, and an operation failing at least 2% and three times its usual over 15 minutes. `checkedAt` says when they last looked. Beside them, never incidents, the operations quiet now: those that usually ran regularly, as guessed from their history, and haven't for twice their usual gap.",
+      "The project's open incidents, newest first, and up to 50 resolved in the last 7 days. Detectors look every minute: a URL monitor down two checks in a row, an operation failing at least 2% and three times its usual over 15 minutes, and each monitor of counts whose condition holds. `checkedAt` says when they last looked. Beside them, never incidents, the operations quiet now: those that usually ran regularly, as guessed from their history, and haven't for twice their usual gap.",
     ),
   )
   .add(
@@ -53,7 +53,7 @@ export class IncidentsGroup extends HttpApiGroup.make("incidents")
       error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
     }).annotate(
       OpenApi.Description,
-      "The project's monitors, oldest first: the URLs fetched every minute, which pass with a status below 400 within 10 seconds. Each with its last check (its status and how long the answer took, absent without an answer, and what was wrong, absent when it passed), since when it has passed or failed as it does now, and its last 90 UTC days with checks: how many, how many failed, and their average time.",
+      "The project's monitors, oldest first, each a subject, a condition and a level, looked at every minute. A URL's is fetched, and passes with a status below 400 within 10 seconds: with its last check (its status and how long the answer took, absent without an answer, and what was wrong, absent when it passed), since when it has passed or failed as it does now, and its last 90 UTC days with checks. One of counts says what it last measured. Each says whether it has an open incident.",
     ),
   )
   .add(
@@ -63,7 +63,7 @@ export class IncidentsGroup extends HttpApiGroup.make("incidents")
       error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), MonitorNotFound.pipe(HttpApiSchema.status(404))],
     }).annotate(
       OpenApi.Description,
-      "One monitor, whatever any period: how it is now and its last 90 days; its checks over the last 24 hours, by five minutes, with how many failed and their average and slowest time; its latest failed checks of the 7 days every check is kept, at most 20, newest first; and the incidents of its component and URL, at most 20, the latest opened first.",
+      "One monitor, whatever any period: how it is now; for a URL's, its last 90 days, its checks over the last 24 hours, by five minutes, with how many failed and their average and slowest time, and its latest failed checks of the 7 days every check is kept, at most 20, newest first; and its incidents, at most 20, the latest opened first: for a URL's, those of its component and URL.",
     ),
   )
   .add(
@@ -79,7 +79,7 @@ export class IncidentsGroup extends HttpApiGroup.make("incidents")
       ],
     }).annotate(
       OpenApi.Description,
-      "Adds a monitor: a URL of one component, such as its health endpoint, fetched every minute from the next check on. A project has at most 20.",
+      "Adds a monitor to one component: a subject, a condition and a level (alarm, timeSensitive or quiet). A URL that doesn't answer two checks in a row (no environment); an operation or app event with nothing for N minutes, first judged N minutes after it is added; an error, log message or event more than N times in a window; an operation's p95 above X ms, or error rate above X%, over a window of at least 5 runs. Windows are 1 to 1,440 minutes, nothing-for 1 to 10,080. Looked at from the next check on. A project has at most 30; the same subject, condition and environment twice is refused with the first one's ID. Any member who sees the project may add one.",
     ),
   )
   .add(
@@ -87,5 +87,8 @@ export class IncidentsGroup extends HttpApiGroup.make("incidents")
       params: { project: ProjectKey, monitor: MonitorId },
       success: HttpApiSchema.NoContent,
       error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), MonitorNotFound.pipe(HttpApiSchema.status(404))],
-    }).annotate(OpenApi.Description, "Removes a monitor, and resolves its open incident, if any."),
+    }).annotate(
+      OpenApi.Description,
+      "Removes a monitor, and resolves its open incident, if any. Any member who sees the project may remove one.",
+    ),
   ) {}

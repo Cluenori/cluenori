@@ -144,7 +144,7 @@ private struct ProjectRouteScreen: View {
         case .uptime(let key):
             UptimeScreen(monitors: models.monitors(key))
         case .monitor(let key, let id):
-            MonitorScreen(monitor: models.monitor(key, id: id))
+            MonitorScreen(monitor: models.monitor(key, id: id), monitors: models.monitors(key))
         case .delivery(let key):
             DeliveryScreen(delivery: models.delivery(key), environments: environments)
         case .operations(let telemetry):

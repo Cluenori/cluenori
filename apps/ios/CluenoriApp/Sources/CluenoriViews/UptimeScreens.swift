@@ -29,11 +29,53 @@ extension MonitorStatus {
     }
 }
 
-/// Uptime's answer in a sentence: `All 3 monitors are up`, `1 of 3 monitors is down`.
+/// Uptime's answer in a sentence: `All 3 monitors are up`, `1 of 3 monitors is down`; with a
+/// monitor of counts among them, `All 3 monitors are fine`, `1 of 3 monitors is firing`.
 struct UptimeAnswerText: View {
     let answer: UptimeAnswer
+    /// Says fine or firing rather than up or down (`UptimeAnswer.saysFine`).
+    var fine = false
 
     var body: some View {
+        if fine {
+            fineText
+        } else {
+            upText
+        }
+    }
+
+    private var fineText: Text {
+        switch answer {
+        case .noMonitors:
+            Text("No monitors", bundle: #bundle, comment: "Uptime's answer: the project has no monitor.")
+        case .noneChecked:
+            Text(
+                "No monitor has been looked at yet", bundle: #bundle,
+                comment: "Uptime's answer: no monitor was looked at yet.")
+        case .down(_, of: 1):
+            Text("The monitor is firing", bundle: #bundle, comment: "Uptime's answer: the one monitor fires.")
+        case .down(1, let total):
+            Text(
+                "1 of \(total) monitors is firing", bundle: #bundle,
+                comment: "Uptime's answer: one monitor fires. The variable is how many there are.")
+        case .down(let down, let total):
+            Text(
+                "\(down) of \(total) monitors are firing", bundle: #bundle,
+                comment: "Uptime's answer: several monitors fire. The variables are counts.")
+        case .up(1, unchecked: 0):
+            Text("The monitor is fine", bundle: #bundle, comment: "Uptime's answer: the one monitor doesn't fire.")
+        case .up(let up, unchecked: 0):
+            Text(
+                "All \(up) monitors are fine", bundle: #bundle,
+                comment: "Uptime's answer: no monitor fires. The variable is a count.")
+        case .up(let up, let unchecked):
+            Text(
+                "^[\(up) monitor](inflect: true) fine; \(unchecked) not looked at yet", bundle: #bundle,
+                comment: "Uptime's answer: those looked at don't fire, some weren't yet. The variables are counts.")
+        }
+    }
+
+    private var upText: Text {
         switch answer {
         case .noMonitors:
             Text("No monitors", bundle: #bundle, comment: "Uptime's answer: the project has no monitor.")
@@ -65,13 +107,165 @@ struct UptimeAnswerText: View {
     }
 }
 
+/// A monitor's window, as its owner set it: `30 minutes`, `12 hours`, `1 day`.
+private func window(_ minutes: Int) -> Text {
+    Text(
+        Duration.seconds(minutes * 60),
+        format: .units(allowed: [.days, .hours, .minutes], width: .wide, maximumUnitCount: 2))
+}
+
+private func milliseconds(_ ms: Double) -> Text {
+    Text(Duration.milliseconds(ms), format: DurationText.style(ms))
+}
+
+private func percent(_ percent: Double) -> Text {
+    Text(percent / 100, format: .percent.precision(.fractionLength(0...1)))
+}
+
+/// What a monitor watches: its URL or operation, `Event user.registered`, `Error 3f9c…`, `Log
+/// message 12`.
+struct MonitorSubjectText: View {
+    let subject: MonitorSubject
+
+    var body: some View {
+        text
+    }
+
+    var text: Text {
+        switch subject {
+        case .url(let url): Text(verbatim: url)
+        case .operation(let operation): Text(verbatim: operation)
+        case .event(let event):
+            Text("Event \(event)", bundle: #bundle, comment: "A monitor's subject: an event. The variable is its name.")
+        case .error(let error):
+            Text(
+                "Error \(error)", bundle: #bundle,
+                comment: "A monitor's subject: an error group. The variable is its ID.")
+        case .message(let message):
+            Text(
+                "Log message \(message)", bundle: #bundle,
+                comment: "A monitor's subject: a log message. The variable is its number.")
+        case .unknown:
+            Text("Update the app to see it", bundle: #bundle, comment: "A monitor's subject this app doesn't know.")
+        }
+    }
+}
+
+/// When a monitor fires: `Doesn't answer two checks in a row`, `Nothing for 30 minutes`, `p95 above
+/// 500 ms over 15 minutes`.
+struct MonitorConditionText: View {
+    let condition: MonitorCondition
+
+    var body: some View {
+        text
+    }
+
+    var text: Text {
+        switch condition {
+        case .noAnswer:
+            Text(
+                "Doesn't answer two checks in a row", bundle: #bundle,
+                comment: "A URL monitor's condition: two failed checks in a row.")
+        case .nothingFor(let nothing):
+            Text(
+                "Nothing for \(window(nothing.minutes))", bundle: #bundle,
+                comment: "A monitor's condition: no run or event for a while. The variable is a duration.")
+        case .moreThan(let more):
+            Text(
+                "More than \(more.count) in \(window(more.minutes))", bundle: #bundle,
+                comment: "A monitor's condition: too many in a window. The variables are a count and a duration.")
+        case .p95Above(let p95):
+            Text(
+                "p95 above \(milliseconds(p95.ms)) over \(window(p95.minutes))", bundle: #bundle,
+                comment: "A monitor's condition: an operation's p95 too slow. The variables are durations.")
+        case .errorRateAbove(let rate):
+            Text(
+                "More than \(percent(rate.percent)) failed over \(window(rate.minutes))", bundle: #bundle,
+                comment:
+                    "A monitor's condition: too many of an operation's runs failed. The variables are a share and a duration."
+            )
+        case .unknown:
+            Text("Update the app to see it", bundle: #bundle, comment: "A monitor's condition this app doesn't know.")
+        }
+    }
+}
+
+/// What a monitor of counts measured at its last look: `0 in 30 minutes`, `p95 820 ms`, `12%
+/// failed`, or that there were too few runs to judge.
+private func measured(_ condition: MonitorCondition, _ value: Double?) -> Text {
+    guard let value else {
+        return Text("too few runs to judge", bundle: #bundle, comment: "A monitor of an operation that ran too little.")
+    }
+    switch condition {
+    case .nothingFor(let nothing):
+        return Text(
+            "\(Int(value)) in \(window(nothing.minutes))", bundle: #bundle,
+            comment: "What a monitor counted. The variables are a count and a duration.")
+    case .moreThan(let more):
+        return Text(
+            "\(Int(value)) in \(window(more.minutes))", bundle: #bundle,
+            comment: "What a monitor counted. The variables are a count and a duration.")
+    case .p95Above:
+        return Text(
+            "p95 \(milliseconds(value))", bundle: #bundle, comment: "An operation's p95. The variable is a duration.")
+    case .errorRateAbove:
+        return Text(
+            "\(percent(value)) failed", bundle: #bundle, comment: "The share of an operation's runs that failed.")
+    case .noAnswer, .unknown:
+        return Text(value, format: .number)
+    }
+}
+
+/// What a monitor of counts measured: `0 in 30 minutes`, `p95 820 ms`, `12% failed`.
+struct MonitorMeasuredText: View {
+    let condition: MonitorCondition
+    let value: Double?
+
+    var body: some View {
+        measured(condition, value)
+    }
+}
+
+/// A monitor in a line: its URL, or its subject and condition, `cleanup.run: Nothing for 30 minutes`.
+struct MonitorNameText: View {
+    let monitor: Monitor
+
+    var body: some View {
+        text
+    }
+
+    var text: Text {
+        if let url = monitor.url {
+            return Text(verbatim: url)
+        }
+        return Text(
+            "\(MonitorSubjectText(subject: monitor.condition.subject).text): \(MonitorConditionText(condition: monitor.condition).text)",
+            bundle: #bundle, comment: "A monitor in a line. The variables are its subject and its condition.")
+    }
+}
+
 /// How a monitor is now and for how long, up to its last check: `Up for 3 days`, `Down for 4 min:
-/// HTTP 503`, `Up` when when it turned isn't known, `Not checked yet`.
+/// HTTP 503`, `Up` when when it turned isn't known, `Not checked yet`; a monitor of counts's by what
+/// it measured last: `Firing: p95 820 ms`, `Fine: 3 in 30 minutes`, `Not looked at yet`.
 struct MonitorStandingText: View {
     let state: MonitorState
 
     var body: some View {
-        if let check = state.lastCheck {
+        if state.monitor.url == nil {
+            if let measure = state.measured {
+                let value = measured(state.monitor.condition, measure.value)
+                if state.firing {
+                    Text(
+                        "Firing: \(value)", bundle: #bundle, comment: "A monitor that fires now, and what it measured.")
+                } else {
+                    Text(
+                        "Fine: \(value)", bundle: #bundle, comment: "A monitor that doesn't fire, and what it measured."
+                    )
+                }
+            } else {
+                Text("Not looked at yet", bundle: #bundle, comment: "A monitor of counts that wasn't looked at yet.")
+            }
+        } else if let check = state.lastCheck {
             let lasted = state.since.map { since in
                 Text(
                     Duration.seconds(max(check.at.timeIntervalSince(since), 0)),
@@ -174,13 +368,13 @@ struct UptimeScreen: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         BaselineDot(color: answer.color, textStyle: .title3)
-                        UptimeAnswerText(answer: answer)
+                        UptimeAnswerText(answer: answer, fine: UptimeAnswer.saysFine(list.monitors))
                             .font(.title3.weight(.semibold))
                     }
                     .accessibilityElement(children: .combine)
                     Text(
-                        "Each monitor is fetched every minute, and passes with a status below 400 within 10 seconds. Two failed checks in a row open an incident.",
-                        bundle: #bundle, comment: "How Uptime checks its monitors."
+                        "Every monitor is looked at each minute. A URL passes with a status below 400 within 10 seconds, and two failed checks in a row open an incident; a monitor of an operation, an error, a log message or an event opens one when its condition holds.",
+                        bundle: #bundle, comment: "How Uptime looks at its monitors."
                     )
                     .font(.footnote)
                     .foregroundStyle(Palette.secondary)
@@ -197,7 +391,7 @@ struct UptimeScreen: View {
                                 Text(
                                     "No monitors. Add one for each component, such as its health endpoint:",
                                     bundle: #bundle, comment: "A project without monitors, and how to add one.")
-                                Text(verbatim: "./cluenori monitor add \(monitors.project) <component> <url>")
+                                Text(verbatim: "./cluenori monitor add \(monitors.project) <component> --url <url>")
                                     .font(.footnote.monospaced())
                                     .foregroundStyle(Palette.secondary)
                                     .textSelection(.enabled)
@@ -231,13 +425,14 @@ struct UptimeScreen: View {
 }
 
 /// One monitor on Uptime: its URL, its component and how it is now, its last 30 days and its uptime
-/// over them.
+/// over them; a monitor of counts, which has no checks, without the days.
 private struct MonitorRow: View {
     let state: MonitorState
     @Environment(\.dynamicTypeSize) private var size
 
     var body: some View {
         let now = Date.now
+        let checked = state.monitor.url != nil
         let share = PassedShareText(
             share: UptimeFacts.passedShare(UptimeFacts.lastDays(of: state, now: now, days: listedDays))
         )
@@ -246,7 +441,7 @@ private struct MonitorRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 BaselineDot(color: state.status.color, textStyle: .subheadline)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: state.monitor.url)
+                    MonitorNameText(monitor: state.monitor).text
                         .unhyphenated()
                         .font(.subheadline.monospaced())
                     // At accessibility sizes, each on its own line, and the share under them.
@@ -259,18 +454,20 @@ private struct MonitorRow: View {
                             .foregroundStyle(Palette.secondary)
                         MonitorStandingText(state: state)
                             .foregroundStyle(state.status == .unchecked ? Palette.secondary : state.status.color)
-                        if size.isAccessibilitySize {
+                        if size.isAccessibilitySize && checked {
                             share
                         }
                     }
                     .font(.footnote)
                 }
-                if !size.isAccessibilitySize {
+                if !size.isAccessibilitySize && checked {
                     Spacer(minLength: 8)
                     share
                 }
             }
-            UptimeStrip(days: UptimeFacts.strip(of: state, now: now, length: listedDays))
+            if checked {
+                UptimeStrip(days: UptimeFacts.strip(of: state, now: now, length: listedDays))
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -281,18 +478,47 @@ private struct MonitorRow: View {
 /// One monitor, by its ID, an item (`concept/Experience.md`): no period, its whole history. How it
 /// is now and since when first; then its last 24 hours by five minutes, its last 90 days, its
 /// incidents, each opening its own screen, and its failed checks; and "Ask an agent".
+///
+/// A monitor of counts has no checks: what it watches, when it fires and how its alerts come take
+/// their place. Removing it, after a confirmation, is in the toolbar's menu.
 struct MonitorScreen: View {
     let monitor: MonitorModel
+    /// The project's monitors, which removing it changes.
+    let monitors: MonitorsModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirming = false
+    @State private var notRemoved: MonitorsModel.Problem? = nil
 
     var body: some View {
         Group {
             if let detail = monitor.detail.value {
                 PanelScreen(spacing: 24) {
                     MonitorHeading(state: detail.state)
-                    RecentPanel(recent: detail.recent)
-                    DaysPanel(state: detail.state)
-                    MonitorIncidents(project: monitor.project, incidents: detail.incidents)
-                    FailuresPanel(failures: detail.failures)
+                    if let notRemoved {
+                        Text(
+                            notRemoved == .unreachable
+                                ? String(
+                                    localized: "Couldn't remove it: the deployment didn't answer.", bundle: #bundle,
+                                    comment: "Removing a monitor failed: offline.")
+                                : String(
+                                    localized: "Couldn't remove it.", bundle: #bundle,
+                                    comment: "Removing a monitor failed.")
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(Palette.red)
+                    }
+                    if detail.state.monitor.url == nil {
+                        ConditionPanel(state: detail.state)
+                    } else {
+                        RecentPanel(recent: detail.recent)
+                        DaysPanel(state: detail.state)
+                    }
+                    MonitorIncidents(
+                        project: monitor.project, incidents: detail.incidents,
+                        fetches: detail.state.monitor.url != nil)
+                    if detail.state.monitor.url != nil {
+                        FailuresPanel(failures: detail.failures)
+                    }
                 }
             } else {
                 AnswerPlaceholder(problem: monitor.detail.problem)
@@ -307,7 +533,42 @@ struct MonitorScreen: View {
                 ToolbarItem(placement: .primaryAction) {
                     AskAnAgent(brief: UptimeBriefs.monitor(project: monitor.project, detail: detail, now: .now))
                 }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button(role: .destructive) {
+                        confirming = true
+                    } label: {
+                        Label {
+                            Text(
+                                "Remove Monitor…", bundle: #bundle, comment: "Removes a monitor, after a confirmation.")
+                        } icon: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                    .disabled(monitors.removing != nil)
+                }
             }
+        }
+        .confirmationDialog(
+            String(
+                localized: "Remove this monitor?", bundle: #bundle,
+                comment: "Title of the confirmation before removing a monitor."),
+            isPresented: $confirming,
+            titleVisibility: .visible
+        ) {
+            Button(role: .destructive) {
+                Task {
+                    notRemoved = await monitors.remove(monitor.id)
+                    if notRemoved == nil {
+                        dismiss()
+                    }
+                }
+            } label: {
+                Text("Remove Monitor", bundle: #bundle, comment: "Confirms removing a monitor.")
+            }
+        } message: {
+            Text(
+                "It is no longer looked at, and its open incident resolves. Its incidents stay.", bundle: #bundle,
+                comment: "What removing a monitor does.")
         }
         .refreshable { await monitor.detail.load() }
         .task { await monitor.detail.load() }
@@ -330,12 +591,12 @@ private struct MonitorHeading: View {
                     .foregroundStyle(state.status == .unchecked ? Palette.secondary : state.status.color)
             }
             .font(.footnote.weight(.semibold))
-            Text(verbatim: state.monitor.url)
+            MonitorNameText(monitor: state.monitor).text
                 .font(.title3.monospaced().bold())
                 .unhyphenated()
             VStack(alignment: .leading, spacing: 2) {
                 Text(
-                    "\(state.monitor.component), watched since \(state.monitor.addedAt, format: .dateTime.month(.abbreviated).day().year())",
+                    "\(state.monitor.environment.map { "\(state.monitor.component), \($0)" } ?? state.monitor.component), watched since \(state.monitor.addedAt, format: .dateTime.month(.abbreviated).day().year())",
                     bundle: #bundle,
                     comment:
                         "A monitor's component, and since when it is fetched. The variables are a component and a date."
@@ -536,10 +797,55 @@ private struct DaysPanel: View {
     }
 }
 
-/// The incidents of a monitor's URL, the latest opened first, each opening its own screen.
+/// What a monitor of counts watches, when it fires, how its alerts come, and what it measured last.
+private struct ConditionPanel: View {
+    let state: MonitorState
+
+    var body: some View {
+        let monitor = state.monitor
+        VStack(alignment: .leading, spacing: 0) {
+            PanelTitle(title: Text("Condition", bundle: #bundle, comment: "Title of when a monitor fires."))
+            Panel {
+                FactRow(label: Text("Watches", bundle: #bundle, comment: "What a monitor watches.")) {
+                    MonitorSubjectText(subject: monitor.condition.subject)
+                }
+                PanelDivider()
+                FactRow(label: Text("Fires on", bundle: #bundle, comment: "When a monitor fires.")) {
+                    MonitorConditionText(condition: monitor.condition)
+                }
+                PanelDivider()
+                FactRow(label: Text("Alerts", bundle: #bundle, comment: "How a monitor's alerts come.")) {
+                    switch monitor.level {
+                    case .alarm:
+                        Text("Ring like an alarm", bundle: #bundle, comment: "A monitor's alerts ring like an alarm.")
+                    case .timeSensitive:
+                        Text("Time-sensitive", bundle: #bundle, comment: "A monitor's alerts come time-sensitive.")
+                    case .quiet:
+                        Text(
+                            "Quiet: no push", bundle: #bundle,
+                            comment: "A monitor whose incidents send no push.")
+                    default:
+                        Text(verbatim: monitor.level.rawValue)
+                    }
+                }
+                if let measure = state.measured {
+                    PanelDivider()
+                    FactRow(label: Text("Last looked", bundle: #bundle, comment: "When a monitor was last looked at."))
+                    {
+                        Text(measure.at, format: .dateTime.hour().minute())
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The incidents of a monitor, the latest opened first, each opening its own screen.
 private struct MonitorIncidents: View {
     let project: String
     let incidents: [Incident]
+    /// Whether it fetches a URL, whose incidents open on two failed checks in a row.
+    let fetches: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -547,9 +853,12 @@ private struct MonitorIncidents: View {
             Panel {
                 if incidents.isEmpty {
                     EmptyRow(
-                        text: Text(
-                            "It never was down two checks in a row.", bundle: #bundle,
-                            comment: "A monitor that never opened an incident."))
+                        text: fetches
+                            ? Text(
+                                "It never was down two checks in a row.", bundle: #bundle,
+                                comment: "A monitor that never opened an incident.")
+                            : Text("It never fired.", bundle: #bundle, comment: "A monitor of counts that never fired.")
+                    )
                 }
                 ForEach(Array(incidents.enumerated()), id: \.element.id) { index, incident in
                     if index > 0 {

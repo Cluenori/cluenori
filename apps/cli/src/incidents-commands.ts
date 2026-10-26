@@ -1,18 +1,57 @@
-import { ComponentKey, ProjectKey } from "@cluenori/foundation"
-import type { Incident } from "@cluenori/incidents"
-import { IncidentId, MonitorId, MonitorUrl } from "@cluenori/incidents"
-import { Console, Effect } from "effect"
-import { Argument, Command } from "effect/cli"
+import { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey } from "@cluenori/foundation"
+import type { Incident, Monitor, MonitorCondition } from "@cluenori/incidents"
+import { AddMonitor, IncidentId, MonitorId, MonitorUrl } from "@cluenori/incidents"
+import { ErrorGroupId, LogMessageId } from "@cluenori/signals"
+import { Console, Effect, Option, Schema } from "effect"
+import { Argument, Command, Flag } from "effect/cli"
 
 import { apiClient, reachFailures, refuse } from "./api-client.ts"
 import type { ApiTarget } from "./api-settings.ts"
 import { apiTarget } from "./api-settings.ts"
 import { local, parsed } from "./question.ts"
-import { columns, count, milliseconds, uptime, utcMinute } from "./terminal-text.ts"
+import { columns, count, milliseconds, span, uptime, utcMinute } from "./terminal-text.ts"
 
 const projectArgument = Argument.String("project").pipe(Argument.withDescription("The project's key."))
 
 const noProject = (target: ApiTarget, project: ProjectKey) => () => refuse(`${target.url} has no project ${project}.`)
+
+// What a monitor watches: a URL, an operation, or an event, error or log message by its name or ID.
+const subjectWords = (subject: MonitorCondition["subject"]) => {
+  switch (subject._tag) {
+    case "url":
+      return subject.url
+    case "operation":
+      return subject.operation
+    case "event":
+      return `event ${subject.event}`
+    case "error":
+      return `error ${subject.error}`
+    case "message":
+      return `log message ${subject.message}`
+  }
+}
+
+// A monitor's subject and condition, in a line: `cleanup.run: nothing for 30 minutes`.
+const conditionWords = (condition: MonitorCondition) => {
+  const name = subjectWords(condition.subject)
+  switch (condition._tag) {
+    case "noAnswer":
+      return `${name}: doesn't answer two checks in a row`
+    case "nothingFor":
+      return `${name}: nothing for ${span(condition.minutes * 60_000)}`
+    case "moreThan":
+      return `${name}: more than ${count(condition.count)} in ${span(condition.minutes * 60_000)}`
+    case "p95Above":
+      return `${name}: p95 above ${milliseconds(condition.ms)} over ${span(condition.minutes * 60_000)}`
+    case "errorRateAbove":
+      return `${name}: more than ${condition.percent}% failed over ${span(condition.minutes * 60_000)}`
+  }
+}
+
+const levelWords = { alarm: "alarm", timeSensitive: "time sensitive", quiet: "quiet" } as const
+
+const monitorWhere = (monitor: Monitor) =>
+  monitor.environment === undefined ? monitor.component : `${monitor.component} (${monitor.environment})`
 
 const titleOf = (incident: Incident) =>
   incident.acknowledgedAt === undefined ? incident.title : `${incident.title} (acknowledged)`
@@ -54,6 +93,17 @@ export const incidents = Command.make("incidents", { project: projectArgument, l
           ]),
         ]).join("\n"),
       )
+    }
+    if (list.quiet.length > 0) {
+      yield* Console.log(
+        "\nQuiet, a guess: operations that usually run regularly and haven't. Maybe fine; nothing was alerted.",
+      )
+      for (const quiet of list.quiet) {
+        const where = quiet.environment === undefined ? "" : ` --environment ${quiet.environment}`
+        yield* Console.log(
+          `${quiet.operation}, of ${quiet.component}: usually about every ${span(quiet.usualGapMs)}, none since ${utcMinute(quiet.lastRanAt)}.\n  A job? Monitor it: ./cluenori monitor add ${project} ${quiet.component} --operation '${quiet.operation.replaceAll("'", "'\\''")}' --nothing-for ${Math.max(1, Math.ceil((2 * quiet.usualGapMs) / 60_000))}m${where}`,
+        )
+      }
     }
   }),
 ).pipe(
@@ -97,7 +147,7 @@ export const incident = Command.make(
       const { incident: found } = detail
       const where = found.environment === undefined ? found.component : `${found.component} (${found.environment})`
       const about =
-        found.evidence._tag === "down"
+        found.evidence._tag === "down" || found.evidence._tag === "monitor"
           ? `monitor ${found.evidence.monitor}: ./cluenori monitor show ${project} ${found.evidence.monitor}`
           : `operation ${found.evidence.operation}: ./cluenori operation ${project} '${found.evidence.operation.replaceAll("'", "'\\''")}' --component ${found.component}${found.environment === undefined ? "" : ` --environment ${found.environment}`}`
       yield* Console.log(`${found.title}\n${found.resolvedAt === undefined ? "Open" : "Resolved"}, in ${where}.`)
@@ -154,23 +204,34 @@ export const monitors = Command.make("monitors", { project: projectArgument, loc
       .pipe(Effect.catchTags({ ...reachFailures(target), ProjectNotFound: noProject(target, project) }))
     if (list.monitors.length === 0) {
       return yield* Console.log(
-        `${project} has no monitors. Add one for each component, such as its health endpoint: ./cluenori monitor add ${project} <component> <url>`,
+        `${project} has no monitors. Add one, such as a component's health endpoint: ./cluenori monitor add ${project} <component> --url <url>`,
       )
     }
     yield* Console.log(
       columns([
-        ["Component", "URL", "Last check", "Result", "ID"],
-        ...list.monitors.map(({ monitor, lastCheck }) => [
-          monitor.component,
-          monitor.url,
-          lastCheck === undefined ? "not yet" : utcMinute(lastCheck.at),
-          lastCheck === undefined ? "" : (lastCheck.problem ?? "passed"),
+        ["Component", "Watches", "Level", "Now", "ID"],
+        ...list.monitors.map(({ monitor, lastCheck, measured, firing }) => [
+          monitorWhere(monitor),
+          conditionWords(monitor.condition),
+          levelWords[monitor.level],
+          firing ? "firing" : nowWords(lastCheck, measured),
           monitor.id,
         ]),
       ]).join("\n"),
     )
   }),
-).pipe(Command.withDescription("A project's monitors: the URLs fetched every minute, and how each last answered."))
+).pipe(Command.withDescription("A project's monitors: what each watches, how its alerts come, and how it is now."))
+
+// How a monitor that isn't firing is now: a URL's last check, or when one of counts last looked.
+const nowWords = (
+  lastCheck: { readonly problem?: string } | undefined,
+  measured: { readonly at: unknown } | undefined,
+) => {
+  if (lastCheck !== undefined) {
+    return lastCheck.problem ?? "passed"
+  }
+  return measured === undefined ? "not looked at yet" : "fine"
+}
 
 /** `cluenori monitor show <project> <monitor>`. */
 export const monitorShow = Command.make(
@@ -193,13 +254,23 @@ export const monitorShow = Command.make(
           MonitorNotFound: () => refuse(`${project} has no monitor ${id}. See them: ./cluenori monitors ${project}`),
         }),
       )
-      const { monitor: shown, lastCheck, since, days } = detail.state
-      const now =
-        lastCheck === undefined
-          ? "Not checked yet."
-          : `${lastCheck.problem === undefined ? "Up" : `Down: ${lastCheck.problem}`}${since === undefined ? "" : ` since ${utcMinute(since)}`}; last checked ${utcMinute(lastCheck.at)}${lastCheck.ms === undefined ? "" : `, answered in ${milliseconds(lastCheck.ms)}`}.`
-      yield* Console.log(`${shown.url}, of ${shown.component}, checked every minute since ${utcMinute(shown.addedAt)}.`)
-      yield* Console.log(now)
+      const { monitor: shown, lastCheck, since, days, measured, firing } = detail.state
+      yield* Console.log(
+        `${conditionWords(shown.condition)}, of ${monitorWhere(shown)}; alerts ${levelWords[shown.level]}; looked at every minute since ${utcMinute(shown.addedAt)}.`,
+      )
+      if (shown.condition._tag === "noAnswer") {
+        yield* Console.log(
+          lastCheck === undefined
+            ? "Not checked yet."
+            : `${lastCheck.problem === undefined ? "Up" : `Down: ${lastCheck.problem}`}${since === undefined ? "" : ` since ${utcMinute(since)}`}; last checked ${utcMinute(lastCheck.at)}${lastCheck.ms === undefined ? "" : `, answered in ${milliseconds(lastCheck.ms)}`}.`,
+        )
+      } else {
+        yield* Console.log(
+          measured === undefined
+            ? "Not looked at yet."
+            : `${firing ? "Firing" : "Fine"}: ${measuredWords(shown.condition, measured.value)}, at ${utcMinute(measured.at)}.`,
+        )
+      }
       const checks = days.reduce((sum, day) => sum + day.checks, 0)
       const failed = days.reduce((sum, day) => sum + day.failed, 0)
       if (checks > 0) {
@@ -239,14 +310,136 @@ export const monitorShow = Command.make(
     }),
 ).pipe(Command.withDescription("One monitor: how it is now, each day's checks, its failed checks and its incidents."))
 
-/** `cluenori monitor add <project> <component> <url>`. */
+// What a monitor of counts measured, in words: `0 runs`, `p95 820ms`, `12% failed`.
+const measuredWords = (condition: MonitorCondition, value: number | undefined) => {
+  if (value === undefined) {
+    return "too few runs to judge"
+  }
+  switch (condition._tag) {
+    case "p95Above":
+      return `p95 ${milliseconds(value)}`
+    case "errorRateAbove":
+      return `${value.toFixed(1)}% failed`
+    case "noAnswer":
+    case "nothingFor":
+    case "moreThan":
+      return `${count(value)} in its window`
+  }
+}
+
+const unitMinutes = { m: 1, h: 60, d: 1440 }
+
+// `30m`, `12h`, `2d`: a span in whole minutes.
+const minutesOf = (value: string) => {
+  const found = /^(\d{1,6})([mhd])$/.exec(value)
+  if (found === null) {
+    return refuse(`"${value}" isn't a span such as 30m, 12h or 2d.`)
+  }
+  return Effect.succeed(Number(found[1]) * unitMinutes[found[2] === "d" || found[2] === "h" ? found[2] : "m"])
+}
+
+const optionalString = (name: string, description: string) =>
+  Flag.String(name).pipe(Flag.optional, Flag.withDescription(description))
+
+// The one subject a monitor is given, from its flags.
+const subjectOf = Effect.fn("subjectOf")(function* (input: {
+  readonly url: Option.Option<string>
+  readonly operation: Option.Option<string>
+  readonly event: Option.Option<string>
+  readonly error: Option.Option<string>
+  readonly message: Option.Option<string>
+}) {
+  const given = [input.url, input.operation, input.event, input.error, input.message].filter(Option.isSome)
+  if (given.length !== 1) {
+    return yield* refuse("Give exactly one of --url, --operation, --event, --error or --message.")
+  }
+  if (Option.isSome(input.url)) {
+    return { _tag: "url" as const, url: yield* parsed(MonitorUrl, input.url.value, "a URL to monitor") }
+  }
+  if (Option.isSome(input.operation)) {
+    return {
+      _tag: "operation" as const,
+      operation: yield* parsed(EnvelopeName, input.operation.value, "an operation's name"),
+    }
+  }
+  if (Option.isSome(input.event)) {
+    return { _tag: "event" as const, event: yield* parsed(EnvelopeName, input.event.value, "an event's name") }
+  }
+  if (Option.isSome(input.error)) {
+    return { _tag: "error" as const, error: yield* parsed(ErrorGroupId, input.error.value, "an error's ID") }
+  }
+  const message = Option.getOrElse(input.message, () => "")
+  return {
+    _tag: "message" as const,
+    message: yield* parsed(Schema.FiniteFromString.pipe(Schema.decodeTo(LogMessageId)), message, "a log message's ID"),
+  }
+})
+
+// The condition its flags give, for the schema to check.
+const conditionOf = Effect.fn("conditionOf")(function* (
+  subject: Effect.Success<ReturnType<typeof subjectOf>>,
+  input: {
+    readonly nothingFor: Option.Option<string>
+    readonly moreThan: Option.Option<number>
+    readonly p95Above: Option.Option<number>
+    readonly errorRateAbove: Option.Option<number>
+  },
+  within: number,
+) {
+  if (subject._tag === "url") {
+    return { _tag: "noAnswer", subject }
+  }
+  if (Option.isSome(input.nothingFor)) {
+    return { _tag: "nothingFor", subject, minutes: yield* minutesOf(input.nothingFor.value) }
+  }
+  if (Option.isSome(input.moreThan)) {
+    return { _tag: "moreThan", subject, count: input.moreThan.value, minutes: within }
+  }
+  if (Option.isSome(input.p95Above)) {
+    return { _tag: "p95Above", subject, ms: input.p95Above.value, minutes: within }
+  }
+  return { _tag: "errorRateAbove", subject, percent: Option.getOrElse(input.errorRateAbove, () => 0), minutes: within }
+})
+
+/** `cluenori monitor add <project> <component> --<subject> <name> [--<condition> <number>]`. */
 export const monitorAdd = Command.make(
   "add",
   {
     project: projectArgument,
     component: Argument.String("component").pipe(Argument.withDescription("The component's key, such as notes-api.")),
-    url: Argument.String("url").pipe(
-      Argument.withDescription("What to fetch every minute, such as https://api.notes.app/health."),
+    url: optionalString("url", "A URL to fetch every minute; it fires when two checks in a row fail."),
+    operation: optionalString("operation", "An operation, such as cleanup.run or 'GET /api/card'."),
+    event: optionalString("event", "An app's event, such as user.registered."),
+    error: optionalString("error", "An error, by its ID from ./cluenori errors."),
+    message: optionalString("message", "A log message, by its ID from ./cluenori log-messages."),
+    nothingFor: optionalString(
+      "nothing-for",
+      "Fires when the operation didn't run, or the event didn't come, for this long: 30m, 12h.",
+    ),
+    moreThan: Flag.Int("more-than").pipe(
+      Flag.optional,
+      Flag.withDescription("Fires when the error, log message or event came more than this many times in --within."),
+    ),
+    p95Above: Flag.Int("p95-above").pipe(
+      Flag.optional,
+      Flag.withDescription("Fires when the operation's p95 over --within is above this many ms, of at least 5 runs."),
+    ),
+    errorRateAbove: Flag.Finite("error-rate-above").pipe(
+      Flag.optional,
+      Flag.withDescription(
+        "Fires when more than this percent of the operation's runs over --within failed, of at least 5.",
+      ),
+    ),
+    within: Flag.String("within").pipe(
+      Flag.withDefault("15m"),
+      Flag.withDescription("The window looked back over: 15m, 1h, 1d at most."),
+    ),
+    environment: optionalString("environment", "Only this environment, such as production; any when absent."),
+    level: Flag.Literals("level", ["alarm", "time-sensitive", "quiet"]).pipe(
+      Flag.optional,
+      Flag.withDescription(
+        "How its alerts reach phones: alarm rings through silent mode; time-sensitive by default, alarm for a URL.",
+      ),
     ),
     local,
   },
@@ -254,24 +447,56 @@ export const monitorAdd = Command.make(
     Effect.gen(function* () {
       const project = yield* parsed(ProjectKey, input.project, "a project key")
       const component = yield* parsed(ComponentKey, input.component, "a component key")
-      const url = yield* parsed(MonitorUrl, input.url, "a URL to monitor")
+      const subject = yield* subjectOf(input)
+      const conditions = [input.nothingFor, input.moreThan, input.p95Above, input.errorRateAbove].filter((given) =>
+        Option.isSome<unknown>(given),
+      )
+      if (subject._tag === "url" ? conditions.length > 0 : conditions.length !== 1) {
+        return yield* refuse(
+          subject._tag === "url"
+            ? "A URL's monitor takes no condition: it fires when two checks in a row fail."
+            : "Give exactly one of --nothing-for, --more-than, --p95-above or --error-rate-above.",
+        )
+      }
+      const within = yield* minutesOf(input.within)
+      const candidate = yield* conditionOf(subject, input, within)
+      const environment = Option.isSome(input.environment)
+        ? yield* parsed(EnvironmentKey, input.environment.value, "an environment's key")
+        : undefined
+      const level = Option.match(input.level, {
+        onNone: () => (subject._tag === "url" ? "alarm" : "timeSensitive"),
+        onSome: (chosen) => (chosen === "time-sensitive" ? "timeSensitive" : chosen),
+      })
+      const payload = yield* Schema.decodeUnknownEffect(AddMonitor)({
+        component,
+        ...(environment === undefined ? {} : { environment }),
+        condition: candidate,
+        level,
+      }).pipe(
+        Effect.catchTag("SchemaError", (error) => refuse(`That monitor isn't one Cluenori takes: ${error.message}`)),
+      )
       const target = yield* apiTarget(input.local)
       const client = yield* apiClient(target)
-      const monitor = yield* client.incidents.addMonitor({ params: { project }, payload: { component, url } }).pipe(
+      const monitor = yield* client.incidents.addMonitor({ params: { project }, payload }).pipe(
         Effect.catchTags({
           ...reachFailures(target),
           ProjectNotFound: noProject(target, project),
           ComponentNotFound: () => refuse(`${project} has no component ${component}.`),
-          MonitorExists: () => refuse(`${component} already has a monitor of ${url}.`),
+          MonitorExists: (exists) =>
+            refuse(`${component} already has this monitor: ./cluenori monitor show ${project} ${exists.monitor}`),
           MonitorLimitReached: (reached) =>
             refuse(`${project} has ${reached.limit} monitors, as many as it may. Remove one first.`),
         }),
       )
       yield* Console.log(
-        `Added a monitor of ${monitor.url} to ${component}. It is fetched every minute; two failed checks in a row open an incident.`,
+        `Added a monitor to ${monitorWhere(monitor)}: ${conditionWords(monitor.condition)}; alerts ${levelWords[monitor.level]}. It is looked at every minute from the next check on. Its ID: ${monitor.id}`,
       )
     }),
-).pipe(Command.withDescription("Fetch a component's URL every minute, and open an incident when it is down."))
+).pipe(
+  Command.withDescription(
+    "Watch something every minute and open an incident when it holds: a URL that doesn't answer, an operation or event with nothing for a while, an error, log message or event more than N times, an operation's p95 or error rate above a number.",
+  ),
+)
 
 /** `cluenori monitor remove <project> <monitor>`. */
 export const monitorRemove = Command.make(
@@ -296,7 +521,7 @@ export const monitorRemove = Command.make(
       )
       yield* Console.log("Removed the monitor, and resolved its open incident, if it had one.")
     }),
-).pipe(Command.withDescription("Stop fetching a monitor's URL."))
+).pipe(Command.withDescription("Remove a monitor, and resolve its open incident."))
 
 /** `cluenori monitor ...`. */
 export const monitor = Command.make("monitor").pipe(

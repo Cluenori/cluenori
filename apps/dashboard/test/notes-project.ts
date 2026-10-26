@@ -14,6 +14,7 @@ import {
   Uuidv7,
 } from "@cluenori/foundation"
 import {
+  AddMonitor,
   Incident,
   IncidentDetail,
   IncidentId,
@@ -1303,15 +1304,32 @@ const draftText = NoteText.make(
   "Share a note with anyone by a link.\nExports that failed on a bad connection now finish on their own.",
 )
 const SettingsBody = Schema.fromJsonString(ProjectSettings)
+const AddMonitorBody = Schema.fromJsonString(AddMonitor)
 
 const noSuchCall = (method: string, path: ReadonlyArray<string>) =>
   Effect.die(`The fake API has no ${method} /api/${path.join("/")}.`)
 
 // The API's health endpoint, which a monitor checks every minute; its last check passed.
+const healthUrl = MonitorUrl.make("https://api.notes.example/health")
 const healthMonitor = new Monitor({
   id: MonitorId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a70"),
   component: api,
-  url: MonitorUrl.make("https://api.notes.example/health"),
+  condition: { _tag: "noAnswer", subject: { _tag: "url", url: healthUrl } },
+  level: "alarm",
+  addedAt: created,
+})
+
+// The nightly cleanup, declared a job: it runs every 30 minutes, and it ran.
+const cleanupMonitor = new Monitor({
+  id: MonitorId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a71"),
+  component: api,
+  environment: EnvironmentKey.make("production"),
+  condition: {
+    _tag: "nothingFor",
+    subject: { _tag: "operation", operation: EnvelopeName.make("cleanup.run") },
+    minutes: 60,
+  },
+  level: "timeSensitive",
   addedAt: created,
 })
 
@@ -1341,9 +1359,9 @@ const incidentsAt = (now: number, acknowledgedAt?: DateTime.Utc): IncidentList =
       id: IncidentId.make("0199f7a2-6d2f-7e4b-8c3a-5f9b2d7e1a65"),
       component: api,
       environment: EnvironmentKey.make("production"),
-      subject: healthMonitor.url,
-      title: `${healthMonitor.url}: down`,
-      evidence: { _tag: "down", monitor: healthMonitor.id, url: healthMonitor.url, failures: 2, problem: "HTTP 503" },
+      subject: healthUrl,
+      title: `${healthUrl}: down`,
+      evidence: { _tag: "down", monitor: healthMonitor.id, url: healthUrl, failures: 2, problem: "HTTP 503" },
       openedAt: DateTime.makeUnsafe(now - 2 * day),
       resolvedAt: DateTime.makeUnsafe(now - 2 * day + 14 * minute),
     }),
@@ -1413,11 +1431,22 @@ const monitorStateAt = (now: number): MonitorState => ({
   lastCheck: { at: DateTime.makeUnsafe(now - minute), status: 200, ms: 84 },
   since: DateTime.makeUnsafe(now - 2 * day + 14 * minute),
   days: monitorDaysAt(now),
+  firing: false,
 })
 
 const monitors = Effect.gen(function* () {
   const now = yield* Clock.currentTimeMillis
-  return yield* reply(MonitorList, { monitors: [monitorStateAt(now)] })
+  return yield* reply(MonitorList, {
+    monitors: [
+      monitorStateAt(now),
+      {
+        monitor: cleanupMonitor,
+        days: [],
+        measured: { at: DateTime.makeUnsafe(now - minute), value: 2 },
+        firing: false,
+      },
+    ],
+  })
 })
 
 const monitorDetail = (id: string) =>
@@ -2104,6 +2133,8 @@ export const notesApi = ({
   let promotions: ReadonlyArray<Promotion> | undefined
   // When someone acknowledged the open incident here, once they did.
   let acknowledgedAt: DateTime.Utc | undefined
+  // The monitors added here, after the fake's own.
+  const added: Array<Monitor> = []
   const incidentsNow = (now: number): IncidentList => {
     return incidentsAt(now, acknowledgedAt)
   }
@@ -2217,6 +2248,25 @@ export const notesApi = ({
         return found === undefined
           ? yield* reply(IncidentNotFound, new IncidentNotFound({ incident: IncidentId.make(id) }), 404)
           : yield* reply(IncidentDetail, incidentDetailOf(found, now))
+      }
+      if (call.method === "POST" && area === "monitors" && id === undefined) {
+        const input = yield* Schema.decodeEffect(AddMonitorBody)(call.body ?? "").pipe(Effect.orDie)
+        const monitor = new Monitor({
+          id: MonitorId.make(`0199f7a2-6d2f-7e4b-8c3a-${(0x5f9b2d7e1b00 + added.length).toString(16)}`),
+          ...input,
+          addedAt: DateTime.makeUnsafe(yield* Clock.currentTimeMillis),
+        })
+        added.push(monitor)
+        return yield* reply(Monitor, monitor, 201)
+      }
+      const addedHere = added.find((monitor) => monitor.id === id)
+      if (call.method === "GET" && area === "monitors" && addedHere !== undefined) {
+        return yield* reply(MonitorDetail, {
+          state: { monitor: addedHere, days: [], firing: false },
+          recent: [],
+          failures: [],
+          incidents: [],
+        })
       }
       if (call.method === "GET" && area === "monitors") {
         return yield* id === undefined ? monitors : monitorDetail(id)

@@ -28,6 +28,7 @@ import type {
   AppRetention,
   AppUsage,
   CountryCode,
+  EventCountQuery,
   FeaturePerson,
   FeatureRelease,
   FeatureUse,
@@ -459,6 +460,26 @@ export const appStore = Effect.gen(function* () {
         DELETE FROM signals_app_timeline WHERE person = ${person} AND at < (
           SELECT at FROM signals_app_timeline WHERE person = ${person} ORDER BY at DESC LIMIT 1 OFFSET ${timelineKept - 1})`
     }
+  })
+
+  // How many of one event are in the people's timelines in the query's period, up to `atMost`:
+  // found through the timeline's index of events by name and time, so it reads only that event's
+  // signals, and stops at `atMost`.
+  const eventCount = Effect.fn("AppStore.eventCount")(function* (query: EventCountQuery, atMost: number) {
+    const row = yield* SqlSchema.findOne({
+      Request: Schema.Void,
+      Result: Schema.Struct({ count: Count }),
+      execute: () => sql`
+        SELECT count(*) AS count FROM (
+          SELECT 1 FROM signals_app_timeline
+          WHERE json_extract(entry, '$.signal._tag') = 'event'
+            AND json_extract(entry, '$.signal.name') = ${query.event}
+            AND at >= ${DateTime.toEpochMillis(query.period.from)} AND at < ${DateTime.toEpochMillis(query.period.to)}
+            AND json_extract(entry, '$.component') = ${query.component}
+            ${query.environment === undefined ? sql`` : sql`AND json_extract(entry, '$.environment') = ${query.environment}`}
+          LIMIT ${Math.max(0, Math.floor(atMost))})`,
+    })(undefined).pipe(Effect.orDie)
+    return row.count
   })
 
   /** Removes what is older than it is kept. Runs inside the caller's transaction. */
@@ -1068,5 +1089,18 @@ export const appStore = Effect.gen(function* () {
     return answer
   })
 
-  return { seenOf, peopleOf, write, cleanUp, usage, retention, releases, health, features, featureLife, person }
+  return {
+    seenOf,
+    peopleOf,
+    write,
+    cleanUp,
+    usage,
+    retention,
+    releases,
+    health,
+    features,
+    featureLife,
+    person,
+    eventCount,
+  }
 })

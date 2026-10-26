@@ -7,11 +7,17 @@ private func date(_ text: String) -> Date {
     try! Date(text, strategy: .iso8601)
 }
 
+private func urlMonitor(_ url: String, added: Date) -> Monitor {
+    Monitor(
+        id: "m1", component: "notes-api", condition: .noAnswer(NoAnswer(subject: UrlSubject(url: url))), level: .alarm,
+        addedAt: added)
+}
+
 private func state(added: String, days: [MonitorDay], problem: String?? = .some(nil)) -> MonitorState {
     MonitorState(
-        monitor: Monitor(id: "m1", component: "notes-api", url: "https://notes.example/health", addedAt: date(added)),
+        monitor: urlMonitor("https://notes.example/health", added: date(added)),
         lastCheck: problem.map { MonitorCheck(at: date("2026-10-26T00:29:00Z"), status: 200, ms: 84, problem: $0) },
-        days: days)
+        days: days, firing: false)
 }
 
 struct UptimeFactsTests {
@@ -65,8 +71,9 @@ struct UptimeFactsTests {
 }
 
 let monitorAnswer = #"""
-    {"state":{"monitor":{"id":"m1","component":"notes-api","url":"https://notes.example/health",
-    "addedAt":"2026-10-01T00:00:00.000Z"},
+    {"state":{"monitor":{"id":"m1","component":"notes-api",
+    "condition":{"_tag":"noAnswer","subject":{"_tag":"url","url":"https://notes.example/health"}},
+    "level":"alarm","addedAt":"2026-10-01T00:00:00.000Z"},"firing":true,
     "lastCheck":{"at":"2026-10-26T00:29:00.000Z","status":503,"ms":120,"problem":"HTTP 503"},
     "since":"2026-10-26T00:25:00.000Z","days":[{"day":"2026-10-25","checks":1440,"failed":4,"averageMs":90}]},
     "recent":[{"start":"2026-10-26T00:25:00.000Z","checks":5,"failed":4,"averageMs":118,"slowestMs":130}],
@@ -146,10 +153,9 @@ struct UptimeModelTests {
     @Test func `hands an agent a monitor's URL without its token, and never rounds a failed check to 100%`() {
         let detail = MonitorDetail(
             state: MonitorState(
-                monitor: Monitor(
-                    id: "m1", component: "notes-api", url: "https://ops:pw@notes.example/health?token=s3cret",
-                    addedAt: date("2026-10-01T00:00:00Z")),
-                days: [MonitorDay(day: "2026-10-25", checks: 14_400, failed: 1)]),
+                monitor: urlMonitor(
+                    "https://ops:pw@notes.example/health?token=s3cret", added: date("2026-10-01T00:00:00Z")),
+                days: [MonitorDay(day: "2026-10-25", checks: 14_400, failed: 1)], firing: false),
             recent: [], failures: [], incidents: [])
 
         let brief = UptimeBriefs.monitor(project: "notes", detail: detail, now: date("2026-10-26T00:30:00Z"))
@@ -157,5 +163,29 @@ struct UptimeModelTests {
         #expect(brief.contains("https://notes.example/health?…, of notes-api"))
         #expect(!brief.contains("s3cret") && !brief.contains("pw@"))
         #expect(brief.contains("Up 99.99% over the last 7 days"))
+    }
+
+    @Test func `says a monitor of counts fires by its incident, not by checks it never has`() {
+        let job = MonitorState(
+            monitor: Monitor(
+                id: "m2", component: "notes-api", environment: "prod",
+                condition: .nothingFor(
+                    NothingFor(subject: .operation(OperationSubject(operation: "cleanup.run")), minutes: 90)),
+                level: .timeSensitive, addedAt: date("2026-10-20T00:00:00Z")),
+            days: [], measured: MonitorMeasure(at: date("2026-10-26T00:29:00Z"), value: 0), firing: true)
+        let unseen = MonitorState(
+            monitor: job.monitor, days: [], firing: false)
+
+        #expect(job.status == .down && unseen.status == .unchecked)
+        #expect(UptimeAnswer([job, state(added: "2026-10-01T00:00:00Z", days: [])]) == .down(1, of: 2))
+        #expect(
+            UptimeAnswer.saysFine([job]) && !UptimeAnswer.saysFine([state(added: "2026-10-01T00:00:00Z", days: [])]))
+
+        let brief = UptimeBriefs.monitor(
+            project: "notes", detail: MonitorDetail(state: job, recent: [], failures: [], incidents: []),
+            now: date("2026-10-26T00:30:00Z"))
+        #expect(brief.contains("cleanup.run: nothing for 90 minutes, of notes-api (prod)"))
+        #expect(brief.contains("Now: Firing: 0 in 90 minutes, at 2026-10-26T00:29:00Z."))
+        #expect(brief.contains("its alerts come timeSensitive"))
     }
 }

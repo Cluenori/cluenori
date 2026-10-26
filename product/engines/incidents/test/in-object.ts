@@ -1,6 +1,6 @@
 import { ActivityLog, ProjectKey, WorkspaceKey } from "@cluenori/foundation"
 import { Projects } from "@cluenori/projects"
-import { ArchiveStore, Signals } from "@cluenori/signals"
+import { AppBatchStore, AppSignals, ArchiveStore, Signals } from "@cluenori/signals"
 import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { runInDurableObject } from "cloudflare:test"
@@ -43,7 +43,7 @@ const fakeWeb = Layer.succeed(
 export const inProject = <A, E>(
   project: string,
   now: number,
-  program: Effect.Effect<A, E, Incidents | Signals | Projects | ActivityLog>,
+  program: Effect.Effect<A, E, Incidents | Signals | AppSignals | Projects | ActivityLog>,
 ) =>
   Effect.promise(() =>
     runInDurableObject(env.PROJECT.getByName(project), (_instance, state) =>
@@ -56,12 +56,14 @@ export const inProject = <A, E>(
                 Layer.mergeAll(
                   Projects.layer({ project: ProjectKey.make(project) }),
                   Signals.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }),
+                  AppSignals.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }),
                 ),
               ),
               Layer.provideMerge(
                 ActivityLog.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }),
               ),
               Layer.provide(ArchiveStore.layerMemory),
+              Layer.provide(AppBatchStore.layerMemory()),
               Layer.provide(fakeWeb),
               Layer.provide(BrowserCrypto.layer),
               Layer.provide(SqliteClient.layer({ storage: state.storage })),

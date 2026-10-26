@@ -5,7 +5,7 @@
 // the same answers.
 
 import type { CalendarDay, EnvironmentKey, Period, ProjectKey } from "@cluenori/foundation"
-import type { Incident } from "@cluenori/incidents"
+import type { Incident, MonitorCondition } from "@cluenori/incidents"
 import type { ProjectSettings } from "@cluenori/projects"
 import type { ReleaseChanges, ReleaseCommit, ReleaseSource, ReleaseSummary, StoreBuild } from "@cluenori/releases"
 import type {
@@ -351,11 +351,28 @@ export const incidentActionOf = (project: ProjectKey, incident: Incident) => ({
   to: { page: "incident" as const, project, incident: incident.id },
 })
 
-/** What found an incident, in a word: "Down", "Failing", "Stopped". */
+/** What found an incident, in a word: "Down", "Failing", "Stopped", "Monitor" for one someone set up. */
 export const detectorWords: Readonly<Record<Incident["evidence"]["_tag"], string>> = {
   down: "Down",
   failing: "Failing",
   stopped: "Stopped",
+  monitor: "Monitor",
+}
+
+// What a monitor of counts saw, against its number: "None in 30 minutes", "p95 820 ms, above 500 ms",
+// "12% failed, above 5%", "14, more than 10".
+const monitorEvidenceWords = (condition: MonitorCondition, value: number) => {
+  switch (condition._tag) {
+    case "noAnswer":
+    case "nothingFor":
+      return `${count(value)} in ${lasting(("minutes" in condition ? condition.minutes : 1) * 60_000)}`
+    case "moreThan":
+      return `${count(value)} in ${lasting(condition.minutes * 60_000)}, more than ${count(condition.count)}`
+    case "p95Above":
+      return `p95 ${duration(value)}, above ${duration(condition.ms)}`
+    case "errorRateAbove":
+      return `${share(value, 100)} failed, above ${share(condition.percent, 100)}`
+  }
 }
 
 /**
@@ -371,6 +388,8 @@ export const evidenceWords = (evidence: Incident["evidence"], now: number) => {
       return `${share(evidence.failed, evidence.count)} of ${count(evidence.count)} failed in the last 15 minutes, usually ${share(evidence.usualRate, 1)}`
     case "stopped":
       return `Last ran ${ago(DateTime.toEpochMillis(evidence.lastRanAt), now)}, usually every ${duration(evidence.usualGapMs)}`
+    case "monitor":
+      return monitorEvidenceWords(evidence.condition, evidence.value)
   }
 }
 
@@ -398,6 +417,9 @@ export type NeedsYou = {
  */
 export const quietWords = (quiet: { readonly usualGapMs: number; readonly lastRanAt: DateTime.Utc }, now: number) =>
   `Usually runs about every ${lasting(quiet.usualGapMs)}; nothing for ${lasting(now - DateTime.toEpochMillis(quiet.lastRanAt))}. Maybe fine: Cluenori guessed this from its history`
+
+/** The minutes a monitor of a quiet operation as a job waits: twice its usual gap, whole minutes. */
+export const quietMinutesOf = (usualGapMs: number) => Math.max(1, Math.ceil((2 * usualGapMs) / 60_000))
 
 // One of Today's items as a row; its times are measured from when Today looked.
 const todayRowOf = (item: TodayItem, now: number): NeedsYou => {

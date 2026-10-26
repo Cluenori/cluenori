@@ -18,7 +18,7 @@ describe("incidents journey", () => {
       // The list answers first: one open, no one on it; and whether every monitor is up.
       yield* Effect.promise(() => expect.element(screen.getByText("1 open, 1 no one is on yet")).toBeVisible())
       yield* Effect.promise(() =>
-        expect.element(screen.getByRole("link", { name: /^Uptime:\s*The monitor is up/ })).toBeVisible(),
+        expect.element(screen.getByRole("link", { name: /^Uptime:\s*All 2 monitors are fine/ })).toBeVisible(),
       )
       yield* expectAccessible()
 
@@ -81,7 +81,7 @@ describe("incidents journey", () => {
       const screen = yield* Effect.promise(() => render(<App />))
 
       // Whether everything is up, first; then each monitor, with its days.
-      yield* Effect.promise(() => expect.element(screen.getByText("The monitor is up")).toBeVisible())
+      yield* Effect.promise(() => expect.element(screen.getByText("All 2 monitors are fine")).toBeVisible())
       const monitors = screen.getByRole("region", { name: "Monitors" })
       yield* Effect.promise(() => expect.element(monitors.getByText(/^Up for 1 \S+$/)).toBeVisible())
       yield* Effect.promise(() =>

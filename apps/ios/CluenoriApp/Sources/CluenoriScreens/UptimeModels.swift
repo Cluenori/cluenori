@@ -23,19 +23,59 @@ public final class IncidentModel {
 }
 
 /// A project's monitors, oldest first, each with how it is now and its last 90 days. Kept on the
-/// phone.
+/// phone. And removing one, sent once and never kept to send later.
 @Observable
 public final class MonitorsModel {
+    /// Why removing a monitor didn't happen.
+    public enum Problem: Equatable, Sendable {
+        /// The deployment didn't answer: the phone may be offline.
+        case unreachable
+        /// The deployment answered in a way this app doesn't understand, or refused.
+        case unreadable
+    }
+
     public let project: String
     public let monitors: Answer<MonitorList>
+    /// The monitor being removed, while it is.
+    public private(set) var removing: String? = nil
+
+    @ObservationIgnored private let api: CluenoriAPI
+    @ObservationIgnored private let keyRejected: () -> Void
 
     init(project: String, api: CluenoriAPI, context: AnswerContext) {
         self.project = project
+        self.api = api
+        keyRejected = context.keyRejected
         monitors = Answer(
             context,
             .init(key: "projects/\(project)/monitors") { () async throws(APIError) in
                 try await api.monitors(project: project)
             })
+    }
+
+    /// Removes monitor `id`, for whoever paired the phone: it is no longer looked at, and its open
+    /// incident resolves. Nil once removed, and gone from the list at once (as when it was already
+    /// gone), or why not.
+    public func remove(_ id: String) async -> Problem? {
+        guard removing == nil else { return .unreadable }
+        removing = id
+        defer { removing = nil }
+        do {
+            try await api.removeMonitor(project: project, monitor: id)
+        } catch .unauthorized {
+            keyRejected()
+            return .unreadable
+        } catch .unreachable {
+            return .unreachable
+        } catch .monitorNotFound {
+            // Already gone: what was asked holds.
+        } catch {
+            return .unreadable
+        }
+        if let list = monitors.value {
+            monitors.show(MonitorList(monitors: list.monitors.filter { $0.monitor.id != id }))
+        }
+        return nil
     }
 }
 
@@ -59,7 +99,52 @@ public final class MonitorModel {
     }
 }
 
-/// How a monitor is now, from its last check: passing, failing, or not checked yet.
+/// What a monitor watches: a URL it fetches, an operation, an event, an error group or a log
+/// message, as data; the web's `subjectWords` says the same.
+public enum MonitorSubject: Equatable, Sendable {
+    case url(String)
+    case operation(String)
+    case event(String)
+    case error(String)
+    case message(Int)
+    /// A subject this version of the app doesn't know, from a newer deployment.
+    case unknown
+}
+
+extension MonitorCondition {
+    /// What it watches.
+    public var subject: MonitorSubject {
+        switch self {
+        case .noAnswer(let condition): .url(condition.subject.url)
+        case .nothingFor(let condition):
+            switch condition.subject {
+            case .operation(let subject): .operation(subject.operation)
+            case .event(let subject): .event(subject.event)
+            case .unknown: .unknown
+            }
+        case .moreThan(let condition):
+            switch condition.subject {
+            case .error(let subject): .error(subject.error)
+            case .message(let subject): .message(subject.message)
+            case .event(let subject): .event(subject.event)
+            case .unknown: .unknown
+            }
+        case .p95Above(let condition): .operation(condition.subject.operation)
+        case .errorRateAbove(let condition): .operation(condition.subject.operation)
+        case .unknown: .unknown
+        }
+    }
+}
+
+extension Monitor {
+    /// The URL it fetches every minute, when it is a URL monitor; nil for a monitor of counts.
+    public var url: String? {
+        if case .noAnswer(let condition) = condition { condition.subject.url } else { nil }
+    }
+}
+
+/// How a monitor is now: a URL's by its last check, passing, failing or not checked yet; a monitor
+/// of counts's by whether it fires, or not looked at yet.
 public enum MonitorStatus: Equatable, Sendable {
     case up
     case down
@@ -68,8 +153,20 @@ public enum MonitorStatus: Equatable, Sendable {
 
 extension MonitorState {
     public var status: MonitorStatus {
+        guard monitor.url != nil else {
+            if firing { return .down }
+            return measured == nil ? .unchecked : .up
+        }
         guard let lastCheck else { return .unchecked }
         return lastCheck.problem == nil ? .up : .down
+    }
+}
+
+extension UptimeAnswer {
+    /// Whether the answer says fine or firing rather than up or down: once any monitor is of counts,
+    /// which no check makes "up".
+    public static func saysFine(_ monitors: [MonitorState]) -> Bool {
+        monitors.contains { $0.monitor.url == nil }
     }
 }
 
@@ -212,11 +309,62 @@ public enum UptimeBriefs {
         "'" + text.replacing("'", with: "'\\''") + "'"
     }
 
+    // "30 minutes", "12 hours", "1 day", "90 minutes": a monitor's window, as its owner set it.
+    private static func minutes(_ minutes: Int) -> String {
+        let (count, unit): (Int, String) =
+            minutes % 1440 == 0
+            ? (minutes / 1440, "day") : minutes % 60 == 0 ? (minutes / 60, "hour") : (minutes, "minute")
+        return "\(count) \(unit)\(count == 1 ? "" : "s")"
+    }
+
+    private static func number(_ value: Double) -> String {
+        value.rounded() == value
+            ? "\(Int(value))" : String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    /// What a monitor watches, in words: its URL (as `briefURL` names it) or operation, "event
+    /// user.registered", "error 3f9c0e2a7b1d4c58", "log message 12".
+    public static func subject(_ subject: MonitorSubject) -> String {
+        switch subject {
+        case .url(let url): briefURL(url)
+        case .operation(let operation): operation
+        case .event(let event): "event \(event)"
+        case .error(let error): "error \(error)"
+        case .message(let message): "log message \(message)"
+        case .unknown: "a subject this app doesn't know"
+        }
+    }
+
+    /// When a monitor fires, in a line: "doesn't answer two checks in a row", "nothing for 30
+    /// minutes", "p95 above 500 ms over 15 minutes".
+    public static func condition(_ condition: MonitorCondition) -> String {
+        switch condition {
+        case .noAnswer: "doesn't answer two checks in a row"
+        case .nothingFor(let nothing): "nothing for \(minutes(nothing.minutes))"
+        case .moreThan(let more): "more than \(more.count) in \(minutes(more.minutes))"
+        case .p95Above(let p95): "p95 above \(milliseconds(p95.ms)) over \(minutes(p95.minutes))"
+        case .errorRateAbove(let rate): "more than \(number(rate.percent))% failed over \(minutes(rate.minutes))"
+        case .unknown(let tag): "a condition this app doesn't know (\(tag))"
+        }
+    }
+
+    // What a monitor of counts measured: "0 in 30 minutes", "p95 820 ms", "12% failed".
+    private static func measured(_ condition: MonitorCondition, _ value: Double) -> String {
+        switch condition {
+        case .nothingFor(let nothing): "\(number(value)) in \(minutes(nothing.minutes))"
+        case .moreThan(let more): "\(number(value)) in \(minutes(more.minutes))"
+        case .p95Above: "p95 \(milliseconds(value))"
+        case .errorRateAbove: "\(number(value))% failed"
+        case .noAnswer, .unknown: number(value)
+        }
+    }
+
     private static func kind(_ evidence: Evidence) -> String {
         switch evidence {
         case .down: "down"
         case .failing: "failing"
         case .stopped: "stopped"
+        case .monitor: "monitor"
         case .unknown(let tag): tag
         }
     }
@@ -228,6 +376,8 @@ public enum UptimeBriefs {
             "\(percent(failing.count == 0 ? 0 : Double(failing.failed) / Double(failing.count))) of \(failing.count) failed in the last 15 minutes, usually \(percent(failing.usualRate))"
         case .stopped(let stopped):
             "last ran \(iso(stopped.lastRanAt)), usually every \(milliseconds(stopped.usualGapMs))"
+        case .monitor(let monitor):
+            "\(measured(monitor.condition, monitor.value)); it fires on \(condition(monitor.condition))"
         case .unknown: "evidence this app doesn't know"
         }
     }
@@ -256,6 +406,8 @@ public enum UptimeBriefs {
                 "Its operation over time: ./cluenori operation \(project) \(quoted(failing.operation)) --component \(incident.component)\(environment.map { " --environment \($0)" } ?? "")."
             case .stopped(let stopped):
                 "Its operation over time: ./cluenori operation \(project) \(quoted(stopped.operation)) --component \(incident.component)\(environment.map { " --environment \($0)" } ?? "")."
+            case .monitor(let monitor):
+                "Its monitor: ./cluenori monitor show \(project) \(monitor.monitor), or GET /api/projects/\(project)/monitors/\(monitor.monitor)."
             case .unknown: ""
             }
         let releases =
@@ -278,8 +430,14 @@ public enum UptimeBriefs {
         ].joined(separator: "\n")
     }
 
-    /// How a monitor is now, said up to its last check: `Up for 3 days`, `Down: HTTP 503`.
+    /// How a monitor is now, said up to its last check: `Up for 3 days`, `Down: HTTP 503`; a monitor
+    /// of counts's by what it last measured: `Firing: p95 820 ms`.
     public static func standing(_ state: MonitorState) -> String {
+        if state.monitor.url == nil {
+            guard let measure = state.measured else { return "Not looked at yet" }
+            let value = measure.value.map { measured(state.monitor.condition, $0) } ?? "too few runs to judge"
+            return "\(state.firing ? "Firing" : "Fine"): \(value)"
+        }
         guard let check = state.lastCheck else { return "Not checked yet" }
         let lasted = state.since.map { " since \(iso($0))" } ?? ""
         return check.problem.map { "Down\(lasted): \($0)" } ?? "Up\(lasted)"
@@ -290,6 +448,25 @@ public enum UptimeBriefs {
     public static func monitor(project: String, detail: MonitorDetail, now: Date) -> String {
         let state = detail.state
         let monitor = state.monitor
+        let read =
+            "Read it with ./cluenori monitor show \(project) \(monitor.id), or GET /api/projects/\(project)/monitors/\(monitor.id); its incidents with ./cluenori incident \(project) <ID>."
+        guard let url = monitor.url else {
+            let place = monitor.component + (monitor.environment.map { " (\($0))" } ?? "")
+            let incidents =
+                detail.incidents.isEmpty
+                ? "It never fired."
+                : "Its incidents, the latest first: "
+                    + detail.incidents.prefix(5).map {
+                        "\($0.id) opened \(iso($0.openedAt))\($0.resolvedAt == nil ? ", open" : "")"
+                    }
+                    .joined(separator: "; ") + "."
+            return [
+                "Look into this monitor in Cluenori project \(project): \(subject(monitor.condition.subject)): \(condition(monitor.condition)), of \(place), looked at every minute since \(iso(monitor.addedAt)); its alerts come \(monitor.level.rawValue).",
+                "Now: \(standing(state))\(state.measured.map { ", at \(iso($0.at))" } ?? "").",
+                incidents,
+                read,
+            ].joined(separator: "\n")
+        }
         let week = UptimeFacts.passedShare(UptimeFacts.lastDays(of: state, now: now, days: 7)).map(uptime)
         let all = UptimeFacts.passedShare(state.days).map(uptime)
         let failures = detail.failures.prefix(5).map { check in
@@ -297,13 +474,11 @@ public enum UptimeBriefs {
         }
         return
             ([
-                "Look into this monitor in Cluenori project \(project): \(briefURL(monitor.url)), of \(monitor.component), fetched every minute since \(iso(monitor.addedAt)); a check passes with a status below 400 within 10 seconds.",
+                "Look into this monitor in Cluenori project \(project): \(briefURL(url)), of \(monitor.component), fetched every minute since \(iso(monitor.addedAt)); a check passes with a status below 400 within 10 seconds.",
                 "Now: \(standing(state))\(state.lastCheck.map { ", last checked \(iso($0.at))" } ?? "").",
                 "Up \(week ?? "unknown") over the last 7 days, \(all ?? "unknown") over its last \(state.days.count) days with checks.",
             ]
             + (failures.isEmpty ? [] : ["Its latest failed checks: \(failures.joined(separator: "; "))."])
-            + [
-                "Read it with ./cluenori monitor show \(project) \(monitor.id), or GET /api/projects/\(project)/monitors/\(monitor.id); its incidents with ./cluenori incident \(project) <ID>."
-            ]).joined(separator: "\n")
+            + [read]).joined(separator: "\n")
     }
 }

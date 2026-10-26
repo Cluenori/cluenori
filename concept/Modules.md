@@ -209,15 +209,31 @@ A detector is a fixed rule that opens an incident. It compares each measure with
 | --- | --- | --- |
 | Down | A monitor's URL fails two checks in a row | Alarm |
 | Failing | An operation's error rate over the last 15 minutes is at least 2% and three times its usual, with at least 5 failures | Alarm |
-| Stopped | A job I declared, such as a cleanup that runs every hour, misses its run. Cluenori never guesses which operations are jobs: an endpoint people happen to call every half hour is not one, and every alert must be real. Until jobs can be declared, nothing opens as stopped. | Time sensitive |
 | New error | An error group appears for the first time | None; the morning brief |
 | Slower | An operation's p95 over the last day is at least 1.5 times its p95 over the 7 days before, and at least 100 ms more | None; the morning brief |
+| Quiet | An operation that usually runs about every N minutes, as Cluenori guessed from its history, hasn't for a while: "GET /api/sync usually runs about every 31 minutes; nothing for 3 hours. Maybe fine: Cluenori guessed this from its history." Shown where Slower shows, with "Monitor this" | None; the morning brief |
 
-A monitor is the only thing I set up: one URL for each component, such as its health endpoint, which Cluenori checks every minute. A small app is silent for hours at night, so silence alone cannot tell "down" from "no users".
+Every alert must be real, so nothing guessed ever alerts (decided on 2026-10-26). Cluenori used to learn a "schedule" from how an operation ran and open "stopped" when it missed one; an endpoint an app called about every 31 minutes was taken for a job and alerted. That guess is now only the Quiet hint, which never opens an incident or sends a push. Incidents opened as "stopped" before stay readable, and never notify.
+
+### Monitors
+
+A monitor is what I set up: a subject, a condition, and a level. Down and Failing need nothing; a monitor is for what Cluenori can't know by itself, such as which operation is a job, or how many failed sign-ins are too many.
+
+| Condition | Subject | Fires when | Example title |
+| --- | --- | --- | --- |
+| Doesn't answer | A URL, such as a component's health endpoint | Two checks in a row fail (Down) | `https://notes.example/health is down: HTTP 503` |
+| Nothing for N | An operation (a job) or an event | None in the last N minutes | `cleanup.run hasn't run for 30 minutes` |
+| More than N in a window | An error, a log message or an event | More than N in the last M minutes | `Error 3f9c… happened 14 times in 1 hour, more than 10` |
+| p95 above X | An operation | Its p95 over the last M minutes is above X ms, with at least 5 runs | `GET /api/card p95 820 ms, above 500 ms` |
+| Error rate above X | An operation | More than X% of its runs failed over the last M minutes, with at least 5 runs | `GET /api/card: 12% failed, above 5%` |
+
+Its level is alarm, time sensitive or quiet (no push); a URL monitor is an alarm by default, others time sensitive. Each is set up in one step: "Monitor this" on an operation's, error's, log message's or event's page offers the conditions that fit it; Uptime adds a URL; and `./cluenori monitor add` does both. It is removed just as explicitly, and removing it resolves its open incident. Each is looked at in the minute's check, from the counts Signals already keeps. No formulas, query language, combinations or rule dashboards.
+
+A small app is silent for hours at night, so silence alone cannot tell "down" from "no users": that's why a URL monitor fetches, and why "nothing for N" is set by someone who knows the subject.
 
 ### Incidents
 
-An incident is one problem from its start to its recovery, one for each detector and subject: an operation, a monitor or an error group. It alerts me once when it opens, at its detector's level, and again only when it gets worse. It resolves after 10 minutes without the problem and tells me "Recovered", quietly. A problem that returns within 30 minutes reopens the same incident, with a time-sensitive alert. Acknowledging an incident stops its alerts. Each incident keeps its evidence: the chart of its window, the error group behind it and a few failed traces.
+An incident is one problem from its start to its recovery, one for each detector and subject: an operation, a monitor or an error group. It alerts me once when it opens, at its detector's level (a monitor's own), and again only when it gets worse. It resolves after 10 minutes without the problem and tells me "Recovered", quietly. A problem that returns within 30 minutes reopens the same incident, with a time-sensitive alert. Acknowledging an incident stops its alerts. Each incident keeps its evidence: the chart of its window, the error group behind it and a few failed traces.
 
 Every alert goes out when it happens, a minute or two after the problem starts. There are no quiet hours.
 
@@ -227,8 +243,8 @@ Alerts reach the Cluenori iOS app through APNs, at three levels:
 
 | Level | What it does | For |
 | --- | --- | --- |
-| Alarm | Rings through silent mode and Do Not Disturb, like an alarm clock | Down, Failing |
-| Time sensitive | Breaks through a Focus I allow it in, and follows the silent switch | Stopped, a reopened incident |
+| Alarm | Rings through silent mode and Do Not Disturb, like an alarm clock | Down, Failing, a monitor set to alarm |
+| Time sensitive | Breaks through a Focus I allow it in, and follows the silent switch | A monitor set to it (a job that stopped), a reopened incident |
 | Quiet | A notification without a sound, which doesn't light the screen | Recovered, Acknowledged |
 
 An alarm is an AlarmKit alarm: the push wakes the app's notification extension, which starts one, and it rings through a locked phone, silent mode and Do Not Disturb. It needs no entitlement from Apple. It says what is down, rings our own siren in the app's red, and has an Acknowledge button that acknowledges the incident and stops it.

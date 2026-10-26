@@ -1,34 +1,69 @@
-import type { ProjectKey } from "@cluenori/foundation"
-import type { MonitorDetail, MonitorId, MonitorState, MonitorStep } from "@cluenori/incidents"
-import { useAtomValue } from "@effect/atom-react"
+import type { ComponentKey, ProjectKey } from "@cluenori/foundation"
+import type { AlertLevel, MonitorDetail, MonitorId, MonitorState, MonitorStep } from "@cluenori/incidents"
+import { AddMonitor } from "@cluenori/incidents"
+import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { cn } from "cn"
-import { DateTime } from "effect"
+import { DateTime, Exit, Result, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { ActivityIcon, ArrowLeftIcon, CalendarDaysIcon, CircleXIcon, RadarIcon, SirenIcon } from "lucide-react"
+import {
+  ActivityIcon,
+  ArrowLeftIcon,
+  CalendarDaysIcon,
+  CircleXIcon,
+  PlusIcon,
+  RadarIcon,
+  SirenIcon,
+  Trash2Icon,
+} from "lucide-react"
 import { useState } from "react"
 
 import type { StripDay } from "@/incident-facts"
 import {
   lastDaysOf,
   monitorBriefOf,
+  monitorNameOf,
   standingWordsOf,
   statusOf,
   stripOf,
   uptimeAnswerOf,
   uptimeOf,
+  urlOf,
 } from "@/incident-facts"
 import { failureColor } from "@/lib/colors"
 import { axisTime, count, duration, moment, uptime } from "@/lib/format"
-import { monitorAtom, monitorsAtom, useComponentKeys } from "@/project-data"
+import { addMonitorAtom, monitorAtom, monitorsAtom, removeMonitorAtom, useComponentKeys } from "@/project-data"
 import { colorOf, incidentActionOf } from "@/project-facts"
-import { Link } from "@/router"
+import { Link, navigate } from "@/router"
 import type { ColumnSpan } from "@/views/bar-rows"
 import { BarRows, largestOf } from "@/views/bar-rows"
 import { CopyButton } from "@/views/copy-button"
 import { IncidentRow } from "@/views/incident-row"
-import { Loaded } from "@/views/loaded"
+import { failureText, Loaded } from "@/views/loaded"
 import { Panel, PanelStats } from "@/views/panel"
-import { buttonVariants } from "@/views/ui/button"
+import { Segmented } from "@/views/segmented"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/views/ui/alert-dialog"
+import { Button, buttonVariants } from "@/views/ui/button"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/views/ui/dialog"
+import { Input } from "@/views/ui/input"
+import { NativeSelect, NativeSelectOption } from "@/views/ui/native-select"
 import { UptimeStrip } from "@/views/uptime-strip"
 
 const clockNow = () => DateTime.toEpochMillis(DateTime.nowUnsafe())
@@ -40,6 +75,9 @@ const shownDays = 90
 // Each status's color: red when it fails now, mint when it passes, gray before its first check.
 const statusDot = { up: "bg-mint", down: "bg-failure", unchecked: "bg-muted-foreground/50" } as const
 const toneDot = { failure: "bg-failure", steady: "bg-mint", quiet: "bg-muted-foreground/50" } as const
+
+// How a monitor's alerts reach phones, in a word or two.
+const levelWords = { alarm: "Alarm", timeSensitive: "Time sensitive", quiet: "Quiet" } as const
 
 // The strip's sentence, for screen readers: "Last 30 days: 99.86% up, 1 day with failed checks".
 const stripLabel = (days: ReadonlyArray<StripDay>) => {
@@ -65,6 +103,7 @@ function MonitorRow({
   readonly now: number
 }) {
   const { monitor, lastCheck } = state
+  const url = urlOf(monitor)
   const days = stripOf(state, now, listedDays)
   const lasted = uptimeOf(lastDaysOf(state, now, listedDays))
   const status = statusOf(state)
@@ -76,23 +115,27 @@ function MonitorRow({
       <span className="flex min-w-0 items-center gap-4">
         <span className={cn("size-2 shrink-0", statusDot[status])} />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="font-mono text-sm wrap-anywhere">{monitor.url}</span>
+          <span className="font-mono text-sm wrap-anywhere">{monitorNameOf(monitor)}</span>
           <span className="flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
             <span className="flex items-center gap-2">
               <span className="size-2 shrink-0" style={{ backgroundColor: color }} />
               {monitor.component}
+              {monitor.environment === undefined ? "" : `, ${monitor.environment}`}
             </span>
+            <span>{levelWords[monitor.level]}</span>
             <span className={cn(status === "down" && "text-failure", status === "up" && "text-mint-ink")}>
               {standingWordsOf(state)}
             </span>
             {lastCheck?.ms !== undefined && <span>answers in {duration(lastCheck.ms)}</span>}
           </span>
         </span>
-        <span className="shrink-0 font-mono text-sm">
-          {lasted === undefined ? <span className="text-muted-foreground">–</span> : lasted}
-        </span>
+        {url !== undefined && (
+          <span className="shrink-0 font-mono text-sm">
+            {lasted === undefined ? <span className="text-muted-foreground">–</span> : lasted}
+          </span>
+        )}
       </span>
-      <UptimeStrip days={days} label={stripLabel(days)} />
+      {url !== undefined && <UptimeStrip days={days} label={stripLabel(days)} />}
     </Link>
   )
 }
@@ -118,8 +161,9 @@ export function UptimePage({ project }: { readonly project: ProjectKey }) {
           </p>
         )}
         <p className="text-sm text-muted-foreground">
-          Each monitor is fetched every minute, and passes with a status below 400 within 10 seconds. Two failed checks
-          in a row open an incident.
+          Each monitor is looked at every minute. A URL is fetched and passes with a status below 400 within 10 seconds;
+          two failed checks in a row open an incident. Others watch an operation, error, log message or event; add those
+          with Monitor this on its page.
         </p>
       </header>
 
@@ -128,18 +172,21 @@ export function UptimePage({ project }: { readonly project: ProjectKey }) {
         title="Monitors"
         subtitle={`How each is now, and its last ${listedDays} days, a cell a day`}
         action={
-          <Link to={{ page: "incidents", project }} className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Incidents
-          </Link>
+          <span className="flex items-center gap-2">
+            <AddUrlMonitor project={project} components={components} />
+            <Link to={{ page: "incidents", project }} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Incidents
+            </Link>
+          </span>
         }
       >
         <Loaded result={monitors}>
           {(list) =>
             list.monitors.length === 0 ? (
               <p className="max-w-2xl px-5 py-5 text-[15px]">
-                No monitors. Add one for each component, such as its health endpoint:{" "}
+                No monitors. Add one for each component, such as its health endpoint, with Add a monitor, or{" "}
                 <span className="font-mono text-sm">
-                  ./cluenori monitor add {project} {"<component>"} {"<url>"}
+                  ./cluenori monitor add {project} {"<component>"} --url {"<url>"}
                 </span>
               </p>
             ) : (
@@ -287,6 +334,156 @@ function FailuresPanel({ detail }: { readonly detail: MonitorDetail }) {
   )
 }
 
+/** Removing a monitor, which resolves its open incident, after asking; then every monitor shows. */
+function RemoveMonitor({ project, monitor }: { readonly project: ProjectKey; readonly monitor: MonitorId }) {
+  const [open, setOpen] = useState(false)
+  const [problem, setProblem] = useState<string | undefined>(undefined)
+  const remove = useAtomSet(removeMonitorAtom, { mode: "promiseExit" })
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger render={<Button variant="ghost" size="sm" />}>
+        <Trash2Icon />
+        Remove
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove this monitor?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {problem ?? "It stops being looked at, and its open incident resolves. Its past incidents stay."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep it</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              void remove({ project, monitor }).then((exit) => {
+                if (Exit.isSuccess(exit)) {
+                  setOpen(false)
+                  navigate({ page: "uptime", project })
+                } else {
+                  setProblem(failureText(exit.cause))
+                }
+              })
+            }}
+          >
+            Remove the monitor
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+// A URL typed in, and the monitor, are checked by the API's own rules, so a refusal says the rule.
+const decodeMonitor = Schema.decodeUnknownResult(AddMonitor)
+
+/** Adding a monitor of a URL, in a dialog: its component, its URL, and its alerts' level. */
+function AddUrlMonitor({
+  project,
+  components,
+}: {
+  readonly project: ProjectKey
+  readonly components: ReadonlyArray<ComponentKey>
+}) {
+  const [open, setOpen] = useState(false)
+  const [component, setComponent] = useState<string>("")
+  const [url, setUrl] = useState("")
+  const [level, setLevel] = useState<AlertLevel>("alarm")
+  const [problem, setProblem] = useState<string | undefined>(undefined)
+  const add = useAtomSet(addMonitorAtom, { mode: "promiseExit" })
+  const chosen = component === "" ? (components[0] ?? "") : component
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        setProblem(undefined)
+      }}
+    >
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        <PlusIcon />
+        Add a monitor
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Monitor a URL</DialogTitle>
+          <DialogDescription>
+            Fetched every minute; it passes with a status below 400 within 10 seconds, and two failed checks in a row
+            open an incident. To watch an operation, error, log message or event, use Monitor this on its page.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-5"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const decoded = decodeMonitor({
+              component: chosen,
+              condition: { _tag: "noAnswer", subject: { _tag: "url", url: url.trim() } },
+              level,
+            })
+            if (Result.isFailure(decoded)) {
+              setProblem(decoded.failure.message)
+              return
+            }
+            void add({ project, monitor: decoded.success }).then((exit) => {
+              if (Exit.isSuccess(exit)) {
+                setOpen(false)
+                navigate({ page: "monitor", project, monitor: exit.value.id })
+              } else {
+                setProblem(failureText(exit.cause))
+              }
+            })
+          }}
+        >
+          <div className="flex flex-col gap-1.5 text-sm">
+            <span id={`${project}-monitor-component`}>Component</span>
+            <NativeSelect
+              aria-labelledby={`${project}-monitor-component`}
+              value={chosen}
+              onChange={(event) => setComponent(event.target.value)}
+              className="h-9 w-full"
+            >
+              {components.map((key) => (
+                <NativeSelectOption key={key} value={key}>
+                  {key}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </div>
+          <label htmlFor={`${project}-monitor-url`} className="flex flex-col gap-1.5 text-sm">
+            URL
+            <Input
+              id={`${project}-monitor-url`}
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://api.notes.app/health"
+              autoComplete="off"
+              spellCheck={false}
+              className="h-9 font-mono"
+            />
+          </label>
+          <Segmented
+            label="Its alerts"
+            options={[
+              { value: "alarm", label: "Alarm" },
+              { value: "timeSensitive", label: "Time sensitive" },
+              { value: "quiet", label: "Quiet" },
+            ]}
+            value={level}
+            onChange={setLevel}
+          />
+          {problem !== undefined && <p className="text-sm text-failure">{problem}</p>}
+          <DialogFooter>
+            <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
+            <Button type="submit">Add the monitor</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /**
  * One monitor, by its ID, an item (`concept/Experience.md`): no period, its whole history. How it is
  * now and since when first; then its last 24 hours by five minutes, its last 90 days, its failed
@@ -325,7 +522,9 @@ export function MonitorPage({ project, monitor: id }: { readonly project: Projec
                 <span className={cn("size-2 shrink-0", statusDot[status ?? "unchecked"])} />
                 {standingWordsOf(state)}
               </p>
-              <h1 className="font-mono text-xl font-semibold tracking-[-0.01em] wrap-anywhere">{state.monitor.url}</h1>
+              <h1 className="font-mono text-xl font-semibold tracking-[-0.01em] wrap-anywhere">
+                {monitorNameOf(state.monitor)}
+              </h1>
               <p className="flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
                 <span className="flex items-center gap-2">
                   <span
@@ -333,7 +532,9 @@ export function MonitorPage({ project, monitor: id }: { readonly project: Projec
                     style={{ backgroundColor: colorOf(state.monitor.component, components) }}
                   />
                   {state.monitor.component}
+                  {state.monitor.environment === undefined ? "" : `, ${state.monitor.environment}`}
                 </span>
+                <span>{levelWords[state.monitor.level]} alerts</span>
                 <span>Watched since {moment(DateTime.toEpochMillis(state.monitor.addedAt))}</span>
                 {state.lastCheck !== undefined && (
                   <span>
@@ -349,19 +550,36 @@ export function MonitorPage({ project, monitor: id }: { readonly project: Projec
         {detail !== undefined && (
           <div className="flex max-w-full min-w-0 flex-wrap items-center gap-3">
             <CopyButton text={monitorBriefOf(project, detail, now)} label="Copy for an agent" />
+            <RemoveMonitor project={project} monitor={id} />
           </div>
         )}
       </header>
       <Loaded result={result}>
         {(shown) => (
           <div className="grid gap-4 xl:grid-cols-2">
-            <div className="min-w-0 xl:col-span-2">
-              <RecentPanel detail={shown} now={now} />
-            </div>
-            <DaysPanel state={shown.state} now={now} />
-            <Panel icon={SirenIcon} title="Incidents" subtitle="Of its URL, the latest opened first">
+            {urlOf(shown.state.monitor) !== undefined && (
+              <>
+                <div className="min-w-0 xl:col-span-2">
+                  <RecentPanel detail={shown} now={now} />
+                </div>
+                <DaysPanel state={shown.state} now={now} />
+              </>
+            )}
+            <Panel
+              icon={SirenIcon}
+              title="Incidents"
+              subtitle={
+                urlOf(shown.state.monitor) === undefined
+                  ? "Its own, the latest opened first"
+                  : "Of its URL, the latest opened first"
+              }
+            >
               {shown.incidents.length === 0 ? (
-                <p className="px-5 py-5 text-sm text-muted-foreground">It never was down two checks in a row.</p>
+                <p className="px-5 py-5 text-sm text-muted-foreground">
+                  {urlOf(shown.state.monitor) === undefined
+                    ? "It never fired."
+                    : "It never was down two checks in a row."}
+                </p>
               ) : (
                 <ul className="divide-y">
                   {shown.incidents.map((incident) => (
@@ -372,9 +590,11 @@ export function MonitorPage({ project, monitor: id }: { readonly project: Projec
                 </ul>
               )}
             </Panel>
-            <div className="min-w-0 xl:col-span-2">
-              <FailuresPanel detail={shown} />
-            </div>
+            {urlOf(shown.state.monitor) !== undefined && (
+              <div className="min-w-0 xl:col-span-2">
+                <FailuresPanel detail={shown} />
+              </div>
+            )}
           </div>
         )}
       </Loaded>

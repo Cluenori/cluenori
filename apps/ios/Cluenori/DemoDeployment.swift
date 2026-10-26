@@ -750,6 +750,10 @@
                 return ok(
                     MonitorDetail(
                         state: monitorStates(now)[1], recent: steps(now, failing: false), failures: [], incidents: []))
+            case ("GET", "\(project)/monitors/\(cleanupId)"):
+                return ok(MonitorDetail(state: monitorStates(now)[2], recent: [], failures: [], incidents: []))
+            case ("DELETE", _) where path.hasPrefix("\(project)/monitors/"):
+                return (204, Data())
             case ("GET", "\(project)/load"):
                 return ok(load(now))
             case ("GET", "\(project)/operations"):
@@ -848,6 +852,7 @@
 
         private static let healthId = "019a0fe0-7200-7b00-8c00-000000000002"
         private static let webId = "019a0fe0-7200-7b00-8c00-000000000004"
+        private static let cleanupId = "019a0fe0-7200-7b00-8c00-000000000006"
 
         // 90 UTC days of checks up to today's, from `added`: a bad day 12 days ago, some failures 3
         // days ago, and today's, failing now when `failing`.
@@ -867,17 +872,29 @@
             return [
                 MonitorState(
                     monitor: Monitor(
-                        id: healthId, component: "notes-api", url: "https://notes.example/health", addedAt: healthAdded),
+                        id: healthId, component: "notes-api",
+                        condition: .noAnswer(NoAnswer(subject: UrlSubject(url: "https://notes.example/health"))),
+                        level: .alarm, addedAt: healthAdded),
                     lastCheck: MonitorCheck(
                         at: now.addingTimeInterval(-20), status: 503, ms: 142, problem: "HTTP 503"),
                     since: now.addingTimeInterval(-5 * minute),
-                    days: days(now, added: healthAdded, failing: true)),
+                    days: days(now, added: healthAdded, failing: true), firing: true),
                 MonitorState(
                     monitor: Monitor(
-                        id: webId, component: "notes-web", url: "https://notes.example/", addedAt: webAdded),
+                        id: webId, component: "notes-web",
+                        condition: .noAnswer(NoAnswer(subject: UrlSubject(url: "https://notes.example/"))),
+                        level: .alarm, addedAt: webAdded),
                     lastCheck: MonitorCheck(at: now.addingTimeInterval(-20), status: 200, ms: 64),
                     since: now.addingTimeInterval(-3 * day + 40 * minute),
-                    days: days(now, added: webAdded, failing: false)),
+                    days: days(now, added: webAdded, failing: false), firing: false),
+                // The nightly cleanup, declared a job: it ran 12 minutes ago.
+                MonitorState(
+                    monitor: Monitor(
+                        id: cleanupId, component: "notes-api", environment: "prod",
+                        condition: .nothingFor(
+                            NothingFor(subject: .operation(OperationSubject(operation: "cleanup.run")), minutes: 30)),
+                        level: .timeSensitive, addedAt: now.addingTimeInterval(-9 * day)),
+                    days: [], measured: MonitorMeasure(at: now.addingTimeInterval(-20), value: 3), firing: false),
             ]
         }
 

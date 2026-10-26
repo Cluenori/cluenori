@@ -178,6 +178,8 @@ struct OperationScreen: View {
                 switch incident.evidence {
                 case .failing(let failing): failing.operation
                 case .stopped(let stopped): stopped.operation
+                case .monitor(let fired):
+                    if case .operation(let operation) = fired.condition.subject { operation } else { nil }
                 case .down, .unknown: nil
                 }
             return name == ref.name && incident.component == ref.component

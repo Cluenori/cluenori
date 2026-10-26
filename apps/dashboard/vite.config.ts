@@ -26,7 +26,10 @@ import { defineConfig } from "vite"
 // route and its atom; its page, and a person's, load after start. And to 258 KB when an incident and
 // a monitor became items (256.5 KB to 257.6 KB): their endpoints and Schemas, an incident's life
 // and a monitor's checks, in the typed client, their routes and atoms; the pages load after start.
-const firstLoadBudget = { scriptKb: 258, styleKb: 36 }
+// And to 259 KB when a monitor became a subject, a condition and a level (257.6 KB to 258.8 KB): its
+// five conditions' and subjects' Schemas in the typed client, the add and remove atoms, and Today's
+// quiet hint; the wording of monitors, and the forms, load after start.
+const firstLoadBudget = { scriptKb: 259, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

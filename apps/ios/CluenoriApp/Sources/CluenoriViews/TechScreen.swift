@@ -380,6 +380,7 @@ struct IncidentCauseText: View {
         case .down: Text("Down", bundle: #bundle, comment: "An incident's kind: a monitor is down.")
         case .failing: Text("Failing", bundle: #bundle, comment: "An incident's kind: an operation fails.")
         case .stopped: Text("Stopped", bundle: #bundle, comment: "An incident's kind: an operation stopped running.")
+        case .monitor: Text("Monitor", bundle: #bundle, comment: "An incident's kind: a monitor someone set up fired.")
         case .other: Text("Incident", bundle: #bundle, comment: "An incident of a kind this app doesn't know.")
         }
     }

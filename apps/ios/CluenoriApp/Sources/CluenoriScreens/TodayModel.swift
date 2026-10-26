@@ -2,12 +2,14 @@ import CluenoriClient
 import Foundation
 import Observation
 
-/// What an incident is about, by the detector that opened it: a monitor down, an operation failing,
-/// or one that stopped running.
+/// What an incident is about, by the detector that opened it: a URL monitor down, an operation
+/// failing, one that stopped running (opened by a guess, before monitors), or a monitor someone set up
+/// firing.
 public enum IncidentCause: Equatable, Sendable {
     case down
     case failing
     case stopped
+    case monitor
     /// A detector this version of the app doesn't know, from a newer deployment.
     case other
 
@@ -16,6 +18,7 @@ public enum IncidentCause: Equatable, Sendable {
         case .down: self = .down
         case .failing: self = .failing
         case .stopped: self = .stopped
+        case .monitor: self = .monitor
         case .unknown: self = .other
         }
     }

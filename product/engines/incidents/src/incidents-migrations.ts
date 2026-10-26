@@ -133,5 +133,32 @@ export const migrateIncidents = Migrator.make({})({
         PRIMARY KEY (component, environment, operation)
       ) WITHOUT ROWID`
     }),
+    // Monitors of anything: each a condition, as JSON, of one component in one environment ('' for
+    // any, and for a URL's), with its alerts' level. Every monitor until now fetched a URL and rang
+    // as an alarm, so each becomes `noAnswer` of its URL at `alarm`. What a monitor of counts last
+    // measured, one row each, in `incidents_monitor_measures`: `value` NULL when it couldn't measure.
+    "0005_monitors": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE incidents_monitors_any (
+        id TEXT PRIMARY KEY,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        condition TEXT NOT NULL,
+        level TEXT NOT NULL,
+        added_at TEXT NOT NULL,
+        UNIQUE (component, environment, condition)
+      )`
+      yield* sql`INSERT INTO incidents_monitors_any (id, component, environment, condition, level, added_at)
+        SELECT id, component, '',
+          json_object('_tag', 'noAnswer', 'subject', json_object('_tag', 'url', 'url', url)), 'alarm', added_at
+        FROM incidents_monitors`
+      yield* sql`DROP TABLE incidents_monitors`
+      yield* sql`ALTER TABLE incidents_monitors_any RENAME TO incidents_monitors`
+      yield* sql`CREATE TABLE incidents_monitor_measures (
+        monitor TEXT PRIMARY KEY,
+        at INTEGER NOT NULL,
+        value REAL
+      ) WITHOUT ROWID`
+    }),
   }),
 })

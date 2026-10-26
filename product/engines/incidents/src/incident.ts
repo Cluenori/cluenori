@@ -1,7 +1,7 @@
 import { ComponentKey, EnvelopeName, EnvironmentKey, Instant, ReleaseVersion, Uuidv7 } from "@cluenori/foundation"
 import { Schema } from "effect"
 
-import { MonitorId, MonitorUrl } from "./monitor.ts"
+import { MonitorCondition, MonitorId, MonitorUrl } from "./monitor.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Rate = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
@@ -12,16 +12,18 @@ export const IncidentId = Uuidv7.pipe(Schema.brand("IncidentId"))
 export type IncidentId = typeof IncidentId.Type
 
 /**
- * Which detector opened an incident, each comparing with its own usual, so none has a threshold to
- * set:
+ * Which detector opened an incident:
  * - `down`: a monitor's URL failed two checks in a row.
  * - `failing`: an operation's error rate over the last 15 minutes is at least 2% and three times
  *   its usual, the 7 days before, with at least five failures.
  * - `stopped`: an operation whose schedule was guessed from how it ran missed twice its usual gap.
  *   Only incidents opened before 26 October 2026 say it: a guess is never an incident now, and a
  *   quiet operation is listed apart, as a hint (`QuietOperation`).
+ * - `monitor`: a monitor of counts fired, as its condition says: what someone chose to watch.
+ * `failing` compares with each operation's own usual, so it has no threshold to set; `down` and
+ * `monitor` follow a monitor someone added.
  */
-export const Detector = Schema.Literals(["down", "failing", "stopped"])
+export const Detector = Schema.Literals(["down", "failing", "stopped", "monitor"])
 export type Detector = typeof Detector.Type
 
 /** What a detector saw when the incident opened, or last got worse; its tag is the detector. */
@@ -49,6 +51,15 @@ export const Evidence = Schema.Union([
     /** Its usual gap between runs. */
     usualGapMs: Milliseconds,
   }).annotate({ identifier: "StoppedEvidence" }),
+  Schema.TaggedStruct("monitor", {
+    monitor: MonitorId,
+    /** Its condition then. */
+    condition: MonitorCondition,
+    /** What it measured: how many ran or came, the p95 in ms, or the error rate in percent. */
+    value: Schema.Finite,
+    /** What its subject is called: the operation's or event's name, an error's or log message's title. */
+    name: Schema.String,
+  }).annotate({ identifier: "MonitorEvidence" }),
 ]).annotate({ identifier: "Evidence" })
 export type Evidence = typeof Evidence.Type
 
@@ -62,7 +73,10 @@ export class Incident extends Schema.Class<Incident>("Incident")({
   component: ComponentKey,
   /** Absent when the component didn't say. */
   environment: Schema.optionalKey(EnvironmentKey),
-  /** What it is about: the operation's name, or the monitor's URL. */
+  /**
+   * What it is about: the operation's name, the monitor's URL, or for a monitor of counts what its
+   * subject is called.
+   */
   subject: Schema.String,
   /**
    * What is wrong, in words without times, which depend on who reads them:

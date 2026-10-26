@@ -1,22 +1,30 @@
 import type { ProjectKey } from "@cluenori/foundation"
-import type { Incident, IncidentDetail, IncidentId } from "@cluenori/incidents"
+import type { Incident, IncidentDetail, IncidentId, IncidentList as Incidents } from "@cluenori/incidents"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { cn } from "cn"
 import { DateTime, Exit } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { ArrowLeftIcon, HistoryIcon, PackageIcon, RadarIcon, SearchIcon, SirenIcon } from "lucide-react"
+import { ArrowLeftIcon, HistoryIcon, MoonIcon, PackageIcon, RadarIcon, SearchIcon, SirenIcon } from "lucide-react"
 import type { ReactNode } from "react"
 import { useState } from "react"
 
-import { incidentBriefOf, incidentsAnswerOf, standingOf, updateWords, uptimeAnswerOf } from "@/incident-facts"
+import {
+  conditionWords,
+  incidentBriefOf,
+  incidentsAnswerOf,
+  standingOf,
+  updateWords,
+  uptimeAnswerOf,
+} from "@/incident-facts"
 import { moment } from "@/lib/format"
 import { acknowledgeAtom, incidentAtom, incidentsAtom, monitorsAtom, useComponentKeys } from "@/project-data"
-import { colorOf, detectorWords, evidenceWords, incidentActionOf } from "@/project-facts"
+import { colorOf, detectorWords, evidenceWords, incidentActionOf, quietMinutesOf, quietWords } from "@/project-facts"
 import type { Route } from "@/router"
 import { Link } from "@/router"
 import { CopyButton } from "@/views/copy-button"
 import { IncidentRow } from "@/views/incident-row"
 import { failureText, Loaded } from "@/views/loaded"
+import { MonitorThis } from "@/views/monitor-this"
 import { Panel } from "@/views/panel"
 import { Button, buttonVariants } from "@/views/ui/button"
 
@@ -118,6 +126,10 @@ export function IncidentsPage({ project }: { readonly project: ProjectKey }) {
         </Loaded>
       </Panel>
 
+      <Loaded result={incidents}>
+        {(list) => (list.quiet.length === 0 ? null : <QuietPanel project={project} quiet={list.quiet} now={now} />)}
+      </Loaded>
+
       <Panel icon={HistoryIcon} title="Resolved" subtitle="In the last 7 days, the latest first">
         <Loaded result={incidents}>
           {(list) => (
@@ -134,6 +146,64 @@ export function IncidentsPage({ project }: { readonly project: ProjectKey }) {
   )
 }
 
+/**
+ * The operations Cluenori guessed are quiet: never incidents, never alerts, each worded as the guess
+ * it is, with its operation one click away and a monitor of it as a job one more.
+ */
+function QuietPanel({
+  project,
+  quiet,
+  now,
+}: {
+  readonly project: ProjectKey
+  readonly quiet: Incidents["quiet"]
+  readonly now: number
+}) {
+  return (
+    <Panel
+      icon={MoonIcon}
+      title="Quiet, a guess"
+      subtitle="Operations that usually run regularly and haven't; no one was alerted"
+    >
+      <ul className="divide-y">
+        {quiet.map((hint) => (
+          <li
+            key={`${hint.component} ${hint.environment ?? ""} ${hint.operation}`}
+            className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5"
+          >
+            <span className="flex min-w-0 flex-[1_1_24rem] flex-col gap-0.5">
+              <Link
+                to={{
+                  page: "operation",
+                  project,
+                  component: hint.component,
+                  ...(hint.environment === undefined ? {} : { environment: hint.environment }),
+                  operation: hint.operation,
+                }}
+                className="font-mono text-sm wrap-anywhere underline-offset-4 hover:underline"
+              >
+                {hint.operation}
+              </Link>
+              <span className="text-sm text-muted-foreground">
+                {hint.component}
+                {hint.environment === undefined ? "" : `, ${hint.environment}`}. {quietWords(hint, now)}.
+              </span>
+            </span>
+            <MonitorThis
+              project={project}
+              component={hint.component}
+              environment={hint.environment}
+              subject={{ _tag: "operation", operation: hint.operation }}
+              initial={{ kind: "nothingFor", minutes: quietMinutesOf(hint.usualGapMs) }}
+              label="It's a job: monitor it"
+            />
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  )
+}
+
 // An incident's color: red while open, yellow once someone is on it, mint once resolved.
 const standingColor = (incident: Incident) => {
   if (incident.resolvedAt !== undefined) {
@@ -144,7 +214,7 @@ const standingColor = (incident: Incident) => {
 
 // Where what an incident is about is: its monitor's page, or its operation's at the moment it opened.
 const subjectRouteOf = (project: ProjectKey, incident: Incident): { readonly label: string; readonly to: Route } =>
-  incident.evidence._tag === "down"
+  incident.evidence._tag === "down" || incident.evidence._tag === "monitor"
     ? { label: "Its monitor", to: { page: "monitor", project, monitor: incident.evidence.monitor } }
     : {
         label: "Its operation",
@@ -157,6 +227,19 @@ const subjectRouteOf = (project: ProjectKey, incident: Incident): { readonly lab
           at: incident.openedAt,
         },
       }
+
+// What an incident is about, by name: its monitor's URL or subject, or its operation.
+const subjectNameOf = (evidence: Incident["evidence"]) => {
+  switch (evidence._tag) {
+    case "down":
+      return evidence.url
+    case "monitor":
+      return `${evidence.name}: ${conditionWords(evidence.condition).toLowerCase()}`
+    case "failing":
+    case "stopped":
+      return evidence.operation
+  }
+}
 
 /** One fact about an incident: what it is on the left, its value on the right. */
 function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }) {
@@ -179,9 +262,9 @@ function AboutPanel({ project, incident }: { readonly project: ProjectKey; reado
       subtitle="What its detector saw when it opened, or last got worse"
     >
       <dl className="divide-y">
-        <Fact label={evidence._tag === "down" ? "Monitor" : "Operation"}>
+        <Fact label={evidence._tag === "failing" || evidence._tag === "stopped" ? "Operation" : "Monitor"}>
           <Link to={subject.to} className="font-mono text-sm underline-offset-4 hover:underline">
-            {evidence._tag === "down" ? evidence.url : evidence.operation}
+            {subjectNameOf(evidence)}
           </Link>
         </Fact>
         <Fact label="Saw">{evidenceWords(evidence, DateTime.toEpochMillis(incident.openedAt))}</Fact>

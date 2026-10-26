@@ -140,7 +140,7 @@ private struct UptimeLine: View {
                 let answer = UptimeAnswer(list.monitors)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     BaselineDot(color: answer.color, textStyle: .body)
-                    UptimeAnswerText(answer: answer)
+                    UptimeAnswerText(answer: answer, fine: UptimeAnswer.saysFine(list.monitors))
                 }
             } else if monitors.problem != nil {
                 Text("Couldn't load", bundle: #bundle, comment: "Uptime's line when the monitors didn't arrive.")
@@ -377,6 +377,22 @@ private struct IncidentAbout: View {
                             format: .units(
                                 allowed: [.days, .hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2))
                     }
+                case .monitor(let fired):
+                    SubjectRow(
+                        label: Text("Monitor", bundle: #bundle, comment: "The monitor an incident is about."),
+                        name: MonitorConditionText(condition: fired.condition).text,
+                        route: .monitor(project: project, id: fired.monitor))
+                    if let route = subject(fired.condition.subject) {
+                        PanelDivider()
+                        SubjectRow(
+                            label: Text("Watches", bundle: #bundle, comment: "What a monitor watches."),
+                            name: fired.name, route: route)
+                    }
+                    PanelDivider()
+                    FactRow(label: Text("Measured", bundle: #bundle, comment: "What a monitor measured when it fired."))
+                    {
+                        MonitorMeasuredText(condition: fired.condition, value: fired.value)
+                    }
                 case .unknown:
                     FactRow(label: Text("Evidence", bundle: #bundle, comment: "What opened an incident.")) {
                         Text(
@@ -394,6 +410,18 @@ private struct IncidentAbout: View {
         }
     }
 
+    // The screen of what a monitor watches, when it has one here: its operation, error or log
+    // message, in the incident's component and environment.
+    private func subject(_ subject: MonitorSubject) -> Route? {
+        let telemetry = Telemetry.project(project, environment: incident.environment)
+        switch subject {
+        case .operation(let name): return operation(name)
+        case .error(let id): return .error(of: telemetry, id: id)
+        case .message(let id): return .logMessage(of: telemetry, id: id)
+        case .url, .event, .unknown: return nil
+        }
+    }
+
     // The operation's screen, in the incident's component and environment.
     private func operation(_ name: String) -> Route {
         .operation(
@@ -405,8 +433,18 @@ private struct IncidentAbout: View {
 /// The monitor or operation an incident is about, opening its screen.
 private struct SubjectRow: View {
     let label: Text
-    let name: String
+    let name: Text
     let route: Route
+
+    init(label: Text, name: String, route: Route) {
+        self.init(label: label, name: Text(verbatim: name), route: route)
+    }
+
+    init(label: Text, name: Text, route: Route) {
+        self.label = label
+        self.name = name
+        self.route = route
+    }
 
     var body: some View {
         NavigationLink(value: route) {
@@ -414,7 +452,7 @@ private struct SubjectRow: View {
                 label
                     .foregroundStyle(Palette.secondary)
                 Spacer(minLength: 8)
-                Text(verbatim: name)
+                name
                     .unhyphenated()
                     .font(.subheadline.monospaced())
                     .foregroundStyle(Palette.blue)

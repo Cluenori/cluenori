@@ -1,4 +1,4 @@
-import { CalendarDay, ComponentKey, ProjectKey } from "@cluenori/foundation"
+import { CalendarDay, ComponentKey, EnvelopeName, ProjectKey } from "@cluenori/foundation"
 import type { MonitorState } from "@cluenori/incidents"
 import { Monitor, MonitorId, MonitorUrl } from "@cluenori/incidents"
 import { assert, describe, it } from "@effect/vitest"
@@ -15,11 +15,16 @@ const monitor = (id: string, days: MonitorState["days"], problem?: string): Moni
   monitor: new Monitor({
     id: MonitorId.make(`019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f5${id}`),
     component: ComponentKey.make("notes-api"),
-    url: MonitorUrl.make(`https://notes.example/health/${id}`),
+    condition: {
+      _tag: "noAnswer",
+      subject: { _tag: "url", url: MonitorUrl.make(`https://notes.example/health/${id}`) },
+    },
+    level: "alarm",
     addedAt: DateTime.makeUnsafe(now - 4 * day),
   }),
   lastCheck: { at: DateTime.makeUnsafe(now), ...(problem === undefined ? {} : { problem }) },
   days,
+  firing: problem !== undefined,
 })
 
 const counted = (date: string, checks: number, failed: number) => ({ day: CalendarDay.make(date), checks, failed })
@@ -57,7 +62,7 @@ describe("uptimeAnswerOf", () => {
   it("answers whether everything is up: down first, then whether all were checked", () => {
     const up = monitor("1", [])
     const down = monitor("2", [], "HTTP 503")
-    const unchecked: MonitorState = { monitor: monitor("3", []).monitor, days: [] }
+    const unchecked: MonitorState = { monitor: monitor("3", []).monitor, days: [], firing: false }
     assert.deepStrictEqual(uptimeAnswerOf([up, down, unchecked]), { tone: "failure", words: "1 of 3 monitors is down" })
     assert.deepStrictEqual(uptimeAnswerOf([up, unchecked]), {
       tone: "steady",
@@ -83,7 +88,11 @@ describe("monitorBriefOf", () => {
         id: state.monitor.id,
         component: state.monitor.component,
         addedAt: state.monitor.addedAt,
-        url: MonitorUrl.make("https://ops:pw@notes.example/health?token=s3cret"),
+        condition: {
+          _tag: "noAnswer",
+          subject: { _tag: "url", url: MonitorUrl.make("https://ops:pw@notes.example/health?token=s3cret") },
+        },
+        level: "alarm",
       }),
     }
 
@@ -96,5 +105,32 @@ describe("monitorBriefOf", () => {
     assert.include(brief, "https://notes.example/health?…, of notes-api")
     assert.notInclude(brief, "s3cret")
     assert.notInclude(brief, "pw@")
+  })
+})
+
+describe("monitors of counts", () => {
+  it("answers fine or firing, never up or down, and says what it measured", () => {
+    const job: MonitorState = {
+      monitor: new Monitor({
+        id: MonitorId.make("019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f60"),
+        component: ComponentKey.make("notes-jobs"),
+        condition: {
+          _tag: "nothingFor",
+          subject: { _tag: "operation", operation: EnvelopeName.make("cleanup.run") },
+          minutes: 30,
+        },
+        level: "timeSensitive",
+        addedAt: DateTime.makeUnsafe(now - day),
+      }),
+      days: [],
+      measured: { at: DateTime.makeUnsafe(now), value: 0 },
+      firing: true,
+    }
+    assert.deepStrictEqual(uptimeAnswerOf([job]), { tone: "failure", words: "The monitor is firing" })
+    assert.match(standingWordsOf(job), /^Firing: 0 in 30 \S+$/)
+    assert.deepStrictEqual(uptimeAnswerOf([monitor("1", []), { ...job, firing: false }]), {
+      tone: "steady",
+      words: "All 2 monitors are fine",
+    })
   })
 })

@@ -415,6 +415,14 @@ export const migrateSignals = Migrator.make({})({
       }
       yield* sql`CREATE INDEX signals_logs_message ON signals_logs (message, time)`
     }),
+    // Each event in the people's timelines, found by its name and time without reading the rest:
+    // a monitor counts one event over a window every minute (`AppSignals.eventCount`).
+    "0014_timeline_events": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE INDEX signals_app_timeline_events
+        ON signals_app_timeline (json_extract(entry, '$.signal.name'), at)
+        WHERE json_extract(entry, '$.signal._tag') = 'event'`
+    }),
   }),
 })
 

@@ -1,6 +1,7 @@
 import { Duration } from "effect"
 
 import type { Evidence } from "./incident.ts"
+import type { MonitorCondition } from "./monitor.ts"
 
 // ---- Failing ----------------------------------------------------------------------------------
 
@@ -80,6 +81,50 @@ export const downAfter = 2
 /** How long a check waits for an answer. */
 export const checkTimeout = Duration.seconds(10)
 
+// ---- Monitors of counts ----------------------------------------------------------------------
+
+/** A monitor's condition other than a URL's: one judged on counts Signals keeps. */
+export type CountCondition = Exclude<MonitorCondition, { readonly _tag: "noAnswer" }>
+
+// A p95 or an error rate of fewer runs says too little to alert on.
+const runsJudged = 5
+
+/**
+ * What a monitor of counts measures from what it read over its window: how many ran or came; the
+ * p95 in ms or the error rate in percent, undefined when its operation ran fewer than 5 times.
+ */
+export const measuredOf = (
+  condition: CountCondition,
+  read: { readonly count: number; readonly errors: number; readonly p95Ms: number },
+): number | undefined => {
+  switch (condition._tag) {
+    case "nothingFor":
+    case "moreThan":
+      return read.count
+    case "p95Above":
+      return read.count >= runsJudged ? read.p95Ms : undefined
+    case "errorRateAbove":
+      return read.count >= runsJudged ? (100 * read.errors) / read.count : undefined
+  }
+}
+
+/** Whether a monitor of counts fires on what it measured: never on a value it couldn't measure. */
+export const firesOn = (condition: CountCondition, value: number | undefined) => {
+  if (value === undefined) {
+    return false
+  }
+  switch (condition._tag) {
+    case "nothingFor":
+      return value === 0
+    case "moreThan":
+      return value > condition.count
+    case "p95Above":
+      return value > condition.ms
+    case "errorRateAbove":
+      return value > condition.percent
+  }
+}
+
 // ---- An incident's life -----------------------------------------------------------------------
 
 /** How long a problem is gone before its incident resolves. */
@@ -102,6 +147,18 @@ const percent = (rate: number) => {
   return `${value.toFixed(value >= 10 ? 0 : 1).replace(/\.0$/, "")}%`
 }
 
+// `30 minutes`, `12 hours`, `1 day`, `90 minutes`: a window as an owner set it.
+const unitWords = (amount: number, unit: string) => `${amount} ${unit}${amount === 1 ? "" : "s"}`
+const minutesWords = (minutes: number) => {
+  if (minutes % 1440 === 0) {
+    return unitWords(minutes / 1440, "day")
+  }
+  return minutes % 60 === 0 ? unitWords(minutes / 60, "hour") : unitWords(minutes, "minute")
+}
+
+// `820 ms`, `12.5 s`.
+const msWords = (ms: number) => (ms < 10_000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`)
+
 // `hour`, `6 hours`, `15 minutes`.
 const every = (gapMs: number) => {
   const minutes = Math.max(1, Math.round(gapMs / 60_000))
@@ -112,11 +169,31 @@ const every = (gapMs: number) => {
   return minutes === 1 ? "minute" : `${minutes} minutes`
 }
 
+const monitorTitleOf = (name: string, condition: MonitorCondition, value: number) => {
+  switch (condition._tag) {
+    case "noAnswer":
+      return `${name} doesn't answer`
+    case "nothingFor":
+      return condition.subject._tag === "operation"
+        ? `${name} hasn't run for ${minutesWords(condition.minutes)}`
+        : `${name}: none for ${minutesWords(condition.minutes)}`
+    case "moreThan":
+      return `${name}: ${value} in ${minutesWords(condition.minutes)}, more than ${condition.count}`
+    case "p95Above":
+      return `${name} p95 ${msWords(value)}, above ${msWords(condition.ms)}`
+    case "errorRateAbove":
+      return `${name}: ${percent(value / 100)} failed, above ${percent(condition.percent / 100)}`
+  }
+}
+
 /**
  * What is wrong, in words without times, which depend on who reads them:
  * - `https://api.notes.app/health is down: HTTP 503`
  * - `POST /api/export: 18% failed, usually 0.1%`
  * - `cleanup.run stopped: it usually runs every hour`
+ * - a monitor's, with its subject and numbers: `cleanup.run hasn't run for 30 minutes`,
+ *   `GET /api/card p95 820 ms, above 500 ms`, `user.registered: none for 12 hours`,
+ *   `TypeError: x is undefined: 14 in 1 hour, more than 10`, `POST /api/sync: 12% failed, above 5%`
  */
 export const titleOf = (evidence: Evidence) => {
   switch (evidence._tag) {
@@ -126,5 +203,7 @@ export const titleOf = (evidence: Evidence) => {
       return `${evidence.operation}: ${percent(evidence.failed / Math.max(1, evidence.count))} failed, usually ${percent(evidence.usualRate)}`
     case "stopped":
       return `${evidence.operation} stopped: it usually runs every ${every(evidence.usualGapMs)}`
+    case "monitor":
+      return monitorTitleOf(evidence.name, evidence.condition, evidence.value)
   }
 }

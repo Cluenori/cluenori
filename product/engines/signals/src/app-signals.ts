@@ -26,6 +26,7 @@ import type {
   AppReleaseQuery,
   AppRetention,
   AppUsage,
+  EventCountQuery,
   FeatureUseLife,
   FeatureUseTable,
   PersonLookup,
@@ -188,6 +189,13 @@ export class AppSignals extends Context.Service<
      * they were active, the features they used, and their timeline. Fails with `PersonNotFound`.
      */
     readonly person: (lookup: PersonLookup) => Effect.Effect<AppPerson, PersonNotFound>
+    /**
+     * How many of one event the apps of a component sent in the query's period, counted up to
+     * `atMost`, as the people's timelines keep them: each person's latest 1,000 signals, 15 months.
+     * Reads only that event's signals in the period, through an index, and stops at `atMost`. An
+     * event arrives when its batch does, which can be later than it happened.
+     */
+    readonly eventCount: (query: EventCountQuery, atMost: number) => Effect.Effect<number>
   }
 >()("@cluenori/signals/app-signals/AppSignals") {
   /** Builds the apps' signals on the object's database and the store of their batches, first creating or updating the tables. */
@@ -343,6 +351,7 @@ export class AppSignals extends Context.Service<
           features,
           feature,
           person,
+          eventCount: store.eventCount,
         })
       }),
     )

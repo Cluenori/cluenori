@@ -1,6 +1,7 @@
 import type { Envelope, ProjectKey } from "@cluenori/foundation"
 import type { Detector, IncidentId } from "@cluenori/incidents"
 import {
+  AlertLevel,
   IncidentAcknowledged,
   IncidentOpened,
   IncidentReopened,
@@ -11,16 +12,11 @@ import { PhoneId } from "@cluenori/phones"
 import { DateTime, Duration, Option, Schema } from "effect"
 
 /**
- * How an alert reaches a phone:
- * - `alarm`: an AlarmKit alarm, which rings through silent mode and Do Not Disturb; for Down and
- *   Failing.
- * - `timeSensitive`: breaks through a Focus that allows it, with a sound; for Stopped, and any
- *   reopened incident.
- * - `quiet`: shows without a sound or lighting the screen; for an incident that recovered, or that
- *   someone is on.
+ * How an alert reaches a phone, Incidents' `AlertLevel`: `alarm` for Failing and as a monitor says;
+ * `timeSensitive` for any reopened incident and as a monitor says; `quiet` for an incident that
+ * recovered, or that someone is on, and as a monitor says.
  */
-export const AlertLevel = Schema.Literals(["alarm", "timeSensitive", "quiet"])
-export type AlertLevel = typeof AlertLevel.Type
+export { AlertLevel }
 
 /** What one push says, and how it reaches the phone. */
 export interface Alert {
@@ -124,18 +120,26 @@ const decodeIncidentActivity = Schema.decodeUnknownOption(IncidentActivity)
 // An alarm this late comes as time sensitive: it would ring about the past.
 const alarmsWithin = Duration.toMillis(Duration.minutes(10))
 
-const detectorWords: Readonly<Record<Detector, string>> = { down: "Down", failing: "Failing", stopped: "Stopped" }
+const detectorWords: Readonly<Record<Detector, string>> = {
+  down: "Down",
+  failing: "Failing",
+  stopped: "Stopped",
+  monitor: "Monitor",
+}
+// Each detector's own level, for activity that doesn't say its monitor's.
 const detectorLevels: Readonly<Record<Detector, AlertLevel>> = {
   down: "alarm",
   failing: "alarm",
   stopped: "timeSensitive",
+  monitor: "timeSensitive",
 }
 
 /**
  * The alert one activity entry is, at `now` (Unix ms), for the project named `projectName`: none for
  * activity that isn't about an incident, about one someone is on, about one in an environment its
- * project doesn't call production, or about a stopped one. An entry that doesn't say, from before October 2026, counts as
- * production.
+ * project doesn't call production, or about a stopped one, which was guessed. An entry that doesn't
+ * say, from before October 2026, counts as production. A monitor's incident comes at the monitor's
+ * level, titled with its subject and numbers: `Graphit · cleanup.run hasn't run for 30 minutes`.
  */
 export const alertOf = (entry: Envelope, projectName: string, now: number): Option.Option<Alert> => {
   const project = entry.project
@@ -149,7 +153,7 @@ export const alertOf = (entry: Envelope, projectName: string, now: number): Opti
   const activity = decoded.value
   // Stopped incidents came from schedules guessed from how operations ran, and every alert must be
   // real: none opens now, and none from before tells anyone anything, however late it is delivered
-  // or however it ends.
+  // or however it ends. A job someone declared is a monitor's, detector `monitor`.
   if (activity.production === false || ("detector" in activity && activity.detector === "stopped")) {
     return Option.none()
   }
@@ -163,15 +167,22 @@ export const alertOf = (entry: Envelope, projectName: string, now: number): Opti
       alert: activity.incident,
       incident: { project, id: activity.incident },
     })
+  // A detector's alert is named by its word, its title in the body; a monitor's says its subject and
+  // numbers in the title.
+  const fired = (detector: Detector, level: AlertLevel, title: string, what?: string) =>
+    detector === "monitor"
+      ? alertAs(level, what === undefined ? title : `${title}${what}`, undefined)
+      : alertAs(level, what === undefined ? detectorWords[detector] : `${detectorWords[detector]}${what}`, title)
   switch (activity._tag) {
     case "incident.opened":
-      return alertAs(detectorLevels[activity.detector], detectorWords[activity.detector], activity.title)
+      return fired(activity.detector, activity.level ?? detectorLevels[activity.detector], activity.title)
     case "incident.worsened":
       return activity.acknowledged === true
         ? Option.none()
-        : alertAs(detectorLevels[activity.detector], `${detectorWords[activity.detector]}, worse`, activity.title)
+        : fired(activity.detector, activity.level ?? detectorLevels[activity.detector], activity.title, ", worse")
     case "incident.reopened":
-      return alertAs("timeSensitive", `${detectorWords[activity.detector]} again`, activity.title)
+      // Back so soon is worth breaking through a Focus, but a quiet monitor stays quiet.
+      return fired(activity.detector, activity.level === "quiet" ? "quiet" : "timeSensitive", activity.title, " again")
     case "incident.resolved":
       return activity.acknowledged === true ? Option.none() : alertAs("quiet", "Recovered", activity.title)
     case "incident.acknowledged":

@@ -1,4 +1,5 @@
 import type { ComponentKey, EnvelopeName, EnvironmentKey, ProjectKey, ReleaseVersion } from "@cluenori/foundation"
+import type { Incident } from "@cluenori/incidents"
 import type { KeptTraceRow } from "@cluenori/signals"
 import { operationKeyOf, slowerOf, usualOf } from "@cluenori/signals"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
@@ -6,6 +7,7 @@ import { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { ActivityIcon, ArrowLeftIcon, CircleXIcon, GaugeIcon, SearchXIcon, SirenIcon, TimerIcon } from "lucide-react"
 import type { ReactNode } from "react"
+import { useState } from "react"
 
 import { failureColor } from "@/lib/colors"
 import { ago, count, duration, moment, share } from "@/lib/format"
@@ -30,6 +32,8 @@ import {
   loadColumnsOf,
   periodCovering,
   periodWords,
+  quietMinutesOf,
+  quietWords,
   sumOf,
   ticksOf,
   zoneOf,
@@ -42,6 +46,7 @@ import { FilterSwitches } from "@/views/filter-switches"
 import { IncidentRow } from "@/views/incident-row"
 import { Loaded } from "@/views/loaded"
 import { holdingOf, MomentPanel, momentOf } from "@/views/moment-panel"
+import { MonitorThis } from "@/views/monitor-this"
 import { OperationName } from "@/views/operation-name"
 import { Panel, PanelStats } from "@/views/panel"
 import { SinceUsual } from "@/views/since-usual"
@@ -137,6 +142,70 @@ function KeptTracePanels({ scope, p95Ms }: { readonly scope: Scope; readonly p95
   )
 }
 
+// The operation an incident is about, if any: a failing or stopped one's, or a monitor's of one.
+const operationOf = (incident: Incident) => {
+  const { evidence } = incident
+  switch (evidence._tag) {
+    case "down":
+      return undefined
+    case "monitor":
+      return evidence.condition.subject._tag === "operation" ? evidence.condition.subject.operation : undefined
+    case "failing":
+    case "stopped":
+      return evidence.operation
+  }
+}
+
+/**
+ * "Monitor this" for an operation of one component, and, when Cluenori guessed it is quiet, the
+ * hint, worded as the guess it is, with a monitor of it as a job one click away. Nothing until the
+ * component is known.
+ */
+function OperationWatch({
+  project,
+  operation,
+  component,
+  environment,
+}: {
+  readonly project: ProjectKey
+  readonly operation: EnvelopeName
+  readonly component: ComponentKey | undefined
+  readonly environment: EnvironmentKey | undefined
+}) {
+  const incidents = useAtomValue(incidentsAtom(project))
+  const [now] = useState(() => DateTime.toEpochMillis(DateTime.nowUnsafe()))
+  if (component === undefined) {
+    return null
+  }
+  const quiet = AsyncResult.isSuccess(incidents)
+    ? incidents.value.quiet.find(
+        (hint) =>
+          hint.operation === operation &&
+          hint.component === component &&
+          (environment === undefined || hint.environment === environment),
+      )
+    : undefined
+  const subject = { _tag: "operation" as const, operation }
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1">
+      <MonitorThis project={project} component={component} environment={environment} subject={subject} />
+      {quiet !== undefined && (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+          <span className="text-yellow-ink">{quietWords(quiet, now)}.</span>
+          <MonitorThis
+            project={project}
+            component={component}
+            environment={quiet.environment}
+            subject={subject}
+            initial={{ kind: "nothingFor", minutes: quietMinutesOf(quiet.usualGapMs) }}
+            label="It's a job: monitor it"
+          />
+        </p>
+      )}
+    </div>
+  )
+}
+
 /**
  * The incidents about an operation, of its component and environment when the page shows one: those
  * open, and those resolved in the last 7 days, each opening its own page; nothing when it has none.
@@ -158,8 +227,7 @@ function OperationIncidents({
   }
   const about = [...incidents.value.open, ...incidents.value.resolved].filter(
     (incident) =>
-      incident.evidence._tag !== "down" &&
-      incident.evidence.operation === operation &&
+      operationOf(incident) === operation &&
       (component === undefined || incident.component === component) &&
       (environment === undefined || incident.environment === environment),
   )
@@ -269,6 +337,12 @@ export function OperationPage({
         <p className="text-sm text-muted-foreground">
           {known?.row?.component ?? shownComponent}, {periodText}
         </p>
+        <OperationWatch
+          project={project}
+          operation={operation}
+          component={component ?? known?.row?.component}
+          environment={environment}
+        />
       </OperationHeader>
 
       <Loaded result={AsyncResult.all({ load, everyOperation, verdict, operations })}>

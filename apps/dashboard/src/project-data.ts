@@ -16,7 +16,7 @@ import type {
   TraceId,
 } from "@cluenori/foundation"
 import type { ConnectGitHub } from "@cluenori/github-app"
-import type { IncidentId, MonitorId } from "@cluenori/incidents"
+import type { AddMonitor, IncidentId, MonitorId } from "@cluenori/incidents"
 import type { Email, InviteCode, SignInId } from "@cluenori/members"
 import type { PhoneId } from "@cluenori/phones"
 import type { ComponentLinks, ProjectSettings, SdkKey } from "@cluenori/projects"
@@ -418,6 +418,28 @@ export const monitorsAtom = Atom.family((project: ProjectKey) =>
       }),
     ),
   ),
+)
+
+/** Adds a monitor, then asks for the monitors, and the incidents, again; returns it. */
+export const addMonitorAtom = CluenoriClient.runtime.fn(
+  (key: { readonly project: ProjectKey; readonly monitor: AddMonitor }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const added = yield* client.incidents.addMonitor({ params: { project: key.project }, payload: key.monitor })
+      yield* Atom.refresh(monitorsAtom(key.project))
+      return added
+    }),
+)
+
+/** Removes a monitor, which resolves its open incident, then asks for the monitors and incidents again. */
+export const removeMonitorAtom = CluenoriClient.runtime.fn(
+  (key: { readonly project: ProjectKey; readonly monitor: MonitorId }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      yield* client.incidents.removeMonitor({ params: key })
+      yield* Atom.refresh(monitorsAtom(key.project))
+      yield* Atom.refresh(incidentsAtom(key.project))
+    }),
 )
 
 /** The errors of the period, most frequent first, of a project or one component. */
