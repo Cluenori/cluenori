@@ -1,7 +1,7 @@
 # @cluenori/notifications
 
-Alerts about the workspace's incidents on its paired phones, through APNs: an alarm that rings
-through silent mode, a time-sensitive notification, or a quiet one, by what happened.
+Alerts about the workspace's incidents and feeds on its paired phones, through APNs: an alarm that
+rings through silent mode, a time-sensitive notification, or a quiet one, by what happened.
 
 ## Use it
 
@@ -13,6 +13,10 @@ yield* notifications.notify(activity)
 // "Notes · Failing" rings every phone with a push token; delivering the batch again rings none twice.
 // When APNs may take it later, PushUnavailable: deliver the whole batch again later.
 
+// Feeds hands over a feed's entries not alerted yet; each phone hears of its member's projects':
+yield* notifications.notifyFeed(alert)
+// "Folio · Registrations", "Germany, folio-ios 2.4.0+12"; or "12 Registrations", "Notes 9, Folio 3".
+
 // Its owner checks that alerts reach a phone:
 yield* notifications.testAlert(phone)
 // NoPushToken until the phone's app registers one; PushNotSetUp until push is set up.
@@ -20,7 +24,8 @@ yield* notifications.testAlert(phone)
 
 ## Owns
 
-- **Data:** which activity entry reached which phone, kept 7 days (`notifications_sent`).
+- **Data:** which activity entry, or feed alert by its key, reached which phone, kept 7 days
+  (`notifications_sent`).
 - **Rules:**
   - **Each change's level:** an alarm when Down or Failing opens or gets worse; time sensitive
     when Stopped opens or any incident reopens; quiet when one recovers or someone acknowledges it.
@@ -28,7 +33,13 @@ yield* notifications.testAlert(phone)
     production, nor for other activity. An alarm more than 10 minutes
     late comes as time sensitive.
   - **Who is told:** the phones whose member sees the incident's project; an owner sees every one.
-  - **What a push says:** "<project> · <what happened>", and the incident's title.
+  - **What a push says:** "<project> · <what happened>", and the incident's title. A feed's: one
+    entry names its project and feed, "Folio · Registrations", and where it came from, "Germany,
+    folio-ios 2.4.0+12"; more say how many from each project the phone's member sees, "12
+    Registrations", "Notes 9, Folio 3", naming the three with most and counting the rest, "… and 4
+    more", so it fits APNs's 4 KB. Never personal data: the person stays on the feed's page.
+  - **Who hears of a feed:** each phone, of the entries in projects its member sees; none at all
+    when they see none of them.
   - **Tokens that are gone:** a token APNs says is inactive (410), or calls `BadDeviceToken` or
     `DeviceTokenNotForTopic`, is forgotten, through Phones.
 - **Integrations:** APNs, through `@bagatka/apns`.

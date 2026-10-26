@@ -15,6 +15,7 @@
     "@bagatka/otlp-protobuf": "catalog:",
     "@bagatka/webauthn": "catalog:",
     "@cluenori/analytics": "workspace:*",
+    "@cluenori/feeds": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github": "workspace:*",
     "@cluenori/github-app": "workspace:*",

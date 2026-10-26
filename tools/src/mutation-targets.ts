@@ -17,6 +17,7 @@ export interface MutationTarget {
  */
 export const mutationTargets: ReadonlyArray<MutationTarget> = [
   { folder: "product/foundation", floor: 72.77 },
+  { folder: "product/engines/feeds", floor: undefined },
   { folder: "product/engines/github-app", floor: 53.67 },
   { folder: "product/engines/incidents", floor: 67.62 },
   { folder: "product/engines/members", floor: 58 },

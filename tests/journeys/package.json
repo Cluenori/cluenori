@@ -8,6 +8,7 @@
   "devDependencies": {
     "@bagatka/webauthn": "catalog:",
     "@cloudflare/vitest-plugin": "catalog:",
+    "@cluenori/feeds": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github": "workspace:*",
     "@cluenori/github-app": "workspace:*",

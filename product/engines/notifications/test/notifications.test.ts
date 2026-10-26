@@ -30,7 +30,7 @@ import { DateTime, Effect, Option, Redacted, Schema } from "effect"
 import { Base64 } from "effect/encoding"
 import { TestClock } from "effect/testing"
 
-import type { NotificationsSettings } from "../src/index.ts"
+import type { FeedAlert, NotificationsSettings } from "../src/index.ts"
 import { Notifications } from "../src/index.ts"
 import type { ApnsReply } from "./in-workspace.ts"
 import { fakeApns, inWorkspace, owner } from "./in-workspace.ts"
@@ -129,14 +129,36 @@ const withProjects = Effect.gen(function* () {
   }
 })
 
+// Ada joins, seeing Atlas alone, and pairs a phone, which registers `otherToken`.
+const adaSeesAtlas = Effect.gen(function* () {
+  const members = yield* Members
+  const site = { origin: "https://cluenori.example", rpId: "cluenori.example" }
+  const invite = yield* members.invite(member, { email: Email.make("ada@example.com"), projects: [atlas] }, site)
+  const code = InviteCode.make(new URL(invite.link).hash.slice(1))
+  const options = yield* members.startJoining(code, site)
+  const device = yield* softwareAuthenticator(crypto)
+  const joined = yield* members.join(
+    code,
+    yield* device.register({ ...site, challenge: options.challenge }, { userHandle: options.user.id }),
+    site,
+    home,
+  )
+  yield* TestClock.adjust(minute)
+  yield* phoneWith(otherToken, "production", { _tag: "Member", id: joined.member.id })
+})
+
 // What the tests read of a push's payload.
 const decodePayload = Schema.decodeUnknownEffect(
   Schema.Struct({
     aps: Schema.Struct({
-      alert: Schema.Struct({ title: Schema.String }),
+      alert: Schema.Struct({ title: Schema.String, body: Schema.optionalKey(Schema.String) }),
       sound: Schema.optionalKey(Schema.String),
     }),
-    cluenori: Schema.Struct({ level: Schema.String, incident: Schema.optionalKey(Schema.String) }),
+    cluenori: Schema.Struct({
+      level: Schema.String,
+      incident: Schema.optionalKey(Schema.String),
+      feed: Schema.optionalKey(Schema.String),
+    }),
   }),
 )
 
@@ -409,28 +431,9 @@ describe("Notifications", () => {
         settings,
         apns.layer,
         Effect.gen(function* () {
-          const members = yield* Members
           yield* withProjects
           yield* phoneWith(phoneToken)
-
-          // Ada joins, seeing Atlas alone, and pairs a phone.
-          const site = { origin: "https://cluenori.example", rpId: "cluenori.example" }
-          const invite = yield* members.invite(
-            member,
-            { email: Email.make("ada@example.com"), projects: [atlas] },
-            site,
-          )
-          const code = InviteCode.make(new URL(invite.link).hash.slice(1))
-          const options = yield* members.startJoining(code, site)
-          const device = yield* softwareAuthenticator(crypto)
-          const joined = yield* members.join(
-            code,
-            yield* device.register({ ...site, challenge: options.challenge }, { userHandle: options.user.id }),
-            site,
-            home,
-          )
-          yield* TestClock.adjust(minute)
-          yield* phoneWith(otherToken, "production", { _tag: "Member", id: joined.member.id })
+          yield* adaSeesAtlas
 
           yield* notify([
             activityOf(IncidentOpened.make(fields)),
@@ -452,6 +455,86 @@ describe("Notifications", () => {
         [phoneToken, "Atlas · Down"],
         [otherToken, "Atlas · Down"],
       ])
+    }),
+  )
+
+  it.effect("tells each phone about a feed's entries in the projects its member sees, once", () =>
+    Effect.gen(function* () {
+      const settings = yield* settingsWithKey
+      const apns = fakeApns(accepts)
+      const feed: FeedAlert = {
+        key: "0199f7a2-8000-7000-8000-000000000029",
+        feed: "0199f7a2-8000-7000-8000-000000000001",
+        name: "Registrations",
+        level: "timeSensitive",
+        at: DateTime.makeUnsafe(start),
+        counts: [
+          { project: notes, count: 2 },
+          { project: atlas, count: 1 },
+        ],
+        newest: { project: atlas, component: "atlas-ios", release: "2.4.0+12", country: "DE" },
+      }
+      yield* inWorkspace(
+        "feeds",
+        start,
+        settings,
+        apns.layer,
+        Effect.gen(function* () {
+          yield* withProjects
+          yield* phoneWith(phoneToken)
+          yield* adaSeesAtlas
+          const notifications = yield* Notifications
+          yield* notifications.notifyFeed(feed)
+          // Feeds hands the same entries over again, as after a retry.
+          yield* notifications.notifyFeed(feed)
+        }),
+      )
+      const told = yield* Effect.forEach(apns.accepted, (push) =>
+        decodePayload(push.payload).pipe(
+          Effect.map((payload) => [
+            push.deviceToken,
+            payload.aps.alert.title,
+            payload.aps.alert.body,
+            payload.cluenori.feed,
+            payload.aps.sound,
+          ]),
+        ),
+      )
+      assert.deepStrictEqual(told, [
+        [phoneToken, "3 Registrations", "Notes 2, Atlas 1", feed.feed, "default"],
+        [otherToken, "Atlas · Registrations", "Germany, atlas-ios 2.4.0+12", feed.feed, "default"],
+      ])
+    }),
+  )
+
+  it.effect("names a feed's three busiest projects in its alert and counts the rest, however many it has", () =>
+    Effect.gen(function* () {
+      const settings = yield* settingsWithKey
+      const apns = fakeApns(accepts)
+      const projects = Array.from({ length: 50 }, (_, n) => ProjectKey.make(`project-${n + 1}`))
+      yield* inWorkspace(
+        "feeds-many",
+        start,
+        settings,
+        apns.layer,
+        Effect.gen(function* () {
+          yield* phoneWith(phoneToken)
+          const notifications = yield* Notifications
+          yield* notifications.notifyFeed({
+            key: "0199f7a2-8000-7000-8000-000000000031",
+            feed: "0199f7a2-8000-7000-8000-000000000002",
+            name: "Purchases",
+            level: "quiet",
+            at: DateTime.makeUnsafe(start),
+            counts: projects.map((project, n) => ({ project, count: 60 - n })),
+            newest: { project: notes, component: "notes-ios", release: "2.4.0+12" },
+          })
+        }),
+      )
+      const told = yield* Effect.forEach(apns.accepted, (push) =>
+        decodePayload(push.payload).pipe(Effect.map((payload) => [payload.aps.alert.title, payload.aps.alert.body])),
+      )
+      assert.deepStrictEqual(told, [["1775 Purchases", "project-1 60, project-2 59, project-3 58 and 47 more"]])
     }),
   )
 })

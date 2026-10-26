@@ -44,6 +44,7 @@
         "@bagatka/webauthn": "catalog:",
         "@base-ui/react": "catalog:",
         "@cluenori/analytics": "workspace:*",
+        "@cluenori/feeds": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/github-app": "workspace:*",
         "@cluenori/incidents": "workspace:*",
@@ -96,6 +97,7 @@
         "@bagatka/otlp-protobuf": "catalog:",
         "@bagatka/webauthn": "catalog:",
         "@cluenori/analytics": "workspace:*",
+        "@cluenori/feeds": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/github": "workspace:*",
         "@cluenori/github-app": "workspace:*",
@@ -126,6 +128,25 @@
       "devDependencies": {
         "@effect/vitest": "catalog:",
         "vitest": "catalog:",
+      },
+    },
+    "product/engines/feeds": {
+      "name": "@cluenori/feeds",
+      "dependencies": {
+        "@cluenori/foundation": "workspace:*",
+        "@cluenori/members": "workspace:*",
+        "@cluenori/notifications": "workspace:*",
+        "@cluenori/projects": "workspace:*",
+        "@cluenori/signals": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@cloudflare/vitest-plugin": "catalog:",
+        "@effect/platform-browser": "catalog:",
+        "@effect/sql-sqlite-do": "catalog:",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+        "wrangler": "catalog:",
       },
     },
     "product/engines/github-app": {
@@ -335,6 +356,7 @@
       "devDependencies": {
         "@bagatka/webauthn": "catalog:",
         "@cloudflare/vitest-plugin": "catalog:",
+        "@cluenori/feeds": "workspace:*",
         "@cluenori/foundation": "workspace:*",
         "@cluenori/github": "workspace:*",
         "@cluenori/github-app": "workspace:*",
@@ -555,6 +577,8 @@
     "@cluenori/cli": ["@cluenori/cli@workspace:apps/cli"],
 
     "@cluenori/dashboard": ["@cluenori/dashboard@workspace:apps/dashboard"],
+
+    "@cluenori/feeds": ["@cluenori/feeds@workspace:product/engines/feeds"],
 
     "@cluenori/foundation": ["@cluenori/foundation@workspace:product/foundation"],
 

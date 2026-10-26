@@ -36,8 +36,80 @@ export interface Alert {
    * stops it; a test's own.
    */
   readonly alert: string
-  /** The incident it is about; absent for a test. */
+  /** The incident it is about; absent for a test and a feed's. */
   readonly incident: { readonly project: ProjectKey; readonly id: IncidentId } | undefined
+  /** The feed it is about, whose alerts a phone groups together; absent for others. */
+  readonly feed?: string
+}
+
+/**
+ * What a feed's alert says, as Feeds hands it over: the entries not alerted yet, by project, the
+ * most first, and the newest of them. `key`, a UUID, is the same for the same entries, so it reaches
+ * each phone once however often it is handed over; phones know the alert by it.
+ */
+export interface FeedAlert {
+  readonly key: string
+  readonly feed: string
+  /** The feed's name: `Registrations`. */
+  readonly name: string
+  readonly level: "quiet" | "timeSensitive"
+  /** When the newest entry happened. */
+  readonly at: DateTime.Utc
+  readonly counts: ReadonlyArray<{ readonly project: ProjectKey; readonly count: number }>
+  readonly newest: {
+    readonly project: ProjectKey
+    readonly component: string
+    readonly release: string
+    readonly country?: string
+  }
+}
+
+// Countries by their names in English, as alerts say them, whatever the machine's locale.
+const countries = new Intl.DisplayNames(["en"], { type: "region" })
+const countryName = (code: string) => countries.of(code) ?? code
+
+// An alert names this many projects, those with the most entries; the rest are counted, so it
+// stays within the 4 KB APNs takes however many sources the feed has.
+const projectsNamed = 3
+const byProject = (counts: FeedAlert["counts"], nameOf: (project: ProjectKey) => string) => {
+  const named = counts.slice(0, projectsNamed).map((each) => `${nameOf(each.project)} ${each.count}`)
+  const more = counts.length - projectsNamed
+  return more > 0 ? `${named.join(", ")} and ${more} more` : named.join(", ")
+}
+
+/**
+ * The alert a feed's entries are, for a member who sees `counts` of them (those of projects they
+ * see), with projects named by `nameOf`: one entry names its project and where it came from, \`Folio
+ * · Registrations\`, \`Germany, folio-ios 2.4.0+12\`; more say how many from each, \`12 Registrations\`,
+ * \`Notes 9, Folio 3\`, the three with most named and the rest counted, \`… and 4 more\`. No personal data: the person stays on the feed's page.
+ */
+export const feedAlertOf = (
+  feed: FeedAlert,
+  counts: FeedAlert["counts"],
+  nameOf: (project: ProjectKey) => string,
+): Alert => {
+  const total = counts.reduce((sum, each) => sum + each.count, 0)
+  const [only] = counts
+  const single = total === 1 && only !== undefined
+  const newest = single && only.project === feed.newest.project ? feed.newest : undefined
+  const where =
+    newest === undefined
+      ? undefined
+      : [
+          newest.country === undefined ? undefined : countryName(newest.country),
+          `${newest.component} ${newest.release}`,
+        ]
+          .filter((part) => part !== undefined)
+          .join(", ")
+  return {
+    level: feed.level,
+    title: single ? `${nameOf(only.project)} · ${feed.name}` : `${total} ${feed.name}`,
+    body: single ? where : byProject(counts, nameOf),
+    at: feed.at,
+    alert: feed.key,
+    incident: undefined,
+    feed: feed.feed,
+  }
 }
 
 const IncidentActivity = Schema.Union([
@@ -118,6 +190,7 @@ export const payloadOf = (alert: Alert): Schema.JsonObject => ({
     // The category whose actions the app registers: Acknowledge.
     ...(alert.level === "quiet" || alert.incident === undefined ? {} : { category: "incident" }),
     ...(alert.incident === undefined ? {} : { "thread-id": alert.incident.project }),
+    ...(alert.feed === undefined ? {} : { "thread-id": `feed:${alert.feed}` }),
     "mutable-content": 1,
   },
   cluenori: {
@@ -125,6 +198,7 @@ export const payloadOf = (alert: Alert): Schema.JsonObject => ({
     at: DateTime.formatIso(alert.at),
     alert: alert.alert,
     ...(alert.incident === undefined ? {} : { project: alert.incident.project, incident: alert.incident.id }),
+    ...(alert.feed === undefined ? {} : { feed: alert.feed }),
   },
 })
 

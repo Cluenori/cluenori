@@ -3,6 +3,7 @@
  * time-sensitive notification, or a quiet one, by what happened. Runs in the workspace's Durable
  * Object, which the activity of every project's incidents reaches.
  */
+export type { FeedAlert } from "./alert.ts"
 export { AlertLevel, NoPushToken, PushNotSetUp, PushRejected, PushUnavailable } from "./alert.ts"
 export { NotificationsGroup } from "./notifications-api.ts"
 export { Notifications } from "./notifications.ts"

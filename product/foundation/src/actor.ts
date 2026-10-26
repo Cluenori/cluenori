@@ -26,7 +26,7 @@ export const Actor = Schema.Union([
 export type Actor = typeof Actor.Type
 
 /**
- * The actor may not do this: only an owner invites, removes, or changes who sees what, or creates a
- * project.
+ * The actor may not do this: only an owner invites, removes, or changes who sees what, creates a
+ * project, or makes, changes or deletes a feed.
  */
 export class NotAllowed extends Schema.TaggedError<NotAllowed>()("NotAllowed", {}) {}

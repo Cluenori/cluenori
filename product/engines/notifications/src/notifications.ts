@@ -10,8 +10,8 @@ import { Clock, Context, Crypto, DateTime, Duration, Effect, Layer, Option, Resu
 import type { HttpClient } from "effect/http"
 import { SqlClient, SqlSchema } from "effect/sql"
 
-import type { Alert } from "./alert.ts"
-import { alertOf, NoPushToken, payloadOf, PushNotSetUp, PushRejected, PushUnavailable } from "./alert.ts"
+import type { Alert, FeedAlert } from "./alert.ts"
+import { alertOf, feedAlertOf, NoPushToken, payloadOf, PushNotSetUp, PushRejected, PushUnavailable } from "./alert.ts"
 import { migrateNotifications } from "./notifications-migrations.ts"
 
 /**
@@ -55,6 +55,13 @@ export class Notifications extends Context.Service<
      * time, each up to 10 seconds.
      */
     readonly notify: (activity: ReadonlyArray<Envelope>) => Effect.Effect<void, PushUnavailable>
+    /**
+     * Tells every phone with a push token whose member sees any of `feed`'s projects about the
+     * entries of the projects they see, at the feed's level, never as an alarm. Each `feed.key`
+     * reaches each phone once, however often it is handed over. Fails with `PushUnavailable` as
+     * `notify` does. Does nothing until push is set up.
+     */
+    readonly notifyFeed: (feed: FeedAlert) => Effect.Effect<void, PushUnavailable>
     /**
      * Rings `phone` with a test alarm, as an incident's would, so its owner knows alerts reach it.
      * Fails with `PushNotSetUp`, with `NoPushToken` for a phone without one, with `PushRejected` when
@@ -154,6 +161,60 @@ const make = (push: Option.Option<Pushing>) =>
       return answer
     })
 
+    // What each phone's member sees, asked once per call; a removed member's phones see nothing.
+    const seesOnce = () => {
+      const accesses = new Map<MemberId, Access>()
+      return Effect.fn("Notifications.sees")(function* (member: MemberId | undefined, project: ProjectKey) {
+        if (member === undefined) {
+          return false
+        }
+        const known = accesses.get(member)
+        const access =
+          known ??
+          (yield* members
+            .accessOf(member)
+            .pipe(Effect.orElseSucceed((): Access => ({ _tag: "Projects", projects: [] }))))
+        accesses.set(member, access)
+        return canSee(access, project)
+      })
+    }
+
+    // Records that `key` reached `phone`, so handing it over again sends it no more.
+    const markSent = (key: string, phone: PhoneId, now: number) =>
+      sql`INSERT OR IGNORE INTO notifications_sent ${sql.insert({ envelope: key, phone, at: now })}`.pipe(Effect.orDie)
+
+    const notifyFeed = Effect.fn("Notifications.notifyFeed")(function* (feed: FeedAlert) {
+      if (Option.isNone(push)) {
+        return
+      }
+      const targets = yield* phones.pushTargets
+      if (targets.length === 0) {
+        return
+      }
+      const now = yield* Clock.currentTimeMillis
+      const names = new Map<string, string>((yield* index.all).map((project) => [project.key, project.name]))
+      const sent = yield* findSent([feed.key]).pipe(
+        Effect.orDie,
+        Effect.map((rows) => new Set(rows.map((row) => row.phone))),
+      )
+      const sees = seesOnce()
+      for (const target of targets) {
+        if (sent.has(target.phone)) {
+          continue
+        }
+        const counts = yield* Effect.filter(feed.counts, (each) => sees(target.member, each.project))
+        if (counts.length === 0) {
+          continue
+        }
+        const alert = feedAlertOf(feed, counts, (project) => names.get(project) ?? project)
+        const answer = yield* sendTo(push.value, target, alert)
+        if (answer._tag === "KeyRefused" || (answer._tag === "Rejected" && !goneReasons.has(answer.reason))) {
+          yield* Effect.logError("APNs refused a feed's alert", { answer: answer._tag, reason: answer.reason })
+        }
+        yield* markSent(feed.key, target.phone, now)
+      }
+    })
+
     const notify = Effect.fn("Notifications.notify")(function* (activity: ReadonlyArray<Envelope>) {
       if (Option.isNone(push)) {
         return
@@ -173,21 +234,7 @@ const make = (push: Option.Option<Pushing>) =>
         Effect.orDie,
         Effect.map((rows) => new Set(rows.map((row) => `${row.envelope} ${row.phone}`))),
       )
-      // What each phone's member sees, asked once per notify; a removed member's phones see nothing.
-      const accesses = new Map<MemberId, Access>()
-      const sees = Effect.fn("Notifications.sees")(function* (member: MemberId | undefined, project: ProjectKey) {
-        if (member === undefined) {
-          return false
-        }
-        const known = accesses.get(member)
-        const access =
-          known ??
-          (yield* members
-            .accessOf(member)
-            .pipe(Effect.orElseSucceed((): Access => ({ _tag: "Projects", projects: [] }))))
-        accesses.set(member, access)
-        return canSee(access, project)
-      })
+      const sees = seesOnce()
       for (const { entry, alert } of alerts) {
         for (const target of targets) {
           if (sent.has(`${entry} ${target.phone}`)) {
@@ -201,9 +248,7 @@ const make = (push: Option.Option<Pushing>) =>
             // Sending it again won't change Apple's answer, so it counts as sent.
             yield* Effect.logError("APNs refused an alert", { answer: answer._tag, reason: answer.reason })
           }
-          yield* sql`INSERT OR IGNORE INTO notifications_sent ${sql.insert({ envelope: entry, phone: target.phone, at: now })}`.pipe(
-            Effect.orDie,
-          )
+          yield* markSent(entry, target.phone, now)
         }
       }
     })
@@ -230,5 +275,5 @@ const make = (push: Option.Option<Pushing>) =>
       }
     })
 
-    return Notifications.of({ notify, testAlert })
+    return Notifications.of({ notify, notifyFeed, testAlert })
   })

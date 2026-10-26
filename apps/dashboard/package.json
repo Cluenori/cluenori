@@ -13,6 +13,7 @@
     "@bagatka/webauthn": "catalog:",
     "@base-ui/react": "catalog:",
     "@cluenori/analytics": "workspace:*",
+    "@cluenori/feeds": "workspace:*",
     "@cluenori/foundation": "workspace:*",
     "@cluenori/github-app": "workspace:*",
     "@cluenori/incidents": "workspace:*",
