@@ -16,9 +16,19 @@
         "responses": {
           "204": {
             "description": "<No Content>"
+          },
+          "503": {
+            "description": "Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unavailable"
+                }
+              }
+            }
           }
         },
-        "description": "Answers 204 when the Worker is deployed and serving. Use it for uptime checks; it reads no storage."
+        "description": "Answers 204 when the deployment can serve: the Worker runs, the workspace's storage answers a read, and so does the deployment's own project's when it measures itself; 503 when either doesn't within 5 seconds. Needs no sign-in and says nothing else, so an outside watcher can call it every minute: two storage reads each time."
       }
     },
     "/api/client-telemetry": {
@@ -13872,6 +13882,21 @@
         },
         "required": [
           "environment"
+        ],
+        "additionalProperties": false
+      },
+      "Unavailable": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "Unavailable"
+            ]
+          }
+        },
+        "required": [
+          "_tag"
         ],
         "additionalProperties": false
       }

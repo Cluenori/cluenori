@@ -22,6 +22,7 @@ import { AppleAppSiteAssociation } from "./apple-app-site.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
 import { FeedsHandlers } from "./feeds-handlers.ts"
 import { GitHubConnected, GitHubHandlers } from "./github-handlers.ts"
+import { Health } from "./health.ts"
 import { IncidentsHandlers } from "./incidents-handlers.ts"
 import { ManifestCache } from "./manifest-cache.ts"
 import { memberAuthorizationLayer } from "./member-authorization-layer.ts"
@@ -78,7 +79,7 @@ const Workspace = WorkspaceObjects.layerInJurisdiction(env.WORKSPACE, workspace)
 
 // Every route group is provided on its own line.
 const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi.json" }).pipe(
-  Layer.provide(SystemHandlers),
+  Layer.provide(SystemHandlers.pipe(Layer.provide(Health.layer))),
   Layer.provide(SignInHandlers),
   Layer.provide(PasskeysHandlers),
   Layer.provide(MembersHandlers),

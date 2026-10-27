@@ -89,5 +89,8 @@ A new page, screen or command takes its feature from this table, or adds a row t
 
 ## What it can't see
 
-A deployment that is down can't report that it is down. That needs a check from outside it, which
-isn't built yet.
+A deployment that is down can't report that it is down. That needs a check from outside it.
+`/api/health` is what such a check calls: unauthenticated, it answers 204 when the workspace's
+Durable Object answers a read, and so does the deployment's own project's while it measures itself,
+and 503 when either doesn't within 5 seconds; it says nothing else. The watcher itself isn't built
+yet.

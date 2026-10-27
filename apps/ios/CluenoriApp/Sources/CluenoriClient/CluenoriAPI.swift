@@ -31,8 +31,12 @@ public nonisolated struct CluenoriAPI: Sendable {
         self.transport = transport ?? { request in try await URLSession.shared.data(for: request) }
     }
 
-    /// Answers 204 when the Worker is deployed and serving. Use it for uptime checks; it reads no
-    /// storage.
+    /// Answers 204 when the deployment can serve: the Worker runs, the workspace's storage answers
+    /// a read, and so does the deployment's own project's when it measures itself; 503 when either
+    /// doesn't within 5 seconds. Needs no sign-in and says nothing else, so an outside watcher can
+    /// call it every minute: two storage reads each time.
+    ///
+    /// Fails with `.unavailable`, or as any call can.
     @concurrent
     public func health() async throws(APIError) {
         _ = try await self.send("GET", "/api/health")
@@ -1463,6 +1467,7 @@ public nonisolated enum APIError: Error, Sendable {
     case signInNotFound(SignInNotFound)
     case tooManySdkKeys(TooManySdkKeys)
     case unauthorized(Unauthorized)
+    case unavailable(Unavailable)
     case versionPolicyRefused(VersionPolicyRefused)
     case versionRefused(VersionRefused)
     /// The server didn't answer: no connection, a timeout, or a cancelled call.
@@ -11434,6 +11439,27 @@ public nonisolated struct Unauthorized: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct Unavailable: Codable, Hashable, Sendable {
+    public init() {
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "Unavailable" else {
+            throw container.`corruption at`(._tag, "_tag isn't Unavailable.")
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("Unavailable", forKey: ._tag)
+    }
+}
+
 public nonisolated struct UpdateText: Codable, Hashable, Sendable {
     public let title: String
     public let message: String
@@ -11901,6 +11927,7 @@ nonisolated extension CluenoriAPI {
             case "SignInNotFound": return .signInNotFound(try jsonDecoder().decode(SignInNotFound.self, from: data))
             case "TooManySdkKeys": return .tooManySdkKeys(try jsonDecoder().decode(TooManySdkKeys.self, from: data))
             case "Unauthorized": return .unauthorized(try jsonDecoder().decode(Unauthorized.self, from: data))
+            case "Unavailable": return .unavailable(try jsonDecoder().decode(Unavailable.self, from: data))
             case "VersionPolicyRefused": return .versionPolicyRefused(try jsonDecoder().decode(VersionPolicyRefused.self, from: data))
             case "VersionRefused": return .versionRefused(try jsonDecoder().decode(VersionRefused.self, from: data))
             default: return .unreadable(status: status, reason: "An error this client doesn't know: \(named).")

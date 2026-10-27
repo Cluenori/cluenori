@@ -4,6 +4,7 @@ import { Config, Effect, Layer, Option } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 
 import { CluenoriApi } from "./cluenori-api.ts"
+import { Health } from "./health.ts"
 
 // The deployment's own clients' settings, each absent until `./cluenori self-telemetry on` sets it.
 const clientTelemetrySettings = Config.all({
@@ -15,10 +16,11 @@ const clientTelemetrySettings = Config.all({
   cli: Config.option(Config.schema(SdkKey, "CLUENORI_CLI_SDK_KEY")),
 })
 
-/** Serves the system group; the clients' settings are read once, from the Worker's env. */
+/** Serves the system group: the deployment's health, and its clients' settings, read once from the Worker's env. */
 export const SystemHandlers = Layer.unwrap(
   Effect.gen(function* () {
     const settings = yield* clientTelemetrySettings.pipe(Effect.orDie)
+    const health = yield* Health
     const answer = {
       environment: settings.environment,
       ...Option.match(settings.release, { onNone: () => ({}), onSome: (release) => ({ release }) }),
@@ -26,7 +28,7 @@ export const SystemHandlers = Layer.unwrap(
       ...Option.match(settings.cli, { onNone: () => ({}), onSome: (cli) => ({ cli }) }),
     }
     return HttpApiBuilder.group(CluenoriApi, "system", (handlers) =>
-      handlers.handle("health", () => Effect.void).handle("clientTelemetry", () => Effect.succeed(answer)),
+      handlers.handle("health", () => health.check).handle("clientTelemetry", () => Effect.succeed(answer)),
     )
   }),
 )

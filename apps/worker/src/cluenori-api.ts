@@ -30,11 +30,17 @@ export const ClientTelemetry = Schema.Struct({
 }).annotate({ identifier: "ClientTelemetry" })
 export type ClientTelemetry = typeof ClientTelemetry.Type
 
+/** The deployment is deployed, but its storage didn't answer: it can't serve now. Says nothing more. */
+export class Unavailable extends Schema.TaggedError<Unavailable>()("Unavailable", {}) {}
+
 export class SystemGroup extends HttpApiGroup.make("system", { topLevel: true })
   .add(
-    HttpApiEndpoint.get("health", "/health", { success: HttpApiSchema.NoContent }).annotate(
+    HttpApiEndpoint.get("health", "/health", {
+      success: HttpApiSchema.NoContent,
+      error: Unavailable.pipe(HttpApiSchema.status(503)),
+    }).annotate(
       OpenApi.Description,
-      "Answers 204 when the Worker is deployed and serving. Use it for uptime checks; it reads no storage.",
+      "Answers 204 when the deployment can serve: the Worker runs, the workspace's storage answers a read, and so does the deployment's own project's when it measures itself; 503 when either doesn't within 5 seconds. Needs no sign-in and says nothing else, so an outside watcher can call it every minute: two storage reads each time.",
     ),
   )
   .add(
