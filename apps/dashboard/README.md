@@ -46,6 +46,8 @@ open from. Above every page but Now, its trail: each level above it, one click a
                                                  one release's app health, each measure beside the release before it's,
                                                  the people on it by day, and its features with the memory each took
       /projects/notes/analytics/features         every feature key, searchable, sorted by people, events, screens or memory
+        /projects/notes/analytics/features/<key>?component=notes-web
+                                                 one feature's story across clients, or narrowed to one component
       /projects/notes/analytics/people?user=user-1842
                                                  one person, by the app's own user ID: their installations, days
                                                  active, and what they did, newest first
@@ -62,7 +64,8 @@ open from. Above every page but Now, its trail: each level above it, one click a
         /projects/notes/operations/GET%20/api/feed?component=…[&at=<ISO 8601>]
                                                  one operation and its requests (a group), its name as path segments:
                                                  what the period holds, or none and when it last ran; its load and p95,
-                                                 a click opening a moment; its slowest and failed requests
+                                                 a click opening a moment; by client, from its requests' origin;
+                                                 its slowest and failed requests
       /projects/notes/errors                     errors over time by component, and every error group
         /projects/notes/errors/<id>              one error: its exception chain, every frame, its operation, its log record
       /projects/notes/logs                       warnings and errors over time, and every log message, searchable,
@@ -247,6 +250,13 @@ address from before they moved, such as `/notes/errors`, opens its page at its a
   are public, issued and revoked after asking, and its version policy, set in a dialog checked by the
   API's own schemas and cleared after asking, are on the Analytics page, for every component: the API
   doesn't say which are apps.
+  Its Screens panel lists each screen's visits, its readiness from the device's copy and from the
+  network, CPU, hitches and hangs, and each timing's spread (`src/views/screen-table.tsx`); a value
+  apps didn't send is "—".
+- **Measuring itself,** `src/lib/telemetry.ts`: when the deployment measures itself
+  (`docs/self-telemetry.md`), each page is a screen with its feature (`featureOfPage`), ready when
+  its panel shows kept or fresh data (`src/views/loaded.tsx`). The SDK loads after start
+  (`src/lib/telemetry-start.ts`), and only when `GET /api/client-telemetry` names a key.
 - **What a color means,** `src/lib/colors.ts`: each component keeps one color everywhere; red is
   failure, yellow a warning; in a line, purple is a release waiting for a member.
 - **The panel** every question is answered in, `src/views/panel.tsx`, an answer's three states,

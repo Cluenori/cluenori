@@ -42,9 +42,7 @@ struct PersonScreen: View {
         }
         .refreshable { await person.load() }
         .task { await person.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: person.person.problem, receivedAt: person.person.receivedAt)
-        }
+        .answerBanner(problem: person.person.problem, receivedAt: person.person.receivedAt)
     }
 
     // The user ID they were asked by, or their first; else that they have none.

@@ -61,9 +61,7 @@ struct AnalyticsScreen: View {
             async let policies: Void = policies.load()
             _ = await (analytics, policies)
         }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: analytics.usage.problem, receivedAt: analytics.usage.receivedAt)
-        }
+        .answerBanner(problem: analytics.usage.problem, receivedAt: analytics.usage.receivedAt)
     }
 
     // Every component of the project, to choose from: the API doesn't say which are apps.
@@ -665,9 +663,7 @@ struct FeaturesScreen: View {
         .navigationTitle(Text("Features", bundle: #bundle, comment: "Title of every feature's use."))
         .refreshable { await analytics.featureUse.load() }
         .task(id: navigation.analyticsPeriod) { await analytics.choose(navigation.analyticsPeriod) }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: analytics.featureUse.problem, receivedAt: analytics.featureUse.receivedAt)
-        }
+        .answerBanner(problem: analytics.featureUse.problem, receivedAt: analytics.featureUse.receivedAt)
     }
 }
 
@@ -713,9 +709,7 @@ struct AppHealthScreen: View {
         #endif
         .refreshable { await analytics.appHealth.load() }
         .task { await analytics.appHealth.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: analytics.appHealth.problem, receivedAt: analytics.appHealth.receivedAt)
-        }
+        .answerBanner(problem: analytics.appHealth.problem, receivedAt: analytics.appHealth.receivedAt)
     }
 }
 

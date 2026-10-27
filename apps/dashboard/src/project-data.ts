@@ -301,6 +301,23 @@ export const operationsAtom = Atom.family((scope: Scope) =>
   ),
 )
 
+/**
+ * The period's operations split by the client that asked for them, of one operation or every one:
+ * origins aren't counted by release, so a scope's release is left out.
+ */
+export const originsAtom = Atom.family((scope: Scope) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastOf(periodMillis[get(periodAtom)])
+        const { release: _release, ...filters } = filtersOf(scope)
+        return yield* client.signals.origins({ params: { project: scope.project }, query: { ...period, ...filters } })
+      }),
+    ),
+  ),
+)
+
 /** The slowest and the failed of the traces kept over the period, of one operation or every one. */
 export const keptTracesAtom = Atom.family((scope: Scope) =>
   kept(
@@ -1022,6 +1039,26 @@ export const featureUseAtom = Atom.family((scope: AppScope) =>
   ),
 )
 
+/** Each screen's readiness, visits, CPU time, hitches and hangs over the analytics period, and the apps' timings. */
+export const screensAtom = Atom.family((scope: AppScope) =>
+  kept(
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastDaysOf(get(appPeriodAtom))
+        return yield* client.analytics.screens({
+          params: { project: scope.project },
+          query: {
+            ...period,
+            ...appScopeOf(scope),
+            ...(scope.release === undefined ? {} : { release: scope.release }),
+          },
+        })
+      }),
+    ),
+  ),
+)
+
 /**
  * One person, by their ID or the app's own user ID linked to them: their installations, active days,
  * features and timeline. Fails with `PersonNotFound` when the apps never sent that person or user ID.
@@ -1048,14 +1085,22 @@ export const personAtom = Atom.family(
  * Fails with `FeatureNotFound` when nothing kept names it.
  */
 export const featureAtom = Atom.family(
-  (key: { readonly project: ProjectKey; readonly feature: FeatureKey; readonly environment?: EnvironmentKey }) =>
+  (key: {
+    readonly project: ProjectKey
+    readonly feature: FeatureKey
+    readonly environment?: EnvironmentKey
+    readonly component?: ComponentKey
+  }) =>
     kept(
       CluenoriClient.runtime.atom(
         Effect.gen(function* () {
           const client = yield* CluenoriClient
           return yield* client.analytics.feature({
             params: { project: key.project, feature: key.feature },
-            query: key.environment === undefined ? {} : { environment: key.environment },
+            query: {
+              ...(key.environment === undefined ? {} : { environment: key.environment }),
+              ...(key.component === undefined ? {} : { component: key.component }),
+            },
           })
         }),
       ),

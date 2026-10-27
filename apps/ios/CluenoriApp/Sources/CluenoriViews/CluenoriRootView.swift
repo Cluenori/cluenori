@@ -16,6 +16,7 @@ public struct CluenoriRootView: View {
                 PairedRoot(models: models, navigation: pairing.navigation, pairing: pairing)
             } else {
                 PairScreen(pairing: pairing)
+                    .measuredScreen("pair", feature: "settings.phones")
             }
         }
         .preferredColorScheme(.dark)
@@ -54,6 +55,7 @@ struct RouteScreen: View {
             // Another environment, a cleared filter, or, for a screen that looks over it, another
             // period, is another screen, with its own state.
             .id(Identity(route: shown, period: Self.looksOverPeriod(shown) ? navigation.period : nil))
+            .measuredScreen(shown.screenName, feature: shown.feature)
             // The project's environments, which choose the one shown; the first screen of a project
             // asks for them, and a link may show another project in this one's place.
             .task(id: route.project) {

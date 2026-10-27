@@ -1,7 +1,8 @@
 import { BunRuntime, BunServices } from "@effect/platform-bun"
-import { Cause, Console, Effect, Layer } from "effect"
+import { Cause, Console, Effect, Layer, Stdio } from "effect"
 import { CliOutput, Command } from "effect/cli"
 
+import { measured } from "./cli-telemetry.ts"
 import { cluenori } from "./cluenori.ts"
 import { printable } from "./terminal-text.ts"
 
@@ -20,8 +21,11 @@ const terminal = Console.consoleWith((current) =>
   ),
 )
 
-const program = cluenori.pipe(
-  Command.run({ version }),
+const program = Effect.gen(function* () {
+  const stdio = yield* Stdio.Stdio
+  const args = yield* stdio.args
+  return yield* measured(cluenori, args, Command.run(cluenori, { version }))
+}).pipe(
   // An expected failure has already printed what went wrong and exits with code 1. A defect is a
   // bug, and prints in full.
   Effect.tapCause((cause) => (Cause.hasDies(cause) ? Effect.logError(cause) : Effect.void)),

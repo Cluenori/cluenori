@@ -67,6 +67,15 @@ Nothing started: 1.4.0+58 has no notes in de-DE, which com.notesapp.notes shows
 Write its notes for each of the app's languages: ./cluenori notes notes notes-ios 1.4.0+58 --draft production
 ```
 
+### Its telemetry
+
+When the deployment it is set up for measures itself (`./cluenori self-telemetry on`), the CLI
+tells that deployment, and no other, which command ran (its name alone, never an argument), its
+feature, how long it took, and a failure's kind. It says so the first time it sends and in
+`--help`, and is off with `CLUENORI_TELEMETRY=off` or `DO_NOT_TRACK=1`. `run` and `setup` are
+never measured. `./cluenori self-telemetry off` turns the deployment's own telemetry off for every
+client (`docs/self-telemetry.md`).
+
 ## Owns
 
 - **The steps** of run, setup, and update.
@@ -89,6 +98,7 @@ Write its notes for each of the app's languages: ./cluenori notes notes notes-io
 - `@cluenori/foundation`, `@cluenori/projects`, `@cluenori/releases`, and `@cluenori/signals`, for
   the Schemas of what the commands send (ARCHITECTURE.md, open decision "How clients import the API
   definition").
+- `@cluenori/sdk` (`sdks/web`), from the workspace, to measure itself.
 - `effect/cli` for commands, and `@effect/platform-bun` for the file system, child processes, and
   `Crypto`.
 

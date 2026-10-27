@@ -135,9 +135,7 @@ struct ComponentScreen: View {
             }
             return ended.isEmpty ? nil : .success
         }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: delivery.answer.problem, receivedAt: delivery.answer.receivedAt)
-        }
+        .answerBanner(problem: delivery.answer.problem, receivedAt: delivery.answer.receivedAt)
     }
 
     // How the title's subtitle describes the component: the one it ships with, or its version and

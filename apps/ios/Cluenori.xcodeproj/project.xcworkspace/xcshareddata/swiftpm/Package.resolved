@@ -1,0 +1,15 @@
+{
+  "originHash" : "0656c014d2337dc12ef4b3f45681809c4adf402c08f45273e92d78734f4deb10",
+  "pins" : [
+    {
+      "identity" : "cluenori-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Cluenori/cluenori-swift",
+      "state" : {
+        "revision" : "ac91dd6597c6d8a057cdad9fd6650060f4043d44",
+        "version" : "0.2.1"
+      }
+    }
+  ],
+  "version" : 3
+}

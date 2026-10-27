@@ -100,7 +100,8 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     folders: "apps/cli",
     name: "@cluenori/cli",
     contract: false,
-    mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*", "apps/worker"],
+    // The web SDK, which measures the CLI with the deployment it is set up for.
+    mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*", "apps/worker", "sdks/web"],
     mayInstall: ["effect", "@effect/platform-bun"],
     mayInstallForDevelopment: forTests,
   },
@@ -108,7 +109,8 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     folders: "apps/dashboard",
     name: "@cluenori/dashboard",
     contract: false,
-    mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*", "apps/worker"],
+    // The web SDK, which measures the dashboard with the deployment that serves it.
+    mayUse: ["packages/*", "product/foundation", "product/engines/*", "product/modules/*", "apps/worker", "sdks/web"],
     // Effect's React binding: the dashboard reads the API through atoms.
     mayInstall: ["effect", "@effect/atom-react", ...toolkit, ...forTheBrowser],
     mayInstallForDevelopment: [

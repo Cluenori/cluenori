@@ -5,9 +5,10 @@ import { Cause, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { SearchXIcon } from "lucide-react"
 import type { ReactNode } from "react"
-import { lazy, Suspense, useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react"
 
 import { useEnvironments } from "@/hooks/use-environments"
+import { featureOfPage, screenReady, showScreen, signedIn } from "@/lib/telemetry"
 import type { ListedProject } from "@/pages/now-page"
 import { NowPage } from "@/pages/now-page"
 import { ProjectPage } from "@/pages/project-page"
@@ -17,7 +18,7 @@ import type { Environments } from "@/project-facts"
 import type { Filters, Route } from "@/router"
 import { Link, trailOf, useRoute } from "@/router"
 import { AppSidebar } from "@/views/app-sidebar"
-import { failureText } from "@/views/loaded"
+import { failureText, ScreenReady } from "@/views/loaded"
 import { PageTrail } from "@/views/page-trail"
 import { Panel } from "@/views/panel"
 import { Button, buttonVariants } from "@/views/ui/button"
@@ -340,6 +341,7 @@ function PageOf({ route, projects }: { readonly route: Route; readonly projects:
             project={route.project}
             feature={route.feature}
             {...(route.environment === undefined ? {} : { named: route.environment })}
+            {...(route.component === undefined ? {} : { component: route.component })}
           />
         </Suspense>
       )
@@ -431,6 +433,15 @@ function Dashboard() {
   const signOut = useAtomSet(signOutAtom)
   const [searching, setSearching] = useState(false)
 
+  // The page shown, as the dashboard's screen, and who is signed in, for its measuring. A visit is
+  // a page's address without its query: a period or component picked on the page is the same visit.
+  const screen = route.page !== "kit" && route.page !== "invite" && isSignedOut(projects) ? "signIn" : route.page
+  const visit = window.location.pathname
+  // Before any panel says it is ready, whose effects run first.
+  useLayoutEffect(() => showScreen(screen, featureOfPage[screen], visit), [screen, visit])
+  const memberId = AsyncResult.isSuccess(me) ? me.value.id : undefined
+  useEffect(() => signedIn(memberId), [memberId])
+
   // ⌘K opens search from anywhere.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -518,7 +529,9 @@ export function App() {
   return (
     <RegistryProvider>
       <TooltipProvider>
-        <Dashboard />
+        <ScreenReady value={screenReady}>
+          <Dashboard />
+        </ScreenReady>
       </TooltipProvider>
     </RegistryProvider>
   )

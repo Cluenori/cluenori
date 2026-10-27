@@ -20,7 +20,16 @@ import type { IssuedSdkKey } from "@cluenori/projects"
 import { SdkKey } from "@cluenori/projects"
 import type { ComponentVersionPolicy } from "@cluenori/releases"
 import { NoteLocale } from "@cluenori/releases"
-import type { AppInstallation, AppUsage, FeatureUse, RetentionCohort, TimelineEntry, UsageDay } from "@cluenori/signals"
+import type {
+  AppInstallation,
+  AppUsage,
+  FeatureUse,
+  RetentionCohort,
+  ScreenUse,
+  TimelineEntry,
+  TimingUse,
+  UsageDay,
+} from "@cluenori/signals"
 import { AppSignalId, AppUserId, CountryCode } from "@cluenori/signals"
 import { DateTime } from "effect"
 
@@ -202,6 +211,40 @@ export const sampleHealth: ReadonlyArray<ReleaseHealth> = [
     worse: [],
     better: [],
   },
+]
+
+/**
+ * Screens as an app measured them: the feed slow from the network and hanging, the editor shown
+ * from what the phone kept, settings never ready-marked, a long name, and hangs on no screen.
+ */
+export const sampleScreens: ReadonlyArray<ScreenUse> = [
+  {
+    screen: EnvelopeName.make("feed"),
+    readyKept: { count: 9_120, p50Ms: 38, p95Ms: 120 },
+    readyFresh: { count: 8_700, p50Ms: 640, p95Ms: 2_300 },
+    visible: { count: 9_800, p50Ms: 41_000, p95Ms: 300_000 },
+    cpuMsPerMinute: 2_100,
+    hitchMsPerSecond: 11.4,
+    hangs: { count: 37, p50Ms: 480, p95Ms: 2_900 },
+  },
+  {
+    screen: EnvelopeName.make("note.editor"),
+    readyKept: { count: 7_300, p50Ms: 22, p95Ms: 70 },
+    visible: { count: 7_400, p50Ms: 95_000, p95Ms: 900_000 },
+    cpuMsPerMinute: 900,
+    hitchMsPerSecond: 1.2,
+  },
+  {
+    screen: EnvelopeName.make("settings.notifications.quiet-hours-and-schedules"),
+    visible: { count: 640, p50Ms: 12_000, p95Ms: 60_000 },
+  },
+  { hangs: { count: 4, p50Ms: 310, p95Ms: 1_200 } },
+]
+
+/** Timings an app measured, by its own names. */
+export const sampleTimings: ReadonlyArray<TimingUse> = [
+  { name: EnvelopeName.make("export.render"), count: 1_204, p50Ms: 820, p95Ms: 4_100 },
+  { name: EnvelopeName.make("sync.merge"), count: 88_310, p50Ms: 12, p95Ms: 64 },
 ]
 
 /** Features by use; sync's memory was never measured, and "(no feature)" is what the app marked with none. */

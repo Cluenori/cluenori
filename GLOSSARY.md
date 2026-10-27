@@ -97,7 +97,7 @@ its exact rule.
 | Screen readiness | When a visit's screen first showed content of one kind: `kept`, from what the device kept, or `fresh`, from the network; the first of a launch is its ready | `ScreenReady`, `ScreenContent`, `ScreenReadiness` (Swift) | time to interactive, load time |
 | Hitch | Time a frame came after it was due, while the person scrolled | `hitchMs` on `ScreenLeft` | jank, dropped frame, failed animation |
 | Hang | The main thread not answering for 250 ms or more while the app is in sight | `AppHang`, `app.hang` | freeze, ANR (Android's word), long task (the browser's) |
-| Self-telemetry | Telemetry a deployment sends to itself, marked by `cluenori-telemetry: self`, whose ingest makes none | `selfTelemetryHeader`, `@cluenori/signals` | internal metrics, meta-telemetry |
+| Self-telemetry | Telemetry a deployment sends to itself, marked by `cluenori-telemetry: self`: its Worker's real work (the API, the dashboard's pages, detectors, pushes, releases), its dashboard and CLI by SDK keys the Worker hands them, its iPhone app by its own; receiving telemetry is never traced, only counted | `SelfTelemetry`, `selfTelemetryHeader`, `@cluenori/signals`; `ClientTelemetry`, `@cluenori/worker` | internal metrics, meta-telemetry |
 | Culprit | Where an error group happens: the top frame of its stack, or its logger | `culprit` | cause, source |
 
 ## Words that already mean a product concept

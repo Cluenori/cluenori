@@ -27,6 +27,9 @@ struct NowScreen: View {
             .safeAreaInset(edge: .bottom) {
                 NowBanner(today: today, pairing: pairing)
             }
+            // The launch is timed to Now's first answer, the first screen ready.
+            .readyMark(receivedAt: today.receivedAt)
+            .measuredScreen("now", feature: "today")
             .safeAreaInset(edge: .top) {
                 if let alerts = pairing.models?.alerts {
                     AlertsCard(alerts: alerts)

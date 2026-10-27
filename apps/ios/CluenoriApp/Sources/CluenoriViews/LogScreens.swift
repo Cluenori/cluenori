@@ -79,9 +79,7 @@ struct LogsScreen: View {
             if text.isEmpty { Task { await logs.filter(level: level, search: "") } }
         }
         .task { await logs.refresh() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: logs.messages.problem, receivedAt: logs.messages.receivedAt)
-        }
+        .answerBanner(problem: logs.messages.problem, receivedAt: logs.messages.receivedAt)
     }
 }
 
@@ -298,14 +296,10 @@ struct LogMessageScreen: View {
         .monitorSheet($monitoring, monitors: monitors, navigation: navigation)
         .refreshable { await message.refresh() }
         .task { await message.refresh() }
-        .safeAreaInset(edge: .bottom) {
-            // The message and its lines are asked for apart; either may be what failed.
-            if message.detail.problem != nil {
-                AnswerBanner(problem: message.detail.problem, receivedAt: message.detail.receivedAt)
-            } else {
-                AnswerBanner(problem: message.lines.problem, receivedAt: message.lines.receivedAt)
-            }
-        }
+        // The message and its lines are asked for apart; either may be what failed.
+        .answerBanner(
+            problem: message.detail.problem ?? message.lines.problem,
+            receivedAt: message.detail.problem != nil ? message.detail.receivedAt : message.lines.receivedAt)
     }
 }
 
@@ -406,9 +400,7 @@ struct LogLineByIDScreen: View {
         }
         .navigationTitle(Text("Log line", bundle: #bundle, comment: "Title of one log line."))
         .task { await line.line.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: line.line.problem, receivedAt: line.line.receivedAt)
-        }
+        .answerBanner(problem: line.line.problem, receivedAt: line.line.receivedAt)
     }
 }
 

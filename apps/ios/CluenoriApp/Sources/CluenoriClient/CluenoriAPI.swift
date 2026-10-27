@@ -38,6 +38,16 @@ public nonisolated struct CluenoriAPI: Sendable {
         _ = try await self.send("GET", "/api/health")
     }
 
+    /// How the deployment's own web dashboard and CLI report themselves to it: its release and
+    /// environment, and each one's SDK key, public as every SDK key is; a key is absent when the
+    /// deployment doesn't measure that client (`./cluenori self-telemetry`). Needs no sign-in,
+    /// since the dashboard measures its sign-in screen too; reads no storage.
+    @concurrent
+    public func clientTelemetry() async throws(APIError) -> ClientTelemetry {
+        let `the answer` = try await self.send("GET", "/api/client-telemetry")
+        return try Self.decoded(from: `the answer`)
+    }
+
     /// Signs a browser in with the deployment's API token: answers 204 with the sign-in cookie,
     /// HttpOnly, Secure and SameSite=Strict, for /api, kept 30 days. The API then accepts it in
     /// place of the bearer token. A wrong token answers 401 and sets nothing.
@@ -363,6 +373,33 @@ public nonisolated struct CluenoriAPI: Sendable {
         if let release { `query items`.append(("release", Self.text(release))) }
         if let operation { `query items`.append(("operation", Self.text(operation))) }
         let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/load", query: `query items`)
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// A period's operations split by the client that asked for them, the most first: of each
+    /// component's operation, how many times each client's requests ran it, how many failed, and
+    /// their average, as the client's SDK named itself in the request's baggage
+    /// (`cluenori.origin.component`) and the service copied it to its span. Requests that named no
+    /// client aren't listed: they are the rest of the operation's count. Counted by the UTC hour,
+    /// kept 15 months; `covered` is the whole hours the period touches.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func origins(
+        project: String,
+        from: Date,
+        to: Date,
+        environment: String? = nil,
+        component: String? = nil,
+        operation: String? = nil,
+    ) async throws(APIError) -> OriginTable {
+        var `query items`: [(String, String)] = []
+        `query items`.append(("from", Self.text(from)))
+        `query items`.append(("to", Self.text(to)))
+        if let environment { `query items`.append(("environment", Self.text(environment))) }
+        if let component { `query items`.append(("component", Self.text(component))) }
+        if let operation { `query items`.append(("operation", Self.text(operation))) }
+        let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/origins", query: `query items`)
         return try Self.decoded(from: `the answer`)
     }
 
@@ -1248,6 +1285,34 @@ public nonisolated struct CluenoriAPI: Sendable {
         return try Self.decoded(from: `the answer`)
     }
 
+    /// How each screen of a project's apps did in a period, by UTC day, those visited the most
+    /// first: how long it took to show its first content from what the device kept and from the
+    /// network (p50 and p95, as the app marked it ready), its visits and their time in sight, the
+    /// CPU time the app used per minute in sight, its hitches while scrolling in ms per second
+    /// scrolled, and the hangs on it (the main thread held 250 ms or more); and the timings the
+    /// apps measured, by name, with their p50 and p95. A measure the apps didn't send is absent,
+    /// not zero. Kept 15 months.
+    ///
+    /// Fails with `.unauthorized`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func screens(
+        project: String,
+        from: Date,
+        to: Date,
+        component: String? = nil,
+        environment: String? = nil,
+        release: String? = nil,
+    ) async throws(APIError) -> ScreenTable {
+        var `query items`: [(String, String)] = []
+        `query items`.append(("from", Self.text(from)))
+        `query items`.append(("to", Self.text(to)))
+        if let component { `query items`.append(("component", Self.text(component))) }
+        if let environment { `query items`.append(("environment", Self.text(environment))) }
+        if let release { `query items`.append(("release", Self.text(release))) }
+        let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/screens", query: `query items`)
+        return try Self.decoded(from: `the answer`)
+    }
+
     /// One person of the project, by the ID Cluenori gave them: the app's user IDs linked to them,
     /// when they were first and last seen, their installations (component, release, device,
     /// country), the days they were active with their sessions, the latest 90, the features they
@@ -1275,12 +1340,14 @@ public nonisolated struct CluenoriAPI: Sendable {
     }
 
     /// One feature's story, by its key exactly, over everything kept of it, with no period, in one
-    /// environment or every one: how the apps used it, each UTC day's people, events and screens
-    /// (15 months), everyone who used it, the 20 who used it last, its releases and the app's
-    /// memory in it; and what its services sent naming it in `cluenori.feature`: each UTC day's
-    /// warnings and errors and its 10 most frequent errors (90 days), and each day's operations by
-    /// component and operation, with how many failed (15 months). A part nothing named the feature
-    /// in is empty; 404 when nothing kept names it.
+    /// environment or every one, of every client or one component (`component`: an app's use and
+    /// errors, a service's operations, warnings and errors): how the apps used it, each UTC day's
+    /// people, events and screens (15 months), everyone who used it, the 20 who used it last, its
+    /// releases and the app's memory in it; and what its services sent naming it in
+    /// `cluenori.feature`: each UTC day's warnings and errors and its 10 most frequent errors (90
+    /// days), and each day's operations by component and operation, with how many failed (15
+    /// months). A part nothing named the feature in is empty; 404 when nothing kept names it, of
+    /// any client: narrowed to a component, every part may be empty.
     ///
     /// Fails with `.unauthorized`, `.projectNotFound`, `.featureNotFound`, or as any call can.
     @concurrent
@@ -1288,9 +1355,11 @@ public nonisolated struct CluenoriAPI: Sendable {
         project: String,
         feature: String,
         environment: String? = nil,
+        component: String? = nil,
     ) async throws(APIError) -> FeatureStory {
         var `query items`: [(String, String)] = []
         if let environment { `query items`.append(("environment", Self.text(environment))) }
+        if let component { `query items`.append(("component", Self.text(component))) }
         let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/features/\(Self.segment(Self.text(feature)))", query: `query items`)
         return try Self.decoded(from: `the answer`)
     }
@@ -2359,6 +2428,48 @@ public nonisolated struct ChangedCommit: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct ClientTelemetry: Codable, Hashable, Sendable {
+    public let release: String?
+    public let environment: String
+    public let dashboard: String?
+    public let cli: String?
+
+    public init(
+        release: String? = nil,
+        environment: String,
+        dashboard: String? = nil,
+        cli: String? = nil,
+    ) {
+        self.release = release
+        self.environment = environment
+        self.dashboard = dashboard
+        self.cli = cli
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case release = "release"
+        case environment = "environment"
+        case dashboard = "dashboard"
+        case cli = "cli"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.release = try container.`value if present at`(.release)
+        self.environment = try container.`value at`(.environment)
+        self.dashboard = try container.`value if present at`(.dashboard)
+        self.cli = try container.`value if present at`(.cli)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encodeIfPresent(self.release, forKey: .release)
+        try container.encode(self.environment, forKey: .environment)
+        try container.encodeIfPresent(self.dashboard, forKey: .dashboard)
+        try container.encodeIfPresent(self.cli, forKey: .cli)
+    }
+}
+
 public nonisolated struct ComparedOperation: Codable, Hashable, Sendable {
     public let operation: String
     public let count: Int
@@ -2976,6 +3087,38 @@ public nonisolated struct DraftUnavailable: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode("DraftUnavailable", forKey: ._tag)
         try container.encode(self.reason, forKey: .reason)
+    }
+}
+
+public nonisolated struct DurationSpread: Codable, Hashable, Sendable {
+    public let count: Int
+    public let p50Ms: Double
+    public let p95Ms: Double
+
+    public init(count: Int, p50Ms: Double, p95Ms: Double) {
+        self.count = count
+        self.p50Ms = p50Ms
+        self.p95Ms = p95Ms
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case count = "count"
+        case p50Ms = "p50Ms"
+        case p95Ms = "p95Ms"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.count = try container.`value at`(.count)
+        self.p50Ms = try container.`value at`(.p50Ms)
+        self.p95Ms = try container.`value at`(.p95Ms)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.count, forKey: .count)
+        try container.encode(self.p50Ms, forKey: .p50Ms)
+        try container.encode(self.p95Ms, forKey: .p95Ms)
     }
 }
 
@@ -7136,6 +7279,87 @@ public nonisolated struct OperationTable: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct OriginRow: Codable, Hashable, Sendable {
+    public let component: String
+    public let operation: String
+    public let origin: String
+    public let count: Int
+    public let errors: Int
+    public let averageMs: Double
+
+    public init(
+        component: String,
+        operation: String,
+        origin: String,
+        count: Int,
+        errors: Int,
+        averageMs: Double,
+    ) {
+        self.component = component
+        self.operation = operation
+        self.origin = origin
+        self.count = count
+        self.errors = errors
+        self.averageMs = averageMs
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case component = "component"
+        case operation = "operation"
+        case origin = "origin"
+        case count = "count"
+        case errors = "errors"
+        case averageMs = "averageMs"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.component = try container.`value at`(.component)
+        self.operation = try container.`value at`(.operation)
+        self.origin = try container.`value at`(.origin)
+        self.count = try container.`value at`(.count)
+        self.errors = try container.`value at`(.errors)
+        self.averageMs = try container.`value at`(.averageMs)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.component, forKey: .component)
+        try container.encode(self.operation, forKey: .operation)
+        try container.encode(self.origin, forKey: .origin)
+        try container.encode(self.count, forKey: .count)
+        try container.encode(self.errors, forKey: .errors)
+        try container.encode(self.averageMs, forKey: .averageMs)
+    }
+}
+
+public nonisolated struct OriginTable: Codable, Hashable, Sendable {
+    public let covered: Period?
+    public let rows: [OriginRow]
+
+    public init(covered: Period? = nil, rows: [OriginRow]) {
+        self.covered = covered
+        self.rows = rows
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case covered = "covered"
+        case rows = "rows"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.covered = try container.`value if present at`(.covered)
+        self.rows = try container.`value at`(.rows)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encodeIfPresent(self.covered, forKey: .covered)
+        try container.encode(self.rows, forKey: .rows)
+    }
+}
+
 public nonisolated struct PairPhone: Codable, Hashable, Sendable {
     public let code: String
     public let model: String
@@ -9618,6 +9842,93 @@ public nonisolated struct ScreenShown: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct ScreenTable: Codable, Hashable, Sendable {
+    public let screens: [ScreenUse]
+    public let timings: [TimingUse]
+
+    public init(screens: [ScreenUse], timings: [TimingUse]) {
+        self.screens = screens
+        self.timings = timings
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case screens = "screens"
+        case timings = "timings"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.screens = try container.`value at`(.screens)
+        self.timings = try container.`value at`(.timings)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.screens, forKey: .screens)
+        try container.encode(self.timings, forKey: .timings)
+    }
+}
+
+public nonisolated struct ScreenUse: Codable, Hashable, Sendable {
+    public let screen: String?
+    public let readyKept: DurationSpread?
+    public let readyFresh: DurationSpread?
+    public let visible: DurationSpread?
+    public let cpuMsPerMinute: Double?
+    public let hitchMsPerSecond: Double?
+    public let hangs: DurationSpread?
+
+    public init(
+        screen: String? = nil,
+        readyKept: DurationSpread? = nil,
+        readyFresh: DurationSpread? = nil,
+        visible: DurationSpread? = nil,
+        cpuMsPerMinute: Double? = nil,
+        hitchMsPerSecond: Double? = nil,
+        hangs: DurationSpread? = nil,
+    ) {
+        self.screen = screen
+        self.readyKept = readyKept
+        self.readyFresh = readyFresh
+        self.visible = visible
+        self.cpuMsPerMinute = cpuMsPerMinute
+        self.hitchMsPerSecond = hitchMsPerSecond
+        self.hangs = hangs
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case screen = "screen"
+        case readyKept = "readyKept"
+        case readyFresh = "readyFresh"
+        case visible = "visible"
+        case cpuMsPerMinute = "cpuMsPerMinute"
+        case hitchMsPerSecond = "hitchMsPerSecond"
+        case hangs = "hangs"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.screen = try container.`value if present at`(.screen)
+        self.readyKept = try container.`value if present at`(.readyKept)
+        self.readyFresh = try container.`value if present at`(.readyFresh)
+        self.visible = try container.`value if present at`(.visible)
+        self.cpuMsPerMinute = try container.`value if present at`(.cpuMsPerMinute)
+        self.hitchMsPerSecond = try container.`value if present at`(.hitchMsPerSecond)
+        self.hangs = try container.`value if present at`(.hangs)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encodeIfPresent(self.screen, forKey: .screen)
+        try container.encodeIfPresent(self.readyKept, forKey: .readyKept)
+        try container.encodeIfPresent(self.readyFresh, forKey: .readyFresh)
+        try container.encodeIfPresent(self.visible, forKey: .visible)
+        try container.encodeIfPresent(self.cpuMsPerMinute, forKey: .cpuMsPerMinute)
+        try container.encodeIfPresent(self.hitchMsPerSecond, forKey: .hitchMsPerSecond)
+        try container.encodeIfPresent(self.hangs, forKey: .hangs)
+    }
+}
+
 public nonisolated struct SdkKeyList: Codable, Hashable, Sendable {
     public let keys: [IssuedSdkKey]
 
@@ -10386,6 +10697,43 @@ public nonisolated enum TimelineSignal: Codable, Hashable, Sendable {
             var container = encoder.container(keyedBy: `JSON keys`.self)
             try container.encode(kind, forKey: .kind)
         }
+    }
+}
+
+public nonisolated struct TimingUse: Codable, Hashable, Sendable {
+    public let name: String
+    public let count: Int
+    public let p50Ms: Double
+    public let p95Ms: Double
+
+    public init(name: String, count: Int, p50Ms: Double, p95Ms: Double) {
+        self.name = name
+        self.count = count
+        self.p50Ms = p50Ms
+        self.p95Ms = p95Ms
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case name = "name"
+        case count = "count"
+        case p50Ms = "p50Ms"
+        case p95Ms = "p95Ms"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.name = try container.`value at`(.name)
+        self.count = try container.`value at`(.count)
+        self.p50Ms = try container.`value at`(.p50Ms)
+        self.p95Ms = try container.`value at`(.p95Ms)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.count, forKey: .count)
+        try container.encode(self.p50Ms, forKey: .p50Ms)
+        try container.encode(self.p95Ms, forKey: .p95Ms)
     }
 }
 

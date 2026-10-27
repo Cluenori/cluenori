@@ -106,9 +106,7 @@ struct OperationsScreen: View {
         }
         .refreshable { await operations.refresh() }
         .task { await operations.refresh() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: operations.table.problem, receivedAt: operations.table.receivedAt)
-        }
+        .answerBanner(problem: operations.table.problem, receivedAt: operations.table.receivedAt)
     }
 
     private func shownMs(_ row: OperationRow) -> Double {
@@ -371,9 +369,7 @@ struct OperationScreen: View {
             await operation.refresh()
             await incidents
         }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: operation.load.problem, receivedAt: operation.load.receivedAt)
-        }
+        .answerBanner(problem: operation.load.problem, receivedAt: operation.load.receivedAt)
     }
 }
 

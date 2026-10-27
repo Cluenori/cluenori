@@ -191,11 +191,20 @@ Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Loca
 
 ## Depends on
 
-Apple's SDKs alone: SwiftUI, Observation, Foundation, Security, UserNotifications, AlarmKit,
-ActivityKit and App Intents. No third-party code.
+Apple's SDKs: SwiftUI, Observation, Foundation, Security, UserNotifications, AlarmKit,
+ActivityKit and App Intents; and Cluenori's Swift SDK, `cluenori-swift` at exactly 0.2.1
+(Cluenori, CluenoriAnalytics, CluenoriPerformance), linked into `CluenoriViews` alone, with which
+the app measures itself (`docs/self-telemetry.md`). No other third-party code.
 
 ## Decisions and constraints
 
+- **It measures itself with Cluenori,** as the component `cluenori-ios`, when its build has an SDK
+  key (`CLUENORI_SDK_KEY` in `Config/Local.xcconfig`) and isn't a demo: each route is a screen with
+  its feature (`Route.screenName`, `Route.feature`), ready when its answer arrives from the device's
+  copy or the network (`.answerBanner`), and the member signed in is who uses it. Debug builds
+  report the environment `development`, Release `production`. Its requests carry the SDK's headers
+  only to the deployment it is paired with. The module is `CluenoriPhone`, so it doesn't clash with
+  the SDK's `Cluenori`.
 - **Layers by what they may import.** `CluenoriClient` and `CluenoriScreens` use Foundation and
   Observation alone, so a Swift CLI or an Android app can reuse them; `apps/ios/check` fails when one
   imports more.

@@ -1,3 +1,4 @@
+import { ProjectKey } from "@cluenori/foundation"
 import { Config, Crypto, Effect, FileSystem, Option, Path, Redacted, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 
@@ -94,6 +95,11 @@ export const SavedDeployment = Schema.Struct({
   domain: Schema.optionalKey(Hostname),
   url: Schema.optionalKey(Schema.String),
   token: Schema.optionalKey(Schema.String),
+  /**
+   * Where the deployment reports itself (`./cluenori self-telemetry on`): its project, and its
+   * Worker's ingest key, shown only once, which `./update` numbers and reports each deploy with.
+   */
+  selfTelemetry: Schema.optionalKey(Schema.Struct({ project: ProjectKey, ingestKey: Schema.String })),
 })
 export type SavedDeployment = typeof SavedDeployment.Type
 

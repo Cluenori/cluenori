@@ -44,9 +44,7 @@ struct ErrorsScreen: View {
         .navigationTitle(Text("Errors", bundle: #bundle, comment: "Title of every error of a project."))
         .refreshable { await errors.table.load() }
         .task { await errors.table.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: errors.table.problem, receivedAt: errors.table.receivedAt)
-        }
+        .answerBanner(problem: errors.table.problem, receivedAt: errors.table.receivedAt)
     }
 }
 
@@ -168,9 +166,7 @@ struct ErrorScreen: View {
         .monitorSheet($monitoring, monitors: monitors, navigation: navigation)
         .refreshable { await error.detail.load() }
         .task { await error.detail.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: error.detail.problem, receivedAt: error.detail.receivedAt)
-        }
+        .answerBanner(problem: error.detail.problem, receivedAt: error.detail.receivedAt)
     }
 }
 

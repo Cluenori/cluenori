@@ -82,9 +82,7 @@ struct IncidentsScreen: View {
         .navigationTitle(Text("Incidents", bundle: #bundle, comment: "Title of a project's incidents."))
         .refreshable { await load() }
         .task { await load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: incidents.incidents.problem, receivedAt: incidents.incidents.receivedAt)
-        }
+        .answerBanner(problem: incidents.incidents.problem, receivedAt: incidents.incidents.receivedAt)
     }
 
     private func load() async {
@@ -269,9 +267,7 @@ struct IncidentScreen: View {
         }
         .refreshable { await incident.detail.load() }
         .task { await incident.detail.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: incident.detail.problem, receivedAt: incident.detail.receivedAt)
-        }
+        .answerBanner(problem: incident.detail.problem, receivedAt: incident.detail.receivedAt)
     }
 }
 

@@ -1,5 +1,5 @@
 import type { FeatureStory } from "@cluenori/analytics"
-import type { EnvironmentKey, FeatureKey, ProjectKey } from "@cluenori/foundation"
+import type { ComponentKey, EnvironmentKey, FeatureKey, ProjectKey } from "@cluenori/foundation"
 import type { FeatureOperationDay } from "@cluenori/signals"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
@@ -21,9 +21,10 @@ import { calendarDayText, count, share } from "@/lib/format"
 import { featureAtom, useComponentKeys } from "@/project-data"
 import type { Environments } from "@/project-facts"
 import { colorOf } from "@/project-facts"
-import { Link } from "@/router"
+import { Link, navigate } from "@/router"
 import type { BarRow } from "@/views/bar-rows"
 import { BarRows } from "@/views/bar-rows"
+import { ComponentSwitch } from "@/views/component-switch"
 import { CopyButton } from "@/views/copy-button"
 import { EnvironmentSwitch } from "@/views/environment-switch"
 import { titleParts } from "@/views/error-group"
@@ -48,17 +49,25 @@ export function FeaturePage({
   project,
   feature,
   named,
+  component,
 }: {
   readonly project: ProjectKey
   readonly feature: FeatureKey
   /** The environment the address names, if any. */
   readonly named?: EnvironmentKey
+  /** The client the story is narrowed to, if any: an app's use and errors, a service's operations. */
+  readonly component?: ComponentKey
 }) {
   const environments = useAppEnvironments(project, undefined, named)
   return environments === undefined ? (
     <div className="p-8 text-sm text-muted-foreground">Opening the page…</div>
   ) : (
-    <Feature project={project} feature={feature} environments={environments} />
+    <Feature
+      project={project}
+      feature={feature}
+      environments={environments}
+      {...(component === undefined ? {} : { component })}
+    />
   )
 }
 
@@ -66,14 +75,18 @@ function Feature({
   project,
   feature,
   environments,
+  component,
 }: {
   readonly project: ProjectKey
   readonly feature: FeatureKey
   readonly environments: Environments
+  readonly component?: ComponentKey
 }) {
   const environment = environments.shown
   const inEnvironment = environment === undefined ? {} : { environment }
-  const result = useAtomValue(featureAtom({ project, feature, ...inEnvironment }))
+  const ofComponent = component === undefined ? {} : { component }
+  const components = useComponentKeys(project)
+  const result = useAtomValue(featureAtom({ project, feature, ...inEnvironment, ...ofComponent }))
   const story = AsyncResult.isSuccess(result) ? result.value : undefined
   return (
     <div className={page}>
@@ -87,13 +100,34 @@ function Feature({
         </Link>
         <div className="flex min-w-0 flex-[1_1_16rem] flex-col">
           <h1 className="font-mono text-2xl font-semibold tracking-[-0.02em] wrap-anywhere">{feature}</h1>
-          <p className="text-sm text-muted-foreground">{story === undefined ? "A feature" : lifeWords(story)}</p>
+          <p className="text-sm text-muted-foreground">
+            {story === undefined ? "A feature" : lifeWords(story, component)}
+          </p>
         </div>
         <div className="ml-auto flex max-w-full min-w-0 flex-wrap items-center gap-3">
+          {components.length > 1 && (
+            <ComponentSwitch
+              components={components}
+              value={component}
+              allowAll
+              onChange={(picked) =>
+                navigate(
+                  {
+                    page: "feature",
+                    project,
+                    feature,
+                    ...inEnvironment,
+                    ...(picked === undefined ? {} : { component: picked }),
+                  },
+                  { replace: true },
+                )
+              }
+            />
+          )}
           <EnvironmentSwitch
             project={project}
             environments={environments}
-            routeOf={(picked) => ({ page: "feature", project, feature, environment: picked })}
+            routeOf={(picked) => ({ page: "feature", project, feature, environment: picked, ...ofComponent })}
           />
           {story !== undefined && (
             <CopyButton text={agentBrief(project, environment, story)} label="Copy for an agent" />
@@ -121,11 +155,16 @@ function Feature({
   )
 }
 
-// When it was first and last used, or named by a service, as the heading's second line says it.
-const lifeWords = (story: FeatureStory) => {
+// When it was first and last used, or named by a service, as the heading's second line says it;
+// narrowed to a client, that client's part, which may be none.
+const lifeWords = (story: FeatureStory, component: ComponentKey | undefined) => {
   const used = story.use.days
   const first = used[0]?.day
   const last = used.at(-1)?.day
+  const named = story.operations.length > 0 || story.logs.days.length > 0
+  if (component !== undefined && first === undefined && !named) {
+    return `${component} has no part in this feature`
+  }
   if (first === undefined || last === undefined) {
     return "A feature only its services name: no app marked it in 15 months"
   }

@@ -161,9 +161,7 @@ struct NotesScreen: View {
         }
         .refreshable { await release.refresh() }
         .task { await release.refresh() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: release.detail.problem, receivedAt: release.detail.receivedAt)
-        }
+        .answerBanner(problem: release.detail.problem, receivedAt: release.detail.receivedAt)
     }
 
     // A language's name, as this phone's language says it, with its code: `German (Germany) · de-DE`.
@@ -387,8 +385,6 @@ struct NotesStyleScreen: View {
         }
         .refreshable { await style.load() }
         .task { await style.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: style.style.problem, receivedAt: style.style.receivedAt)
-        }
+        .answerBanner(problem: style.style.problem, receivedAt: style.style.receivedAt)
     }
 }

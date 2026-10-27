@@ -4,3 +4,6 @@ CLUENORI_BUNDLE_ID = com.example.cluenori
 CLUENORI_TEAM = ABCDE12345
 // The domain of your deployment, for signing in with a passkey; leave it out to pair by links alone.
 CLUENORI_PASSKEY_DOMAIN = cluenori.example
+// The SDK key the app reports itself with, to the deployment above (`./cluenori component sdk-keys
+// <project> <component> --new`); leave it out, and the app reports nothing.
+CLUENORI_SDK_KEY =

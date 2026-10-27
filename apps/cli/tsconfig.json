@@ -1,4 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // @cluenori/sdk is compiled from its source, whose browser runtime names the DOM's types; the CLI
+    // starts it with program(), and never touches the DOM.
+    "lib": ["es2024", "dom"]
+  },
   "include": ["src", "test"]
 }

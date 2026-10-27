@@ -65,9 +65,7 @@ struct FeatureScreen: View {
         }
         .refreshable { await feature.load() }
         .task { await feature.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: feature.story.problem, receivedAt: feature.story.receivedAt)
-        }
+        .answerBanner(problem: feature.story.problem, receivedAt: feature.story.receivedAt)
     }
 }
 

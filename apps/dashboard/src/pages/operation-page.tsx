@@ -5,7 +5,16 @@ import { operationKeyOf, slowerOf, usualOf } from "@cluenori/signals"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { ActivityIcon, ArrowLeftIcon, CircleXIcon, GaugeIcon, SearchXIcon, SirenIcon, TimerIcon } from "lucide-react"
+import {
+  ActivityIcon,
+  ArrowLeftIcon,
+  CircleXIcon,
+  GaugeIcon,
+  SearchXIcon,
+  SirenIcon,
+  SplitIcon,
+  TimerIcon,
+} from "lucide-react"
 import type { ReactNode } from "react"
 import { useState } from "react"
 
@@ -15,6 +24,7 @@ import type { Scope } from "@/project-data"
 import {
   incidentsAtom,
   operationsAtom,
+  originsAtom,
   keptTracesAtom,
   periodAtom,
   periodMillis,
@@ -42,6 +52,7 @@ import type { Filters, Route } from "@/router"
 import { Link, navigate } from "@/router"
 import type { ColumnSpan } from "@/views/bar-rows"
 import { BarRows, largestOf } from "@/views/bar-rows"
+import { ClientSplit } from "@/views/client-split"
 import { FilterSwitches } from "@/views/filter-switches"
 import { IncidentRow } from "@/views/incident-row"
 import { Loaded } from "@/views/loaded"
@@ -248,6 +259,34 @@ function OperationIncidents({
           </li>
         ))}
       </ul>
+    </Panel>
+  )
+}
+
+/** The operation's requests by the client that asked for them, as their baggage named it. */
+function ClientsPanel({
+  scope,
+  total,
+  colorOfOrigin,
+}: {
+  readonly scope: Scope
+  readonly total: number
+  readonly colorOfOrigin: (component: string) => string
+}) {
+  const origins = useAtomValue(originsAtom(scope))
+  return (
+    <Panel icon={SplitIcon} title="By client" subtitle="The app, web or CLI that asked, counted by the hour">
+      <Loaded result={origins}>
+        {(table) =>
+          table.rows.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-muted-foreground">
+              No request named its client: clients name themselves through Cluenori's SDKs.
+            </p>
+          ) : (
+            <ClientSplit rows={table.rows} total={total} colorOf={colorOfOrigin} />
+          )
+        }
+      </Loaded>
     </Panel>
   )
 }
@@ -490,6 +529,8 @@ export function OperationPage({
                   ]}
                 />
               </Panel>
+
+              <ClientsPanel scope={scope} total={row.count} colorOfOrigin={(origin) => colorOf(origin, components)} />
 
               {at !== undefined && (
                 <MomentPanel

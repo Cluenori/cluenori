@@ -168,6 +168,8 @@ public final class TodayModel {
     public private(set) var projects: [ProjectNow]? = nil
     /// When the deployment looked, for the items shown.
     public private(set) var lookedAt: Date? = nil
+    /// When the items shown arrived on the phone, by its clock; nil until they do.
+    public var receivedAt: Date? { answer.receivedAt }
     public var problem: AnswerProblem? { answer.problem }
     public var isLoading: Bool { answer.isLoading }
 

@@ -30,8 +30,15 @@ import { defineConfig } from "vite"
 // five conditions' and subjects' Schemas in the typed client, the add and remove atoms, and Today's
 // quiet hint; the wording of monitors, and the forms, load after start. And to 260 KB when every app
 // signal gained the screen it was recorded on (258.8 KB to 259.2 KB): the field in each of the
-// timeline's Schemas in the typed client.
-const firstLoadBudget = { scriptKb: 260, styleKb: 36 }
+// timeline's Schemas in the typed client. And to 263 KB when the dashboard began measuring itself
+// (259.2 KB to 262.1 KB): the SDK itself loads after start, but each page's screen and readiness
+// are on the first load (0.8 KB), and Effect's modules the SDK shares with it (uuid, ulid, random,
+// PlatformError: 2.1 KB) are kept in the first load's chunk, which holds those modules already.
+// And to 264 KB when operations were split by client and screens gained their table (262.1 KB to
+// 263.1 KB): the origins', screens' and client telemetry's Schemas in the typed client. Their
+// queries' SQL stays out: a Schema the API names lives in a `*-queries.ts` file, never next to a
+// store, which would bring the Worker's code (sketches, OTLP, the scrubber: 13 KB) with it.
+const firstLoadBudget = { scriptKb: 264, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

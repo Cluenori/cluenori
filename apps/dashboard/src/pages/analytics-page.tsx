@@ -6,7 +6,7 @@ import { AppUserId } from "@cluenori/signals"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Cause, Exit, Option, Result, Schema } from "effect"
 import { AsyncResult } from "effect/reactivity"
-import { Grid3x3Icon, HeartPulseIcon, KeyRoundIcon, ShapesIcon, UserSearchIcon } from "lucide-react"
+import { GaugeIcon, Grid3x3Icon, HeartPulseIcon, KeyRoundIcon, ShapesIcon, UserSearchIcon } from "lucide-react"
 import { useId, useState } from "react"
 
 import { appColorOf, appPeriodWords, cohortRowsOf, latestSentOf, peopleNowOf } from "@/app-facts"
@@ -22,6 +22,7 @@ import {
   projectAtom,
   retentionAtom,
   revokeSdkKeyAtom,
+  screensAtom,
   sdkKeysAtom,
   setVersionPolicyAtom,
   usageAtom,
@@ -39,6 +40,7 @@ import { Panel } from "@/views/panel"
 import { PeopleCounters } from "@/views/people-counters"
 import { ProjectHeader } from "@/views/project-header"
 import { RetentionGrid } from "@/views/retention-grid"
+import { ScreenTable, TimingTable } from "@/views/screen-table"
 import { SdkKeys } from "@/views/sdk-keys"
 import {
   AlertDialog,
@@ -151,6 +153,7 @@ function Analytics({
               <PeopleCounters now={peopleNowOf(answer, period)} color={color} />
               <UsageTotals usage={answer} period={period} periodText={periodText} />
               <FeaturesPanel scope={scope} people={answer.people} color={color} shown={shown} />
+              <ScreensPanel scope={scope} />
               <div className="grid items-start gap-4 xl:grid-cols-2">
                 <RetentionPanel scope={scope} color={color} />
                 <ReleasesInUse usage={answer} colorOfComponent={(of) => colorOf(of, keys)} />
@@ -269,6 +272,37 @@ function FeaturesPanel({
             </>
           )
         }
+      </Loaded>
+    </Panel>
+  )
+}
+
+/** How each screen did, and the apps' own timings, over the period. */
+function ScreensPanel({ scope }: { readonly scope: AppScope }) {
+  const screens = useAtomValue(screensAtom(scope))
+  return (
+    <Panel
+      icon={GaugeIcon}
+      title="Screens"
+      subtitle="How fast each shows its data, from what the device kept and from the network, its visits, CPU time, hitches and hangs"
+    >
+      <Loaded result={screens}>
+        {(table) => (
+          <>
+            {table.screens.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">
+                No screen was measured in this period: the apps' SDKs measure the screens they name.
+              </p>
+            ) : (
+              <ScreenTable rows={table.screens} />
+            )}
+            {table.timings.length > 0 && (
+              <div className="border-t">
+                <TimingTable rows={table.timings} />
+              </div>
+            )}
+          </>
+        )}
       </Loaded>
     </Panel>
   )

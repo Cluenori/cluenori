@@ -47,11 +47,15 @@
           "effect/cli",
           "effect/http",
           "effect/http-api",
+          // Effect's OTLP encoding of metrics, for the count of telemetry a deployment received.
+          "effect/observability",
           "effect/process",
           "effect/sql",
           "effect/Crypto",
           "effect/FileSystem",
           "effect/Path",
+          // The CLI's arguments, which name the command it measures.
+          "effect/Stdio",
           "effect/PlatformError",
           "effect/reactivity",
           "@effect/atom-react",

@@ -46,9 +46,7 @@ struct TechScreen: View {
             }
             await open
         }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: project.load.problem, receivedAt: project.load.receivedAt)
-        }
+        .answerBanner(problem: project.load.problem, receivedAt: project.load.receivedAt)
     }
 }
 

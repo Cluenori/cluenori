@@ -12,6 +12,7 @@ import { component, project } from "./projects-commands.ts"
 import { push } from "./push-commands.ts"
 import { delivery, promote, release, releaseApproved, releases } from "./releases-commands.ts"
 import { run } from "./run.ts"
+import { selfTelemetry } from "./self-telemetry-commands.ts"
 import { setup } from "./setup.ts"
 import { appStore, github } from "./sources-commands.ts"
 import { today } from "./today-command.ts"
@@ -25,7 +26,7 @@ import { version } from "./versions-commands.ts"
  */
 export const cluenori = Command.make("cluenori").pipe(
   Command.withDescription(
-    "Run Cluenori, deploy it to Cloudflare, ask it about your projects, and promote their releases.",
+    "Run Cluenori, deploy it to Cloudflare, ask it about your projects, and promote their releases. Telemetry: when the deployment this CLI is set up for measures itself (./cluenori self-telemetry on), each command reports to that deployment alone, and nowhere else: its name (never its arguments, files or output), how long it took, what kind of failure it had, and this machine's installation ID. Turn it off with CLUENORI_TELEMETRY=off or DO_NOT_TRACK=1; a deployment stops it for everyone with ./cluenori self-telemetry off.",
   ),
   Command.withSubcommands([
     run,
@@ -67,5 +68,6 @@ export const cluenori = Command.make("cluenori").pipe(
     phones,
     phone,
     push,
+    selfTelemetry,
   ]),
 )

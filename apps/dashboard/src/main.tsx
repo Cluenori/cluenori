@@ -3,10 +3,12 @@ import { createRoot } from "react-dom/client"
 
 import "./styles.css"
 import { App } from "@/app"
+import { startTelemetry } from "@/lib/telemetry"
 import { applyTheme, storedTheme } from "@/lib/theme"
 import { movedAddressOf } from "@/router"
 
 applyTheme(storedTheme())
+startTelemetry()
 
 // A link from before a project's pages moved under `/projects/` opens the page it named, at its
 // address now, without a step in the history.

@@ -15,6 +15,7 @@
     "@cluenori/phones": "workspace:*",
     "@cluenori/projects": "workspace:*",
     "@cluenori/releases": "workspace:*",
+    "@cluenori/sdk": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/today": "workspace:*",
     "@cluenori/worker": "workspace:*",

@@ -6,6 +6,7 @@ import { FetchHttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient, HttpApiMiddleware } from "effect/http-api"
 
 import type { ApiTarget } from "./api-settings.ts"
+import { ClientHeaders } from "./cli-telemetry.ts"
 
 /** The command couldn't do what was asked; it has printed why, `message`. */
 export class Refused extends Schema.TaggedError<Refused>()("Refused", { message: Schema.String }) {}
@@ -18,7 +19,12 @@ export const apiClient = (target: ApiTarget) =>
   HttpApiClient.make(CluenoriApi, { baseUrl: target.url }).pipe(
     Effect.provide(
       HttpApiMiddleware.layerClient(MemberAuthorization, ({ next, request }) =>
-        next(HttpClientRequest.bearerToken(request, Redacted.value(target.token))),
+        Effect.gen(function* () {
+          // The release, a trace, and the command's feature and origin, when the run is measured.
+          const headers = yield* ClientHeaders
+          const measured = HttpClientRequest.setHeaders(request, headers({}))
+          return yield* next(HttpClientRequest.bearerToken(measured, Redacted.value(target.token)))
+        }),
       ).pipe(Layer.provideMerge(FetchHttpClient.layer)),
     ),
   )

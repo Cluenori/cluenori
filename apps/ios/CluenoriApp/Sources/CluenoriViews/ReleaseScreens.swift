@@ -80,9 +80,7 @@ struct ReleasesScreen: View {
         .navigationSubtitle(ifAny: componentName.map { Text(verbatim: $0) })
         .refreshable { await releases.list.load() }
         .task { await releases.list.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: releases.list.problem, receivedAt: releases.list.receivedAt)
-        }
+        .answerBanner(problem: releases.list.problem, receivedAt: releases.list.receivedAt)
     }
 }
 
@@ -543,9 +541,7 @@ struct ReleaseScreen: View {
         .sheet(item: promoting) { promote in
             PromoteSheet(promote: promote, release: release, versions: nil, cancel: release.cancelPromoting)
         }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: release.detail.problem, receivedAt: release.detail.receivedAt)
-        }
+        .answerBanner(problem: release.detail.problem, receivedAt: release.detail.receivedAt)
     }
 
     // The promote sheet, while the release's model has one open; dismissed, it is cancelled.

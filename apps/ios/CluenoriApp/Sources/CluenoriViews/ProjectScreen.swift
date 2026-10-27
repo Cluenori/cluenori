@@ -40,6 +40,7 @@ struct ProjectScreen: View {
         .safeAreaInset(edge: .bottom) {
             AnswerBanner(problem: today.problem, receivedAt: today.lookedAt)
         }
+        .readyMark(receivedAt: today.receivedAt)
     }
 }
 

@@ -1,69 +1,123 @@
-import { cn } from "cn"
+import type { DurationSpread, ScreenUse, TimingUse } from "@cluenori/signals"
 
-import { compact, count } from "@/lib/format"
-import { OperationName } from "@/views/operation-name"
-import type { Latency, Slower } from "@/views/operation-table"
-import { LatencyCell, percentiles, SlowerTag } from "@/views/operation-table"
+import { count, duration, ratio } from "@/lib/format"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/views/ui/table"
 
-/** One screen of an app, or a page in a browser: how often it was shown, and how long it took. */
-export type ScreenLatency = Latency & {
-  readonly screen: string
-  readonly component: string
-  readonly views: number
-  readonly slower?: Slower
+const head = "h-auto px-4 py-2.5 text-right text-sm font-normal"
+const cell = "px-4 py-2.5 text-right font-mono"
+const unknown = <span className="font-sans text-muted-foreground">—</span>
+
+/** p50 over p95, as the apps measured it; a dash when they didn't. */
+function Spread({ spread }: { readonly spread: DurationSpread | undefined }) {
+  if (spread === undefined) {
+    return unknown
+  }
+  return (
+    <span>
+      {duration(spread.p50Ms)}
+      <span className="block text-[13px] text-muted-foreground">p95 {duration(spread.p95Ms)}</span>
+    </span>
+  )
 }
 
 /**
- * An app's screens by how long they took to show: p50, p80, p95, and p99, each a value beside a
- * filled cell, as in the operation table, then how often each was shown. A screen that got slower
- * says so beside its name.
+ * Screens as the apps measured them: how long each took to show its first content from what the
+ * device kept and from the network (p50, and p95 under it), its visits with their time in sight,
+ * the CPU time the app used per minute in sight, its hitches while scrolling in ms per second
+ * scrolled, and its hangs. A dash is a measure the apps didn't send, never zero.
  */
-export function ScreenTable({
-  rows,
-  color,
-  heading,
-}: {
-  readonly rows: ReadonlyArray<ScreenLatency>
-  readonly color: string
-  /** What the first column names: "Screen" on a phone, "Page" in a browser. */
-  readonly heading: string
-}) {
-  // On a phone only p50 and p95 show, so names fit.
-  const grid =
-    "grid grid-cols-[minmax(0,1fr)_repeat(2,4.5rem)] gap-x-3 sm:grid-cols-[minmax(0,1fr)_repeat(4,4.5rem)_4rem]"
+export function ScreenTable({ rows }: { readonly rows: ReadonlyArray<ScreenUse> }) {
+  // Columns follow the table's own width, not the window's: it is a full panel on Analytics and a
+  // half-width card in the kit.
   return (
-    <div className="flex flex-col">
-      <div className={cn(grid, "border-b pb-2 text-sm text-muted-foreground")}>
-        <span>{heading}</span>
-        {percentiles.map((column) => (
-          <span key={column.key} className={cn("font-mono", !column.always && "hidden sm:block")}>
-            {column.key}
-          </span>
-        ))}
-        <span className="hidden justify-self-end sm:block">Views</span>
-      </div>
-      {rows.map((row) => (
-        <div key={row.screen} className={cn(grid, "min-h-12 items-center border-b py-2")}>
-          <span className="flex min-w-0 items-baseline gap-2.5">
-            <OperationName name={row.screen} className="text-[15px]" />
-            {row.slower !== undefined && <SlowerTag slower={row.slower} />}
-          </span>
-          {percentiles.map((column) => (
-            <LatencyCell
-              key={column.key}
-              milliseconds={column.of(row)}
-              color={color}
-              className={cn(!column.always && "hidden sm:flex")}
-            />
+    <div className="@container">
+      <Table className="text-[15px]">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="h-auto py-2.5 pr-4 pl-5 text-sm font-normal">Screen</TableHead>
+            <TableHead className={head}>Ready, kept</TableHead>
+            <TableHead className={head}>Ready, fresh</TableHead>
+            <TableHead className={`hidden @xl:table-cell ${head}`}>Visits</TableHead>
+            <TableHead className={`hidden @3xl:table-cell ${head}`}>CPU a minute</TableHead>
+            <TableHead className={`hidden @3xl:table-cell ${head}`}>Hitches</TableHead>
+            <TableHead className={`hidden @lg:table-cell ${head} pr-5`}>Hangs</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.screen ?? ""}>
+              <TableHead scope="row" className="h-auto py-2.5 pr-4 pl-5 text-[15px] font-normal whitespace-normal">
+                {row.screen === undefined ? (
+                  <span className="text-muted-foreground">(no screen)</span>
+                ) : (
+                  <span className="font-mono text-foreground [overflow-wrap:anywhere]">{row.screen}</span>
+                )}
+              </TableHead>
+              <TableCell className={cell}>
+                <Spread spread={row.readyKept} />
+              </TableCell>
+              <TableCell className={cell}>
+                <Spread spread={row.readyFresh} />
+              </TableCell>
+              <TableCell className={`hidden @xl:table-cell ${cell}`}>
+                {row.visible === undefined ? (
+                  unknown
+                ) : (
+                  <span>
+                    {count(row.visible.count)}
+                    <span className="block text-[13px] text-muted-foreground">{duration(row.visible.p50Ms)} each</span>
+                  </span>
+                )}
+              </TableCell>
+              <TableCell className={`hidden @3xl:table-cell ${cell}`}>
+                {row.cpuMsPerMinute === undefined ? unknown : duration(row.cpuMsPerMinute)}
+              </TableCell>
+              <TableCell className={`hidden @3xl:table-cell ${cell}`}>
+                {row.hitchMsPerSecond === undefined ? unknown : `${ratio(row.hitchMsPerSecond)} ms/s`}
+              </TableCell>
+              <TableCell className={`hidden @lg:table-cell ${cell} pr-5`}>
+                {/* No hang sent: none happened, or the app can't tell (a command-line program). */}
+                {row.hangs === undefined ? (
+                  unknown
+                ) : (
+                  <span className="text-failure">
+                    {count(row.hangs.count)}
+                    <span className="block text-[13px] text-muted-foreground">p95 {duration(row.hangs.p95Ms)}</span>
+                  </span>
+                )}
+              </TableCell>
+            </TableRow>
           ))}
-          <span
-            className="hidden text-right font-mono text-[13px] text-muted-foreground sm:block"
-            title={`${count(row.views)} views`}
-          >
-            {row.views >= 10_000 ? compact(row.views) : count(row.views)}
-          </span>
-        </div>
-      ))}
+        </TableBody>
+      </Table>
     </div>
+  )
+}
+
+/** Timings the apps measured, by the name they gave each: how many, and their p50 and p95. */
+export function TimingTable({ rows }: { readonly rows: ReadonlyArray<TimingUse> }) {
+  return (
+    <Table className="text-[15px]">
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="h-auto py-2.5 pr-4 pl-5 text-sm font-normal">Timing</TableHead>
+          <TableHead className={head}>Measured</TableHead>
+          <TableHead className={head}>p50</TableHead>
+          <TableHead className={`${head} pr-5`}>p95</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.name}>
+            <TableHead scope="row" className="h-auto py-2.5 pr-4 pl-5 font-mono text-[15px] font-normal">
+              {row.name}
+            </TableHead>
+            <TableCell className={cell}>{count(row.count)}</TableCell>
+            <TableCell className={cell}>{duration(row.p50Ms)}</TableCell>
+            <TableCell className={`${cell} pr-5`}>{duration(row.p95Ms)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   )
 }

@@ -114,9 +114,7 @@ struct VersionPolicyScreen: View {
         }
         .refreshable { await policies.load() }
         .task { await policies.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: policies.policies.problem, receivedAt: policies.policies.receivedAt)
-        }
+        .answerBanner(problem: policies.policies.problem, receivedAt: policies.policies.receivedAt)
     }
 }
 
@@ -529,9 +527,7 @@ struct SdkKeysScreen: View {
         .sensoryFeedback(.success, trigger: keys.lastIssued)
         .refreshable { await keys.load() }
         .task { await keys.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: keys.list.problem, receivedAt: keys.list.receivedAt)
-        }
+        .answerBanner(problem: keys.list.problem, receivedAt: keys.list.receivedAt)
     }
 
     // Why the last issue or revoke failed.

@@ -40,9 +40,7 @@ struct FeedsScreen: View {
         .navigationTitle(Text("Feeds", bundle: #bundle, comment: "Title of the deployment's feeds."))
         .refreshable { await feeds.load() }
         .task { await feeds.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: feeds.feeds.problem, receivedAt: feeds.feeds.receivedAt)
-        }
+        .answerBanner(problem: feeds.feeds.problem, receivedAt: feeds.feeds.receivedAt)
     }
 }
 
@@ -143,9 +141,7 @@ struct FeedScreen: View {
                 try? await Task.sleep(for: FeedModel.askEvery)
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: feed.page.problem, receivedAt: feed.page.receivedAt)
-        }
+        .answerBanner(problem: feed.page.problem, receivedAt: feed.page.receivedAt)
     }
 }
 

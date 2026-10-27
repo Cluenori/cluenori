@@ -70,9 +70,7 @@ struct TraceScreen: View {
         .navigationTitle(Text("Request", bundle: #bundle, comment: "Title of one request and its trace."))
         .refreshable { await trace.view.load() }
         .task { await trace.view.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: trace.view.problem, receivedAt: trace.view.receivedAt)
-        }
+        .answerBanner(problem: trace.view.problem, receivedAt: trace.view.receivedAt)
     }
 }
 

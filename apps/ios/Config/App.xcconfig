@@ -1,6 +1,9 @@
 // The app's own build settings, over Cluenori.xcconfig's.
 
 PRODUCT_NAME = Cluenori
+// The app's module has a name of its own: the SDK's core module, which the app links through
+// CluenoriViews, is Cluenori, and two modules of one name can't be built into one app.
+PRODUCT_MODULE_NAME = CluenoriPhone
 PRODUCT_BUNDLE_IDENTIFIER = $(CLUENORI_BUNDLE_ID)$(CLUENORI_VARIANT_ID)
 // Icon Composer documents in Cluenori/: their SVG layers are the source, and Xcode renders each
 // appearance from them.

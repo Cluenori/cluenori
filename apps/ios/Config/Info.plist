@@ -23,6 +23,9 @@
 	<!-- The deployment this build's passkeys sign in to; empty when it has none. -->
 	<key>CluenoriPasskeyDomain</key>
 	<string>$(CLUENORI_PASSKEY_DOMAIN)</string>
+	<!-- The SDK key this build reports itself with, to the deployment above; empty, it reports nothing. -->
+	<key>CluenoriSDKKey</key>
+	<string>$(CLUENORI_SDK_KEY)</string>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>Cluenori rings like an alarm clock when a project is down or failing, even in silent mode.</string>
 	<key>NSLocalNetworkUsageDescription</key>

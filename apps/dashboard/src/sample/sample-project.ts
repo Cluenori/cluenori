@@ -824,57 +824,6 @@ export const sampleComponents: ReadonlyArray<SampleComponent> = [
 ]
 
 /**
- * A screen of an app, or a page in a browser: how often it was shown, and how long it took to
- * show, from opening to drawn on a phone and to LCP in a browser, with its usual p95. Not in the
- * API yet.
- */
-export type ScreenRow = {
-  readonly component: string
-  readonly screen: string
-  readonly views: number
-  readonly p50Ms: number
-  readonly p80Ms: number
-  readonly p95Ms: number
-  readonly p99Ms: number
-  readonly lastDayP95Ms: number
-  readonly usualP95Ms?: number
-}
-
-const screen = (
-  component: string,
-  name: string,
-  views: number,
-  [p50Ms, p80Ms, p95Ms, p99Ms]: readonly [number, number, number, number],
-  usualP95Ms: number,
-): ScreenRow => ({ component, screen: name, views, p50Ms, p80Ms, p95Ms, p99Ms, lastDayP95Ms: p95Ms, usualP95Ms })
-
-// A day of each app's screens. The feed got slower with GET /api/feed.
-const dayOfScreens: ReadonlyArray<ScreenRow> = [
-  screen("folio-ios", "FeedView", 9_800, [210, 380, 720, 1_400], 340),
-  screen("folio-ios", "NoteEditorView", 7_400, [90, 150, 260, 480], 250),
-  screen("folio-ios", "NoteListView", 6_100, [60, 110, 190, 350], 180),
-  screen("folio-ios", "SearchView", 2_300, [140, 240, 520, 900], 480),
-  screen("folio-ios", "MediaPicker", 1_900, [180, 320, 610, 1_100], 560),
-  screen("folio-ios", "SettingsView", 640, [40, 70, 120, 200], 115),
-  screen("folio-ios", "ExportSheet", 410, [120, 200, 340, 600], 330),
-  screen("folio-ios", "SignInView", 380, [70, 120, 220, 410], 210),
-  screen("folio-web", "/notes", 3_900, [900, 1_400, 2_300, 3_600], 2_200),
-  screen("folio-web", "/notes/{id}", 3_100, [800, 1_250, 2_100, 3_300], 2_000),
-  screen("folio-web", "/", 2_200, [1_100, 1_600, 2_600, 4_100], 2_500),
-  screen("folio-web", "/search", 700, [950, 1_500, 2_500, 3_900], 2_400),
-  screen("folio-web", "/sign-in", 520, [650, 950, 1_500, 2_300], 1_450),
-  screen("folio-web", "/settings", 240, [700, 1_000, 1_600, 2_500], 1_550),
-]
-
-/** An app's screens over the period, the most shown first. */
-export const screenTable = (component: string, period: PeriodKey): ReadonlyArray<ScreenRow> => {
-  const millis = periods.find((entry) => entry.key === period)?.millis ?? day
-  return dayOfScreens
-    .filter((entry) => entry.component === component)
-    .map((entry) => ({ ...entry, views: Math.max(1, Math.round((entry.views * millis) / day)) }))
-}
-
-/**
  * A backend endpoint as an app saw it over the period: how often it called it, and the p95 from
  * the app's side, network included. Not in the API yet: it comes from the app's own request spans.
  */

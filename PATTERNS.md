@@ -433,13 +433,16 @@ export const apnsSettings = Config.all({
 - **Spans come from `Effect.fn` names** (entry 4). Add `Effect.withSpan` only around work that isn't
   already a named function, such as one item of a batch.
 - **Export** is configured once, in the host, with `effect/observability`.
-- **Cluenori's telemetry about itself goes one hop at most.** The Worker's own exports, to itself,
-  carry the header `cluenori-telemetry: self` and the resource attribute `cluenori.self = true`, and
-  the Worker handles a request that has the header with tracing off (Signals'
-  `selfTelemetryUntraced` and `selfTelemetryUntracedServer`, on visible lines in
-  `apps/worker/src/worker.ts`). Ingesting N signals then makes the spans of N requests, and ingesting
-  those makes none (`product/engines/signals/test/self-telemetry.test.ts`). SDKs never record their
-  own work: a failure to send is logged, never a signal.
+- **Cluenori's telemetry about itself never feeds on itself.** The Worker records its real work (the
+  API's requests, detectors, pushes, background work and queue batches) with Signals'
+  `SelfTelemetry`, bounded in memory, and sends it to its own OTLP routes at the end of each
+  request, alarm or batch, with the header `cluenori-telemetry: self` and the resource attribute
+  `cluenori.self = true`. A request that brings telemetry (`telemetryRouteOf`: OTLP and apps'
+  batches) is handled untraced, whoever sent it; its only telemetry is a count per route, sent at
+  most once a minute (`SelfTelemetry.countIngest`). N signals in make a bounded number out
+  (`product/engines/signals/test/self-telemetry.test.ts`). SDKs never record their own work: a
+  failure to send is logged, never a signal. How the deployment's clients measure themselves, and
+  the names of its features, are in `docs/self-telemetry.md`.
 
 ## 13. Persistence
 

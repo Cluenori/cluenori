@@ -2,6 +2,7 @@ import { cn } from "cn"
 import { Cause, Option } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import type { ReactNode } from "react"
+import { createContext, useContext, useEffect, useState } from "react"
 
 // What a person reads for each failure the API names; anything else is the API not answering.
 const failureWords: Readonly<Record<string, string>> = {
@@ -36,6 +37,14 @@ export const failureText = <E,>(cause: Cause.Cause<E>) => {
   return words ?? "The API didn't answer. Check that Cluenori is running, then try again."
 }
 
+const noAnswer = Symbol("no answer")
+
+/**
+ * What a page does when its first answer shows: from what the browser kept, while a newer one
+ * loads, or from the network. The app measures it; previews and the design kit do nothing.
+ */
+export const ScreenReady = createContext<(kind: "kept" | "fresh") => void>(() => undefined)
+
 /**
  * One of the API's answers, as a panel shows it: a quiet line while it first loads, what failed if
  * it did, and the answer, dimmed while a newer one loads, so a page never blanks when the period
@@ -48,6 +57,21 @@ export function Loaded<A, E>({
   readonly result: AsyncResult.AsyncResult<A, E>
   readonly children: (value: A) => ReactNode
 }) {
+  const ready = useContext(ScreenReady)
+  // An answer there as the panel first shows was kept; any answer after it is the network's. A
+  // page's first of each kind counts, whichever panel it is in.
+  const [atStart] = useState<unknown>(() => (AsyncResult.isSuccess(result) ? result.value : noAnswer))
+  useEffect(() => {
+    if (atStart !== noAnswer) {
+      ready("kept")
+    }
+  }, [atStart, ready])
+  const fresh = AsyncResult.isSuccess(result) && !result.waiting && result.value !== atStart
+  useEffect(() => {
+    if (fresh) {
+      ready("fresh")
+    }
+  }, [fresh, ready])
   if (AsyncResult.isSuccess(result)) {
     return (
       <div

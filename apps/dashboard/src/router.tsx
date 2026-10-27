@@ -123,6 +123,8 @@ export type Route =
       readonly project: ProjectKey
       readonly feature: FeatureKey
       readonly environment?: EnvironmentKey
+      /** One client's part of the story, when narrowed to it. */
+      readonly component?: ComponentKey
     }
   | ({ readonly page: "person"; readonly project: ProjectKey } & (
       | { readonly person: PersonId }
@@ -612,7 +614,7 @@ const betweenOf = (route: Route): ReadonlyArray<TrailStep> => {
     return [{ label: pageNames.appReleases, to: { ...shown, page: "appReleases" } }]
   }
   if (route.page === "feature") {
-    const { feature: _, ...shown } = route
+    const { feature: _, component: _component, ...shown } = route
     return [{ label: pageNames.features, to: { ...shown, page: "features" } }]
   }
   return []
@@ -681,6 +683,7 @@ const analyticsRouteOf = (
           project,
           feature: feature.value,
           ...(shown.environment === undefined ? {} : { environment: shown.environment }),
+          ...(shown.component === undefined ? {} : { component: shown.component }),
         }
       : { page: "missing" }
   }

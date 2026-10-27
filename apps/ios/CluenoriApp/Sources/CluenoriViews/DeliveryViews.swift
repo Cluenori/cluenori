@@ -128,9 +128,7 @@ struct DeliveryScreen: View {
         .task { await delivery.load() }
         // Runs again once a promotion is shown that hasn't ended; stops when the screen leaves.
         .task(id: delivery.hasUnendedPromotions) { await delivery.followPromotions() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: delivery.answer.problem, receivedAt: delivery.answer.receivedAt)
-        }
+        .answerBanner(problem: delivery.answer.problem, receivedAt: delivery.answer.receivedAt)
     }
 }
 

@@ -422,9 +422,7 @@ struct UptimeScreen: View {
         .navigationTitle(Text("Uptime", bundle: #bundle, comment: "Title of a project's monitors."))
         .refreshable { await monitors.monitors.load() }
         .task { await monitors.monitors.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: monitors.monitors.problem, receivedAt: monitors.monitors.receivedAt)
-        }
+        .answerBanner(problem: monitors.monitors.problem, receivedAt: monitors.monitors.receivedAt)
     }
 }
 
@@ -576,9 +574,7 @@ struct MonitorScreen: View {
         }
         .refreshable { await monitor.detail.load() }
         .task { await monitor.detail.load() }
-        .safeAreaInset(edge: .bottom) {
-            AnswerBanner(problem: monitor.detail.problem, receivedAt: monitor.detail.receivedAt)
-        }
+        .answerBanner(problem: monitor.detail.problem, receivedAt: monitor.detail.receivedAt)
     }
 }
 

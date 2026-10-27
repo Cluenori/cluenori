@@ -34,6 +34,15 @@ public final class DeploymentModels {
         alerts = AlertsModel(api: api, phone: phone, system: alertSystem, keyRejected: context.keyRejected)
     }
 
+    /// The member the phone acts for, by their ID, the same in every client: the one kept from
+    /// before, else asked for; nil when it can't be had.
+    public func memberID() async -> String? {
+        if member.value == nil {
+            await member.load()
+        }
+        return member.value?.id
+    }
+
     /// What people call `project`: its name, from Today; its key until Today says. A view reading it
     /// shows the name once Today arrives.
     public func name(of project: String) -> String {

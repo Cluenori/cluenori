@@ -9,6 +9,8 @@ import { KitCard, KitColumn, KitGroup, KitSample } from "@/pages/kit-section"
 import {
   sampleCohorts,
   sampleFeatures,
+  sampleScreens,
+  sampleTimings,
   sampleHealth,
   sampleInstallations,
   sampleKeys,
@@ -29,6 +31,7 @@ import { Panel } from "@/views/panel"
 import { PeopleCounters } from "@/views/people-counters"
 import { InstallationList, Timeline } from "@/views/person-views"
 import { RetentionGrid } from "@/views/retention-grid"
+import { ScreenTable, TimingTable } from "@/views/screen-table"
 import { SdkKeys } from "@/views/sdk-keys"
 import { Button } from "@/views/ui/button"
 import { VersionPolicyDialog, VersionPolicySummary } from "@/views/version-policy"
@@ -179,6 +182,14 @@ export function KitAnalytics() {
           files={["feature-table.tsx"]}
         >
           <FeatureTable rows={sampleFeatures} people={sampleUsage.people} color={purple} />
+        </KitCard>
+        <KitCard
+          title="Screens and timings"
+          description="How fast each screen shows its data, kept and fresh; its visits, CPU, hitches and hangs; a dash where the app measured nothing. Then the app's own timings."
+          files={["screen-table.tsx"]}
+        >
+          <ScreenTable rows={sampleScreens} />
+          <TimingTable rows={sampleTimings} />
         </KitCard>
         <KitCard
           title="A person"
