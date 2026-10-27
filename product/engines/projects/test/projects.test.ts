@@ -2,8 +2,9 @@ import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvironmentKey, MemberId, ProjectKey } from "@cluenori/foundation"
 import { Repository, WorkflowFile } from "@cluenori/github"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Redacted, Schema } from "effect"
+import { DateTime, Effect, Redacted, Schema } from "effect"
 import { SqlClient } from "effect/sql"
+import { TestClock } from "effect/testing"
 
 import {
   BundleId,
@@ -13,6 +14,10 @@ import {
   ComponentNotFound,
   defaultProjectSettings,
   IngestKey,
+  IngestKeyId,
+  IngestKeyName,
+  IngestKeyNotFound,
+  IngestKeyRefused,
   IngestKeyRejected,
   isProduction,
   ProjectExists,
@@ -21,6 +26,7 @@ import {
   Projects,
   SdkKey,
   SdkKeyNotFound,
+  TooManySdkKeys,
 } from "../src/index.ts"
 import { inProject } from "./in-object.ts"
 
@@ -35,6 +41,25 @@ const createWithApi = Effect.gen(function* () {
 
 // The same SDK key's ID under another project's or component's name.
 const renamed = (key: SdkKey, from: string, to: string) => SdkKey.make(key.replace(from, to))
+
+const hour = 3_600_000
+const day = 24 * hour
+// A time on the hour, so the hours a test moves through are whole: 2026-10-20 12:00 UTC.
+const noon = 1_792_670_400_000
+const at = (millis: number) => DateTime.makeUnsafe(millis)
+const named = (name: string) => IngestKeyName.make(name)
+
+// Runs `program` in project `project` on a test clock set to `start`.
+const inProjectAt = <A, E>(
+  project: string,
+  start: number,
+  program: Effect.Effect<A, E, Projects | ActivityLog | SqlClient.SqlClient>,
+) => inProject(project, TestClock.setTime(start).pipe(Effect.andThen(program), Effect.provide(TestClock.layer())))
+
+const activityNames = Effect.gen(function* () {
+  const log = yield* ActivityLog
+  return (yield* log.latest).map((entry) => entry.name)
+})
 
 // Changes one character of the secret, keeping the key's form.
 const tampered = (key: IngestKey) => IngestKey.make(`${key.slice(0, -1)}${key.endsWith("A") ? "B" : "A"}`)
@@ -196,6 +221,8 @@ describe("Projects", () => {
           yield* sql`ALTER TABLE projects_components DROP COLUMN deploy_targets`
           yield* sql`ALTER TABLE projects_components DROP COLUMN ships_with`
           yield* sql`DROP TABLE projects_sdk_keys`
+          yield* sql`ALTER TABLE projects_components ADD COLUMN ingest_key_digest TEXT NOT NULL DEFAULT ''`
+          yield* sql`DROP TABLE projects_ingest_keys`
           yield* sql`DELETE FROM projects_migrations WHERE migration_id >= 4`
         }),
       )
@@ -221,7 +248,9 @@ describe("Projects", () => {
       "keeps-no-key",
       Effect.gen(function* () {
         const added = yield* createWithApi
-        const secret = Redacted.value(added.ingestKey).split(".")[3] ?? ""
+        const projects = yield* Projects
+        const another = yield* projects.addIngestKey(owner, notesApi.key, { name: IngestKeyName.make("ci") })
+        const secrets = [added.ingestKey, another.ingestKey].map((key) => Redacted.value(key).split(".")[3] ?? "")
         const sql = yield* SqlClient.SqlClient
         // Every table but the platform's own, which a Durable Object may not read.
         const tables = yield* sql<{
@@ -230,8 +259,10 @@ describe("Projects", () => {
         const everything = yield* Effect.forEach(tables, (table) => sql.unsafe(`SELECT * FROM "${table.name}"`))
         const stored = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(everything)
 
-        assert.isAbove(secret.length, 0)
-        assert.notInclude(stored, secret)
+        for (const secret of secrets) {
+          assert.strictEqual(secret.length, 43)
+          assert.notInclude(stored, secret)
+        }
       }),
     ),
   )
@@ -284,6 +315,224 @@ describe("Projects", () => {
         assert.deepStrictEqual(refusals, [new IngestKeyRejected(), new IngestKeyRejected(), new IngestKeyRejected()])
       }),
     ),
+  )
+
+  it.effect("keeps a component's keys working side by side until one is revoked, now or later", () =>
+    inProjectAt(
+      "keys-overlap",
+      noon,
+      Effect.gen(function* () {
+        const added = yield* createWithApi
+        const projects = yield* Projects
+        const blue = yield* projects.addIngestKey(owner, notesApi.key, { name: named("blue") })
+        // Both work: a deploy can move to the new key with no gap.
+        assert.strictEqual(yield* projects.authenticate(added.ingestKey), "notes-api")
+        assert.strictEqual(yield* projects.authenticate(blue.ingestKey), "notes-api")
+        const listed = yield* projects.ingestKeys(notesApi.key)
+        assert.deepStrictEqual(
+          listed.keys.map((key) => key.name),
+          ["blue", "first"],
+        )
+        const first = listed.keys[1]?.id ?? IngestKeyId.make("00000000-0000-7000-8000-000000000000")
+
+        // Revoked in 24 hours: it works until then, and not a millisecond after.
+        const scheduled = yield* projects.revokeIngestKey(owner, notesApi.key, first, at(noon + day))
+        assert.strictEqual(DateTime.toEpochMillis(scheduled.revokedAt ?? at(0)), noon + day)
+        // A later revocation changes nothing; it only moves earlier.
+        const later = yield* projects.revokeIngestKey(owner, notesApi.key, first, at(noon + 2 * day))
+        assert.strictEqual(DateTime.toEpochMillis(later.revokedAt ?? at(0)), noon + day)
+        yield* TestClock.setTime(noon + day - 1)
+        assert.strictEqual(yield* projects.authenticate(added.ingestKey), "notes-api")
+        yield* TestClock.setTime(noon + day)
+        assert.deepStrictEqual(yield* projects.authenticate(added.ingestKey).pipe(Effect.flip), new IngestKeyRejected())
+        assert.strictEqual(yield* projects.authenticate(blue.ingestKey), "notes-api")
+        // Revoked at once, the other stops too; revoking an ended key says nothing new.
+        yield* projects.revokeIngestKey(owner, notesApi.key, blue.key.id, undefined)
+        yield* projects.revokeIngestKey(owner, notesApi.key, blue.key.id, undefined)
+        assert.deepStrictEqual(yield* projects.authenticate(blue.ingestKey).pipe(Effect.flip), new IngestKeyRejected())
+        // Newest first.
+        assert.deepStrictEqual(yield* activityNames, [
+          "ingest_key.revoked",
+          "ingest_key.revoked",
+          "ingest_key.added",
+          "component.added",
+          "project.created",
+        ])
+        // A key of another component, or none, isn't found.
+        const missing = IngestKeyId.make("0199f7a2-5c1e-7d3a-9b2f-4e8a1c6d0f54")
+        assert.deepStrictEqual(
+          yield* projects.revokeIngestKey(owner, notesApi.key, missing, undefined).pipe(Effect.flip),
+          new IngestKeyNotFound({ key: missing }),
+        )
+      }),
+    ),
+  )
+
+  it.effect("keeps when a key was last used by the hour, writing it once an hour", () =>
+    inProjectAt(
+      "keys-last-used",
+      noon,
+      Effect.gen(function* () {
+        const added = yield* createWithApi
+        const projects = yield* Projects
+        const lastUsed = projects
+          .ingestKeys(notesApi.key)
+          .pipe(Effect.map(({ keys }) => keys.map((key) => key.lastUsedAt && DateTime.toEpochMillis(key.lastUsedAt))))
+        assert.deepStrictEqual(yield* lastUsed, [undefined])
+        yield* TestClock.setTime(noon + 20 * 60_000)
+        yield* projects.authenticate(added.ingestKey)
+        yield* TestClock.setTime(noon + 59 * 60_000)
+        yield* projects.authenticate(added.ingestKey)
+        assert.deepStrictEqual(yield* lastUsed, [noon])
+        yield* TestClock.setTime(noon + 2 * hour + 1)
+        yield* projects.authenticate(added.ingestKey)
+        assert.deepStrictEqual(yield* lastUsed, [noon + 2 * hour])
+      }),
+    ),
+  )
+
+  it.effect("warns a week and a day before a key expires, once each, then refuses it, and forgets it 30 days on", () =>
+    inProjectAt(
+      "keys-expire",
+      noon,
+      Effect.gen(function* () {
+        yield* createWithApi
+        const projects = yield* Projects
+        const ci = yield* projects.addIngestKey(owner, notesApi.key, {
+          name: named("ci"),
+          expiresAt: at(noon + 10 * day),
+        })
+        // Revoked before it would expire: never warned of.
+        const old = yield* projects.addIngestKey(owner, notesApi.key, {
+          name: named("old"),
+          expiresAt: at(noon + 8 * day),
+        })
+        yield* projects.revokeIngestKey(owner, notesApi.key, old.key.id, at(noon + 7 * day))
+        const log = yield* ActivityLog
+        const warnings = log.latest.pipe(
+          Effect.map((entries) =>
+            entries.filter((entry) => entry.name === "ingest_key.expiring").map((entry) => entry.attrs),
+          ),
+        )
+        const checkAt = (millis: number) => TestClock.setTime(millis).pipe(Effect.andThen(projects.checkIngestKeys))
+        yield* checkAt(noon)
+        yield* checkAt(noon + 3 * day - 1)
+        assert.deepStrictEqual(yield* warnings, [])
+        yield* checkAt(noon + 3 * day)
+        yield* checkAt(noon + 3 * day + hour)
+        yield* checkAt(noon + 9 * day - 1)
+        const ciWarning = {
+          component: "notes-api",
+          key: ci.key.id,
+          name: "ci",
+          expiresAt: DateTime.formatIso(at(noon + 10 * day)),
+        }
+        assert.deepStrictEqual(yield* warnings, [ciWarning])
+        yield* checkAt(noon + 9 * day)
+        yield* checkAt(noon + 9 * day + hour)
+        assert.deepStrictEqual(yield* warnings, [ciWarning, ciWarning])
+        // A key made with less than a day left hears only the day's warning.
+        yield* projects.addIngestKey(owner, notesApi.key, {
+          name: named("short"),
+          expiresAt: at(noon + 9 * day + 12 * hour),
+        })
+        yield* checkAt(noon + 9 * day + 2 * hour)
+        yield* checkAt(noon + 9 * day + 3 * hour)
+        assert.deepStrictEqual(
+          (yield* warnings).map((each) => each["name"]),
+          ["short", "ci", "ci"],
+        )
+        yield* TestClock.setTime(noon + 10 * day)
+        assert.deepStrictEqual(yield* projects.authenticate(ci.ingestKey).pipe(Effect.flip), new IngestKeyRejected())
+        // Listed 30 days after it ended, then forgotten; the key that never expires stays.
+        yield* checkAt(noon + 40 * day - 1)
+        assert.deepStrictEqual(
+          (yield* projects.ingestKeys(notesApi.key)).keys.map((key) => key.name),
+          ["ci", "first"],
+        )
+        yield* checkAt(noon + 40 * day + 1)
+        assert.deepStrictEqual(
+          (yield* projects.ingestKeys(notesApi.key)).keys.map((key) => key.name),
+          ["first"],
+        )
+      }),
+    ),
+  )
+
+  it.effect("refuses an eleventh working key and one that would expire at once", () =>
+    inProjectAt(
+      "keys-bound",
+      noon,
+      Effect.gen(function* () {
+        yield* createWithApi
+        const projects = yield* Projects
+        const past = yield* projects
+          .addIngestKey(owner, notesApi.key, { name: named("late"), expiresAt: at(noon) })
+          .pipe(Effect.flip)
+        assert.deepStrictEqual(past, new IngestKeyRefused({ reason: "expiryPast" }))
+        const nine = yield* Effect.forEach(
+          Array.from({ length: 9 }, (_, index) => index),
+          (index) => projects.addIngestKey(owner, notesApi.key, { name: named(`key-${index}`) }),
+        )
+        const tooMany = yield* projects.addIngestKey(owner, notesApi.key, { name: named("more") }).pipe(Effect.flip)
+        assert.deepStrictEqual(tooMany, new IngestKeyRefused({ reason: "tooMany" }))
+        // One that ended no longer counts: an owner can always make room.
+        yield* projects.revokeIngestKey(
+          owner,
+          notesApi.key,
+          nine[0]?.key.id ?? IngestKeyId.make("0199f7a2-5c1e-7d3a-9b2f-4e8a1c6d0f54"),
+          undefined,
+        )
+        const room = yield* projects.addIngestKey(owner, notesApi.key, { name: named("more") })
+        assert.strictEqual(yield* projects.authenticate(room.ingestKey), "notes-api")
+      }),
+    ),
+  )
+
+  it.effect("turns each component's one key from before into its key first, made in the same millisecond too", () =>
+    Effect.gen(function* () {
+      // A database from before: the key's digest in its old column, and migration 7 not yet run.
+      const added = yield* inProject(
+        "key-before",
+        Effect.gen(function* () {
+          const made = yield* createWithApi
+          const projects = yield* Projects
+          const worker = yield* projects.addComponent(owner, {
+            key: ComponentKey.make("notes-worker"),
+            name: ComponentName.make("Notes worker"),
+          })
+          const sql = yield* SqlClient.SqlClient
+          // Both components made in the same millisecond, as an import could make them.
+          yield* sql`UPDATE projects_components SET created_at = (SELECT created_at FROM projects_components WHERE key = 'notes-api')`
+          yield* sql`ALTER TABLE projects_components ADD COLUMN ingest_key_digest TEXT NOT NULL DEFAULT ''`
+          yield* sql`UPDATE projects_components SET ingest_key_digest =
+            (SELECT digest FROM projects_ingest_keys WHERE projects_ingest_keys.component = projects_components.key)`
+          yield* sql`DROP TABLE projects_ingest_keys`
+          yield* sql`DELETE FROM projects_migrations WHERE migration_id >= 7`
+          return { ...made, worker }
+        }),
+      )
+      const { component, workerComponent, keys } = yield* inProject(
+        "key-before",
+        Effect.gen(function* () {
+          const projects = yield* Projects
+          return {
+            component: yield* projects.authenticate(added.ingestKey),
+            workerComponent: yield* projects.authenticate(added.worker.ingestKey),
+            keys: (yield* projects.ingestKeys(notesApi.key)).keys,
+          }
+        }),
+      )
+      assert.strictEqual(component, "notes-api")
+      assert.strictEqual(workerComponent, "notes-worker")
+      assert.deepStrictEqual(
+        keys.map((key) => [key.name, key.expiresAt, key.revokedAt, Schema.is(IngestKeyId)(key.id)]),
+        [["first", undefined, undefined, true]],
+      )
+      // Its ID's time is the component's creation.
+      const idMillis = Number.parseInt((keys[0]?.id ?? "").replace("-", "").slice(0, 12), 16)
+      assert.strictEqual(idMillis, DateTime.toEpochMillis(added.component.createdAt))
+    }),
   )
 
   it.effect("issues SDK keys that each authenticate to their component, listed newest first, with sdk_key.issued", () =>
@@ -345,6 +594,26 @@ describe("Projects", () => {
           assert.deepStrictEqual(list, { keys: [current, revoked] })
         }),
       ),
+  )
+
+  it.effect("refuses a 21st active SDK key, and issues one again once a key is revoked", () =>
+    inProject(
+      "sdk-keys-bound",
+      Effect.gen(function* () {
+        yield* createWithApi
+        const projects = yield* Projects
+        const twenty = yield* Effect.forEach(Array.from({ length: 20 }), () =>
+          projects.issueSdkKey(owner, notesApi.key),
+        )
+        const tooMany = yield* projects.issueSdkKey(owner, notesApi.key).pipe(Effect.flip)
+        assert.deepStrictEqual(tooMany, new TooManySdkKeys({ component: notesApi.key }))
+        const [oldest] = twenty
+        assert.isDefined(oldest)
+        yield* projects.revokeSdkKey(owner, notesApi.key, oldest.key)
+        const again = yield* projects.issueSdkKey(owner, notesApi.key)
+        assert.strictEqual(yield* projects.authenticateSdkKey(again.key), notesApi.key)
+      }),
+    ),
   )
 
   it.effect("refuses an SDK key that is unknown, another project's, or for a component the project lacks, alike", () =>

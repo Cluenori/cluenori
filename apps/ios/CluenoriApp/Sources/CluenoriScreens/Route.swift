@@ -198,6 +198,8 @@ public enum Route: Hashable, Sendable {
     case versionPolicy(project: String, component: String)
     /// One component's SDK keys, which its app's builds carry.
     case sdkKeys(project: String, component: String)
+    /// One component's ingest keys, which its services send telemetry with; an owner's.
+    case ingestKeys(project: String, component: String)
 
     /// The project the screen is of; nil for the deployment's own, the feeds.
     public var project: String? {
@@ -207,6 +209,7 @@ public enum Route: Hashable, Sendable {
             .monitor(let key, _), .delivery(let key),
             .releases(let key, _), .notesStyle(let key), .component(let key, _), .componentReleases(let key, _),
             .person(let key, _), .personByID(let key, _), .versionPolicy(let key, _), .sdkKeys(let key, _),
+            .ingestKeys(let key, _),
             .logLine(let key, _):
             key
         case .feature(let feature): feature.project
@@ -329,6 +332,8 @@ public enum Route: Hashable, Sendable {
             [.project(key), .analytics(AnalyticsRef(project: key)), self]
         case .versionPolicy(let key, let component), .sdkKeys(let key, let component):
             [.project(key), .analytics(AnalyticsRef(project: key, component: component)), self]
+        case .ingestKeys(let key, let component):
+            [.project(key), .delivery(project: key), .component(project: key, component: component), self]
         }
     }
 
@@ -391,6 +396,7 @@ public enum Route: Hashable, Sendable {
             case 4 where parts[3] == "releases": self = .componentReleases(project: project, component: parts[2])
             case 4 where parts[3] == "version-policy": self = .versionPolicy(project: project, component: parts[2])
             case 4 where parts[3] == "sdk-keys": self = .sdkKeys(project: project, component: parts[2])
+            case 4 where parts[3] == "ingest-keys": self = .ingestKeys(project: project, component: parts[2])
             default: return nil
             }
             return

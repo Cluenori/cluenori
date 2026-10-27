@@ -1,5 +1,6 @@
 import type { ProjectKey } from "@cluenori/foundation"
 import type { IncidentList } from "@cluenori/incidents"
+import type { IngestKeyInfo } from "@cluenori/projects"
 import type { Compared, ErrorTable } from "@cluenori/signals"
 import { errorStatusOf, operationKeyOf, slowerOperations } from "@cluenori/signals"
 import { DateTime } from "effect"
@@ -15,6 +16,8 @@ export interface ProjectState {
   /** The operations of the last day, and of the 7 days before. */
   readonly operations: Compared
   readonly components: number
+  /** Its ingest keys that expire within a week, not revoked before. */
+  readonly expiringKeys: ReadonlyArray<IngestKeyInfo>
   /** The time Today looks at (Unix ms). */
   readonly now: number
 }
@@ -48,6 +51,7 @@ export const itemsOf = (state: ProjectState): ReadonlyArray<TodayItem> => {
           ]
     }),
     ...state.incidents.quiet.map((quiet): TodayItem => ({ _tag: "quiet", project, ...quiet })),
+    ...state.expiringKeys.map((key): TodayItem => ({ _tag: "keyExpiring", project, key })),
     ...(silent
       ? [
           {
@@ -71,15 +75,17 @@ const rankOf = (item: TodayItem) => {
       return 4
     case "quiet":
       return 5
-    case "promotion":
+    case "keyExpiring":
       return 6
-    case "silent":
+    case "promotion":
       return 7
+    case "silent":
+      return 8
   }
 }
 
 // Within a kind, the more urgent first: the latest incident or error, the most slowed operation, the
-// operation quiet the longest, the
+// operation quiet the longest, the key that expires soonest, the
 // promotion that ended latest or, while it hasn't, started latest.
 const weightOf = (item: TodayItem) => {
   switch (item._tag) {
@@ -91,6 +97,8 @@ const weightOf = (item: TodayItem) => {
       return -item.p95Ms / item.usualP95Ms
     case "quiet":
       return DateTime.toEpochMillis(item.lastRanAt)
+    case "keyExpiring":
+      return item.key.expiresAt === undefined ? 0 : DateTime.toEpochMillis(item.key.expiresAt)
     case "promotion":
       return -DateTime.toEpochMillis(item.endedAt ?? item.startedAt)
     case "silent":

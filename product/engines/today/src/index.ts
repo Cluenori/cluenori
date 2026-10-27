@@ -16,6 +16,7 @@ export {
   PromotionItem,
   PromotionItemState,
   SilentItem,
+  KeyExpiringItem,
   QuietItem,
   SlowerItem,
   TodayItem,

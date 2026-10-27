@@ -17,7 +17,7 @@ import {
 } from "@cluenori/foundation"
 import { StoreVersion } from "@cluenori/manifest"
 import type { IssuedSdkKey } from "@cluenori/projects"
-import { SdkKey } from "@cluenori/projects"
+import { IngestKeyId, IngestKeyInfo, IngestKeyName, SdkKey } from "@cluenori/projects"
 import type { ComponentVersionPolicy } from "@cluenori/releases"
 import { NoteLocale } from "@cluenori/releases"
 import type {
@@ -424,3 +424,50 @@ export const samplePolicy: ComponentVersionPolicy = {
   ],
   setAt: at(sampleNow - 2 * day),
 }
+
+const api = ComponentKey.make("notes-api")
+const keyId = (n: number) => IngestKeyId.make(`019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f8${n}`)
+
+/**
+ * notes-api's ingest keys at their worst: one unused, with a name of the most 40 characters, one
+ * that expires in 2 days, one being revoked tomorrow, and two that ended, one expired, one revoked.
+ */
+export const sampleIngestKeys: ReadonlyArray<IngestKeyInfo> = [
+  new IngestKeyInfo({
+    id: keyId(1),
+    component: api,
+    name: IngestKeyName.make("green-deploy-eu-west-2026-10-canary-pool"),
+    createdAt: at(sampleNow - 20 * minute),
+  }),
+  new IngestKeyInfo({
+    id: keyId(2),
+    component: api,
+    name: IngestKeyName.make("blue"),
+    createdAt: at(sampleNow - 88 * day),
+    lastUsedAt: at(sampleNow - hour),
+    expiresAt: at(sampleNow + 2 * day),
+  }),
+  new IngestKeyInfo({
+    id: keyId(3),
+    component: api,
+    name: IngestKeyName.make("first"),
+    createdAt: at(sampleNow - 400 * day),
+    lastUsedAt: at(sampleNow - 5 * hour),
+    revokedAt: at(sampleNow + 22 * hour),
+  }),
+  new IngestKeyInfo({
+    id: keyId(4),
+    component: api,
+    name: IngestKeyName.make("ci"),
+    createdAt: at(sampleNow - 120 * day),
+    lastUsedAt: at(sampleNow - 31 * day),
+    expiresAt: at(sampleNow - 30 * day),
+  }),
+  new IngestKeyInfo({
+    id: keyId(5),
+    component: api,
+    name: IngestKeyName.make("laptop"),
+    createdAt: at(sampleNow - 60 * day),
+    revokedAt: at(sampleNow - 3 * day),
+  }),
+]

@@ -61,5 +61,38 @@ export const migrateProjects = Migrator.make({})({
       )`
       yield* sql`CREATE INDEX projects_sdk_keys_by_component ON projects_sdk_keys (component)`
     }),
+    // Several ingest keys a component, so one can replace another without a gap: each kept as its
+    // SHA-256 digest, by an ID of its own. Each component's one key so far becomes its key "first",
+    // which never expires; its ID is made here, from the component's creation and random bits.
+    "0007_ingest_keys": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE projects_ingest_keys (
+        id TEXT PRIMARY KEY,
+        component TEXT NOT NULL,
+        name TEXT NOT NULL,
+        digest TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        last_used_at INTEGER,
+        expires_at INTEGER,
+        revoked_at INTEGER,
+        warned_within INTEGER
+      )`
+      yield* sql`CREATE INDEX projects_ingest_keys_by_component ON projects_ingest_keys (component)`
+      // The whole UUIDv7 in one statement: its time, then version, variant and random bits, each
+      // row's own, so components made in the same millisecond never share an ID.
+      yield* sql`INSERT INTO projects_ingest_keys (id, component, name, digest, created_at)
+        SELECT
+          substr(t, 1, 8) || '-' || substr(t, 9, 4) || '-7' || lower(substr(hex(randomblob(2)), 1, 3)) || '-' ||
+            substr('89ab', 1 + (abs(random()) % 4), 1) || lower(substr(hex(randomblob(2)), 1, 3)) || '-' ||
+            lower(hex(randomblob(6))),
+          key, 'first', ingest_key_digest, created_at
+        FROM (
+          SELECT
+            lower(printf('%012x', CAST(strftime('%s', created_at) AS INTEGER) * 1000 + CAST(substr(created_at, 21, 3) AS INTEGER))) AS t,
+            key, ingest_key_digest, created_at
+          FROM projects_components
+        )`
+      yield* sql`ALTER TABLE projects_components DROP COLUMN ingest_key_digest`
+    }),
   }),
 })

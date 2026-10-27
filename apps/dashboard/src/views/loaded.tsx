@@ -18,6 +18,8 @@ const failureWords: Readonly<Record<string, string>> = {
   FeatureNotFound:
     "Nothing kept names this feature: no app marked it in 15 months, and no service named it in cluenori.feature.",
   SdkKeyNotFound: "The component has no such SDK key any more; reload the page to see its keys.",
+  TooManySdkKeys: "The component has 20 active SDK keys, the most it may: revoke one first.",
+  IngestKeyNotFound: "The component no longer lists this ingest key; reload the page to see its keys.",
   IncidentNotFound: "This project has no such incident: the link may be from another project.",
   MonitorNotFound: "This project has no such monitor: it may have been removed.",
   FeedNotFound: "There is no such feed here: it may have been deleted, or it lists no project you see.",

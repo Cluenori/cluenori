@@ -114,6 +114,7 @@ export class Today extends Context.Service<
             usual: productionOnly(yield* signals.operations({ period: weekBefore })),
           },
           components: components.length,
+          expiringKeys: yield* projects.expiringIngestKeys,
           now: DateTime.toEpochMillis(now),
         })
       }).pipe(Effect.withSpan("Today.items"))

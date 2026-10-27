@@ -85,7 +85,8 @@ struct RouteScreen: View {
         case .feeds, .feed, .project, .tech, .incidents, .incident, .uptime, .monitor, .delivery, .component,
             .release, .trace, .operations(.release),
             .errors(.release), .error(.release, _), .logs(.release), .logMessage(.release, _), .logLine, .notes,
-            .notesStyle, .analytics, .features, .appHealth, .feature, .person, .personByID, .versionPolicy, .sdkKeys:
+            .notesStyle, .analytics, .features, .appHealth, .feature, .person, .personByID, .versionPolicy, .sdkKeys,
+            .ingestKeys:
             false
         }
     }
@@ -246,6 +247,10 @@ private struct ProjectRouteScreen: View {
         case .sdkKeys(let project, let component):
             SdkKeysScreen(
                 keys: models.sdkKeys(project, component: component), name: models.delivery(project).name(of: component))
+        case .ingestKeys(let project, let component):
+            IngestKeysScreen(
+                keys: models.ingestKeys(project, component: component),
+                name: models.delivery(project).name(of: component))
         }
     }
 }

@@ -91,6 +91,46 @@ export const ProjectsHandlers = HttpApiBuilder.group(CluenoriApi, "projects", (h
         return yield* projects.call(member, params.project, projectCalls.addComponent, { actor, component: payload })
       }),
     )
+    // Ingest keys are credentials: only owners see, add and revoke them.
+    .handle("ingestKeys", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        if (member.access._tag !== "Everything") {
+          return yield* new NotAllowed()
+        }
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.ingestKeys, { component: params.component })
+      }),
+    )
+    .handle("addIngestKey", ({ params, payload }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        if (member.access._tag !== "Everything") {
+          return yield* new NotAllowed()
+        }
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.addIngestKey, {
+          actor: member.actor,
+          component: params.component,
+          input: payload,
+        })
+      }),
+    )
+    .handle("revokeIngestKey", ({ params, payload }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        if (member.access._tag !== "Everything") {
+          return yield* new NotAllowed()
+        }
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.revokeIngestKey, {
+          actor: member.actor,
+          component: params.component,
+          key: params.key,
+          ...(payload.at === undefined ? {} : { at: payload.at }),
+        })
+      }),
+    )
     .handle("issueSdkKey", ({ params }) =>
       Effect.gen(function* () {
         const member = yield* CurrentMember

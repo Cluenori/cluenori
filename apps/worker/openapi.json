@@ -1165,6 +1165,300 @@
         }
       }
     },
+    "/api/projects/{project}/components/{component}/ingest-keys": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.ingestKeys",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "IngestKeyList",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestKeyList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ComponentNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ComponentNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "A component's ingest keys, newest first, never the keys themselves: each one's ID, name, when it was created, `lastUsedAt`, the start of the UTC hour it was last used in (absent until used), and `expiresAt` and `revokedAt` when it has them. A key works until the earlier of those two; a revocation may be scheduled, so `revokedAt` may be in the future. Keys that ended are listed 30 days, then forgotten. Owners only."
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.addIngestKey",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "AddedIngestKey",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddedIngestKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | ComponentNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ComponentNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "IngestKeyRefused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestKeyRefused"
+                }
+              }
+            }
+          }
+        },
+        "description": "Adds an ingest key to a component, named by where it is used, optionally expiring at `expiresAt`, and returns it: the key is shown only in this answer. The component's other keys keep working, so a deploy can move to the new key with no gap; revoke the old one once its `lastUsedAt` stops moving. Owners can always add a key, so a lost key never loses a component. 409 `IngestKeyRefused`: `tooMany` when 10 of its keys work, `expiryPast` when `expiresAt` isn't in the future. Owners only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddIngestKey"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/projects/{project}/components/{component}/ingest-keys/{key}/revoke": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.revokeIngestKey",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/IngestKeyId"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "IngestKeyInfo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestKeyInfo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound | IngestKeyNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/IngestKeyNotFound"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Revokes one of a component's ingest keys: it stops working at `at`, or at once when `at` is absent or past, such as in 24 hours, while the deploys that use it move to another. A revocation only moves earlier: one later than the key already stops changes nothing and returns it. 404 for a key the component doesn't list. Owners only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeIngestKey"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/projects/{project}/components/{component}/sdk-keys": {
       "post": {
         "tags": [
@@ -1236,9 +1530,19 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "TooManySdkKeys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManySdkKeys"
+                }
+              }
+            }
           }
         },
-        "description": "Issues a new SDK key for a component: the key its app's builds carry, in the app's SDK configuration, so the SDK can send the component's signals and read its manifest. It is public, as anything shipped in an app is, and grants nothing else. The component's other keys stay active until revoked, so a new build can carry the new key while older builds keep working. Listed again with sdkKeys. 404 for a project or a component that doesn't exist."
+        "description": "Issues a new SDK key for a component: the key its app's builds carry, in the app's SDK configuration, so the SDK can send the component's signals and read its manifest. It is public, as anything shipped in an app is, and grants nothing else. The component's other keys stay active until revoked, so a new build can carry the new key while older builds keep working. Listed again with sdkKeys. 404 for a project or a component that doesn't exist; 409 when 20 of the component's keys are active, so one must be revoked first."
       },
       "get": {
         "tags": [
@@ -10493,6 +10797,9 @@
             "$ref": "#/components/schemas/QuietItem"
           },
           {
+            "$ref": "#/components/schemas/KeyExpiringItem"
+          },
+          {
             "$ref": "#/components/schemas/PromotionItem"
           },
           {
@@ -10585,6 +10892,77 @@
           "rejected",
           "lost"
         ]
+      },
+      "KeyExpiringItem": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "keyExpiring"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "key": {
+            "$ref": "#/components/schemas/IngestKeyInfo"
+          }
+        },
+        "required": [
+          "_tag",
+          "project",
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "IngestKeyInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/IngestKeyId"
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "name": {
+            "$ref": "#/components/schemas/IngestKeyName"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "component",
+          "name",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "IngestKeyName": {
+        "type": "string",
+        "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+        "minLength": 1,
+        "maxLength": 40
+      },
+      "IngestKeyId": {
+        "type": "string"
       },
       "QuietItem": {
         "type": "object",
@@ -12617,6 +12995,128 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/IssuedSdkKey"
+            }
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "additionalProperties": false
+      },
+      "TooManySdkKeys": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "TooManySdkKeys"
+            ]
+          },
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "_tag",
+          "component"
+        ],
+        "additionalProperties": false
+      },
+      "IngestKeyNotFound": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "IngestKeyNotFound"
+            ]
+          },
+          "key": {
+            "$ref": "#/components/schemas/IngestKeyId"
+          }
+        },
+        "required": [
+          "_tag",
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "RevokeIngestKey": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "IngestKeyRefused": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": [
+              "IngestKeyRefused"
+            ]
+          },
+          "reason": {
+            "$ref": "#/components/schemas/IngestKeyRefusal"
+          }
+        },
+        "required": [
+          "_tag",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "IngestKeyRefusal": {
+        "type": "string",
+        "enum": [
+          "tooMany",
+          "expiryPast"
+        ]
+      },
+      "AddedIngestKey": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/IngestKeyInfo"
+          },
+          "ingestKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "ingestKey"
+        ],
+        "additionalProperties": false
+      },
+      "AddIngestKey": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/IngestKeyName"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "IngestKeyList": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestKeyInfo"
             }
           }
         },

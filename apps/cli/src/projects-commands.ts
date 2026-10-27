@@ -1,6 +1,14 @@
 import { ComponentKey, EnvironmentKey, ProjectKey } from "@cluenori/foundation"
-import { ComponentName, ProjectName, SdkKey } from "@cluenori/projects"
-import { Console, Effect, Option, Redacted } from "effect"
+import {
+  ComponentName,
+  IngestKeyId,
+  IngestKeyName,
+  ingestKeysPerComponent,
+  ProjectName,
+  SdkKey,
+  sdkKeysPerComponent,
+} from "@cluenori/projects"
+import { Console, DateTime, Duration, Effect, Option, Redacted } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 
 import { apiClient, reachFailures, refuse } from "./api-client.ts"
@@ -255,9 +263,13 @@ export const componentSdkKeys = Command.make(
           ),
       }
       if (input.issue) {
-        const issued = yield* client.projects
-          .issueSdkKey({ params: { project, component } })
-          .pipe(Effect.catchTags(failures))
+        const issued = yield* client.projects.issueSdkKey({ params: { project, component } }).pipe(
+          Effect.catchTags({
+            ...failures,
+            TooManySdkKeys: () =>
+              refuse(`${component} has ${sdkKeysPerComponent} active SDK keys, the most it may: revoke one first.`),
+          }),
+        )
         yield* Console.log(`Issued an SDK key for ${component} of ${project}:\n`)
         yield* Console.log(`  ${issued.key}\n`)
         yield* Console.log(
@@ -303,6 +315,157 @@ export const componentSdkKeys = Command.make(
   ),
 )
 
+// How long a new ingest key works, and how long until a revocation takes effect.
+const keyLives = { "30d": Duration.days(30), "90d": Duration.days(90), "365d": Duration.days(365) }
+const revokeDelays = { "1h": Duration.hours(1), "24h": Duration.days(1), "7d": Duration.days(7) }
+
+// A moment a key ends at, or nothing when it doesn't.
+const ends = (at: DateTime.Utc | undefined) => (at === undefined ? "" : utcMinute(at))
+
+/**
+ * `cluenori component ingest-keys <project> <component> [--new <name> [--expires 90d]]
+ * [--revoke <id> [--in 24h]]`.
+ */
+export const componentIngestKeys = Command.make(
+  "ingest-keys",
+  {
+    project: Argument.String("project").pipe(Argument.withDescription("The project's key.")),
+    component: Argument.String("component").pipe(Argument.withDescription("The component's key, such as notes-api.")),
+    add: Flag.String("new").pipe(
+      Flag.optional,
+      Flag.withDescription(
+        "Add a key with this name, such as blue or 2026-11; it is shown once. The component's other keys keep working.",
+      ),
+    ),
+    expires: Flag.Literals("expires", ["30d", "90d", "365d"]).pipe(
+      Flag.optional,
+      Flag.withDescription("With --new: the key stops working this long from now. Without it, it works until revoked."),
+    ),
+    revoke: Flag.String("revoke").pipe(
+      Flag.optional,
+      Flag.withDescription("Revoke the key with this ID: what is sent with it is refused from then on."),
+    ),
+    after: Flag.Literals("in", ["1h", "24h", "7d"]).pipe(
+      Flag.optional,
+      Flag.withDescription("With --revoke: it stops working this long from now, not at once."),
+    ),
+    local,
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const project = yield* parsed(ProjectKey, input.project, "a project key")
+      const component = yield* parsed(ComponentKey, input.component, "a component key")
+      if (Option.isSome(input.add) && Option.isSome(input.revoke)) {
+        return yield* refuse("Use --new or --revoke, not both: add the new key, deploy it, then revoke the old one.")
+      }
+      if (Option.isSome(input.expires) && Option.isNone(input.add)) {
+        return yield* refuse("--expires goes with --new.")
+      }
+      if (Option.isSome(input.after) && Option.isNone(input.revoke)) {
+        return yield* refuse("--in goes with --revoke.")
+      }
+      const listCommand = `./cluenori component ingest-keys ${project} ${component}`
+      const target = yield* apiTarget(input.local)
+      const client = yield* apiClient(target)
+      const failures = {
+        ...reachFailures(target),
+        ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
+        ComponentNotFound: () =>
+          refuse(
+            `${project} has no component ${component}. Add it: ./cluenori component add ${project} ${component} --name <name>`,
+          ),
+        NotAllowed: () => refuse("Only an owner manages ingest keys."),
+      }
+      const now = yield* DateTime.now
+      if (Option.isSome(input.add)) {
+        const name = yield* parsed(IngestKeyName, input.add.value, "a key's name")
+        const added = yield* client.projects
+          .addIngestKey({
+            params: { project, component },
+            payload: {
+              name,
+              ...(Option.isSome(input.expires)
+                ? { expiresAt: DateTime.addDuration(now, keyLives[input.expires.value]) }
+                : {}),
+            },
+          })
+          .pipe(
+            Effect.catchTags({
+              ...failures,
+              IngestKeyRefused: (refused) =>
+                refuse(
+                  refused.reason === "tooMany"
+                    ? `${component} has ${ingestKeysPerComponent} keys that work, the most it may: revoke one first. See them: ${listCommand}`
+                    : "That key would expire at once.",
+                ),
+            }),
+          )
+        yield* Console.log(
+          `Added the ingest key "${added.key.name}" (${added.key.id}) to ${component} of ${project}:\n`,
+        )
+        yield* Console.log(`  ${added.ingestKey}\n`)
+        yield* Console.log("It is shown only now: keep it in your service's secrets.")
+        return yield* Console.log(
+          `Deploy it; once the old key's last use stops moving, revoke it: ${listCommand} --revoke <id> [--in 24h]`,
+        )
+      }
+      if (Option.isSome(input.revoke)) {
+        const key = yield* parsed(IngestKeyId, input.revoke.value, "an ingest key's ID")
+        const revoked = yield* client.projects
+          .revokeIngestKey({
+            params: { project, component, key },
+            payload: Option.isSome(input.after)
+              ? { at: DateTime.addDuration(now, revokeDelays[input.after.value]) }
+              : {},
+          })
+          .pipe(
+            Effect.catchTags({
+              ...reachFailures(target),
+              ProjectNotFound: failures.ProjectNotFound,
+              NotAllowed: failures.NotAllowed,
+              IngestKeyNotFound: () =>
+                refuse(`${component} of ${project} lists no ingest key ${key}. See them: ${listCommand}`),
+            }),
+          )
+        const at = revoked.revokedAt === undefined ? "now" : utcMinute(revoked.revokedAt)
+        return yield* Console.log(
+          `"${revoked.name}" stops working at ${at}; what is sent with it is refused from then on.`,
+        )
+      }
+      const list = yield* client.projects
+        .ingestKeys({ params: { project, component } })
+        .pipe(Effect.catchTags(failures))
+      if (list.keys.length === 0) {
+        return yield* Console.log(`${component} has no ingest keys. Add one: ${listCommand} --new <name>`)
+      }
+      const nowMillis = DateTime.toEpochMillis(now)
+      const stateOf = (key: (typeof list.keys)[number]) => {
+        const ended = [key.revokedAt, key.expiresAt].some(
+          (at) => at !== undefined && DateTime.toEpochMillis(at) <= nowMillis,
+        )
+        return ended ? "ended" : "works"
+      }
+      yield* Console.log(
+        columns([
+          ["ID", "Name", "State", "Added", "Last used", "Expires", "Revoked"],
+          ...list.keys.map((key) => [
+            key.id,
+            key.name,
+            stateOf(key),
+            utcMinute(key.createdAt),
+            key.lastUsedAt === undefined ? "never" : `${utcMinute(key.lastUsedAt)} hour`,
+            ends(key.expiresAt),
+            ends(key.revokedAt),
+          ]),
+        ]).join("\n"),
+      )
+    }),
+).pipe(
+  Command.withDescription(
+    "List a component's ingest keys, which its services send telemetry with; add one with --new, the others working on, or revoke one with --revoke, at once or --in a while. Owners only. To change a key without a gap: add one, deploy it, wait until the old one's last use stops moving, then revoke it.",
+  ),
+)
+
 /** `cluenori project ...`. */
 export const project = Command.make("project").pipe(
   Command.withDescription("Create projects, and choose their production environments."),
@@ -312,7 +475,7 @@ export const project = Command.make("project").pipe(
 /** `cluenori component ...`. */
 export const component = Command.make("component").pipe(
   Command.withDescription(
-    "Add components to projects, link them to their repository and deploy targets, where their releases go, and issue the SDK keys their apps' builds carry.",
+    "Add components to projects, link them to their repository and deploy targets, where their releases go, and manage the ingest keys their services send with and the SDK keys their apps' builds carry.",
   ),
-  Command.withSubcommands([componentAdd, componentLink, componentSdkKeys]),
+  Command.withSubcommands([componentAdd, componentLink, componentIngestKeys, componentSdkKeys]),
 )

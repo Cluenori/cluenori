@@ -37,8 +37,11 @@ import { defineConfig } from "vite"
 // And to 264 KB when operations were split by client and screens gained their table (262.1 KB to
 // 263.1 KB): the origins', screens' and client telemetry's Schemas in the typed client. Their
 // queries' SQL stays out: a Schema the API names lives in a `*-queries.ts` file, never next to a
-// store, which would bring the Worker's code (sketches, OTLP, the scrubber: 13 KB) with it.
-const firstLoadBudget = { scriptKb: 264, styleKb: 36 }
+// store, which would bring the Worker's code (sketches, OTLP, the scrubber: 13 KB) with it. And to
+// 265 KB when a component gained several ingest keys (to 264.5 KB): their three endpoints'
+// Schemas in the typed client, their atoms, and Today's item for a key about to expire; the keys'
+// panel loads after start, and only for an owner.
+const firstLoadBudget = { scriptKb: 265, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

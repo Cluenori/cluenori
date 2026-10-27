@@ -1,5 +1,7 @@
 import { calendarDayOf, ComponentKey } from "@cluenori/foundation"
+import { IngestKey } from "@cluenori/projects"
 import { PersonNotFound } from "@cluenori/signals"
+import { DateTime } from "effect"
 import { AsyncResult } from "effect/reactivity"
 import { HeartPulseIcon, UserSearchIcon } from "lucide-react"
 import { useState } from "react"
@@ -12,6 +14,7 @@ import {
   sampleScreens,
   sampleTimings,
   sampleHealth,
+  sampleIngestKeys,
   sampleInstallations,
   sampleKeys,
   samplePeriod,
@@ -26,6 +29,7 @@ import { BarRows } from "@/views/bar-rows"
 import { FeatureTable } from "@/views/feature-table"
 import { HealthList } from "@/views/health-list"
 import { HealthTable } from "@/views/health-table"
+import { IngestKeys } from "@/views/ingest-keys"
 import { Loaded } from "@/views/loaded"
 import { Panel } from "@/views/panel"
 import { PeopleCounters } from "@/views/people-counters"
@@ -37,6 +41,7 @@ import { Button } from "@/views/ui/button"
 import { VersionPolicyDialog, VersionPolicySummary } from "@/views/version-policy"
 
 const ios = ComponentKey.make("notes-ios")
+const api = ComponentKey.make("notes-api")
 const purple = "var(--purple)"
 const colorOfApp = () => purple
 const noop = () => undefined
@@ -237,6 +242,51 @@ export function KitAnalytics() {
               issuing
               problem="The API didn't answer. Check that Cluenori is running, then try again."
               onIssue={noop}
+              onRevoke={noop}
+            />
+          </KitSample>
+        </KitCard>
+        <KitCard
+          title="Ingest keys"
+          description="None working; several at once, one unused with the longest name, one expiring, one being revoked, two ended; a key just added, shown once; what failed."
+          files={["ingest-keys.tsx", "copy-button.tsx"]}
+        >
+          <KitSample label="None working">
+            <IngestKeys
+              component={api}
+              keys={sampleIngestKeys.slice(3)}
+              now={DateTime.toEpochMillis(asOf)}
+              adding={false}
+              onAdd={noop}
+              onRevoke={noop}
+            />
+          </KitSample>
+          <KitSample label="Several, one just added">
+            <IngestKeys
+              component={api}
+              keys={sampleIngestKeys}
+              now={DateTime.toEpochMillis(asOf)}
+              adding={false}
+              {...(sampleIngestKeys[0] === undefined
+                ? {}
+                : {
+                    added: {
+                      key: sampleIngestKeys[0],
+                      ingestKey: IngestKey.make(`cluenori.notes.notes-api.${"Q".repeat(43)}`),
+                    },
+                  })}
+              onAdd={noop}
+              onRevoke={noop}
+            />
+          </KitSample>
+          <KitSample label="Adding, after a failure">
+            <IngestKeys
+              component={api}
+              keys={sampleIngestKeys.slice(1, 2)}
+              now={DateTime.toEpochMillis(asOf)}
+              adding
+              problem="notes-api has 10 keys that work, the most it may: revoke one first."
+              onAdd={noop}
               onRevoke={noop}
             />
           </KitSample>

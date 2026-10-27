@@ -44,6 +44,9 @@ public struct TodayRow: Identifiable, Equatable, Sendable {
         case promotion(release: String, component: String, environment: String, state: PromotionItemState, since: Date)
         /// A project that sent nothing in the last day; when it last did, if in the 8 days before.
         case silent(lastDataAt: Date?)
+        /// One of a component's ingest keys expires within 7 days: add another and deploy it first.
+        /// Shown to owners only.
+        case keyExpiring(component: String, name: String, expiresAt: Date)
         /// A kind of item this version of the app doesn't know, from a newer deployment.
         case unknown(kind: String)
     }
@@ -56,6 +59,7 @@ public struct TodayRow: Identifiable, Equatable, Sendable {
         case quiet
         case promotion
         case silent
+        case keyExpiring
         case unknown
     }
 
@@ -76,6 +80,7 @@ public struct TodayRow: Identifiable, Equatable, Sendable {
         case .quiet: .quiet
         case .promotion: .promotion
         case .silent: .silent
+        case .keyExpiring: .keyExpiring
         case .unknown: .unknown
         }
     }
@@ -329,6 +334,17 @@ public final class TodayModel {
                 project: names[item.project] ?? item.project,
                 evidence: .silent(lastDataAt: item.lastDataAt),
                 route: .project(item.project)
+            )
+        case .keyExpiring(let item):
+            TodayRow(
+                id: "key \(item.project) \(item.key.id)",
+                projectKey: item.project,
+                project: names[item.project] ?? item.project,
+                evidence: .keyExpiring(
+                    component: item.key.component, name: item.key.name,
+                    // Only a key with an expiry is ever one about to expire.
+                    expiresAt: item.key.expiresAt ?? item.key.createdAt),
+                route: .ingestKeys(project: item.project, component: item.key.component)
             )
         case .unknown(let kind):
             TodayRow(

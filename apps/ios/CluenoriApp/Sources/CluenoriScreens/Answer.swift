@@ -12,6 +12,8 @@ public enum AnswerProblem: Equatable, Sendable {
     case missing
     /// The deployment answered in a way this app doesn't understand, such as from a newer version.
     case unreadable
+    /// The deployment shows this only to an owner, such as a component's ingest keys.
+    case notAllowed
 }
 
 /// Where answers are kept on the phone between launches, and the choices made on them: one file per
@@ -121,6 +123,8 @@ public final class Answer<Value: Codable & Equatable & Sendable> {
                 .releaseNotFound, .personNotFound, .feedNotFound, .featureNotFound, .logMessageNotFound,
                 .logLineNotFound:
                 problem = .missing
+            case .notAllowed:
+                problem = .notAllowed
             default:
                 problem = .unreadable
             }

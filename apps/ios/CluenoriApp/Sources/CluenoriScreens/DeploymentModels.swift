@@ -277,6 +277,13 @@ public final class DeploymentModels {
         model("version policies \(project)") { VersionPolicyModel(project: project, api: api, context: context) }
     }
 
+    /// One component's ingest keys.
+    public func ingestKeys(_ project: String, component: String) -> IngestKeysModel {
+        model("ingest keys \(project) \(component)") {
+            IngestKeysModel(project: project, component: component, api: api, context: context)
+        }
+    }
+
     /// One component's SDK keys.
     public func sdkKeys(_ project: String, component: String) -> SdkKeysModel {
         model("sdk keys \(project) \(component)") {

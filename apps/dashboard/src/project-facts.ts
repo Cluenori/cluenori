@@ -490,6 +490,21 @@ const todayRowOf = (item: TodayItem, now: number): NeedsYou => {
           operation: item.operation,
         },
       }
+    case "keyExpiring": {
+      const { key } = item
+      // Only a key with an expiry is ever one about to expire.
+      const expiresAt = key.expiresAt === undefined ? now : DateTime.toEpochMillis(key.expiresAt)
+      return {
+        key: `key ${item.project} ${key.id}`,
+        kind: "Key expires",
+        tone: "warning",
+        project: item.project,
+        title: `${key.component}'s ingest key "${key.name}"`,
+        detail: `Expires ${ago(expiresAt, now)}; add a key and deploy it before then`,
+        when: ago(expiresAt, now),
+        to: { page: "tech", project: item.project },
+      }
+    }
     case "silent": {
       const last = item.lastDataAt === undefined ? undefined : ago(DateTime.toEpochMillis(item.lastDataAt), now)
       return {

@@ -19,11 +19,18 @@ import { ManifestQuery, VersionPolicy } from "@cluenori/manifest"
 import {
   AddComponent,
   AddedComponentResponse,
+  AddedIngestKey,
+  AddIngestKey,
   Component,
   ComponentExists,
   ComponentLinks,
   ComponentNotFound,
   IngestKey,
+  IngestKeyId,
+  IngestKeyInfo,
+  IngestKeyList,
+  IngestKeyNotFound,
+  IngestKeyRefused,
   IngestKeyRejected,
   IssuedSdkKey,
   Project,
@@ -35,6 +42,7 @@ import {
   SdkKey,
   SdkKeyList,
   SdkKeyNotFound,
+  TooManySdkKeys,
 } from "@cluenori/projects"
 import {
   AppBatch,
@@ -84,6 +92,9 @@ export type EngineCallName =
   | "addComponent"
   | "linkComponent"
   | "updateSettings"
+  | "ingestKeys"
+  | "addIngestKey"
+  | "revokeIngestKey"
   | "issueSdkKey"
   | "sdkKeys"
   | "revokeSdkKey"
@@ -164,11 +175,29 @@ export const projectCalls = {
     Component,
     Schema.Union([ProjectNotFound, ComponentNotFound]),
   ),
+  ingestKeys: projectCall(
+    "ingestKeys",
+    Schema.Struct({ component: ComponentKey }),
+    IngestKeyList,
+    Schema.Union([ProjectNotFound, ComponentNotFound]),
+  ),
+  addIngestKey: projectCall(
+    "addIngestKey",
+    Schema.Struct({ actor: Actor, component: ComponentKey, input: AddIngestKey }),
+    AddedIngestKey,
+    Schema.Union([ProjectNotFound, ComponentNotFound, IngestKeyRefused]),
+  ),
+  revokeIngestKey: projectCall(
+    "revokeIngestKey",
+    Schema.Struct({ actor: Actor, component: ComponentKey, key: IngestKeyId, at: Schema.optionalKey(Instant) }),
+    IngestKeyInfo,
+    Schema.Union([ProjectNotFound, IngestKeyNotFound]),
+  ),
   issueSdkKey: projectCall(
     "issueSdkKey",
     Schema.Struct({ actor: Actor, component: ComponentKey }),
     IssuedSdkKey,
-    Schema.Union([ProjectNotFound, ComponentNotFound]),
+    Schema.Union([ProjectNotFound, ComponentNotFound, TooManySdkKeys]),
   ),
   sdkKeys: projectCall(
     "sdkKeys",

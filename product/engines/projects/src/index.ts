@@ -17,8 +17,23 @@ export {
   DeployTarget,
 } from "./component.ts"
 export { IngestKey, IngestKeyRejected, ingestKeyScope } from "./ingest-key.ts"
+export {
+  AddedIngestKey,
+  AddIngestKey,
+  endedIngestKeysKept,
+  IngestKeyId,
+  IngestKeyInfo,
+  IngestKeyList,
+  IngestKeyName,
+  IngestKeyNotFound,
+  IngestKeyRefusal,
+  IngestKeyRefused,
+  ingestKeysPerComponent,
+  ingestKeyWarnings,
+  RevokeIngestKey,
+} from "./issued-ingest-key.ts"
 export { SdkKey, sdkKeyScope } from "./sdk-key.ts"
-export { IssuedSdkKey, SdkKeyList, SdkKeyNotFound } from "./issued-sdk-key.ts"
+export { IssuedSdkKey, SdkKeyList, SdkKeyNotFound, sdkKeysPerComponent, TooManySdkKeys } from "./issued-sdk-key.ts"
 export {
   CreateProject,
   defaultProjectSettings,
@@ -32,6 +47,9 @@ export {
 export {
   ComponentAdded,
   ComponentLinked,
+  IngestKeyAdded,
+  IngestKeyExpiring,
+  IngestKeyRevoked,
   ProjectCreated,
   ProjectSettingsChanged,
   SdkKeyIssued,
@@ -40,4 +58,4 @@ export {
 export { ProjectIndex } from "./project-index.ts"
 export { AddedComponentResponse, ProjectDetail, ProjectList, ProjectsGroup } from "./projects-api.ts"
 export { Projects } from "./projects.ts"
-export type { AddedComponent, ProjectsSettings } from "./projects.ts"
+export type { AddedComponent, AddedIngestKeyOf, ProjectsSettings } from "./projects.ts"

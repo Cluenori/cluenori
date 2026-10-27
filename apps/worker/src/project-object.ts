@@ -184,6 +184,34 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       }),
     new ProjectNotFound({ project }),
   ),
+  ingestKeys: served(
+    projectCalls.ingestKeys,
+    ({ component }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        return yield* projects.ingestKeys(component)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  addIngestKey: served(
+    projectCalls.addIngestKey,
+    ({ actor, component, input }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const added = yield* projects.addIngestKey(actor, component, input)
+        return { key: added.key, ingestKey: Redacted.value(added.ingestKey) }
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  revokeIngestKey: served(
+    projectCalls.revokeIngestKey,
+    ({ actor, component, key, at }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        return yield* projects.revokeIngestKey(actor, component, key, at)
+      }),
+    new ProjectNotFound({ project }),
+  ),
   issueSdkKey: served(
     projectCalls.issueSdkKey,
     ({ actor, component }) =>
@@ -647,6 +675,11 @@ export class ProjectObject extends DurableObject<Env> {
         yield* incidents.check.pipe(
           Effect.withSpan("detectors.check"),
           Effect.catchCause((cause) => Effect.logError("The detectors' check failed", cause)),
+        )
+        // Keys that expire soon are warned of, and those long ended forgotten.
+        const projects = yield* Projects
+        yield* projects.checkIngestKeys.pipe(
+          Effect.catchCause((cause) => Effect.logError("Checking the ingest keys failed", cause)),
         )
         // Each module's background work; one that fails doesn't hold up the others or the delivery.
         for (const module of modules) {

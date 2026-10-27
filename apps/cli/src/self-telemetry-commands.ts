@@ -1,5 +1,5 @@
 import { ComponentKey, ProjectKey } from "@cluenori/foundation"
-import { ComponentName, ProjectName } from "@cluenori/projects"
+import { ComponentName, IngestKeyName, ProjectName } from "@cluenori/projects"
 import type { SdkKey } from "@cluenori/projects"
 import { SemanticVersion } from "@cluenori/releases"
 import { Console, Effect, Option } from "effect"
@@ -72,12 +72,29 @@ const selfTelemetryOn = Command.make("on", { project: projectFlag }, (input) =>
           Effect.tap(() => Console.log(`Added ${component.key} to ${project}.`)),
         ),
     )
-    const ingestKey = added.find((each) => each.component.key === worker)?.ingestKey ?? savedKey
-    if (ingestKey === undefined) {
-      return yield* refuse(
-        `${project} has a worker component whose ingest key this computer doesn't have; turn it off on the computer that turned it on, or use another --project.`,
-      )
-    }
+    // A worker made before has its keys, which this computer may not have: it then gets one of its
+    // own, the others working on until an owner revokes them.
+    const ingestKey =
+      added.find((each) => each.component.key === worker)?.ingestKey ??
+      savedKey ??
+      (yield* client.projects
+        .addIngestKey({
+          params: { project, component: worker },
+          payload: { name: IngestKeyName.make("self-telemetry") },
+        })
+        .pipe(
+          Effect.catchTags({
+            ...failures,
+            ComponentNotFound: () => refuse(`${project} has no ${worker}.`),
+            NotAllowed: () => refuse("Only an owner adds an ingest key."),
+            IngestKeyRefused: () =>
+              refuse(
+                `${worker} has the most keys that work: revoke one first, ./cluenori component ingest-keys ${project} ${worker}`,
+              ),
+          }),
+          Effect.tap((key) => Console.log(`Added the ingest key "${key.key.name}" to ${worker}.`)),
+          Effect.map((key) => key.ingestKey),
+        ))
     // Saved at once, so a failure below never loses the key, which is shown only once.
     yield* saveDeployment({ ...saved.value, selfTelemetry: { project, ingestKey, measuring: true } })
 

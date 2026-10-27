@@ -8,7 +8,7 @@ import {
   Uuidv7,
 } from "@cluenori/foundation"
 import { Incident } from "@cluenori/incidents"
-import { Project } from "@cluenori/projects"
+import { IngestKeyInfo, Project } from "@cluenori/projects"
 import { ErrorGroup } from "@cluenori/signals"
 import { Schema } from "effect"
 
@@ -98,12 +98,23 @@ export const PromotionItem = Schema.TaggedStruct("promotion", {
 }).annotate({ identifier: "PromotionItem" })
 export type PromotionItem = typeof PromotionItem.Type
 
+/**
+ * An ingest key that expires within a week and isn't revoked before: a deploy needs a new key first.
+ * Owners only, who alone manage keys.
+ */
+export const KeyExpiringItem = Schema.TaggedStruct("keyExpiring", { project: ProjectKey, key: IngestKeyInfo }).annotate(
+  {
+    identifier: "KeyExpiringItem",
+  },
+)
+
 /** One thing that needs attention now, of one project, with its evidence; its tag says what. */
 export const TodayItem = Schema.Union([
   IncidentItem,
   ErrorItem,
   SlowerItem,
   QuietItem,
+  KeyExpiringItem,
   PromotionItem,
   SilentItem,
 ]).annotate({
@@ -114,7 +125,8 @@ export type TodayItem = typeof TodayItem.Type
 /**
  * What needs attention now across the workspace's projects, the most urgent first: open incidents
  * not acknowledged, errors happening now, acknowledged incidents, new errors, slower operations,
- * quiet operations, promotions that need a member, then projects that sent nothing; and how each project is going
+ * quiet operations, ingest keys that expire soon, promotions that need a member, then projects that
+ * sent nothing; and how each project is going
  * now. A project that didn't answer is in `unanswered`, its items and pulse missing: never read as
  * nothing to do.
  */

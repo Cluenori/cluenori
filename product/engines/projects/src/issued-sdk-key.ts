@@ -20,3 +20,11 @@ export type SdkKeyList = typeof SdkKeyList.Type
  * another project's, which fail alike.
  */
 export class SdkKeyNotFound extends Schema.TaggedError<SdkKeyNotFound>()("SdkKeyNotFound", { key: SdkKey }) {}
+
+/** At most this many of a component's SDK keys are active at once. */
+export const sdkKeysPerComponent = 20
+
+/** A key wasn't issued: the component has 20 active, so one must be revoked first. */
+export class TooManySdkKeys extends Schema.TaggedError<TooManySdkKeys>()("TooManySdkKeys", {
+  component: ComponentKey,
+}) {}

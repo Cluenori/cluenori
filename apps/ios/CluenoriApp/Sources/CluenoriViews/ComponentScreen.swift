@@ -70,6 +70,13 @@ struct ComponentScreen: View {
                             Image(systemName: "clock.arrow.circlepath")
                         }
                     }
+                    NavigationLink(value: Route.ingestKeys(project: delivery.project, component: component)) {
+                        Label {
+                            Text("Ingest Keys", bundle: #bundle, comment: "Opens a component's ingest keys.")
+                        } icon: {
+                            Image(systemName: "key")
+                        }
+                    }
                     NavigationLink(value: Route.notesStyle(project: delivery.project)) {
                         Label {
                             Text("Notes Style", bundle: #bundle, comment: "Opens how a project's release notes read.")

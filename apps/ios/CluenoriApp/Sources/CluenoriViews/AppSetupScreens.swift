@@ -707,3 +707,104 @@ struct SdkKeyProblemText: View {
         }
     }
 #endif
+
+/// A component's ingest keys, read-only: each that works, with when it was last used, and when it
+/// ends, in orange within a week; then those that ended. Owners add and revoke keys on the web or
+/// with `./cluenori component ingest-keys`.
+struct IngestKeysScreen: View {
+    let keys: IngestKeysModel
+    /// What people call the component.
+    let name: String
+
+    var body: some View {
+        let now = keys.list.receivedAt ?? .now
+        List {
+            if keys.list.value != nil {
+                Section {
+                    let working = keys.working(at: now)
+                    if working.isEmpty {
+                        Text(
+                            "No working ingest key: everything this component sends is refused. Add one on the web.",
+                            bundle: #bundle, comment: "A component without a working ingest key."
+                        )
+                        .foregroundStyle(.secondary)
+                    }
+                    ForEach(working, id: \.id) { key in
+                        IngestKeyRow(key: key, now: now)
+                    }
+                } footer: {
+                    Text(
+                        "Several keys work at once, so a key changes without a gap: add one, deploy it, wait until the old one's last use stops moving, then revoke it. Keys are added and revoked on the web.",
+                        bundle: #bundle,
+                        comment: "Below a component's ingest keys: how to change one."
+                    )
+                }
+                let ended = keys.ended(at: now)
+                if !ended.isEmpty {
+                    Section {
+                        ForEach(ended, id: \.id) { key in
+                            IngestKeyRow(key: key, now: now)
+                        }
+                    } header: {
+                        Text("Ended", bundle: #bundle, comment: "Header of ingest keys that expired or were revoked.")
+                    }
+                }
+            }
+        }
+        .overlay {
+            if keys.list.value == nil {
+                AnswerPlaceholder(problem: keys.list.problem)
+            }
+        }
+        .navigationTitle(Text("Ingest Keys", bundle: #bundle, comment: "Title of a component's ingest keys."))
+        .navigationSubtitle(Text(verbatim: name))
+        .refreshable { await keys.load() }
+        .task { await keys.load() }
+        .answerBanner(problem: keys.list.problem, receivedAt: keys.list.receivedAt)
+    }
+}
+
+/// One ingest key: its name, when it was last used, and when it ends or ended.
+struct IngestKeyRow: View {
+    let key: IngestKeyInfo
+    let now: Date
+
+    var body: some View {
+        let end = IngestKeysModel.end(of: key)
+        let ended = end.map { $0 <= now } ?? false
+        let soon = !ended && (end.map { $0.timeIntervalSince(now) <= 7 * 86_400 } ?? false)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: key.name)
+                .font(.body.monospaced())
+                .foregroundStyle(ended ? .secondary : .primary)
+            if let lastUsedAt = key.lastUsedAt {
+                Text(
+                    "Last used \(lastUsedAt, format: .relative(presentation: .named))", bundle: #bundle,
+                    comment: "When an ingest key was last used, within an hour. The variable is a relative time."
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            } else {
+                Text("Not used yet", bundle: #bundle, comment: "An ingest key never used.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if let end {
+                Group {
+                    if key.revokedAt == end {
+                        Text(
+                            "Revoked \(end, format: .relative(presentation: .named))", bundle: #bundle,
+                            comment: "When an ingest key is or was revoked. The variable is a relative time.")
+                    } else {
+                        Text(
+                            "Expires \(end, format: .relative(presentation: .named))", bundle: #bundle,
+                            comment: "When an ingest key expires or expired. The variable is a relative time.")
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(soon ? Color.orange : Color.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}

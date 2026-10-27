@@ -23,6 +23,7 @@ export const TodayHandlers = HttpApiBuilder.group(CluenoriApi, "today", (handler
   handlers.handle("today", () =>
     Effect.gen(function* () {
       const member = yield* CurrentMember
+      const owner = member.access._tag === "Everything"
       const workspace = yield* WorkspaceObjects
       const objects = yield* MemberProjects
       const all = yield* workspace.call(workspaceCalls.projects, undefined)
@@ -38,7 +39,8 @@ export const TodayHandlers = HttpApiBuilder.group(CluenoriApi, "today", (handler
       for (const [index, answer] of answers.entries()) {
         const project = projects[index]
         if (Exit.isSuccess(answer)) {
-          items.push(...answer.value.items)
+          // Keys are owners' to replace, so only owners hear of one expiring.
+          items.push(...answer.value.items.filter((item) => item._tag !== "keyExpiring" || owner))
           pulses.push(answer.value.pulse)
         } else if (project !== undefined) {
           yield* Effect.logWarning("A project didn't answer Today", answer.cause)

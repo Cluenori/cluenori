@@ -191,13 +191,13 @@ struct PanelScreen<Content: View>: View {
 }
 
 extension TodayRow.Kind {
-    /// Its color: red for an incident, pink for an error, yellow for a slower operation, purple for
+    /// Its color: red for an incident, pink for an error, yellow for a slower operation or a key about to expire, purple for
     /// a release, gray for silence and what this version doesn't know.
     var color: Color {
         switch self {
         case .incident: Palette.red
         case .error: Palette.pink
-        case .slower, .quiet: Palette.yellow
+        case .slower, .quiet, .keyExpiring: Palette.yellow
         case .promotion: Palette.purple
         case .silent, .unknown: Palette.secondary
         }

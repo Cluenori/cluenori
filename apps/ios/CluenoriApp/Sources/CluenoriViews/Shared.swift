@@ -120,7 +120,7 @@ struct AnswerBanner: View {
                     comment: "Banner when the deployment's answer couldn't be read."
                 )
             }
-        case .missing, nil:
+        case .missing, .notAllowed, nil:
             EmptyView()
         }
     }
@@ -131,7 +131,15 @@ struct AnswerPlaceholder: View {
     let problem: AnswerProblem?
 
     var body: some View {
-        if problem == .missing {
+        if problem == .notAllowed {
+            ContentUnavailableView {
+                Label {
+                    Text("Only an owner sees this", bundle: #bundle, comment: "A screen only owners may see.")
+                } icon: {
+                    Image(systemName: "lock")
+                }
+            }
+        } else if problem == .missing {
             ContentUnavailableView {
                 Label {
                     Text("Not found", bundle: #bundle, comment: "The deployment has no such thing.")

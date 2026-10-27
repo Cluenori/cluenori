@@ -46,8 +46,9 @@ export class Notifications extends Context.Service<
      * Alerts every phone with a push token whose member sees the project about the incident
      * activity among `activity` in its project's production environments, at its level: an alarm when Down or Failing opens or gets worse; time sensitive when Stopped opens or
      * any incident reopens; quiet when one recovers or someone acknowledges it, which also stops its
-     * alarm. Nothing about an incident someone is on, nor for other activity. An alarm more than 10
-     * minutes late comes as time sensitive.
+     * alarm. Owners' phones alone, time sensitive, about an ingest key that expires in a week or a day
+     * (`ingest_key.expiring`). Nothing about an incident someone is on, nor for other activity. An
+     * alarm more than 10 minutes late comes as time sensitive.
      *
      * Each entry reaches each phone once, however often it is delivered; a token APNs says is gone is
      * forgotten. Fails with `PushUnavailable` when APNs may take the rest later: what was sent stays
@@ -179,6 +180,25 @@ const make = (push: Option.Option<Pushing>) =>
       })
     }
 
+    // Whether each phone's member is an owner, asked once per call; a removed member is none.
+    const ownsOnce = () => {
+      const owners = new Map<MemberId, boolean>()
+      return Effect.fn("Notifications.owns")(function* (member: MemberId | undefined) {
+        if (member === undefined) {
+          return false
+        }
+        const known = owners.get(member)
+        const owner =
+          known ??
+          (yield* members.accessOf(member).pipe(
+            Effect.map((access) => access._tag === "Everything"),
+            Effect.orElseSucceed(() => false),
+          ))
+        owners.set(member, owner)
+        return owner
+      })
+    }
+
     // Records that `key` reached `phone`, so handing it over again sends it no more.
     const markSent = (key: string, phone: PhoneId, now: number) =>
       sql`INSERT OR IGNORE INTO notifications_sent ${sql.insert({ envelope: key, phone, at: now })}`.pipe(Effect.orDie)
@@ -235,12 +255,18 @@ const make = (push: Option.Option<Pushing>) =>
         Effect.map((rows) => new Set(rows.map((row) => `${row.envelope} ${row.phone}`))),
       )
       const sees = seesOnce()
+      const owns = ownsOnce()
       for (const { entry, alert } of alerts) {
         for (const target of targets) {
           if (sent.has(`${entry} ${target.phone}`)) {
             continue
           }
-          if (alert.incident === undefined || !(yield* sees(target.member, alert.incident.project))) {
+          // An incident reaches who sees its project; a credential's warning, only owners.
+          const told =
+            alert.incident !== undefined
+              ? yield* sees(target.member, alert.incident.project)
+              : alert.credential !== undefined && (yield* owns(target.member))
+          if (!told) {
             continue
           }
           const answer = yield* sendTo(push.value, target, alert)

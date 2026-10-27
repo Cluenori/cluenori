@@ -9,6 +9,7 @@ import {
   IncidentWorsened,
 } from "@cluenori/incidents"
 import { PhoneId } from "@cluenori/phones"
+import { IngestKeyExpiring } from "@cluenori/projects"
 import { DateTime, Duration, Option, Schema } from "effect"
 
 /**
@@ -36,6 +37,11 @@ export interface Alert {
   readonly incident: { readonly project: ProjectKey; readonly id: IncidentId } | undefined
   /** The feed it is about, whose alerts a phone groups together; absent for others. */
   readonly feed?: string
+  /**
+   * The project and component whose credential it is about, which only owners are told of; absent
+   * for others.
+   */
+  readonly credential?: { readonly project: ProjectKey; readonly component: string }
 }
 
 /**
@@ -108,6 +114,44 @@ export const feedAlertOf = (
   }
 }
 
+const decodeKeyExpiring = Schema.decodeUnknownOption(IngestKeyExpiring)
+
+// When a key expires, as alerts say it, the same on every machine: `Oct 30, 12:00 UTC`.
+const expiryWords = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+})
+const leftWords = (millis: number) => {
+  const hours = Math.max(1, Math.round(millis / 3_600_000))
+  if (hours < 24) {
+    return hours === 1 ? "in an hour" : `in ${hours} hours`
+  }
+  const days = Math.round(hours / 24)
+  return days === 1 ? "tomorrow" : `in ${days} days`
+}
+
+/**
+ * The alert an ingest key's expiry is, for owners: time sensitive, as a deploy is needed in time,
+ * \`Notes · An ingest key expires\`, \`notes-api's key "ci" expires in 7 days, Oct 30, 12:00 UTC\`.
+ */
+const keyExpiringAlert = (entry: Envelope, project: ProjectKey, projectName: string, now: number) =>
+  Option.map(decodeKeyExpiring({ ...entry.attrs, _tag: entry.name }), (expiring): Alert => {
+    const expires = DateTime.toEpochMillis(expiring.expiresAt)
+    return {
+      level: "timeSensitive",
+      title: `${projectName} · An ingest key expires`,
+      body: `${expiring.component}'s key "${expiring.name}" expires ${leftWords(expires - now)}, ${expiryWords.format(expires)} UTC. Add a key and deploy it first.`,
+      at: entry.ts,
+      alert: entry.id,
+      incident: undefined,
+      credential: { project, component: expiring.component },
+    }
+  })
+
 const IncidentActivity = Schema.Union([
   IncidentOpened,
   IncidentReopened,
@@ -135,8 +179,8 @@ const detectorLevels: Readonly<Record<Detector, AlertLevel>> = {
 }
 
 /**
- * The alert one activity entry is, at `now` (Unix ms), for the project named `projectName`: none for
- * activity that isn't about an incident, about one someone is on, about one in an environment its
+ * The alert one activity entry is, at `now` (Unix ms), for the project named `projectName`: an ingest
+ * key that expires soon, for owners; none for other activity that isn't about an incident, about one someone is on, about one in an environment its
  * project doesn't call production, or about a stopped one, which was guessed. An entry that doesn't
  * say, from before October 2026, counts as production. A monitor's incident comes at the monitor's
  * level, titled with its subject and numbers: `Graphit · cleanup.run hasn't run for 30 minutes`.
@@ -145,6 +189,9 @@ export const alertOf = (entry: Envelope, projectName: string, now: number): Opti
   const project = entry.project
   if (entry.kind !== "activity" || project === undefined) {
     return Option.none()
+  }
+  if (entry.name === "ingest_key.expiring") {
+    return keyExpiringAlert(entry, project, projectName, now)
   }
   const decoded = decodeIncidentActivity({ ...entry.attrs, _tag: entry.name })
   if (Option.isNone(decoded)) {
@@ -221,6 +268,9 @@ export const payloadOf = (alert: Alert): Schema.JsonObject => ({
     alert: alert.alert,
     ...(alert.incident === undefined ? {} : { project: alert.incident.project, incident: alert.incident.id }),
     ...(alert.feed === undefined ? {} : { feed: alert.feed }),
+    ...(alert.credential === undefined
+      ? {}
+      : { project: alert.credential.project, component: alert.credential.component }),
   },
 })
 

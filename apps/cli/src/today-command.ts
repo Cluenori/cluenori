@@ -72,6 +72,11 @@ const describe = (item: TodayItem): readonly [string, string] => {
         "Quiet, a guess",
         `${item.operation}: usually runs about every ${span(item.usualGapMs)}, none since ${utcMinute(item.lastRanAt)}; maybe fine`,
       ]
+    case "keyExpiring":
+      return [
+        "Key expires",
+        `${item.key.component}'s ingest key "${item.key.name}"${item.key.expiresAt === undefined ? "" : ` expires at ${utcMinute(item.key.expiresAt)}`}; add a key and deploy it before then`,
+      ]
     case "promotion":
       return [
         item.state === "approved" || item.state === "waiting" ? "Release waits" : "Release failed",

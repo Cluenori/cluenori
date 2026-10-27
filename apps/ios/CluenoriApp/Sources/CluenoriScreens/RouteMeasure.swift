@@ -34,6 +34,7 @@ extension Route {
         case .person, .personByID: "person"
         case .versionPolicy: "versionPolicy"
         case .sdkKeys: "sdkKeys"
+        case .ingestKeys: "ingestKeys"
         }
     }
 
@@ -59,6 +60,7 @@ extension Route {
         case .person, .personByID: "analytics.people"
         case .versionPolicy: "analytics.version-policy"
         case .sdkKeys: "analytics.sdk-keys"
+        case .ingestKeys: "settings.ingest-keys"
         }
     }
 }

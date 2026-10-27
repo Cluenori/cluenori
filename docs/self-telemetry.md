@@ -13,7 +13,9 @@ OTLP, its dashboard, CLI and iPhone app use Cluenori's SDKs. It is off until an 
 `on` makes the project (when it doesn't exist) with the components `worker`, `dashboard` and
 `cli`; links the dashboard and the CLI to ship with the worker; and sets three Worker secrets:
 `CLUENORI_SELF_INGEST_KEY` (the worker's ingest key) and `CLUENORI_DASHBOARD_SDK_KEY` and
-`CLUENORI_CLI_SDK_KEY`. No key is ever in a committed file. `./update` deploys with
+`CLUENORI_CLI_SDK_KEY`. When `worker` exists but this computer doesn't have its key, `on` adds a
+key named `self-telemetry`, so the old one works on until an owner revokes it. No key is ever in a
+committed file. `./update` deploys with
 `CLUENORI_RELEASE`, so each deploy is a release. `off` removes the secrets; people self-hosting
 have the same switch.
 
@@ -76,6 +78,7 @@ one component.
 | `analytics.sdk-keys` | | SDK keys | `component sdk-keys` |
 | `feeds` | feeds, feed | feeds, feed | `feeds`, `feed` |
 | `settings.projects` | | | `project`, `component` |
+| `settings.ingest-keys` | | ingest keys | `component ingest-keys` |
 | `settings.members` | members, invite | | `members`, `member` |
 | `settings.phones` | phones | pair | `phones`, `phone` |
 | `settings.browsers` | browsers | | |

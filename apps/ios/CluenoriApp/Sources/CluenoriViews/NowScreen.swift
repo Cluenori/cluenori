@@ -196,6 +196,8 @@ struct ItemKind: View {
             Text("Release", bundle: #bundle, comment: "An item's kind: a release that needs you.")
         case .silent:
             Text("No data", bundle: #bundle, comment: "An item's kind: a project sent nothing.")
+        case .keyExpiring:
+            Text("Key expires", bundle: #bundle, comment: "An item's kind: an ingest key expires soon.")
         case .unknown:
             Text("Update the app", bundle: #bundle, comment: "An item's kind, of a kind this app doesn't know.")
         }
@@ -216,6 +218,10 @@ struct ItemTitle: View {
             PromotionNeedTitle(release: release, environment: environment, state: state)
         case .silent:
             Text("Sent no data today", bundle: #bundle, comment: "A project sent nothing in the last day.")
+        case .keyExpiring(let component, let name, _):
+            Text(
+                "\(component)'s ingest key “\(name)”", bundle: #bundle,
+                comment: "An ingest key about to expire. The variables are a component and the key's name.")
         case .unknown:
             Text(
                 "Something this version can't show. Update the app.",
@@ -307,6 +313,11 @@ struct ItemDetail: View {
             } else {
                 Text("Nothing in 8 days", bundle: #bundle, comment: "A project silent for 8 days or more.")
             }
+        case .keyExpiring(_, _, let expiresAt):
+            Text(
+                "Expires \(expiresAt, format: .relative(presentation: .named)); add a key and deploy it first",
+                bundle: #bundle,
+                comment: "When an ingest key expires, and what to do. The variable is a relative time.")
         case .unknown:
             EmptyView()
         }
@@ -356,7 +367,7 @@ struct ItemSince: View {
             agoText(since)
         case .quiet(_, _, let lastRanAt):
             agoText(lastRanAt)
-        case .slower, .silent, .unknown:
+        case .slower, .silent, .keyExpiring, .unknown:
             EmptyView()
         }
     }

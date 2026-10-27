@@ -79,6 +79,7 @@ const features: Readonly<Record<string, string>> = {
   phones: "settings.phones",
   phone: "settings.phones",
   "component sdk-keys": "analytics.sdk-keys",
+  "component ingest-keys": "settings.ingest-keys",
 }
 
 /** The command a run is, by its subcommands' names alone: `project create`; never an argument. */

@@ -36,6 +36,7 @@ import {
   ComponentName,
   ComponentNotFound,
   DeployTarget,
+  IngestKeyInfo,
   Project,
   ProjectDetail,
   ProjectList,
@@ -1519,6 +1520,7 @@ const TodayAnswer = Schema.Struct({
         startedAt: Instant,
         endedAt: Schema.optionalKey(Instant),
       }),
+      Schema.TaggedStruct("keyExpiring", { project: ProjectKey, key: IngestKeyInfo }),
       Schema.TaggedStruct("silent", { project: ProjectKey, lastDataAt: Schema.optionalKey(Instant) }),
     ]),
   ),
@@ -1541,11 +1543,17 @@ const sameAsThisOne = (answer: typeof TodayAnswer.Type): TodayList => answer
 type TodayItem = TodayList["items"][number]
 
 // Today's order: incidents not acknowledged, errors happening now, then new ones, slower operations,
-// releases that need a member, then projects that sent nothing.
+// keys that expire soon, releases that need a member, then projects that sent nothing.
 const todayRank = (item: TodayItem) =>
-  ({ incident: 0, error: item._tag === "error" && item.ongoing ? 1 : 2, slower: 3, quiet: 4, promotion: 5, silent: 6 })[
-    item._tag
-  ]
+  ({
+    incident: 0,
+    error: item._tag === "error" && item.ongoing ? 1 : 2,
+    slower: 3,
+    quiet: 4,
+    keyExpiring: 5,
+    promotion: 6,
+    silent: 7,
+  })[item._tag]
 
 // What Today says of a promotion: one that waits for a member, or ended without its release getting
 // there, the latest to each of the project's production environments.

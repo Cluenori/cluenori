@@ -13,6 +13,7 @@ import { count, duration, share } from "@/lib/format"
 import {
   errorsAtom,
   incidentsAtom,
+  meAtom,
   logCountsAtom,
   operationsAtom,
   periodAtom,
@@ -48,6 +49,11 @@ import { Button, buttonVariants } from "@/views/ui/button"
 // Changing production loads when opened, now and then.
 const ProductionDialog = lazy(() =>
   import("@/views/production-dialog").then((module) => ({ default: module.ProductionDialog })),
+)
+
+// An owner's ingest keys load after start, and only for an owner.
+const IngestKeysPanel = lazy(() =>
+  import("@/pages/ingest-keys-panel").then((module) => ({ default: module.IngestKeysPanel })),
 )
 
 // How many of each the summary shows; each area's own page has every one.
@@ -513,8 +519,8 @@ function ProductionPanel({
 
 /**
  * Tech: a project's operations, errors, logs and incidents, each with its top few and a way to its
- * full page, in the environment shown and over the period; then each component's numbers, and which
- * environments the project calls production.
+ * full page, in the environment shown and over the period; then each component's numbers, which
+ * environments the project calls production, and, for an owner, each component's ingest keys.
  */
 export function TechPage({
   project,
@@ -527,6 +533,8 @@ export function TechPage({
   const filters: Filters = environment === undefined ? {} : { environment }
   const detail = useAtomValue(projectAtom(project))
   const operations = useAtomValue(operationsAtom({ project, ...filters }))
+  const me = useAtomValue(meAtom)
+  const owner = AsyncResult.isSuccess(me) && me.value.role === "owner"
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
       <ProjectHeader
@@ -559,6 +567,12 @@ export function TechPage({
           settings={detail.value.settings}
           seen={detail.value.environments ?? []}
         />
+      )}
+
+      {owner && AsyncResult.isSuccess(detail) && detail.value.components.length > 0 && (
+        <Suspense fallback={null}>
+          <IngestKeysPanel project={project} components={detail.value.components} />
+        </Suspense>
       )}
     </div>
   )

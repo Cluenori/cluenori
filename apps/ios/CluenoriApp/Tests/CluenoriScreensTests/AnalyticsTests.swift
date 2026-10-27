@@ -108,6 +108,10 @@ struct AnalyticsRouteTests {
             .versionPolicy(project: "notes", component: "notes-ios")
         ),
         ("cluenori://projects/notes/components/notes-ios/sdk-keys", .sdkKeys(project: "notes", component: "notes-ios")),
+        (
+            "cluenori://projects/notes/components/notes-api/ingest-keys",
+            .ingestKeys(project: "notes", component: "notes-api")
+        ),
     ])
     func `reads the analytics screen a link names`(_ text: String, _ route: Route) throws {
         #expect(Route(try #require(URL(string: text))) == route)
@@ -637,5 +641,43 @@ struct PeopleCountsTests {
         #expect(counts.weekly.change == -0.1)
         #expect(counts.monthly.value == nil)
         #expect(counts.monthly.change == nil)
+    }
+}
+
+struct IngestKeysTests {
+    // At 2026-10-22T10:00Z: "blue" works and expires in 3 days; "first" was revoked; "green" is
+    // revoked from tomorrow, so it still works.
+    let answer = #"""
+        {"keys":[
+          {"id":"019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f71","component":"notes-api","name":"first","createdAt":"2026-08-01T10:00:00.000Z",
+           "lastUsedAt":"2026-10-20T09:00:00.000Z","revokedAt":"2026-10-21T10:00:00.000Z"},
+          {"id":"019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f72","component":"notes-api","name":"blue","createdAt":"2026-10-01T10:00:00.000Z",
+           "expiresAt":"2026-10-25T10:00:00.000Z"},
+          {"id":"019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f73","component":"notes-api","name":"green","createdAt":"2026-10-10T10:00:00.000Z",
+           "expiresAt":"2026-12-01T10:00:00.000Z","revokedAt":"2026-10-23T10:00:00.000Z"}]}
+        """#
+
+    @Test func `splits the keys into those that work, the newest first, and those that ended`() async throws {
+        let deployment = FakeDeployment()
+        deployment.answer("GET /api/projects/notes/components/notes-api/ingest-keys", 200, answer)
+        let keys = try pairedModels(deployment).ingestKeys("notes", component: "notes-api")
+        await keys.load()
+        let now = try Date("2026-10-22T10:00:00Z", strategy: .iso8601)
+
+        #expect(keys.working(at: now).map(\.name) == ["green", "blue"])
+        #expect(keys.ended(at: now).map(\.name) == ["first"])
+        // A key revoked before it would expire ends when it is revoked.
+        let revokedAt = try Date("2026-10-23T10:00:00Z", strategy: .iso8601)
+        #expect(keys.working(at: now).first.flatMap(IngestKeysModel.end(of:)) == revokedAt)
+    }
+
+    @Test func `says a member may not see them`() async throws {
+        let deployment = FakeDeployment()
+        deployment.answer(
+            "GET /api/projects/notes/components/notes-api/ingest-keys", 403, #"{"_tag":"NotAllowed"}"#)
+        let keys = try pairedModels(deployment).ingestKeys("notes", component: "notes-api")
+        await keys.load()
+
+        #expect(keys.list.problem == .notAllowed)
     }
 }

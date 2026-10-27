@@ -257,3 +257,44 @@ public final class SdkKeysModel {
         }
     }
 }
+
+/// One component's ingest keys, which its services send telemetry with, as an owner sees them: never
+/// the keys themselves, only their names, when each was added and last used, and when it ends. The
+/// phone only shows them; keys are added and revoked on the web or with `./cluenori`.
+@Observable
+public final class IngestKeysModel {
+    public let project: String
+    public let component: String
+    public let list: Answer<IngestKeyList>
+
+    init(project: String, component: String, api: CluenoriAPI, context: AnswerContext) {
+        self.project = project
+        self.component = component
+        list = Answer(
+            context,
+            .init(key: "projects/\(project)/components/\(component)/ingest-keys") { () async throws(APIError) in
+                try await api.ingestKeys(project: project, component: component)
+            })
+    }
+
+    public func load() async {
+        await list.load()
+    }
+
+    /// When `key` stops working, if it will: the earlier of its expiry and its revocation.
+    public static func end(of key: IngestKeyInfo) -> Date? {
+        [key.expiresAt, key.revokedAt].compactMap { $0 }.min()
+    }
+
+    /// The keys that work at `now`, the newest first; empty until they arrive.
+    public func working(at now: Date) -> [IngestKeyInfo] {
+        (list.value?.keys ?? []).filter { key in Self.end(of: key).map { $0 > now } ?? true }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// The keys that ended by `now`, the latest to end first.
+    public func ended(at now: Date) -> [IngestKeyInfo] {
+        (list.value?.keys ?? []).filter { key in Self.end(of: key).map { $0 <= now } ?? false }
+            .sorted { (Self.end(of: $0) ?? now) > (Self.end(of: $1) ?? now) }
+    }
+}

@@ -155,6 +155,10 @@ struct LineWords: View {
             PromotionNeedTitle(release: release, environment: environment, state: state).text
         case .error(let title, _, _, _, _, _):
             Text(verbatim: title)
+        case .keyExpiring(_, _, let expiresAt):
+            Text(
+                "An ingest key expires \(expiresAt, format: .relative(presentation: .named))", bundle: #bundle,
+                comment: "An ingest key about to expire. The variable is a relative time.")
         case .unknown:
             Text("Update the app", bundle: #bundle, comment: "An item's kind, of a kind this app doesn't know.")
         }

@@ -24,7 +24,7 @@ import type { Detector } from "@cluenori/incidents"
 import { Email, InviteCode, Members } from "@cluenori/members"
 import type { PushEnvironment } from "@cluenori/phones"
 import { AppVersion, ModelIdentifier, PairingCode, Phones, PushToken, SystemVersion } from "@cluenori/phones"
-import { ProjectIndex, ProjectName } from "@cluenori/projects"
+import { IngestKeyExpiring, IngestKeyId, IngestKeyName, ProjectIndex, ProjectName } from "@cluenori/projects"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Option, Redacted, Schema } from "effect"
 import { Base64 } from "effect/encoding"
@@ -523,6 +523,54 @@ describe("Notifications", () => {
         [phoneToken, "Notes · Down"],
         [phoneToken, "Atlas · Down"],
         [otherToken, "Atlas · Down"],
+      ])
+    }),
+  )
+
+  it.effect("tells only owners' phones that an ingest key expires, time sensitive, with when", () =>
+    Effect.gen(function* () {
+      const settings = yield* settingsWithKey
+      const apns = fakeApns(accepts)
+      const expiring = yield* Schema.encodeEffect(IngestKeyExpiring)(
+        IngestKeyExpiring.make({
+          component: ComponentKey.make("atlas-api"),
+          key: IngestKeyId.make("0199f7a2-6000-7000-8000-00000000000a"),
+          name: IngestKeyName.make("ci"),
+          expiresAt: DateTime.makeUnsafe(start + 7 * 86_400_000),
+        }),
+      )
+      yield* inWorkspace(
+        "key-expiring",
+        start,
+        settings,
+        apns.layer,
+        Effect.gen(function* () {
+          yield* withProjects
+          yield* phoneWith(phoneToken)
+          // Ada sees Atlas, but isn't an owner: credentials aren't hers to replace.
+          yield* adaSeesAtlas
+          const entry = activityOf(expiring, start, { project: atlas })
+          yield* notify([entry])
+          yield* notify([entry])
+        }),
+      )
+      const told = yield* Effect.forEach(apns.accepted, (push) =>
+        decodePayload(push.payload).pipe(
+          Effect.map((payload) => [
+            push.deviceToken,
+            payload.cluenori.level,
+            payload.aps.alert.title,
+            payload.aps.alert.body,
+          ]),
+        ),
+      )
+      assert.deepStrictEqual(told, [
+        [
+          phoneToken,
+          "timeSensitive",
+          "Atlas · An ingest key expires",
+          `atlas-api's key "ci" expires in 7 days, Oct 28, 10:00 UTC. Add a key and deploy it first.`,
+        ],
       ])
     }),
   )

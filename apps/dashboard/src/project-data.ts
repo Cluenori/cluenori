@@ -19,7 +19,7 @@ import type { ConnectGitHub } from "@cluenori/github-app"
 import type { AddMonitor, IncidentId, MonitorId } from "@cluenori/incidents"
 import type { Email, InviteCode, SignInId } from "@cluenori/members"
 import type { PhoneId } from "@cluenori/phones"
-import type { ComponentLinks, ProjectSettings, SdkKey } from "@cluenori/projects"
+import type { ComponentLinks, IngestKeyId, IngestKeyName, ProjectSettings, SdkKey } from "@cluenori/projects"
 import type {
   AppStoreSubmission,
   ReleaseCommit,
@@ -1184,6 +1184,67 @@ export const revokeSdkKeyAtom = CluenoriClient.runtime.fn(
         params: { project: input.project, component: input.component, key: input.key },
       })
       yield* Atom.refresh(sdkKeysAtom({ project: input.project, component: input.component }))
+      return revoked
+    }),
+)
+
+/** A component's ingest keys, the newest first: those that work, and those that ended in the last 30 days. */
+export const ingestKeysAtom = Atom.family((key: { readonly project: ProjectKey; readonly component: ComponentKey }) =>
+  kept(
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.projects.ingestKeys({ params: { project: key.project, component: key.component } })
+      }),
+    ),
+  ),
+)
+
+/**
+ * Adds an ingest key to a component, its others working on, that expires `days` days from now, or
+ * never without them; asks for its keys again.
+ */
+export const addIngestKeyAtom = CluenoriClient.runtime.fn(
+  (input: {
+    readonly project: ProjectKey
+    readonly component: ComponentKey
+    readonly name: IngestKeyName
+    readonly days?: number
+  }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const now = yield* DateTime.now
+      const added = yield* client.projects.addIngestKey({
+        params: { project: input.project, component: input.component },
+        payload: {
+          name: input.name,
+          ...(input.days === undefined ? {} : { expiresAt: DateTime.add(now, { days: input.days }) }),
+        },
+      })
+      yield* Atom.refresh(ingestKeysAtom({ project: input.project, component: input.component }))
+      return added
+    }),
+)
+
+/**
+ * Revokes one of a component's ingest keys, now or `hours` hours from now; what is sent with it is
+ * refused from then on. Asks for its keys again.
+ */
+export const revokeIngestKeyAtom = CluenoriClient.runtime.fn(
+  (input: {
+    readonly project: ProjectKey
+    readonly component: ComponentKey
+    readonly key: IngestKeyId
+    readonly hours?: number
+  }) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const now = yield* DateTime.now
+      const revoked = yield* client.projects.revokeIngestKey({
+        params: { project: input.project, component: input.component, key: input.key },
+        payload: input.hours === undefined ? {} : { at: DateTime.add(now, { hours: input.hours }) },
+      })
+      yield* Atom.refresh(ingestKeysAtom({ project: input.project, component: input.component }))
       return revoked
     }),
 )

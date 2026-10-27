@@ -9,6 +9,7 @@ import {
 } from "@cluenori/foundation"
 import type { IncidentList } from "@cluenori/incidents"
 import { Incident, IncidentId } from "@cluenori/incidents"
+import { IngestKeyId, IngestKeyInfo, IngestKeyName } from "@cluenori/projects"
 import type { ErrorGroup, OperationRow, OperationTable } from "@cluenori/signals"
 import { ErrorGroupId } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
@@ -80,8 +81,19 @@ const quiet: ProjectState = {
   errors: { groups: [], occurrences: 0 },
   operations: { lastDay: table([row("GET /api/notes", 80)], now), usual: table([row("GET /api/notes", 80)]) },
   components: 1,
+  expiringKeys: [],
   now,
 }
+
+// An ingest key of notes-api that expires at `expiresAt`.
+const key = (id: string, expiresAt: number) =>
+  new IngestKeyInfo({
+    id: IngestKeyId.make(`019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f7${id}`),
+    component: api,
+    name: IngestKeyName.make(`deploy ${id}`),
+    createdAt: at(now - 80 * 24 * hour),
+    expiresAt: at(expiresAt),
+  })
 
 // An operation that usually ran every 31 minutes, quiet since `lastRanAt`.
 const quietOperation = (operation: string, lastRanAt: number) => ({
@@ -119,6 +131,8 @@ const tags = (items: ReadonlyArray<TodayItem>) =>
         return `promotion ${item.state}`
       case "quiet":
         return `quiet ${item.operation}`
+      case "keyExpiring":
+        return `key ${item.key.name}`
       case "error":
       case "slower":
       case "silent":
@@ -213,6 +227,7 @@ describe("sortToday", () => {
           lastDay: table([row("POST /api/export", 900)], now),
           usual: table([row("POST /api/export", 300)]),
         },
+        expiringKeys: [key("1", now + 6 * 24 * hour), key("2", now + 20 * hour)],
       }),
     ])
     assert.deepStrictEqual(tags(items), [
@@ -225,6 +240,9 @@ describe("sortToday", () => {
       // Quiet operations, guesses, after slower ones: the longest quiet first.
       "quiet POST /jobs/cleanup",
       "quiet GET /api/sync",
+      // Keys about to expire, the soonest first.
+      "key deploy 2",
+      "key deploy 1",
       // Then the promotion that ended or started latest first.
       "promotion failed",
       "promotion waiting",

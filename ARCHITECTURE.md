@@ -272,8 +272,9 @@ named system actor.
 From `concept/`; each gets its pattern when it is built.
 
 - **Ingest keys** belong to one component each and allow only sending its telemetry. A key names its
-  project, so the Worker routes it unread; the project's object checks it against the SHA-256 digest
-  it keeps (`@cluenori/projects`).
+  project, so the Worker routes it unread; the project's object checks it against the SHA-256 digests
+  of the component's keys that work (`@cluenori/projects`). Several work at once, so a key changes
+  without a gap; only owners add and revoke them.
 - **SDK keys** (`cluenori-sdk.<project>.<component>.<id>`) are public, shipped in every build of an
   app, and allow only sending that component's signals and reading its manifest. Like an ingest
   key, one names its project, so the Worker routes it unread and the project's object checks it, in
@@ -450,7 +451,7 @@ updates this table in the same change.
 
 | Package | Kind | Owns | Uses | Reacts to |
 |---|---|---|---|---|
-| `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys' digests and their SDK keys; the workspace's index of its projects | Foundation's `ActivityLog` | — |
+| `@cluenori/projects` | Engine | The project of each object, its components, their ingest keys (names, digests, last use, expiry) and their SDK keys; the workspace's index of its projects | Foundation's `ActivityLog` | — |
 | `@cluenori/signals` | Engine | The archive of every export and its index; operations counted by name and environment; warnings and errors; error groups; the duplicate window; what "slower", "new" and "happening now" mean; apps' signals: people and their user IDs, installations, activity and measures by day, sessions, timelines, apps' batches, and the limits on how much they take | `@bagatka/otlp-protobuf`, `@bagatka/quantile-sketch`, `@bagatka/scrub`; an `ArchiveStore` and an `AppBatchStore` the host provides; `projects` for its API's errors and SDK keys | — |
 | `@cluenori/manifest` | Engine | The manifest's shape and its route: what an app's SDK reads at launch and on resume | Foundation | — |
 | `@cluenori/incidents` | Engine | Its project's incidents and monitors (a subject, a condition and a level); the detectors and what they learn: usual error rates, and how often sparse operations run, for quiet hints only | `@cluenori/signals`, `@cluenori/projects`; Foundation's `ActivityLog`; an `HttpClient` the host provides, for monitors | — |

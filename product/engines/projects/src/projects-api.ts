@@ -4,7 +4,17 @@ import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/ht
 
 import { AddComponent, Component, ComponentExists, ComponentLinks, ComponentNotFound } from "./component.ts"
 import { IngestKey } from "./ingest-key.ts"
-import { IssuedSdkKey, SdkKeyList, SdkKeyNotFound } from "./issued-sdk-key.ts"
+import {
+  AddedIngestKey,
+  AddIngestKey,
+  IngestKeyId,
+  IngestKeyInfo,
+  IngestKeyList,
+  IngestKeyNotFound,
+  IngestKeyRefused,
+  RevokeIngestKey,
+} from "./issued-ingest-key.ts"
+import { IssuedSdkKey, SdkKeyList, SdkKeyNotFound, TooManySdkKeys } from "./issued-sdk-key.ts"
 import { CreateProject, Project, ProjectExists, ProjectNotFound, ProjectSettings } from "./project.ts"
 import { SdkKey } from "./sdk-key.ts"
 
@@ -89,13 +99,62 @@ export class ProjectsGroup extends HttpApiGroup.make("projects")
     ),
   )
   .add(
+    HttpApiEndpoint.get("ingestKeys", "/projects/:project/components/:component/ingest-keys", {
+      params: { project: ProjectKey, component: ComponentKey },
+      success: IngestKeyList,
+      error: [
+        ProjectNotFound.pipe(HttpApiSchema.status(404)),
+        ComponentNotFound.pipe(HttpApiSchema.status(404)),
+        NotAllowed.pipe(HttpApiSchema.status(403)),
+      ],
+    }).annotate(
+      OpenApi.Description,
+      "A component's ingest keys, newest first, never the keys themselves: each one's ID, name, when it was created, `lastUsedAt`, the start of the UTC hour it was last used in (absent until used), and `expiresAt` and `revokedAt` when it has them. A key works until the earlier of those two; a revocation may be scheduled, so `revokedAt` may be in the future. Keys that ended are listed 30 days, then forgotten. Owners only.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("addIngestKey", "/projects/:project/components/:component/ingest-keys", {
+      params: { project: ProjectKey, component: ComponentKey },
+      payload: AddIngestKey,
+      success: AddedIngestKey.pipe(HttpApiSchema.status(201)),
+      error: [
+        ProjectNotFound.pipe(HttpApiSchema.status(404)),
+        ComponentNotFound.pipe(HttpApiSchema.status(404)),
+        IngestKeyRefused.pipe(HttpApiSchema.status(409)),
+        NotAllowed.pipe(HttpApiSchema.status(403)),
+      ],
+    }).annotate(
+      OpenApi.Description,
+      "Adds an ingest key to a component, named by where it is used, optionally expiring at `expiresAt`, and returns it: the key is shown only in this answer. The component's other keys keep working, so a deploy can move to the new key with no gap; revoke the old one once its `lastUsedAt` stops moving. Owners can always add a key, so a lost key never loses a component. 409 `IngestKeyRefused`: `tooMany` when 10 of its keys work, `expiryPast` when `expiresAt` isn't in the future. Owners only.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("revokeIngestKey", "/projects/:project/components/:component/ingest-keys/:key/revoke", {
+      params: { project: ProjectKey, component: ComponentKey, key: IngestKeyId },
+      payload: RevokeIngestKey,
+      success: IngestKeyInfo,
+      error: [
+        ProjectNotFound.pipe(HttpApiSchema.status(404)),
+        IngestKeyNotFound.pipe(HttpApiSchema.status(404)),
+        NotAllowed.pipe(HttpApiSchema.status(403)),
+      ],
+    }).annotate(
+      OpenApi.Description,
+      "Revokes one of a component's ingest keys: it stops working at `at`, or at once when `at` is absent or past, such as in 24 hours, while the deploys that use it move to another. A revocation only moves earlier: one later than the key already stops changes nothing and returns it. 404 for a key the component doesn't list. Owners only.",
+    ),
+  )
+  .add(
     HttpApiEndpoint.post("issueSdkKey", "/projects/:project/components/:component/sdk-keys", {
       params: { project: ProjectKey, component: ComponentKey },
       success: IssuedSdkKey.pipe(HttpApiSchema.status(201)),
-      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ComponentNotFound.pipe(HttpApiSchema.status(404))],
+      error: [
+        ProjectNotFound.pipe(HttpApiSchema.status(404)),
+        ComponentNotFound.pipe(HttpApiSchema.status(404)),
+        TooManySdkKeys.pipe(HttpApiSchema.status(409)),
+      ],
     }).annotate(
       OpenApi.Description,
-      "Issues a new SDK key for a component: the key its app's builds carry, in the app's SDK configuration, so the SDK can send the component's signals and read its manifest. It is public, as anything shipped in an app is, and grants nothing else. The component's other keys stay active until revoked, so a new build can carry the new key while older builds keep working. Listed again with sdkKeys. 404 for a project or a component that doesn't exist.",
+      "Issues a new SDK key for a component: the key its app's builds carry, in the app's SDK configuration, so the SDK can send the component's signals and read its manifest. It is public, as anything shipped in an app is, and grants nothing else. The component's other keys stay active until revoked, so a new build can carry the new key while older builds keep working. Listed again with sdkKeys. 404 for a project or a component that doesn't exist; 409 when 20 of the component's keys are active, so one must be revoked first.",
     ),
   )
   .add(

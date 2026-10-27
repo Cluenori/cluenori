@@ -140,10 +140,14 @@ public struct ProductLine: Identifiable, Equatable, Sendable {
         let silent = project.rows.filter { $0.kind == .silent }
         let slower = project.rows.filter { $0.kind == .slower }
         let quiet = project.rows.filter { $0.kind == .quiet }
+        let expiring = project.rows.filter { $0.kind == .keyExpiring }
         if let first = silent.first {
             add(.performance, .warning, .one(first.evidence), silent)
         } else if let first = slower.first {
             add(.performance, .warning, slower.count == 1 ? .one(first.evidence) : .slower(count: slower.count), slower)
+        } else if let first = expiring.first {
+            // A key about to expire stops the telemetry the line measures; the soonest speaks.
+            add(.performance, .warning, .one(first.evidence), expiring)
         } else if let first = quiet.first {
             // A guess says less than what is measured, so it speaks only when nothing slower does.
             add(.performance, .warning, .one(first.evidence), quiet)
@@ -228,7 +232,7 @@ public struct ProductLine: Identifiable, Equatable, Sendable {
         case .incident(_, _, _, let acknowledged): acknowledged ? .warning : .failure
         case .error(_, _, _, _, _, let ongoing): ongoing ? .failure : .warning
         case .promotion(_, _, _, let state, _): state == .approved || state == .waiting ? .release : .failure
-        case .slower, .quiet, .silent, .unknown: .warning
+        case .slower, .quiet, .silent, .keyExpiring, .unknown: .warning
         }
     }
 }

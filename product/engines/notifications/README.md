@@ -29,10 +29,12 @@ yield* notifications.testAlert(phone)
 - **Rules:**
   - **Each change's level:** an alarm when Down or Failing opens or gets worse; time sensitive
     when Stopped opens or any incident reopens; quiet when one recovers or someone acknowledges it.
+    Time sensitive when an ingest key expires in 7 days and again in 1 day (`ingest_key.expiring`).
     Nothing about an incident someone is on, one in an environment its project doesn't call
     production, nor for other activity. An alarm more than 10 minutes
     late comes as time sensitive.
   - **Who is told:** the phones whose member sees the incident's project; an owner sees every one.
+    Of an ingest key that expires, only owners' phones, since only owners manage keys.
   - **What a push says:** "<project> · <what happened>", and the incident's title. A feed's: one
     entry names its project and feed, "Folio · Registrations", and where it came from, "Germany,
     folio-ios 2.4.0+12"; more say how many from each project the phone's member sees, "12
@@ -66,7 +68,7 @@ provides.
 ## Activity
 
 Reacts to `incident.opened`, `incident.reopened`, `incident.worsened`, `incident.resolved` and
-`incident.acknowledged`. Emits none: a push isn't a change to a record.
+`incident.acknowledged`, and `ingest_key.expiring`. Emits none: a push isn't a change to a record.
 
 ## Settings
 

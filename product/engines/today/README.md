@@ -36,13 +36,16 @@ didn't answer in `unanswered`, never as one with nothing to do, and has no pulse
     (Signals' `errorStatusOf`).
   - **A slower operation:** its p95 over the last day at least 1.5 times its p95 over the 7 days
     before, and 100 ms more (Signals' `slowerOf`).
+  - **An ingest key that expires within 7 days,** shown to owners only (Projects'
+    `expiringIngestKeys`); one revoked before it would expire is never named.
   - **A silent project:** it has components, and sent no operation in the last day; with when it
     last did in the 8 days before.
 - **The promotion item's shape** (`PromotionItem`); the Releases module's detector decides which
   promotions need a member.
 - **Today's order** (`sortToday`): incidents not acknowledged, errors happening now, acknowledged
-  incidents, new errors, slower operations, promotions that need a member, silent projects; the
-  latest or the most slowed first within each, a promotion by when it ended, else when it started.
+  incidents, new errors, slower operations, quiet operations, ingest keys about to expire,
+  promotions that need a member, silent projects; the latest or the most slowed first within each,
+  the key that expires soonest first, a promotion by when it ended, else when it started.
 - **The pulse** (`pulseOf`), in the environments the project calls production:
   - **Load:** Signals' load by the hour over the current hour so far and the 23 before it, of each
     production environment the telemetry of those hours named, or of all of it when it named none

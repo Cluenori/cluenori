@@ -150,7 +150,8 @@ const declared: Readonly<Record<Product, (facts: Facts) => Said | undefined>> = 
     ].join(" · ")
     return { tone: first.row.tone, words, items: errors.map(({ row }) => row) }
   },
-  // A project that sent nothing in a day, its slower operations, else its last day's load.
+  // A project that sent nothing in a day, its slower operations, an ingest key about to expire, else
+  // its last day's load.
   performance: ({ items, pulse, now }) => {
     const silent = items.find(({ item }) => item._tag === "silent")
     if (silent?.item._tag === "silent") {
@@ -169,6 +170,12 @@ const declared: Readonly<Record<Product, (facts: Facts) => Said | undefined>> = 
         words: slower.length === 1 ? `${first.item.operation} slower` : `${count(slower.length)} operations slower`,
         items: slower.map(({ row }) => row),
       }
+    }
+    // A key about to expire stops the telemetry this line measures; the soonest speaks.
+    const expiring = items.filter(({ item }) => item._tag === "keyExpiring").map(({ row }) => row)
+    const [soonest] = expiring
+    if (soonest !== undefined) {
+      return { tone: "warning", words: `An ingest key expires ${soonest.when ?? "soon"}`, items: expiring }
     }
     if (pulse === undefined || pulse.load.length === 0) {
       return undefined

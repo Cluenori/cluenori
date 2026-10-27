@@ -275,13 +275,69 @@ public nonisolated struct CluenoriAPI: Sendable {
         return try Self.decoded(from: `the answer`)
     }
 
+    /// A component's ingest keys, newest first, never the keys themselves: each one's ID, name,
+    /// when it was created, `lastUsedAt`, the start of the UTC hour it was last used in (absent
+    /// until used), and `expiresAt` and `revokedAt` when it has them. A key works until the earlier
+    /// of those two; a revocation may be scheduled, so `revokedAt` may be in the future. Keys that
+    /// ended are listed 30 days, then forgotten. Owners only.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.projectNotFound`, `.componentNotFound`, or as
+    /// any call can.
+    @concurrent
+    public func ingestKeys(
+        project: String,
+        component: String,
+    ) async throws(APIError) -> IngestKeyList {
+        let `the answer` = try await self.send("GET", "/api/projects/\(Self.segment(Self.text(project)))/components/\(Self.segment(Self.text(component)))/ingest-keys")
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// Adds an ingest key to a component, named by where it is used, optionally expiring at
+    /// `expiresAt`, and returns it: the key is shown only in this answer. The component's other
+    /// keys keep working, so a deploy can move to the new key with no gap; revoke the old one once
+    /// its `lastUsedAt` stops moving. Owners can always add a key, so a lost key never loses a
+    /// component. 409 `IngestKeyRefused`: `tooMany` when 10 of its keys work, `expiryPast` when
+    /// `expiresAt` isn't in the future. Owners only.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.projectNotFound`, `.componentNotFound`,
+    /// `.ingestKeyRefused`, or as any call can.
+    @concurrent
+    public func addIngestKey(
+        project: String,
+        component: String,
+        _ `request body`: AddIngestKey,
+    ) async throws(APIError) -> AddedIngestKey {
+        let `the answer` = try await self.send("POST", "/api/projects/\(Self.segment(Self.text(project)))/components/\(Self.segment(Self.text(component)))/ingest-keys", body: try Self.encoded(`request body`))
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// Revokes one of a component's ingest keys: it stops working at `at`, or at once when `at` is
+    /// absent or past, such as in 24 hours, while the deploys that use it move to another. A
+    /// revocation only moves earlier: one later than the key already stops changes nothing and
+    /// returns it. 404 for a key the component doesn't list. Owners only.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.projectNotFound`, `.ingestKeyNotFound`, or as
+    /// any call can.
+    @concurrent
+    public func revokeIngestKey(
+        project: String,
+        component: String,
+        key: String,
+        _ `request body`: RevokeIngestKey,
+    ) async throws(APIError) -> IngestKeyInfo {
+        let `the answer` = try await self.send("POST", "/api/projects/\(Self.segment(Self.text(project)))/components/\(Self.segment(Self.text(component)))/ingest-keys/\(Self.segment(Self.text(key)))/revoke", body: try Self.encoded(`request body`))
+        return try Self.decoded(from: `the answer`)
+    }
+
     /// Issues a new SDK key for a component: the key its app's builds carry, in the app's SDK
     /// configuration, so the SDK can send the component's signals and read its manifest. It is
     /// public, as anything shipped in an app is, and grants nothing else. The component's other
     /// keys stay active until revoked, so a new build can carry the new key while older builds keep
-    /// working. Listed again with sdkKeys. 404 for a project or a component that doesn't exist.
+    /// working. Listed again with sdkKeys. 404 for a project or a component that doesn't exist; 409
+    /// when 20 of the component's keys are active, so one must be revoked first.
     ///
-    /// Fails with `.unauthorized`, `.projectNotFound`, `.componentNotFound`, or as any call can.
+    /// Fails with `.unauthorized`, `.projectNotFound`, `.componentNotFound`, `.tooManySdkKeys`, or
+    /// as any call can.
     @concurrent
     public func issueSdkKey(
         project: String,
@@ -1376,6 +1432,8 @@ public nonisolated enum APIError: Error, Sendable {
     case feedNotFound(FeedNotFound)
     case gitHubAlreadyConnected(GitHubAlreadyConnected)
     case incidentNotFound(IncidentNotFound)
+    case ingestKeyNotFound(IngestKeyNotFound)
+    case ingestKeyRefused(IngestKeyRefused)
     case inviteRejected(InviteRejected)
     case logLineNotFound(LogLineNotFound)
     case logMessageNotFound(LogMessageNotFound)
@@ -1403,6 +1461,7 @@ public nonisolated enum APIError: Error, Sendable {
     case releaseNotFound(ReleaseNotFound)
     case sdkKeyNotFound(SdkKeyNotFound)
     case signInNotFound(SignInNotFound)
+    case tooManySdkKeys(TooManySdkKeys)
     case unauthorized(Unauthorized)
     case versionPolicyRefused(VersionPolicyRefused)
     case versionRefused(VersionRefused)
@@ -1438,6 +1497,33 @@ public nonisolated struct AddComponent: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode(self.key, forKey: .key)
         try container.encode(self.name, forKey: .name)
+    }
+}
+
+public nonisolated struct AddIngestKey: Codable, Hashable, Sendable {
+    public let name: String
+    public let expiresAt: Date?
+
+    public init(name: String, expiresAt: Date? = nil) {
+        self.name = name
+        self.expiresAt = expiresAt
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case name = "name"
+        case expiresAt = "expiresAt"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.name = try container.`value at`(.name)
+        self.expiresAt = try container.`value if present at`(.expiresAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.name, forKey: .name)
+        try container.encodeIfPresent(self.expiresAt, forKey: .expiresAt)
     }
 }
 
@@ -1506,6 +1592,33 @@ public nonisolated struct AddedComponentResponse: Codable, Hashable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode(self.component, forKey: .component)
+        try container.encode(self.ingestKey, forKey: .ingestKey)
+    }
+}
+
+public nonisolated struct AddedIngestKey: Codable, Hashable, Sendable {
+    public let key: IngestKeyInfo
+    public let ingestKey: String
+
+    public init(key: IngestKeyInfo, ingestKey: String) {
+        self.key = key
+        self.ingestKey = ingestKey
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case key = "key"
+        case ingestKey = "ingestKey"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.key = try container.`value at`(.key)
+        self.ingestKey = try container.`value at`(.ingestKey)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.key, forKey: .key)
         try container.encode(self.ingestKey, forKey: .ingestKey)
     }
 }
@@ -4964,6 +5077,154 @@ public nonisolated struct IndexedLevel: RawRepresentable, Codable, Hashable, Sen
     public static let fatal = IndexedLevel(rawValue: "fatal")
 }
 
+public nonisolated struct IngestKeyInfo: Codable, Hashable, Sendable {
+    public let id: String
+    public let component: String
+    public let name: String
+    public let createdAt: Date
+    public let lastUsedAt: Date?
+    public let expiresAt: Date?
+    public let revokedAt: Date?
+
+    public init(
+        id: String,
+        component: String,
+        name: String,
+        createdAt: Date,
+        lastUsedAt: Date? = nil,
+        expiresAt: Date? = nil,
+        revokedAt: Date? = nil,
+    ) {
+        self.id = id
+        self.component = component
+        self.name = name
+        self.createdAt = createdAt
+        self.lastUsedAt = lastUsedAt
+        self.expiresAt = expiresAt
+        self.revokedAt = revokedAt
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case id = "id"
+        case component = "component"
+        case name = "name"
+        case createdAt = "createdAt"
+        case lastUsedAt = "lastUsedAt"
+        case expiresAt = "expiresAt"
+        case revokedAt = "revokedAt"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.id = try container.`value at`(.id)
+        self.component = try container.`value at`(.component)
+        self.name = try container.`value at`(.name)
+        self.createdAt = try container.`value at`(.createdAt)
+        self.lastUsedAt = try container.`value if present at`(.lastUsedAt)
+        self.expiresAt = try container.`value if present at`(.expiresAt)
+        self.revokedAt = try container.`value if present at`(.revokedAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.component, forKey: .component)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(self.lastUsedAt, forKey: .lastUsedAt)
+        try container.encodeIfPresent(self.expiresAt, forKey: .expiresAt)
+        try container.encodeIfPresent(self.revokedAt, forKey: .revokedAt)
+    }
+}
+
+public nonisolated struct IngestKeyList: Codable, Hashable, Sendable {
+    public let keys: [IngestKeyInfo]
+
+    public init(keys: [IngestKeyInfo]) {
+        self.keys = keys
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case keys = "keys"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.keys = try container.`value at`(.keys)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.keys, forKey: .keys)
+    }
+}
+
+public nonisolated struct IngestKeyNotFound: Codable, Hashable, Sendable {
+    public let key: String
+
+    public init(key: String) {
+        self.key = key
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case key = "key"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "IngestKeyNotFound" else {
+            throw container.`corruption at`(._tag, "_tag isn't IngestKeyNotFound.")
+        }
+        self.key = try container.`value at`(.key)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("IngestKeyNotFound", forKey: ._tag)
+        try container.encode(self.key, forKey: .key)
+    }
+}
+
+/// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
+public nonisolated struct IngestKeyRefusal: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let tooMany = IngestKeyRefusal(rawValue: "tooMany")
+    public static let expiryPast = IngestKeyRefusal(rawValue: "expiryPast")
+}
+
+public nonisolated struct IngestKeyRefused: Codable, Hashable, Sendable {
+    public let reason: IngestKeyRefusal
+
+    public init(reason: IngestKeyRefusal) {
+        self.reason = reason
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case reason = "reason"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "IngestKeyRefused" else {
+            throw container.`corruption at`(._tag, "_tag isn't IngestKeyRefused.")
+        }
+        self.reason = try container.`value at`(.reason)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("IngestKeyRefused", forKey: ._tag)
+        try container.encode(self.reason, forKey: .reason)
+    }
+}
+
 public nonisolated struct InvitationCode: Codable, Hashable, Sendable {
     public let code: String
 
@@ -5226,6 +5487,38 @@ public nonisolated struct KeptTraces: Codable, Hashable, Sendable {
         try container.encodeIfPresent(self.covered, forKey: .covered)
         try container.encode(self.slowest, forKey: .slowest)
         try container.encode(self.failed, forKey: .failed)
+    }
+}
+
+public nonisolated struct KeyExpiringItem: Codable, Hashable, Sendable {
+    public let project: String
+    public let key: IngestKeyInfo
+
+    public init(project: String, key: IngestKeyInfo) {
+        self.project = project
+        self.key = key
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case project = "project"
+        case key = "key"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "keyExpiring" else {
+            throw container.`corruption at`(._tag, "_tag isn't keyExpiring.")
+        }
+        self.project = try container.`value at`(.project)
+        self.key = try container.`value at`(.key)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("keyExpiring", forKey: ._tag)
+        try container.encode(self.project, forKey: .project)
+        try container.encode(self.key, forKey: .key)
     }
 }
 
@@ -9770,6 +10063,28 @@ public nonisolated struct RetentionCohort: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct RevokeIngestKey: Codable, Hashable, Sendable {
+    public let at: Date?
+
+    public init(at: Date? = nil) {
+        self.at = at
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case at = "at"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.at = try container.`value if present at`(.at)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encodeIfPresent(self.at, forKey: .at)
+    }
+}
+
 /// One of a set of values; a value this client doesn't know, from a newer API, is kept as it is.
 public nonisolated struct Runner: RawRepresentable, Codable, Hashable, Sendable {
     public let rawValue: String
@@ -10744,6 +11059,7 @@ public nonisolated enum TodayItem: Codable, Hashable, Sendable {
     case error(ErrorItem)
     case slower(SlowerItem)
     case quiet(QuietItem)
+    case keyExpiring(KeyExpiringItem)
     case promotion(PromotionItem)
     case silent(SilentItem)
     case unknown(String)
@@ -10759,6 +11075,7 @@ public nonisolated enum TodayItem: Codable, Hashable, Sendable {
         case "error": self = .error(try ErrorItem(from: decoder))
         case "slower": self = .slower(try SlowerItem(from: decoder))
         case "quiet": self = .quiet(try QuietItem(from: decoder))
+        case "keyExpiring": self = .keyExpiring(try KeyExpiringItem(from: decoder))
         case "promotion": self = .promotion(try PromotionItem(from: decoder))
         case "silent": self = .silent(try SilentItem(from: decoder))
         default: self = .unknown(kind)
@@ -10771,6 +11088,7 @@ public nonisolated enum TodayItem: Codable, Hashable, Sendable {
         case .error(let value): try value.encode(to: encoder)
         case .slower(let value): try value.encode(to: encoder)
         case .quiet(let value): try value.encode(to: encoder)
+        case .keyExpiring(let value): try value.encode(to: encoder)
         case .promotion(let value): try value.encode(to: encoder)
         case .silent(let value): try value.encode(to: encoder)
         case .unknown(let kind):
@@ -10825,6 +11143,33 @@ public nonisolated struct TodayList: Codable, Hashable, Sendable {
         try container.encode(self.unanswered, forKey: .unanswered)
         try container.encodeIfPresent(self.pulses, forKey: .pulses)
         try container.encode(self.at, forKey: .at)
+    }
+}
+
+public nonisolated struct TooManySdkKeys: Codable, Hashable, Sendable {
+    public let component: String
+
+    public init(component: String) {
+        self.component = component
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case _tag = "_tag"
+        case component = "component"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        guard try container.`value at`(._tag) as String == "TooManySdkKeys" else {
+            throw container.`corruption at`(._tag, "_tag isn't TooManySdkKeys.")
+        }
+        self.component = try container.`value at`(.component)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode("TooManySdkKeys", forKey: ._tag)
+        try container.encode(self.component, forKey: .component)
     }
 }
 
@@ -11525,6 +11870,8 @@ nonisolated extension CluenoriAPI {
             case "FeedNotFound": return .feedNotFound(try jsonDecoder().decode(FeedNotFound.self, from: data))
             case "GitHubAlreadyConnected": return .gitHubAlreadyConnected(try jsonDecoder().decode(GitHubAlreadyConnected.self, from: data))
             case "IncidentNotFound": return .incidentNotFound(try jsonDecoder().decode(IncidentNotFound.self, from: data))
+            case "IngestKeyNotFound": return .ingestKeyNotFound(try jsonDecoder().decode(IngestKeyNotFound.self, from: data))
+            case "IngestKeyRefused": return .ingestKeyRefused(try jsonDecoder().decode(IngestKeyRefused.self, from: data))
             case "InviteRejected": return .inviteRejected(try jsonDecoder().decode(InviteRejected.self, from: data))
             case "LogLineNotFound": return .logLineNotFound(try jsonDecoder().decode(LogLineNotFound.self, from: data))
             case "LogMessageNotFound": return .logMessageNotFound(try jsonDecoder().decode(LogMessageNotFound.self, from: data))
@@ -11552,6 +11899,7 @@ nonisolated extension CluenoriAPI {
             case "ReleaseNotFound": return .releaseNotFound(try jsonDecoder().decode(ReleaseNotFound.self, from: data))
             case "SdkKeyNotFound": return .sdkKeyNotFound(try jsonDecoder().decode(SdkKeyNotFound.self, from: data))
             case "SignInNotFound": return .signInNotFound(try jsonDecoder().decode(SignInNotFound.self, from: data))
+            case "TooManySdkKeys": return .tooManySdkKeys(try jsonDecoder().decode(TooManySdkKeys.self, from: data))
             case "Unauthorized": return .unauthorized(try jsonDecoder().decode(Unauthorized.self, from: data))
             case "VersionPolicyRefused": return .versionPolicyRefused(try jsonDecoder().decode(VersionPolicyRefused.self, from: data))
             case "VersionRefused": return .versionRefused(try jsonDecoder().decode(VersionRefused.self, from: data))
