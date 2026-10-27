@@ -46,7 +46,7 @@ export const update = Command.make("update", {}, () =>
     yield* ensureActivityQueue(saved.value.jurisdiction, account)
     // A deployment that measures itself numbers its commit as its Worker's next release, as any
     // component's CI does, with the file founders copy (`cluenori-release`), and reports the deploy.
-    const self = Option.fromNullishOr(saved.value.selfTelemetry)
+    const self = Option.filter(Option.fromNullishOr(saved.value.selfTelemetry), (each) => each.measuring)
     const releaseEnv = Option.map(self, (each) => ({
       CLUENORI_URL: saved.value.url ?? "",
       CLUENORI_INGEST_KEY: each.ingestKey,

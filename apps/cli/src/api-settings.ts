@@ -96,10 +96,13 @@ export const SavedDeployment = Schema.Struct({
   url: Schema.optionalKey(Schema.String),
   token: Schema.optionalKey(Schema.String),
   /**
-   * Where the deployment reports itself (`./cluenori self-telemetry on`): its project, and its
-   * Worker's ingest key, shown only once, which `./update` numbers and reports each deploy with.
+   * Where the deployment reports itself (`./cluenori self-telemetry on`): its project, its Worker's
+   * ingest key, shown only once and so kept after `off` too, and whether it measures itself now,
+   * when `./update` numbers and reports each deploy with that key.
    */
-  selfTelemetry: Schema.optionalKey(Schema.Struct({ project: ProjectKey, ingestKey: Schema.String })),
+  selfTelemetry: Schema.optionalKey(
+    Schema.Struct({ project: ProjectKey, ingestKey: Schema.String, measuring: Schema.Boolean }),
+  ),
 })
 export type SavedDeployment = typeof SavedDeployment.Type
 

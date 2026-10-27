@@ -79,7 +79,7 @@ const selfTelemetryOn = Command.make("on", { project: projectFlag }, (input) =>
       )
     }
     // Saved at once, so a failure below never loses the key, which is shown only once.
-    yield* saveDeployment({ ...saved.value, selfTelemetry: { project, ingestKey } })
+    yield* saveDeployment({ ...saved.value, selfTelemetry: { project, ingestKey, measuring: true } })
 
     // The dashboard and the CLI ship with the Worker: one commit, one release, one deploy.
     for (const app of [dashboard, cli]) {
@@ -141,8 +141,11 @@ const selfTelemetryOff = Command.make("off", {}, () =>
         Effect.catchTag("CommandFailed", () => Effect.void),
       )
     }
-    const { selfTelemetry: _off, ...rest } = saved.value
-    yield* saveDeployment(rest)
+    // The key stays, since it is shown only once: `on` takes it up again.
+    const kept = saved.value.selfTelemetry
+    yield* saveDeployment(
+      kept === undefined ? saved.value : { ...saved.value, selfTelemetry: { ...kept, measuring: false } },
+    )
     yield* Console.log("The deployment no longer measures itself; what it sent stays in its project.")
   }),
 ).pipe(Command.withDescription("Stop the deployment measuring itself; what it sent is kept."))
