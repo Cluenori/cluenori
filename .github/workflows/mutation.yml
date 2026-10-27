@@ -13,7 +13,12 @@ name: Mutation testing
 
 on:
   schedule:
-    - cron: "17 3 * * *"
+    # Start the previous evening: GitHub cron is UTC, so 17:17 is 18:17 in Warsaw (CET)
+    # or 19:17 (CEST). Allow ~2 hours to mutate and ~80 minutes for Amp's follow-up.
+    # Recent scheduled runs started 5–6 hours late; even with a 6-hour delay this budget
+    # finishes around 03:37 CET / 04:37 CEST. Aim to be ready by 04:00–05:00 Warsaw,
+    # not to start Amp then. GitHub scheduling/queues and longer work can still overrun.
+    - cron: "17 17 * * *"
   workflow_dispatch:
     inputs:
       folders:
