@@ -206,15 +206,39 @@ const reactTo = (batch: MessageBatch) =>
     }),
   )
 
+// Plain HTTP carries tokens and keys in the clear, so a deployment refuses it, never redirects it, as
+// a redirect has already sent them. It answers it on this computer, and on the local network when
+// CLUENORI_PLAIN_HTTP is `local`, which only .dev.vars sets (`./run` writes it), so a phone can pair
+// with a Mac at its address; a deployment never reads .dev.vars. Read as plain data, not through
+// Config, so no value can make loading the Worker fail.
+const plainHttpAllowed = "CLUENORI_PLAIN_HTTP" in env && env.CLUENORI_PLAIN_HTTP === "local"
+const loopback: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"])
+const isPlainRemote = (url: URL) => url.protocol === "http:" && !plainHttpAllowed && !loopback.has(url.hostname)
+
+// Tells browsers to come back over HTTPS only, for a year; the dashboard's files say the same in `_headers`.
+const strictTransport = "max-age=31536000"
+
 export default {
-  fetch: (request, _env, context) =>
-    telemetry.runPromise(
+  fetch: (request, _env, context) => {
+    const url = new URL(request.url)
+    if (isPlainRemote(url)) {
+      return Promise.resolve(
+        new Response(`Cluenori answers over HTTPS only: https://${url.host}${url.pathname}\n`, {
+          status: 403,
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        }),
+      )
+    }
+    return telemetry.runPromise(
       Effect.gen(function* () {
-        const response = yield* Effect.promise(() => app.handler(request))
+        const answered = yield* Effect.promise(() => app.handler(request))
         yield* sendOwnTelemetry(context)
+        const response = new Response(answered.body, answered)
+        response.headers.set("strict-transport-security", strictTransport)
         return response
       }),
-    ),
+    )
+  },
   queue: (batch, _env, context) =>
     reactions.runPromise(reactTo(batch).pipe(Effect.ensuring(sendOwnTelemetry(context)))),
 } satisfies ExportedHandler<Env>

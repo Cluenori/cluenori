@@ -69,8 +69,10 @@ To run it on an iPhone, copy `Config/Local.example.xcconfig` to `Config/Local.xc
 App ID's bundle ID and your team, and your deployment's domain for signing in with a passkey. The scheme Cluenori builds the app for your deployment; Cluenori
 Local builds a second app beside it, `<bundle ID>.local`, for the one `./run` serves, which shows
 everything but alerts: `./run` can't reach APNs. To pair with `./run`, which listens on this Mac alone, start the
-Worker for the local network instead (`bun run wrangler dev --ip 0.0.0.0` in `apps/worker`), and
-make the pairing link at the Mac's address; the first call asks for Local Network access.
+Worker for the local network instead (`bun run wrangler dev --ip 0.0.0.0` in `apps/worker`, after
+`./run` has run once: its `.dev.vars` lets this computer's Worker answer plain HTTP from the local
+network, which a deployment refuses), and make the pairing link at the Mac's address; the first call
+asks for Local Network access.
 
 On an iPhone connected to the Mac, `xcrun devicectl device capture screenshot --device <name>
 --destination <file>.png` takes a screenshot; `xcrun devicectl device process launch --device <name>

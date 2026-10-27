@@ -43,7 +43,7 @@ const readDevVars = Effect.gen(function* () {
 })
 
 /**
- * Makes sure the Worker `./run` starts has an API token and an owner, in apps/worker/.dev.vars,
+ * Makes sure the Worker `./run` starts has an API token, an owner, and plain HTTP on the local network, in apps/worker/.dev.vars,
  * adding whichever is missing the first time. Leaves every other line as it is.
  */
 export const ensureLocalApiSettings = Effect.gen(function* () {
@@ -54,6 +54,8 @@ export const ensureLocalApiSettings = Effect.gen(function* () {
   const missing = [
     ...(variables.has("CLUENORI_API_TOKEN") ? [] : [`CLUENORI_API_TOKEN=${fresh.token}`]),
     ...(variables.has("CLUENORI_OWNER") ? [] : [`CLUENORI_OWNER=${fresh.owner}`]),
+    // This computer's Worker answers plain HTTP from the local network too, so a phone can pair with it.
+    ...(variables.has("CLUENORI_PLAIN_HTTP") ? [] : ["CLUENORI_PLAIN_HTTP=local"]),
   ]
   if (missing.length === 0) {
     return
