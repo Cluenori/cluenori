@@ -24,8 +24,9 @@ apps/dashboard/dist/
 /result-*
 
 # The iOS app: each developer's own bundle ID and team (apps/ios/Config/Local.example.xcconfig),
-# and what Xcode and SwiftPM build
+# the key its builds are numbered with (Local.example.env), and what Xcode and SwiftPM build
 apps/ios/Config/Local.xcconfig
+apps/ios/Config/Local.env
 apps/ios/build/
 apps/ios/CluenoriApp/.build/
 xcuserdata/

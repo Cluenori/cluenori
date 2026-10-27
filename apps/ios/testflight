@@ -1,10 +1,14 @@
 #!/bin/sh
-# Sends the app to TestFlight, as `bun run testflight:ios` does: builds Cluenori, the Release app,
-# with a build number from the time, and uploads it to App Store Connect, signed for the App Store;
-# the team's internal testers get it once Apple has processed it. Xcode signs and uploads as the
-# account in its Settings, Accounts, and makes the App Store's profiles, and the team's distribution
-# certificate the first time, which takes the Admin or Account Holder role. Needs a Mac with Xcode,
-# Config/Local.xcconfig, and the app's record in App Store Connect (README.md, "TestFlight").
+# Sends the app to TestFlight, as `bun run testflight:ios` does: has Cluenori number the commit as
+# the app component's next release, such as 0.2.1+7, builds Cluenori, the Release app, as that
+# version and build, uploads it to App Store Connect, signed for the App Store, and then raises the
+# component's patch version, so the next upload is a new version. The team's internal testers get
+# it once Apple has processed it. Build numbers count 1, 2, 3 across versions, and one is one commit.
+# For a minor or major version, raise it before uploading: ./cluenori version <project> <component>
+# minor. Xcode signs and uploads as the account in its Settings, Accounts, and makes the App Store's
+# profiles, and the team's distribution certificate the first time, which takes the Admin or
+# Account Holder role. Needs a Mac with Xcode, Config/Local.xcconfig, Config/Local.env, the
+# deployment ./setup saved, and the app's record in App Store Connect (README.md, "TestFlight").
 set -eu
 cd "$(dirname "$0")"
 
@@ -12,22 +16,55 @@ cd "$(dirname "$0")"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode27.2RC.app/Contents/Developer}"
 
 if [ ! -f Config/Local.xcconfig ]; then
-  echo "Copy Config/Local.example.xcconfig to Config/Local.xcconfig, with your bundle ID and team, first."
+  echo "Copy Config/Local.example.xcconfig to Config/Local.xcconfig, with your bundle ID and team, first." >&2
+  exit 1
+fi
+if [ ! -f Config/Local.env ]; then
+  echo "Copy Config/Local.example.env to Config/Local.env, with the app component's ingest key, first." >&2
+  exit 1
+fi
+# The deployment ./cluenori asks, so numbering and raising the version reach the same one.
+deployment="${XDG_CONFIG_HOME:-$HOME/.config}/cluenori/deployment.json"
+url=$(plutil -extract url raw -o - "$deployment" 2>/dev/null) || {
+  echo "No deployment is saved at $deployment, with its address: run ./setup first." >&2
+  exit 1
+}
+# Read, not sourced: the key stays out of the environment, so Xcode's build records never hold it.
+unset CLUENORI_INGEST_KEY
+key=$(sed -n 's/^CLUENORI_INGEST_KEY=//p' Config/Local.env)
+# The key names its project and component: cluenori.<project>.<component>.<secret>.
+case "$key" in
+  cluenori.?*.?*.?*) ;;
+  *) echo "Config/Local.env's CLUENORI_INGEST_KEY isn't an ingest key, cluenori.<project>.<component>.<secret>." >&2; exit 1 ;;
+esac
+project=$(printf '%s' "$key" | cut -d. -f2)
+component=$(printf '%s' "$key" | cut -d. -f3)
+
+# The build is the commit Cluenori numbers, so it is built from the commit alone.
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Commit or stash the changes first: the build Cluenori numbers is the commit, nothing else." >&2
   exit 1
 fi
 
-# Every upload needs a build number greater than the last: the time, in UTC, to the minute.
-build_number=$(date -u +%Y%m%d%H%M)
+# The commit's release: the one it got before, as when an upload failed and runs again, or the next.
+# Not handled: a commit uploaded before. It keeps its release, and App Store Connect refuses the
+# same build twice; a new commit uploads.
+release=$(CLUENORI_URL="$url" CLUENORI_INGEST_KEY="$key" ../../cluenori-release number)
+version="${release%%+*}"
+build="${release#*+}"
 # Kept, one per upload, for reading its crash reports later.
-archive="build/testflight/Cluenori-$build_number.xcarchive"
+archive="build/testflight/Cluenori-$release.xcarchive"
 
-echo "Building Cluenori, build $build_number"
+echo "Building Cluenori $version, build $build"
 xcodebuild archive -project Cluenori.xcodeproj -scheme Cluenori -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$archive" -derivedDataPath build/testflight/derived \
-  -allowProvisioningUpdates -quiet CURRENT_PROJECT_VERSION="$build_number"
+  -allowProvisioningUpdates -quiet MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build"
 
 echo "Uploading it to App Store Connect"
 xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist Config/ExportOptions.plist \
-  -exportPath "build/testflight/Cluenori-$build_number" -allowProvisioningUpdates -quiet
+  -exportPath "build/testflight/Cluenori-$release" -allowProvisioningUpdates -quiet
 
-echo "Uploaded build $build_number. Once Apple has processed it, in a few minutes, internal testers get it in TestFlight."
+echo "Uploaded Cluenori $version ($build). Once Apple has processed it, in a few minutes, internal testers get it in TestFlight."
+# Only once it is uploaded, so a failed build leaves the version as it was. Not handled: this
+# failing after the upload; the next build is then the same version, which TestFlight takes.
+../../cluenori version "$project" "$component" patch

@@ -92,9 +92,17 @@ Once, before the first upload:
    team's people in it; Users and Access adds someone to the team first. Each installs TestFlight
    and accepts the email.
 
-Then `bun run testflight:ios` builds the Release app, with the time as its build number, and
-uploads it, for internal testers alone; the archive stays in `build/testflight`, for its crash
-reports. Testers get it once Apple has processed it, in a few minutes. On an iPhone that ran the
+4. Copy `Config/Local.example.env` to `Config/Local.env`, with a new ingest key of the app's
+   component in the deployment `./setup` saved, and set its version: `./cluenori version <project>
+   <component> 0.1.0`.
+
+Then `bun run testflight:ios` has Cluenori number the commit as the component's next release, such
+as `0.2.1+7`, builds the Release app as that version and build, uploads it, for internal testers
+alone, and raises the version's patch in Cluenori for the next upload; for a minor or major one,
+raise it first with `./cluenori version`. Build numbers count 1, 2, 3 across versions, one for each
+commit: a commit that failed to build or upload keeps its number when it runs again, and one
+uploaded already is refused by App Store Connect. The archive stays in `build/testflight`, for its
+crash reports. Testers get it once Apple has processed it, in a few minutes. On an iPhone that ran the
 Release app from Xcode, TestFlight's replaces it, pairing and all; Cluenori Local stays beside it.
 
 ## Owns
