@@ -105,6 +105,29 @@ describe("performance journey", () => {
     }),
   )
 
+  // The chart merges columns as it narrows, as when a phone turns, between a key and the next.
+  it.effect("opens the latest moment when the chart narrows between End and Enter", () =>
+    Effect.gen(function* () {
+      answerApi(notesApi())
+      window.history.pushState(null, "", "/projects/notes/performance")
+      const screen = yield* Effect.promise(() => render(<App />))
+      const chart = screen.getByRole("slider", { name: /The load on every component/ })
+      yield* Effect.promise(() => expect.element(chart).toBeVisible())
+      chart.element().focus()
+      yield* Effect.promise(() => userEvent.keyboard("{End}"))
+      const wide = chart.element().getAttribute("aria-valuemax")
+      yield* Effect.promise(() => page.viewport(390, 844))
+      yield* Effect.promise(() => expect.poll(() => chart.element().getAttribute("aria-valuemax")).not.toBe(wide))
+      yield* Effect.promise(() => userEvent.keyboard("{Enter}"))
+      yield* Effect.promise(() =>
+        expect
+          .element(screen.getByRole("region", { name: /–/ }).getByText("The moment opened, marked on the charts"))
+          .toBeVisible(),
+      )
+      yield* Effect.promise(() => page.viewport(1280, 900))
+    }),
+  )
+
   it.live("shows the requests of a moment 40 minutes ago, the failed export among them", () =>
     Effect.gen(function* () {
       answerApi(notesApi())

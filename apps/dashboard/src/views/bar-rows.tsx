@@ -104,7 +104,9 @@ export function BarRows({
     first: column * group,
     last: Math.min(given, (column + 1) * group) - 1,
   })
-  const [pointed, setPointed] = useState<number | undefined>(undefined)
+  const [pointedAt, setPointed] = useState<number | undefined>(undefined)
+  // Columns merge when the chart narrows, so a column pointed at before stays within the ones shown.
+  const pointed = pointedAt === undefined ? undefined : Math.min(pointedAt, columns - 1)
   const slot = 100 / columns
   // Bars take most of their column; the gap shrinks as columns get narrow.
   const gap = columns > 48 ? 0.2 : 0.28
