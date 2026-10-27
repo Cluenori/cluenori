@@ -150,11 +150,15 @@ describe("testedPaths", () => {
     ])
   })
 
-  it("follows a test's helpers, and stops at files it doesn't have", () => {
+  it("follows helpers through cycles, but not missing files or package imports with local lookalikes", () => {
     const texts = new Map([
-      ["test/phones.test.ts", 'import { inWorkspace } from "./in-workspace.ts"\nimport "../../other/src/x.ts"\n'],
+      [
+        "test/phones.test.ts",
+        'import { inWorkspace } from "./in-workspace.ts"\nimport "../../other/src/x.ts"\nimport "some-library/helpers.ts"\n',
+      ],
       ["test/in-workspace.ts", 'import { Phones } from "../src/phones.ts"\nimport "./missing.ts"\n'],
-      ["src/phones.ts", ""],
+      ["src/phones.ts", 'import "../test/in-workspace.ts"\nimport "./phones.ts"\n'],
+      ["test/some-library/helpers.ts", ""],
     ])
     assert.deepStrictEqual([...testedPaths(texts, ["test/phones.test.ts"])].toSorted(), [
       "src/phones.ts",

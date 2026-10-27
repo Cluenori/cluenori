@@ -13,6 +13,17 @@ describe("scoreOf", () => {
   it("has no score when no mutant counts", () => {
     assert.deepStrictEqual(scoreOf(tallyOf(["CompileError", "Ignored"])), Option.none())
   })
+
+  it("scores all caught, none caught, and an uneven mix without treating untested mutants as caught", () => {
+    for (const { tally, score } of [
+      { tally: { caught: 3, survived: 0, notCovered: 0 }, score: 100 },
+      { tally: { caught: 0, survived: 2, notCovered: 0 }, score: 0 },
+      { tally: { caught: 0, survived: 0, notCovered: 2 }, score: 0 },
+      { tally: { caught: 1, survived: 2, notCovered: 5 }, score: 12.5 },
+    ]) {
+      assert.deepStrictEqual(scoreOf(tally), Option.some(score))
+    }
+  })
 })
 
 describe("floorOf", () => {
