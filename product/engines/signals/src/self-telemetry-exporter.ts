@@ -40,8 +40,12 @@ export interface SelfTelemetrySettings {
   /** The deployment's release, its `service.version`; absent when the deploy didn't say. */
   readonly release: ReleaseVersion | undefined
   readonly environment: EnvironmentKey
-  /** Which isolate or object sends, `service.instance.id`, so its counts since it started are told apart. */
-  readonly instance: string
+  /**
+   * Which isolate or object sends, `service.instance.id`, so its counts since it started are told
+   * apart. Asked once, at the first flush, never while the layer is built: a Worker builds its
+   * layers in global scope, where random values and I/O aren't allowed.
+   */
+  readonly instance: Effect.Effect<string>
   /**
    * Sends one export to the deployment's own OTLP route, as an exporter would, with these headers;
    * succeeds with the HTTP status it answered. A failure to reach it is a defect, which the
@@ -340,14 +344,21 @@ const makeRecorder = (settings: SelfTelemetrySettings) =>
       waiting()
     })
 
-    const resourceEntries: ReadonlyArray<readonly [string, string | boolean]> = [
-      ["service.name", settings.component],
-      ...(settings.release === undefined ? [] : [["service.version", settings.release] as const]),
-      ["deployment.environment.name", settings.environment],
-      ["service.instance.id", settings.instance],
-      [selfTelemetryAttribute, true],
-    ]
-    const resource = { attributes: attributesOf(resourceEntries), droppedAttributesCount: 0 }
+    // The resource's attributes, made at the first flush, inside a request, alarm or batch.
+    let resourceEntries: ReadonlyArray<readonly [string, string | boolean]> = []
+    const resourceOf = Effect.gen(function* () {
+      if (resourceEntries.length === 0) {
+        const instance = yield* settings.instance
+        resourceEntries = [
+          ["service.name", settings.component],
+          ...(settings.release === undefined ? [] : [["service.version", settings.release] as const]),
+          ["deployment.environment.name", settings.environment],
+          ["service.instance.id", instance],
+          [selfTelemetryAttribute, true],
+        ]
+      }
+      return { attributes: attributesOf(resourceEntries), droppedAttributesCount: 0 }
+    })
     const headers = {
       authorization: `Bearer ${settings.ingestKey.pipe(Redacted.value)}`,
       "content-type": "application/x-protobuf",
@@ -427,6 +438,7 @@ const makeRecorder = (settings: SelfTelemetrySettings) =>
 
     const sendWaiting = (options?: { readonly olderThan?: Duration.Duration }) =>
       Effect.gen(function* () {
+        const resource = yield* resourceOf
         const now = clock.currentTimeMillisUnsafe()
         const due =
           waitingSince !== undefined &&

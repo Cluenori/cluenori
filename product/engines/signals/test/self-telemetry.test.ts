@@ -47,7 +47,7 @@ const deployment = () => {
     component: ComponentKey.make("worker"),
     release: ReleaseVersion.make("0.4.0+12"),
     environment: EnvironmentKey.make("production"),
-    instance: "test",
+    instance: Effect.succeed("test"),
     send: (path, body, headers) =>
       Effect.gen(function* () {
         sent.push({ path, body, headers })
@@ -192,6 +192,33 @@ describe("self-telemetry", () => {
     }),
   )
 
+  it.effect("building it asks for nothing until the first flush, as a Worker's global scope requires", () =>
+    Effect.gen(function* () {
+      // A Worker builds its layers when its module loads, where workerd refuses random values and
+      // I/O: a build that made the instance's ID failed every request after.
+      let asked = 0
+      const telemetry = SelfTelemetry.layer({
+        ingestKey: Redacted.make("cluenori.cluenori.worker.secret"),
+        component: ComponentKey.make("worker"),
+        release: undefined,
+        environment: EnvironmentKey.make("production"),
+        instance: Effect.sync(() => {
+          asked += 1
+          return "test"
+        }),
+        send: () => Effect.succeed(200),
+      })
+      const runtime = ManagedRuntime.make(telemetry)
+      yield* Effect.promise(() => runtime.runPromise(Effect.void.pipe(Effect.withSpan("api.request"))))
+      assert.strictEqual(asked, 0)
+      yield* Effect.promise(() => runtime.runPromise(SelfTelemetry.use((recorded) => recorded.flush())))
+      yield* Effect.promise(() => runtime.runPromise(Effect.void.pipe(Effect.withSpan("api.request"))))
+      yield* Effect.promise(() => runtime.runPromise(SelfTelemetry.use((recorded) => recorded.flush())))
+      assert.strictEqual(asked, 1)
+      yield* Effect.promise(() => runtime.dispose())
+    }),
+  )
+
   it.effect("a slow receiver holds one export in memory, however many requests flush meanwhile", () =>
     Effect.gen(function* () {
       // A receiver that answers nothing until the end: each send waits.
@@ -202,7 +229,7 @@ describe("self-telemetry", () => {
         component: ComponentKey.make("worker"),
         release: undefined,
         environment: EnvironmentKey.make("production"),
-        instance: "test",
+        instance: Effect.succeed("test"),
         send: () =>
           Effect.callback<number>((resume) => {
             waiting += 1

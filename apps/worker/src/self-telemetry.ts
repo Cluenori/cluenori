@@ -45,13 +45,12 @@ export const selfTelemetryLayer = (env: Env): Layer.Layer<SelfTelemetry> =>
         )
       }
       const crypto = yield* Crypto.Crypto
-      const instance = yield* crypto.randomUUIDv7().pipe(Effect.orDie)
       return SelfTelemetry.layer({
         ingestKey: settings.ingestKey.value,
         component: ingestKeyScope(ingestKey).component,
         release: Option.getOrUndefined(settings.release),
         environment: settings.environment,
-        instance,
+        instance: crypto.randomUUIDv7().pipe(Effect.orDie),
         send: sendToSelf,
       })
     }),
