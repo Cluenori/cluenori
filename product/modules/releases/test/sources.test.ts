@@ -160,6 +160,7 @@ const fakeGitHub = (calls: Array<string>, published: Array<Published> = []): Git
       labels: ["performance"],
     }),
   setActionsSecret: () => Effect.die("No secret is written in these tests"),
+  deleteActionsSecret: () => Effect.die("No secret is written in these tests"),
   publishRelease: (publishedIn, release) =>
     Effect.sync(() => {
       published.push({ repository: publishedIn, release })
@@ -558,6 +559,7 @@ describe("GitHub's Releases page", () => {
         {
           ...github,
           setActionsSecret: () => Effect.die("No secret is written in these tests"),
+          deleteActionsSecret: () => Effect.die("No secret is written in these tests"),
           publishRelease: (forRepository, release) =>
             allowed.now
               ? github.publishRelease(forRepository, release)

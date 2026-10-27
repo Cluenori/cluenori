@@ -59,6 +59,7 @@ const runnersGitHub = (runners: GitHub["Service"]["selfHostedRunners"]) =>
       workflowRun: () => Effect.succeedNone,
       selfHostedRunners: runners,
       setActionsSecret: () => Effect.die("No secret is written in these tests"),
+      deleteActionsSecret: () => Effect.die("No secret is written in these tests"),
       publishRelease: () => Effect.die("No release is published in these tests"),
     }),
   )

@@ -6,7 +6,7 @@ import { Email, InviteCode, Members } from "@cluenori/members"
 import { AppVersion, ModelIdentifier, PairingCode, Phones, PushToken, SystemVersion } from "@cluenori/phones"
 import { ProjectIndex, ProjectName } from "@cluenori/projects"
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { DateTime, Deferred, Effect, Fiber, Layer, Option, Redacted, Schema } from "effect"
 import { TestClock } from "effect/testing"
 
 import type { WatcherSettings } from "../src/index.ts"
@@ -44,13 +44,28 @@ const KeySecret = Schema.Struct({
 
 const unused = () => Effect.die("Only secrets are written in these tests")
 
+// GitHub's refusal to an app without Secrets: write.
+const refusal = (forRepository: string) =>
+  Effect.fail(
+    new GitHubRefused({
+      status: 403,
+      reason: `${forRepository}'s Actions secrets can't be written: the token lacks Secrets: write there`,
+    }),
+  )
+
 /**
  * A fake GitHub that keeps each secret written, by repository and name, and refuses while
- * `refusing` is set, as GitHub does an app without Secrets: write. Sealing is `@cluenori/github`'s.
+ * `refusing` is set, as GitHub does an app without Secrets: write; and, while `held` is set, holds
+ * the next phones write until it is done. Sealing is `@cluenori/github`'s.
  */
 const fakeGitHub = () => {
   const written: Array<{ readonly repository: string; readonly name: string; readonly value: string }> = []
-  const state = { refusing: false }
+  const deleted: Array<string> = []
+  const state: { refusing: boolean; refusingDelete: string | undefined; held: Deferred.Deferred<void> | undefined } = {
+    refusing: false,
+    refusingDelete: undefined,
+    held: undefined,
+  }
   const layer = Layer.succeed(
     GitHub,
     GitHub.of({
@@ -65,19 +80,26 @@ const fakeGitHub = () => {
       workflowRun: unused,
       selfHostedRunners: unused,
       setActionsSecret: (forRepository, name, value) =>
-        state.refusing
-          ? Effect.fail(
-              new GitHubRefused({
-                status: 403,
-                reason: `${forRepository}'s Actions secrets can't be written: the token lacks Secrets: write there`,
-              }),
-            )
+        Effect.gen(function* () {
+          if (state.refusing) {
+            return yield* refusal(forRepository)
+          }
+          const held = state.held
+          if (held !== undefined && name === "CLUENORI_PHONES") {
+            state.held = undefined
+            yield* Deferred.await(held)
+          }
+          written.push({ repository: forRepository, name, value: Redacted.value(value) })
+        }),
+      deleteActionsSecret: (forRepository, name) =>
+        state.refusing || state.refusingDelete === name
+          ? refusal(forRepository)
           : Effect.sync(() => {
-              written.push({ repository: forRepository, name, value: Redacted.value(value) })
+              deleted.push(`${forRepository} ${name}`)
             }),
     }),
   )
-  return { written, state, layer }
+  return { written, deleted, state, layer }
 }
 
 // Pairs a phone for `actor`, which registers `token`; returns its ID.
@@ -224,6 +246,102 @@ describe("Watcher", () => {
           const hidden = yield* watcher.status({ _tag: "Projects", projects: [] }).pipe(Effect.flip)
           assert.strictEqual(hidden._tag, "NotAllowed")
           assert.strictEqual(github.written.length, 0)
+        }),
+      )
+    }),
+  )
+
+  it.effect("never puts back a removed phone when writes overlap", () =>
+    Effect.gen(function* () {
+      const github = fakeGitHub()
+      yield* inWorkspace(
+        "overlapping",
+        start,
+        settings,
+        github.layer,
+        Effect.gen(function* () {
+          const watcher = yield* Watcher
+          yield* watcher.setRepository(ownerActor, { _tag: "Everything" }, repository)
+          // A second phone: the next sync writes both, and is held at GitHub.
+          const phones = yield* Phones
+          const phone = yield* phoneWith(ownerToken, ownerActor)
+          const held = yield* Deferred.make<void>()
+          github.state.held = held
+          const older = yield* Effect.forkChild(watcher.sync)
+          yield* Effect.yieldNow
+          // Meanwhile the phone is removed, and the host syncs again.
+          yield* phones.remove(ownerActor, phone)
+          const newer = yield* Effect.forkChild(watcher.sync)
+          yield* Effect.yieldNow
+          yield* Deferred.succeed(held, undefined)
+          yield* Fiber.join(older)
+          yield* Fiber.join(newer)
+          const last = github.written.findLast((each) => each.name === "CLUENORI_PHONES")
+          assert.deepStrictEqual(yield* phonesIn(last?.value ?? ""), [])
+          const status = yield* watcher.status({ _tag: "Everything" })
+          assert.strictEqual(status.phones, 0)
+        }),
+      )
+    }),
+  )
+
+  it.effect("deletes the old repository's secrets on a move, and doesn't move while GitHub refuses", () =>
+    Effect.gen(function* () {
+      const github = fakeGitHub()
+      const other = Repository.make("octo-org/elsewhere")
+      yield* inWorkspace(
+        "moves",
+        start,
+        settings,
+        github.layer,
+        Effect.gen(function* () {
+          const watcher = yield* Watcher
+          yield* phoneWith(ownerToken, ownerActor)
+          yield* watcher.setRepository(ownerActor, { _tag: "Everything" }, repository)
+          github.state.refusing = true
+          const stuck = yield* watcher.setRepository(ownerActor, { _tag: "Everything" }, other)
+          assert.strictEqual(stuck.repository, repository)
+          assert.include(stuck.problem ?? "", "wasn't moved")
+          github.state.refusing = false
+          const moved = yield* watcher.setRepository(ownerActor, { _tag: "Everything" }, other)
+          assert.strictEqual(moved.repository, other)
+          assert.deepStrictEqual(github.deleted, ["octo-org/watch CLUENORI_APNS_KEY", "octo-org/watch CLUENORI_PHONES"])
+          assert.deepStrictEqual(
+            github.written.slice(-2).map((each) => `${each.repository} ${each.name}`),
+            ["octo-org/elsewhere CLUENORI_APNS_KEY", "octo-org/elsewhere CLUENORI_PHONES"],
+          )
+        }),
+      )
+    }),
+  )
+
+  it.effect("puts back the old repository's secrets when a move deletes only one of them", () =>
+    Effect.gen(function* () {
+      const github = fakeGitHub()
+      yield* inWorkspace(
+        "half-moved",
+        start,
+        settings,
+        github.layer,
+        Effect.gen(function* () {
+          const watcher = yield* Watcher
+          yield* phoneWith(ownerToken, ownerActor)
+          yield* watcher.setRepository(ownerActor, { _tag: "Everything" }, repository)
+          // The key is deleted; the phones aren't.
+          github.state.refusingDelete = "CLUENORI_PHONES"
+          yield* watcher.setRepository(ownerActor, { _tag: "Everything" }, Repository.make("octo-org/elsewhere"))
+          assert.deepStrictEqual(github.deleted, ["octo-org/watch CLUENORI_APNS_KEY"])
+          const stuck = yield* watcher.status({ _tag: "Everything" })
+          assert.strictEqual(stuck.repository, repository)
+          assert.include(stuck.problem ?? "", "wasn't moved")
+          github.state.refusingDelete = undefined
+          yield* TestClock.adjust(6 * minute)
+          yield* watcher.sync
+          assert.deepStrictEqual(
+            github.written.slice(-2).map((each) => `${each.repository} ${each.name}`),
+            ["octo-org/watch CLUENORI_APNS_KEY", "octo-org/watch CLUENORI_PHONES"],
+          )
+          assert.isUndefined((yield* watcher.status({ _tag: "Everything" })).problem)
         }),
       )
     }),

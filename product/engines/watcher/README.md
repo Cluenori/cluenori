@@ -29,7 +29,12 @@ yield* watcher.sync // writes only what changed; never fails
     removed members' never are.
   - A secret is written only when its content changed; after a failed write, not again for 5
     minutes, unless an owner names the repository again.
-- **Integrations:** GitHub's Actions secrets, through `@cluenori/github`'s `setActionsSecret`.
+  - Writes run one at a time, from reading the phones to recording what was written, so an older
+    write never lands after a newer one and puts back a removed phone.
+  - Moving to another repository deletes both secrets in the old one first; while GitHub refuses
+    that, the repository stays and the status says why.
+- **Integrations:** GitHub's Actions secrets, through `@cluenori/github`'s `setActionsSecret` and
+  `deleteActionsSecret`.
 
 ## Does not own
 
@@ -45,7 +50,8 @@ change owners' push tokens.
 ## Depends on
 
 `@cluenori/phones` for push targets, `@cluenori/members` for who is an owner, `@cluenori/github`'s
-`GitHub` client, which the host builds on the workspace's app, Foundation's `ActivityLog`, and
+`GitHub` client, which the host builds on `GitHubConnection.tokenFor` (no token kept past a
+disconnect), Foundation's `ActivityLog`, and
 `Crypto` for digests.
 
 ## Activity
@@ -67,7 +73,9 @@ up.
   so the watcher must sign its own. Cluenori writes it rather than the founder, so the `.p8` is
   handled once and a key set again with `./cluenori push setup` reaches the watcher on the next
   sync. It is a second place that can push to the team's apps; a topic-specific APNs key, limited to
-  Cluenori's bundle ID, limits what that copy can do.
+  Cluenori's bundle ID, limits what that copy can do. A repository the watcher moved away from loses
+  both secrets, but anyone who could read its workflows' secrets before could have kept the key:
+  rotate it with `./cluenori push setup` if that repository is no longer trusted.
 - **Secrets: write is the app's on every repository it is installed on,** as GitHub grants an
   app's permissions per installation. Only this engine writes secrets, only to the one repository an
   owner named, with a token limited to it. Installing the app only on the repositories components

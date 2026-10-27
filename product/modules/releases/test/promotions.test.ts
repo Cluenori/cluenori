@@ -79,6 +79,7 @@ const fakeGitHub = (state: FakeState, named: boolean): GitHub["Service"] => ({
   workflowRun: (_repository, id) => Effect.sync(() => Option.fromNullishOr(state.runs.find((run) => run.id === id))),
   selfHostedRunners: () => Effect.succeed([]),
   setActionsSecret: () => Effect.die("No secret is written in these tests"),
+  deleteActionsSecret: () => Effect.die("No secret is written in these tests"),
   publishRelease: (publishedIn, published) =>
     Effect.succeed({ url: `https://github.com/${publishedIn}/releases/tag/${published.tag}` }),
 })

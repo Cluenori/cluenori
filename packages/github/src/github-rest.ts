@@ -17,7 +17,7 @@ const answerTimeout = Duration.seconds(15)
 
 /** One request to GitHub's REST API. */
 export interface Question {
-  readonly method: "GET" | "POST" | "PATCH" | "PUT"
+  readonly method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"
   /** The path under `https://api.github.com`, its segments already safe. */
   readonly path: string
   readonly urlParams?: Readonly<Record<string, string | number>>

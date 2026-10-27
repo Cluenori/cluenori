@@ -55,7 +55,9 @@ yield* github.dispatchWorkflow(repository, workflow, "main", { release, environm
 
 `src/index.ts`. `GitHubConnection` runs in the workspace's object: the connect flow, the status an
 owner sees, and `tokenFor`, which the host serves to projects' objects. `gitHubAsApp` is the
-`GitHub` client a project's object uses. `GitHubGroup` is the API's part; the host serves GitHub's
+`GitHub` client a project's object uses, keeping each token until 5 minutes before it expires;
+`gitHubThroughConnection` is the one the workspace's own object uses, asking `tokenFor` on every
+call, so it stops the moment the app is disconnected. `GitHubGroup` is the API's part; the host serves GitHub's
 return, `/api/github/connected`, itself.
 
 ## Depends on

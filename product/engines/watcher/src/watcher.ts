@@ -4,7 +4,20 @@ import { GitHub, Repository } from "@cluenori/github"
 import type { Access } from "@cluenori/members"
 import { Members } from "@cluenori/members"
 import { Phones } from "@cluenori/phones"
-import { Clock, Context, Crypto, DateTime, Duration, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import {
+  Clock,
+  Context,
+  Crypto,
+  DateTime,
+  Duration,
+  Effect,
+  Layer,
+  Option,
+  Redacted,
+  Result,
+  Schema,
+  Semaphore,
+} from "effect"
 import { Base64, Hex } from "effect/encoding"
 import { SqlClient, SqlSchema } from "effect/sql"
 
@@ -82,8 +95,9 @@ export class Watcher extends Context.Service<
     readonly status: (access: Access) => Effect.Effect<WatcherStatus, NotAllowed>
     /**
      * Names the watcher's repository, with `watcher.repository_set`, then writes its secrets at
-     * once, whatever was written before. For an owner only. A write GitHub refuses doesn't fail
-     * this: the status says what is wrong.
+     * once, whatever was written before. Moving from another repository first deletes the secrets
+     * there; while GitHub refuses that, the repository stays as it was. For an owner only. A write
+     * GitHub refuses doesn't fail this: the status says what is wrong.
      */
     readonly setRepository: (
       actor: Actor,
@@ -95,7 +109,8 @@ export class Watcher extends Context.Service<
      * have a push token, and the key. Nothing before a repository is named or push is set up, and
      * nothing within 5 minutes of a failed write. Never fails: a failure is kept in the status, and
      * logged without the secrets. The host calls it after every change to phones or members; up to
-     * two writes to GitHub, of two requests each, when something changed, else none.
+     * two writes to GitHub, of two requests each, when something changed, else none. Runs one at a
+     * time with `setRepository`.
      */
     readonly sync: Effect.Effect<void>
   }
@@ -114,6 +129,9 @@ export class Watcher extends Context.Service<
         const github = yield* GitHub
         const crypto = yield* Crypto.Crypto
         yield* migrateWatcher.pipe(Effect.orDie)
+        // One write at a time, from reading what to write to recording it: an older write finishing
+        // after a newer one would otherwise put back a phone that was removed in between.
+        const oneAtATime = Semaphore.makeUnsafe(1)
 
         const findRow = SqlSchema.findOneOption({
           Request: Schema.Void,
@@ -228,22 +246,46 @@ export class Watcher extends Context.Service<
           repository: Repository,
         ) {
           yield* ownerOnly(access)
-          yield* log.commit({
-            source,
-            actor,
-            write: sql`INSERT INTO watcher (only, repository) VALUES (1, ${repository})
-              ON CONFLICT (only) DO UPDATE SET repository = excluded.repository, key_digest = NULL,
-              phones_digest = NULL, phones = NULL, written_at = NULL, problem = NULL, failed_at = NULL`.pipe(
-              Effect.asVoid,
-              Effect.orDie,
-            ),
-            activity: () => [{ payload: WatcherRepositorySet.make({ repository }) }],
-          })
-          yield* write(true)
-          return yield* status(access).pipe(Effect.orDie)
+          return yield* oneAtATime.withPermit(
+            Effect.gen(function* () {
+              const before = yield* row
+              // Moving: the old repository's secrets go first, so the key and the phones are never
+              // left behind where Cluenori no longer looks. If GitHub won't delete them, the move waits.
+              if (Option.isSome(before) && before.value.repository !== repository) {
+                const old = before.value.repository
+                // Forgotten first: if only one secret is deleted, or this stops halfway, the next sync
+                // writes both to the old repository again, which is still the watcher's.
+                yield* sql`UPDATE watcher SET key_digest = NULL, phones_digest = NULL`.pipe(Effect.orDie)
+                const deleted = yield* Effect.forEach([keySecret, phonesSecret], (name) =>
+                  github.deleteActionsSecret(old, name),
+                ).pipe(Effect.result)
+                if (deleted._tag === "Failure") {
+                  const reason = deleted.failure.reason
+                  yield* Effect.logWarning("The watcher's old secrets couldn't be deleted", { reason })
+                  const problem = `Still ${old}: its secrets couldn't be deleted, so the watcher wasn't moved (${reason}). Delete ${keySecret} and ${phonesSecret} there, or give the app Secrets: write there, and try again.`
+                  const now = yield* Clock.currentTimeMillis
+                  yield* sql`UPDATE watcher SET problem = ${problem}, failed_at = ${now}`.pipe(Effect.orDie)
+                  return yield* status(access).pipe(Effect.orDie)
+                }
+              }
+              yield* log.commit({
+                source,
+                actor,
+                write: sql`INSERT INTO watcher (only, repository) VALUES (1, ${repository})
+                  ON CONFLICT (only) DO UPDATE SET repository = excluded.repository, key_digest = NULL,
+                  phones_digest = NULL, phones = NULL, written_at = NULL, problem = NULL, failed_at = NULL`.pipe(
+                  Effect.asVoid,
+                  Effect.orDie,
+                ),
+                activity: () => [{ payload: WatcherRepositorySet.make({ repository }) }],
+              })
+              yield* write(true)
+              return yield* status(access).pipe(Effect.orDie)
+            }),
+          )
         })
 
-        const sync = write(false)
+        const sync = oneAtATime.withPermit(write(false))
 
         return Watcher.of({ status, setRepository, sync })
       }),

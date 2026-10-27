@@ -1,7 +1,7 @@
 import { Feeds } from "@cluenori/feeds"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, MemberId, WorkspaceKey } from "@cluenori/foundation"
-import { GitHubConnection, gitHubAsApp } from "@cluenori/github-app"
+import { GitHubConnection, gitHubThroughConnection } from "@cluenori/github-app"
 import type { Access } from "@cluenori/members"
 import { Members } from "@cluenori/members"
 import type { PushUnavailable } from "@cluenori/notifications"
@@ -398,7 +398,8 @@ export class WorkspaceObject extends DurableObject<Env> {
         return Members.layer({ owner, crypto: crypto.subtle })
       }),
     ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie)
-    // The watcher writes its secrets as the workspace's GitHub App, with tokens this object issues.
+    // The watcher writes its secrets as the workspace's GitHub App, asking the connection for a token
+    // on every call: the connection keeps them, and refuses once the app is disconnected.
     const WatcherLive = Layer.unwrap(
       Effect.gen(function* () {
         const push = yield* pushSettings
@@ -407,14 +408,7 @@ export class WorkspaceObject extends DurableObject<Env> {
     ).pipe(
       Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
       Layer.orDie,
-      Layer.provide(
-        Layer.unwrap(
-          Effect.gen(function* () {
-            const connection = yield* GitHubConnection
-            return gitHubAsApp(connection.tokenFor)
-          }),
-        ),
-      ),
+      Layer.provide(gitHubThroughConnection),
     )
     this.#runtime = ManagedRuntime.make(
       Layer.mergeAll(Feeds.layer, WatcherLive).pipe(

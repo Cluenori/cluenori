@@ -259,6 +259,15 @@ export class GitHub extends Context.Service<
       name: string,
       value: Redacted.Redacted,
     ) => Effect.Effect<void, GitHubRefused | GitHubUnavailable>
+    /**
+     * Deletes the repository's Actions secret `name`. One request, two when GitHub answers 404,
+     * which it does for a missing secret and for a token without access alike; needs Secrets:
+     * write. Idempotent: a secret that doesn't exist is already deleted.
+     */
+    readonly deleteActionsSecret: (
+      repository: Repository,
+      name: string,
+    ) => Effect.Effect<void, GitHubRefused | GitHubUnavailable>
   }
 >()("@cluenori/github/github") {
   /**
@@ -599,8 +608,34 @@ export class GitHub extends Context.Service<
           return yield* refusedSecrets(repository, answer)
         })
 
+        const deleteActionsSecret = Effect.fn("GitHub.deleteActionsSecret")(function* (
+          repository: Repository,
+          name: string,
+        ) {
+          const answer = yield* askAbout(repository, {
+            method: "DELETE",
+            path: `/repos/${repository}/actions/secrets/${encodeURIComponent(name)}`,
+          })
+          // 204: deleted. A 404 is either no such secret or no access; the public key tells which.
+          if (answer.status === 204) {
+            return
+          }
+          if (answer.status === 404) {
+            const keyAnswer = yield* askAbout(repository, {
+              method: "GET",
+              path: `/repos/${repository}/actions/secrets/public-key`,
+            })
+            if (keyAnswer.status === 200) {
+              return
+            }
+            return yield* refusedSecrets(repository, keyAnswer)
+          }
+          return yield* refusedSecrets(repository, answer)
+        })
+
         return GitHub.of({
           setActionsSecret,
+          deleteActionsSecret,
           selfHostedRunners,
           tagsContaining,
           commit,

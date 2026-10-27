@@ -1,6 +1,6 @@
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, MemberId, ProjectKey } from "@cluenori/foundation"
-import { Repository } from "@cluenori/github"
+import { GitHub, Repository } from "@cluenori/github"
 import type { Access } from "@cluenori/members"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Layer, Redacted, Schema } from "effect"
@@ -8,7 +8,7 @@ import { Base64 } from "effect/encoding"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 
-import { GitHubAccount, GitHubConnection, GitHubStatus, ManifestCode } from "../src/index.ts"
+import { GitHubAccount, GitHubConnection, GitHubStatus, ManifestCode, gitHubThroughConnection } from "../src/index.ts"
 import { inWorkspace } from "./in-workspace.ts"
 
 // 2026-10-21T10:00:00Z.
@@ -256,6 +256,40 @@ describe("GitHub's connection", () => {
           assert.include(asked, "POST /app/installations/77/access_tokens")
           // The token reaches the repository asked about, not every one the installation does.
           assert.include(asked, `  with {"repositories":["notes-api"]}`)
+        }),
+      )
+    }),
+  )
+
+  it.effect("stops acting as the app the moment it is disconnected", () =>
+    Effect.gen(function* () {
+      const pem = yield* privateKeyPem
+      const asked: Array<string> = []
+      const http = fakeGitHub(pem, asked)
+      yield* inWorkspace(
+        "through-connection",
+        start,
+        http,
+        Effect.gen(function* () {
+          const connection = yield* GitHubConnection
+          const form = yield* connection.startConnecting(owner, everything, deployment, undefined)
+          yield* connection.finishConnecting(ManifestCode.make("good-code"), stateOf(form.action))
+          const github = yield* Effect.provide(
+            Effect.service(GitHub),
+            gitHubThroughConnection.pipe(Layer.provide(http)),
+          )
+          // Connected: GitHub is asked, with the app's token (this fake has no secrets to give).
+          const connected = yield* github
+            .setActionsSecret(reached, "CLUENORI_PHONES", Redacted.make("{}"))
+            .pipe(Effect.flip)
+          assert.include(connected.reason, "lacks Secrets: write")
+          yield* connection.disconnect(owner, everything)
+          const before = asked.length
+          const disconnected = yield* github
+            .setActionsSecret(reached, "CLUENORI_PHONES", Redacted.make("{}"))
+            .pipe(Effect.flip)
+          assert.include(disconnected.reason, "isn't connected to GitHub")
+          assert.strictEqual(asked.length, before)
         }),
       )
     }),

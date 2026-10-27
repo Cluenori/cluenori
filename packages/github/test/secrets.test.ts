@@ -92,4 +92,31 @@ describe("GitHub's Actions secrets", () => {
       assert.isFalse(github.asked.some((question) => question.method === "PUT"))
     }),
   )
+
+  it.effect("deletes a secret; a missing one is deleted already, but a 404 without access is refused", () =>
+    Effect.gen(function* () {
+      const github = fakeGitHub({
+        [`DELETE ${repo}/actions/secrets/CLUENORI_APNS_KEY`]: [{ status: 204 }],
+        [`DELETE ${repo}/actions/secrets/CLUENORI_PHONES`]: [
+          { status: 404, body: errorJson("Not Found", 404) },
+          { status: 404, body: errorJson("Not Found", 404) },
+        ],
+        [`GET ${repo}/actions/secrets/public-key`]: [
+          { status: 200, body: { key_id: "1", key: Base64.encode(new Uint8Array(32)) } },
+          { status: 404, body: errorJson("Not Found", 404) },
+        ],
+      })
+      const refused = yield* withGitHub(
+        github,
+        Effect.gen(function* () {
+          const gitHub = yield* GitHub
+          yield* gitHub.deleteActionsSecret(repository, "CLUENORI_APNS_KEY")
+          yield* gitHub.deleteActionsSecret(repository, "CLUENORI_PHONES")
+          return yield* gitHub.deleteActionsSecret(repository, "CLUENORI_PHONES").pipe(Effect.flip)
+        }),
+      )
+      assert.strictEqual(refused._tag, "GitHubRefused")
+      assert.include(refused.reason, "lacks Secrets: write")
+    }),
+  )
 })

@@ -2,6 +2,9 @@ import type { IssuedToken } from "@bagatka/github-app"
 import type { GitHubRefused, GitHubUnavailable, Repository } from "@cluenori/github"
 import { GitHub } from "@cluenori/github"
 import { DateTime, Duration, Effect, Layer } from "effect"
+import type { HttpClient } from "effect/http"
+
+import { GitHubConnection } from "./github-connection.ts"
 
 // A token is used until this long before it expires.
 const renewBefore = Duration.minutes(5)
@@ -30,5 +33,18 @@ export const gitHubAsApp = (
         return issued.token
       })
       return GitHub.layerFor(tokenFor)
+    }),
+  )
+
+/**
+ * The GitHub client the workspace's own Durable Object acts with as the app: every call asks
+ * `GitHubConnection.tokenFor`, which keeps each token, so no token outlives a disconnect; a call
+ * after one fails as `tokenFor` does.
+ */
+export const gitHubThroughConnection: Layer.Layer<GitHub, never, GitHubConnection | HttpClient.HttpClient> =
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const connection = yield* GitHubConnection
+      return GitHub.layerFor((repository) => connection.tokenFor(repository).pipe(Effect.map((issued) => issued.token)))
     }),
   )

@@ -3,7 +3,7 @@
  * and installs on their accounts, kept in the workspace's Durable Object; and the client a project
  * reads and acts with as the app, through short-lived tokens the workspace hands it.
  */
-export { gitHubAsApp } from "./as-app.ts"
+export { gitHubAsApp, gitHubThroughConnection } from "./as-app.ts"
 export {
   ConnectGitHub,
   ConnectRejected,
