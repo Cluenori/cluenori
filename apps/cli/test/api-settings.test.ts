@@ -115,14 +115,15 @@ describe("deployment settings", () => {
 
   it.effect("round-trips deployment settings in XDG_CONFIG_HOME or HOME without losing self telemetry", () =>
     Effect.gen(function* () {
-      const deployment = yield* Schema.decodeEffect(SavedDeployment)({
+      const saved = {
         jurisdiction: "eu",
         account: "0123456789abcdef0123456789abcdef",
         domain: "app.example.com",
         url: "https://app.example.com",
         token: "saved-test-token",
         selfTelemetry: { project: "folio", ingestKey: "made-up-ingest-key", measuring: false },
-      })
+      } as const
+      const deployment = yield* Schema.decodeEffect(SavedDeployment)(saved)
       for (const configHome of [undefined, "/test-config"]) {
         const files = new Map<string, string>()
         yield* Effect.gen(function* () {
@@ -131,10 +132,10 @@ describe("deployment settings", () => {
           assert.strictEqual(file, `${configHome ?? "/test-home/.config"}/cluenori/deployment.json`)
           const text = files.get(file)
           assert.isDefined(text)
-          assert.deepStrictEqual(yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(text), deployment)
+          assert.deepStrictEqual(yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(text), saved)
           const read = yield* savedDeployment
           assert(Option.isSome(read))
-          assert.deepStrictEqual(read.value, deployment)
+          assert.deepStrictEqual(yield* Schema.encodeEffect(SavedDeployment)(read.value), saved)
         }).pipe(
           Effect.provide(
             settingsLayer(files, {
@@ -243,6 +244,10 @@ describe("deployment settings", () => {
         { jurisdiction: "eu", domain: "not a hostname" },
         { jurisdiction: "eu", url: 42 },
         { jurisdiction: "eu", token: 42 },
+        { jurisdiction: "eu", selfTelemetry: {} },
+        { jurisdiction: "eu", selfTelemetry: { project: "Not a key", ingestKey: "test-key", measuring: true } },
+        { jurisdiction: "eu", selfTelemetry: { project: "folio", ingestKey: 42, measuring: true } },
+        { jurisdiction: "eu", selfTelemetry: { project: "folio", ingestKey: "test-key", measuring: "false" } },
       ]) {
         const refused = yield* Schema.decodeUnknownEffect(SavedDeployment)(saved).pipe(Effect.flip)
         assert.strictEqual(refused._tag, "SchemaError")
