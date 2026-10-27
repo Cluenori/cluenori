@@ -216,6 +216,12 @@ describe("errors journey", () => {
         expect.element(screen.getByRole("button", { name: /Retrying the export, attempt/ })).toBeVisible(),
       )
       yield* Effect.sleep("1 second")
+      // The browser collects what no page holds any more, as it may at any time.
+      const gc: unknown = Reflect.get(window, "gc")
+      if (typeof gc !== "function") {
+        return yield* Effect.die("The browser runs without --expose-gc, so a test can't collect garbage.")
+      }
+      gc()
       const before = apiCalls().length
       // Back to the project by the trail above the page.
       yield* Effect.promise(() =>

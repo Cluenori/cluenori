@@ -18,7 +18,11 @@ export default mergeConfig(
       browser: {
         enabled: true,
         headless: true,
-        provider: playwright({ contextOptions: { locale: "tr-TR", timezoneId: "Pacific/Chatham" } }),
+        // `gc` lets a test collect garbage, so what a page keeps is shown to outlive it every time.
+        provider: playwright({
+          launchOptions: { args: ["--js-flags=--expose-gc"] },
+          contextOptions: { locale: "tr-TR", timezoneId: "Pacific/Chatham" },
+        }),
         instances: [{ browser: "chromium" }],
         viewport: { width: 1280, height: 900 },
       },

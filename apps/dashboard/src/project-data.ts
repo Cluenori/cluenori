@@ -89,12 +89,24 @@ const lastOf = (millis: number) =>
  * back into view, the old one shown, marked waiting, until the new one arrives.
  */
 const kept = <A, E>(question: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
-  Atom.swr(Atom.setIdleTTL(question, Duration.minutes(5)), {
-    staleTime: Duration.seconds(30),
-    revalidateOnMount: true,
-    revalidateOnFocus: true,
-    focusSignal: Atom.windowFocusSignal,
-  })
+  Atom.swr(Atom.setIdleTTL(question, Duration.minutes(5)), fresh)
+
+const fresh = {
+  staleTime: Duration.seconds(30),
+  revalidateOnMount: true,
+  revalidateOnFocus: true,
+  focusSignal: Atom.windowFocusSignal,
+}
+
+/**
+ * `kept` for a family of questions. The question is its own family: the registry holds a kept answer
+ * until it expires, so the same one is found again even after the browser collects the atom a page
+ * read it through, which a family holds only weakly.
+ */
+const keptFamily = <Arg, A, E>(question: (arg: Arg) => Atom.Atom<AsyncResult.AsyncResult<A, E>>) => {
+  const questions = Atom.family((arg: Arg) => Atom.setIdleTTL(question(arg), Duration.minutes(5)))
+  return Atom.family((arg: Arg) => Atom.swr(questions(arg), fresh))
+}
 
 /**
  * What a question is about: a project, and optionally one of its components, environments,
@@ -216,17 +228,15 @@ export const feedsAtom = kept(
  * A page of one feed's entries, newest first: the latest page without `before`, an older one from an
  * earlier page's `next`. The feed's page asks for the latest again each minute.
  */
-export const feedAtom = Atom.family((key: { readonly feed: FeedId; readonly before?: number }) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.feeds.feed({
-          params: { feed: key.feed },
-          query: key.before === undefined ? {} : { before: key.before },
-        })
-      }),
-    ),
+export const feedAtom = keptFamily((key: { readonly feed: FeedId; readonly before?: number }) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.feeds.feed({
+        params: { feed: key.feed },
+        query: key.before === undefined ? {} : { before: key.before },
+      })
+    }),
   ),
 )
 
@@ -254,26 +264,22 @@ export const removeFeedAtom = CluenoriClient.runtime.fn((feed: FeedId) =>
 )
 
 /** A project's incidents: the open ones, and those resolved in the last 7 days, whatever the period. */
-export const incidentsAtom = Atom.family((project: ProjectKey) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.incidents.incidents({ params: { project } })
-      }),
-    ),
+export const incidentsAtom = keptFamily((project: ProjectKey) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.incidents.incidents({ params: { project } })
+    }),
   ),
 )
 
 /** One project and its components. */
-export const projectAtom = Atom.family((project: ProjectKey) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.projects.project({ params: { project } })
-      }),
-    ),
+export const projectAtom = keptFamily((project: ProjectKey) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.projects.project({ params: { project } })
+    }),
   ),
 )
 
@@ -287,18 +293,16 @@ export const useComponentKeys = (project: ProjectKey): ReadonlyArray<ComponentKe
 }
 
 /** Every operation over the period, or one component's, or one operation. */
-export const operationsAtom = Atom.family((scope: Scope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.operations({
-          params: { project: scope.project },
-          query: { ...period, ...filtersOf(scope) },
-        })
-      }),
-    ),
+export const operationsAtom = keptFamily((scope: Scope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastOf(periodMillis[get(periodAtom)])
+      return yield* client.signals.operations({
+        params: { project: scope.project },
+        query: { ...period, ...filtersOf(scope) },
+      })
+    }),
   ),
 )
 
@@ -306,32 +310,28 @@ export const operationsAtom = Atom.family((scope: Scope) =>
  * The period's operations split by the client that asked for them, of one operation or every one:
  * origins aren't counted by release, so a scope's release is left out.
  */
-export const originsAtom = Atom.family((scope: Scope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(periodMillis[get(periodAtom)])
-        const { release: _release, ...filters } = filtersOf(scope)
-        return yield* client.signals.origins({ params: { project: scope.project }, query: { ...period, ...filters } })
-      }),
-    ),
+export const originsAtom = keptFamily((scope: Scope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastOf(periodMillis[get(periodAtom)])
+      const { release: _release, ...filters } = filtersOf(scope)
+      return yield* client.signals.origins({ params: { project: scope.project }, query: { ...period, ...filters } })
+    }),
   ),
 )
 
 /** The slowest and the failed of the traces kept over the period, of one operation or every one. */
-export const keptTracesAtom = Atom.family((scope: Scope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.keptTraces({
-          params: { project: scope.project },
-          query: { ...period, ...filtersOf(scope) },
-        })
-      }),
-    ),
+export const keptTracesAtom = keptFamily((scope: Scope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastOf(periodMillis[get(periodAtom)])
+      return yield* client.signals.keptTraces({
+        params: { project: scope.project },
+        query: { ...period, ...filtersOf(scope) },
+      })
+    }),
   ),
 )
 
@@ -339,17 +339,15 @@ export const keptTracesAtom = Atom.family((scope: Scope) =>
  * The slowest and the failed of the traces kept in one moment, `from` to `to` in Unix milliseconds,
  * whatever the period: the requests of a step a chart opened.
  */
-export const momentTracesAtom = Atom.family((key: Scope & { readonly from: number; readonly to: number }) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.signals.keptTraces({
-          params: { project: key.project },
-          query: { from: DateTime.makeUnsafe(key.from), to: DateTime.makeUnsafe(key.to), ...filtersOf(key) },
-        })
-      }),
-    ),
+export const momentTracesAtom = keptFamily((key: Scope & { readonly from: number; readonly to: number }) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.signals.keptTraces({
+        params: { project: key.project },
+        query: { from: DateTime.makeUnsafe(key.from), to: DateTime.makeUnsafe(key.to), ...filtersOf(key) },
+      })
+    }),
   ),
 )
 
@@ -363,49 +361,43 @@ export const useIsOwner = () => {
  * The operations over the last day and over the 7 days before, whatever the period: what "slower"
  * compares (`slowerOf` in `@cluenori/signals`). Both questions go at once.
  */
-export const usualOperationsAtom = Atom.family((scope: Scope) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const now = yield* DateTime.now
-        const lastDay = { from: DateTime.subtract(now, { days: 1 }), to: now }
-        const weekBefore = { from: DateTime.subtract(now, { days: 8 }), to: lastDay.from }
-        const ask = (period: typeof lastDay) =>
-          client.signals.operations({ params: { project: scope.project }, query: { ...period, ...filtersOf(scope) } })
-        const [last, usual] = yield* Effect.all([ask(lastDay), ask(weekBefore)], { concurrency: 2 })
-        return { lastDay: last, usual }
-      }),
-    ),
+export const usualOperationsAtom = keptFamily((scope: Scope) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const now = yield* DateTime.now
+      const lastDay = { from: DateTime.subtract(now, { days: 1 }), to: now }
+      const weekBefore = { from: DateTime.subtract(now, { days: 8 }), to: lastDay.from }
+      const ask = (period: typeof lastDay) =>
+        client.signals.operations({ params: { project: scope.project }, query: { ...period, ...filtersOf(scope) } })
+      const [last, usual] = yield* Effect.all([ask(lastDay), ask(weekBefore)], { concurrency: 2 })
+      return { lastDay: last, usual }
+    }),
   ),
 )
 
 /** The load over the period: how many operations ran and failed, with their percentiles, in the period's steps. */
-export const loadAtom = Atom.family((scope: Scope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const key = get(periodAtom)
-        const period = yield* lastOf(periodMillis[key])
-        return yield* client.signals.load({
-          params: { project: scope.project },
-          query: { ...period, ...filtersOf(scope), step: stepOf[key] },
-        })
-      }),
-    ),
+export const loadAtom = keptFamily((scope: Scope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const key = get(periodAtom)
+      const period = yield* lastOf(periodMillis[key])
+      return yield* client.signals.load({
+        params: { project: scope.project },
+        query: { ...period, ...filtersOf(scope), step: stepOf[key] },
+      })
+    }),
   ),
 )
 
 /** One incident, whatever any period: its life, and the releases that ran when it opened. */
-export const incidentAtom = Atom.family((key: { readonly project: ProjectKey; readonly incident: IncidentId }) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.incidents.incident({ params: key })
-      }),
-    ),
+export const incidentAtom = keptFamily((key: { readonly project: ProjectKey; readonly incident: IncidentId }) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.incidents.incident({ params: key })
+    }),
   ),
 )
 
@@ -421,26 +413,22 @@ export const acknowledgeAtom = CluenoriClient.runtime.fn(
 )
 
 /** One monitor, whatever any period: how it is now, its days, its last 24 hours, and its incidents. */
-export const monitorAtom = Atom.family((key: { readonly project: ProjectKey; readonly monitor: MonitorId }) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.incidents.monitor({ params: key })
-      }),
-    ),
+export const monitorAtom = keptFamily((key: { readonly project: ProjectKey; readonly monitor: MonitorId }) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.incidents.monitor({ params: key })
+    }),
   ),
 )
 
 /** The project's monitors, oldest first, each with its last check and its last 90 days: Uptime. */
-export const monitorsAtom = Atom.family((project: ProjectKey) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.incidents.monitors({ params: { project } })
-      }),
-    ),
+export const monitorsAtom = keptFamily((project: ProjectKey) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.incidents.monitors({ params: { project } })
+    }),
   ),
 )
 
@@ -467,34 +455,30 @@ export const removeMonitorAtom = CluenoriClient.runtime.fn(
 )
 
 /** The errors of the period, most frequent first, of a project or one component. */
-export const errorsAtom = Atom.family((scope: Scope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.errors({
-          params: { project: scope.project },
-          query: { ...period, ...filtersOf(scope) },
-        })
-      }),
-    ),
+export const errorsAtom = keptFamily((scope: Scope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastOf(periodMillis[get(periodAtom)])
+      return yield* client.signals.errors({
+        params: { project: scope.project },
+        query: { ...period, ...filtersOf(scope) },
+      })
+    }),
   ),
 )
 
 /** One error and its latest occurrences in the period, of one component, environment, or release when the key names it. */
-export const errorAtom = Atom.family((key: Scope & { readonly error: ErrorGroupId }) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.error({
-          params: { project: key.project, error: key.error },
-          query: { ...period, ...filtersOf(key) },
-        })
-      }),
-    ),
+export const errorAtom = keptFamily((key: Scope & { readonly error: ErrorGroupId }) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastOf(periodMillis[get(periodAtom)])
+      return yield* client.signals.error({
+        params: { project: key.project, error: key.error },
+        query: { ...period, ...filtersOf(key) },
+      })
+    }),
   ),
 )
 
@@ -502,14 +486,12 @@ export const errorAtom = Atom.family((key: Scope & { readonly error: ErrorGroupI
  * One warning or error by its ID, whenever it happened: an occurrence of an error, as its own page
  * shows it, with no period.
  */
-export const logLineAtom = Atom.family((key: { readonly project: ProjectKey; readonly line: number }) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.signals.logLine({ params: { project: key.project, line: key.line } })
-      }),
-    ),
+export const logLineAtom = keptFamily((key: { readonly project: ProjectKey; readonly line: number }) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.signals.logLine({ params: { project: key.project, line: key.line } })
+    }),
   ),
 )
 
@@ -517,7 +499,7 @@ export const logLineAtom = Atom.family((key: { readonly project: ProjectKey; rea
  * Warnings and errors counted over the period, a series for each level, component, or error group;
  * of one component, environment, release, or error group, when the key names it.
  */
-export const logCountsAtom = Atom.family(
+export const logCountsAtom = keptFamily(
   (
     key: Scope & {
       readonly by: LogCountsBy
@@ -526,28 +508,26 @@ export const logCountsAtom = Atom.family(
       readonly message?: LogMessageId
     },
   ) =>
-    kept(
-      CluenoriClient.runtime.atom((get) =>
-        Effect.gen(function* () {
-          const client = yield* CluenoriClient
-          const period = get(periodAtom)
-          const range = yield* lastOf(periodMillis[period])
-          return yield* client.signals.logCounts({
-            params: { project: key.project },
-            query: {
-              ...range,
-              step: stepOf[period],
-              by: key.by,
-              ...(key.component === undefined ? {} : { component: key.component }),
-              ...(key.environment === undefined ? {} : { environment: key.environment }),
-              ...(key.release === undefined ? {} : { release: key.release }),
-              ...(key.level === undefined ? {} : { level: key.level }),
-              ...(key.error === undefined ? {} : { error: key.error }),
-              ...(key.message === undefined ? {} : { message: key.message }),
-            },
-          })
-        }),
-      ),
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = get(periodAtom)
+        const range = yield* lastOf(periodMillis[period])
+        return yield* client.signals.logCounts({
+          params: { project: key.project },
+          query: {
+            ...range,
+            step: stepOf[period],
+            by: key.by,
+            ...(key.component === undefined ? {} : { component: key.component }),
+            ...(key.environment === undefined ? {} : { environment: key.environment }),
+            ...(key.release === undefined ? {} : { release: key.release }),
+            ...(key.level === undefined ? {} : { level: key.level }),
+            ...(key.error === undefined ? {} : { error: key.error }),
+            ...(key.message === undefined ? {} : { message: key.message }),
+          },
+        })
+      }),
     ),
 )
 
@@ -555,7 +535,7 @@ export const logCountsAtom = Atom.family(
  * A page of the period's warnings and errors, newest first, 100 at a time, of one component,
  * environment, or release when the key names it: `before` continues from an earlier page's `next`.
  */
-export const logsAtom = Atom.family(
+export const logsAtom = keptFamily(
   (
     key: Scope & {
       readonly level?: IndexedLevel
@@ -564,26 +544,24 @@ export const logsAtom = Atom.family(
       readonly before?: number
     },
   ) =>
-    kept(
-      CluenoriClient.runtime.atom((get) =>
-        Effect.gen(function* () {
-          const client = yield* CluenoriClient
-          const period = yield* lastOf(periodMillis[get(periodAtom)])
-          return yield* client.signals.logs({
-            params: { project: key.project },
-            query: {
-              ...period,
-              ...(key.component === undefined ? {} : { component: key.component }),
-              ...(key.environment === undefined ? {} : { environment: key.environment }),
-              ...(key.release === undefined ? {} : { release: key.release }),
-              ...(key.level === undefined ? {} : { level: key.level }),
-              ...(key.search === undefined ? {} : { search: key.search }),
-              ...(key.message === undefined ? {} : { message: key.message }),
-              ...(key.before === undefined ? {} : { before: key.before }),
-            },
-          })
-        }),
-      ),
+    CluenoriClient.runtime.atom((get) =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastOf(periodMillis[get(periodAtom)])
+        return yield* client.signals.logs({
+          params: { project: key.project },
+          query: {
+            ...period,
+            ...(key.component === undefined ? {} : { component: key.component }),
+            ...(key.environment === undefined ? {} : { environment: key.environment }),
+            ...(key.release === undefined ? {} : { release: key.release }),
+            ...(key.level === undefined ? {} : { level: key.level }),
+            ...(key.search === undefined ? {} : { search: key.search }),
+            ...(key.message === undefined ? {} : { message: key.message }),
+            ...(key.before === undefined ? {} : { before: key.before }),
+          },
+        })
+      }),
     ),
 )
 
@@ -591,39 +569,35 @@ export const logsAtom = Atom.family(
  * The period's log messages, those with the most lines first, of one component, environment, or
  * release when the key names it: each counting its lines at `level` and with `search`.
  */
-export const logMessagesAtom = Atom.family((key: Scope & { readonly level?: IndexedLevel; readonly search?: string }) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.logMessages({
-          params: { project: key.project },
-          query: {
-            ...period,
-            ...filtersOf(key),
-            ...(key.level === undefined ? {} : { level: key.level }),
-            ...(key.search === undefined ? {} : { search: key.search }),
-          },
-        })
-      }),
-    ),
+export const logMessagesAtom = keptFamily((key: Scope & { readonly level?: IndexedLevel; readonly search?: string }) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastOf(periodMillis[get(periodAtom)])
+      return yield* client.signals.logMessages({
+        params: { project: key.project },
+        query: {
+          ...period,
+          ...filtersOf(key),
+          ...(key.level === undefined ? {} : { level: key.level }),
+          ...(key.search === undefined ? {} : { search: key.search }),
+        },
+      })
+    }),
   ),
 )
 
 /** One log message, whatever the period, with how many of its lines the period holds, and its errors. */
-export const logMessageAtom = Atom.family((key: Scope & { readonly message: LogMessageId }) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(periodMillis[get(periodAtom)])
-        return yield* client.signals.logMessage({
-          params: { project: key.project, message: key.message },
-          query: { ...period, ...filtersOf(key) },
-        })
-      }),
-    ),
+export const logMessageAtom = keptFamily((key: Scope & { readonly message: LogMessageId }) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastOf(periodMillis[get(periodAtom)])
+      return yield* client.signals.logMessage({
+        params: { project: key.project, message: key.message },
+        query: { ...period, ...filtersOf(key) },
+      })
+    }),
   ),
 )
 
@@ -634,19 +608,17 @@ export const logMessageAtom = Atom.family((key: Scope & { readonly message: LogM
  * API's filter leaves out builds that don't say one, such as those only App Store Connect knows,
  * which a production page shows (`isShownIn` in `src/project-facts.ts`).
  */
-export const releasesAtom = Atom.family((scope: Scope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastOf(periodMillis[get(periodAtom)])
-        const list = yield* client.releases.releases({
-          params: { project: scope.project },
-          query: { ...period, ...(scope.component === undefined ? {} : { component: scope.component }) },
-        })
-        return { releases: list.releases, problems: list.problems, asOf: period.to }
-      }),
-    ),
+export const releasesAtom = keptFamily((scope: Scope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastOf(periodMillis[get(periodAtom)])
+      const list = yield* client.releases.releases({
+        params: { project: scope.project },
+        query: { ...period, ...(scope.component === undefined ? {} : { component: scope.component }) },
+      })
+      return { releases: list.releases, problems: list.problems, asOf: period.to }
+    }),
   ),
 )
 
@@ -662,19 +634,17 @@ export type ReleaseScope = {
  * One release compared with the one before it, whatever the period; with `asOf`, when it was asked,
  * which "live" is measured from. Fails with `ReleaseNotFound` for a release never counted.
  */
-export const releaseAtom = Atom.family((key: ReleaseScope) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const asOf = yield* DateTime.now
-        const detail = yield* client.releases.release({
-          params: { project: key.project, component: key.component, release: key.release },
-          query: key.environment === undefined ? {} : { environment: key.environment },
-        })
-        return { detail, asOf }
-      }),
-    ),
+export const releaseAtom = keptFamily((key: ReleaseScope) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const asOf = yield* DateTime.now
+      const detail = yield* client.releases.release({
+        params: { project: key.project, component: key.component, release: key.release },
+        query: key.environment === undefined ? {} : { environment: key.environment },
+      })
+      return { detail, asOf }
+    }),
   ),
 )
 
@@ -683,16 +653,14 @@ export const releaseAtom = Atom.family((key: ReleaseScope) =>
  * the release there now and since when, a promotion under way, and the one next step; with `asOf`,
  * when it was asked, which "how long" is measured from.
  */
-export const deliveryAtom = Atom.family((project: ProjectKey) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const asOf = yield* DateTime.now
-        const delivery = yield* client.releases.delivery({ params: { project } })
-        return { delivery, asOf }
-      }),
-    ),
+export const deliveryAtom = keptFamily((project: ProjectKey) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const asOf = yield* DateTime.now
+      const delivery = yield* client.releases.delivery({ params: { project } })
+      return { delivery, asOf }
+    }),
   ),
 )
 
@@ -833,14 +801,12 @@ export const setVersionAtom = CluenoriClient.runtime.fn(
 )
 
 /** How the project's release notes read, which drafts follow: its own, or Cluenori's default. */
-export const notesStyleAtom = Atom.family((project: ProjectKey) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.releases.notesStyle({ params: { project } })
-      }),
-    ),
+export const notesStyleAtom = keptFamily((project: ProjectKey) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.releases.notesStyle({ params: { project } })
+    }),
   ),
 )
 
@@ -939,39 +905,35 @@ const appScopeOf = (scope: AppScope) => ({
  * How the project's apps were used over the analytics period, by UTC day, with the period asked
  * about: the days it covers are the chart's, those the answer doesn't list unknown.
  */
-export const usageAtom = Atom.family((scope: AppScope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastDaysOf(get(appPeriodAtom))
-        const usage = yield* client.analytics.usage({
-          params: { project: scope.project },
-          query: {
-            ...period,
-            ...appScopeOf(scope),
-            ...(scope.release === undefined ? {} : { release: scope.release }),
-          },
-        })
-        return { usage, period }
-      }),
-    ),
+export const usageAtom = keptFamily((scope: AppScope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastDaysOf(get(appPeriodAtom))
+      const usage = yield* client.analytics.usage({
+        params: { project: scope.project },
+        query: {
+          ...period,
+          ...appScopeOf(scope),
+          ...(scope.release === undefined ? {} : { release: scope.release }),
+        },
+      })
+      return { usage, period }
+    }),
   ),
 )
 
 /** Weekly cohorts of the people first seen over the analytics period, the oldest first. */
-export const retentionAtom = Atom.family((scope: AppScope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastDaysOf(get(appPeriodAtom))
-        return yield* client.analytics.retention({
-          params: { project: scope.project },
-          query: { ...period, ...appScopeOf(scope) },
-        })
-      }),
-    ),
+export const retentionAtom = keptFamily((scope: AppScope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastDaysOf(get(appPeriodAtom))
+      return yield* client.analytics.retention({
+        params: { project: scope.project },
+        query: { ...period, ...appScopeOf(scope) },
+      })
+    }),
   ),
 )
 
@@ -980,19 +942,17 @@ export const retentionAtom = Atom.family((scope: AppScope) =>
  * seen first, at most 30, each beside the release before it; with `asOf`, the end of the period,
  * which "live" is measured from.
  */
-export const appHealthAtom = Atom.family((scope: AppScope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastDaysOf(get(appPeriodAtom))
-        const list = yield* client.analytics.appHealth({
-          params: { project: scope.project },
-          query: { ...period, ...appScopeOf(scope) },
-        })
-        return { releases: list.releases, asOf: period.to }
-      }),
-    ),
+export const appHealthAtom = keptFamily((scope: AppScope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastDaysOf(get(appPeriodAtom))
+      const list = yield* client.analytics.appHealth({
+        params: { project: scope.project },
+        query: { ...period, ...appScopeOf(scope) },
+      })
+      return { releases: list.releases, asOf: period.to }
+    }),
   ),
 )
 
@@ -1001,68 +961,62 @@ export const appHealthAtom = Atom.family((scope: AppScope) =>
  * environment that sent anything in the last 90 days, none when it sent nothing then; with `asOf`,
  * when it was asked, which "live" is measured from.
  */
-export const releaseHealthAtom = Atom.family(
+export const releaseHealthAtom = keptFamily(
   (key: {
     readonly project: ProjectKey
     readonly component: ComponentKey
     readonly release: ReleaseVersion
     readonly environment?: EnvironmentKey
   }) =>
-    kept(
-      CluenoriClient.runtime.atom(
-        Effect.gen(function* () {
-          const client = yield* CluenoriClient
-          const period = yield* lastOf(90 * day)
-          const list = yield* client.analytics.appHealth({
-            params: { project: key.project },
-            query: { ...period, ...appScopeOf(key) },
-          })
-          // Not handled: a release more than 30 releases back of its component and environment isn't
-          // in the list, so it reads as having sent nothing lately; a route for one release would fix it.
-          const found = list.releases.find((each) => each.release.release === key.release)
-          return { health: Option.fromUndefinedOr(found), asOf: period.to }
-        }),
-      ),
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const period = yield* lastOf(90 * day)
+        const list = yield* client.analytics.appHealth({
+          params: { project: key.project },
+          query: { ...period, ...appScopeOf(key) },
+        })
+        // Not handled: a release more than 30 releases back of its component and environment isn't
+        // in the list, so it reads as having sent nothing lately; a route for one release would fix it.
+        const found = list.releases.find((each) => each.release.release === key.release)
+        return { health: Option.fromUndefinedOr(found), asOf: period.to }
+      }),
     ),
 )
 
 /** How each feature key was used over the analytics period, the most people first. */
-export const featureUseAtom = Atom.family((scope: AppScope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastDaysOf(get(appPeriodAtom))
-        return yield* client.analytics.featureUse({
-          params: { project: scope.project },
-          query: {
-            ...period,
-            ...appScopeOf(scope),
-            ...(scope.release === undefined ? {} : { release: scope.release }),
-          },
-        })
-      }),
-    ),
+export const featureUseAtom = keptFamily((scope: AppScope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastDaysOf(get(appPeriodAtom))
+      return yield* client.analytics.featureUse({
+        params: { project: scope.project },
+        query: {
+          ...period,
+          ...appScopeOf(scope),
+          ...(scope.release === undefined ? {} : { release: scope.release }),
+        },
+      })
+    }),
   ),
 )
 
 /** Each screen's readiness, visits, CPU time, hitches and hangs over the analytics period, and the apps' timings. */
-export const screensAtom = Atom.family((scope: AppScope) =>
-  kept(
-    CluenoriClient.runtime.atom((get) =>
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        const period = yield* lastDaysOf(get(appPeriodAtom))
-        return yield* client.analytics.screens({
-          params: { project: scope.project },
-          query: {
-            ...period,
-            ...appScopeOf(scope),
-            ...(scope.release === undefined ? {} : { release: scope.release }),
-          },
-        })
-      }),
-    ),
+export const screensAtom = keptFamily((scope: AppScope) =>
+  CluenoriClient.runtime.atom((get) =>
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      const period = yield* lastDaysOf(get(appPeriodAtom))
+      return yield* client.analytics.screens({
+        params: { project: scope.project },
+        query: {
+          ...period,
+          ...appScopeOf(scope),
+          ...(scope.release === undefined ? {} : { release: scope.release }),
+        },
+      })
+    }),
   ),
 )
 
@@ -1070,20 +1024,18 @@ export const screensAtom = Atom.family((scope: AppScope) =>
  * One person, by their ID or the app's own user ID linked to them: their installations, active days,
  * features and timeline. Fails with `PersonNotFound` when the apps never sent that person or user ID.
  */
-export const personAtom = Atom.family(
+export const personAtom = keptFamily(
   (key: { readonly project: ProjectKey } & ({ readonly person: PersonId } | { readonly user: AppUserId })) =>
-    kept(
-      CluenoriClient.runtime.atom(
-        Effect.gen(function* () {
-          const client = yield* CluenoriClient
-          const asOf = yield* DateTime.now
-          const person =
-            "person" in key
-              ? yield* client.analytics.person({ params: { project: key.project, person: key.person } })
-              : yield* client.analytics.personByUser({ params: { project: key.project }, query: { user: key.user } })
-          return { person, asOf }
-        }),
-      ),
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const asOf = yield* DateTime.now
+        const person =
+          "person" in key
+            ? yield* client.analytics.person({ params: { project: key.project, person: key.person } })
+            : yield* client.analytics.personByUser({ params: { project: key.project }, query: { user: key.user } })
+        return { person, asOf }
+      }),
     ),
 )
 
@@ -1091,38 +1043,34 @@ export const personAtom = Atom.family(
  * One feature's story over everything kept of it, with no period, in one environment or every one.
  * Fails with `FeatureNotFound` when nothing kept names it.
  */
-export const featureAtom = Atom.family(
+export const featureAtom = keptFamily(
   (key: {
     readonly project: ProjectKey
     readonly feature: FeatureKey
     readonly environment?: EnvironmentKey
     readonly component?: ComponentKey
   }) =>
-    kept(
-      CluenoriClient.runtime.atom(
-        Effect.gen(function* () {
-          const client = yield* CluenoriClient
-          return yield* client.analytics.feature({
-            params: { project: key.project, feature: key.feature },
-            query: {
-              ...(key.environment === undefined ? {} : { environment: key.environment }),
-              ...(key.component === undefined ? {} : { component: key.component }),
-            },
-          })
-        }),
-      ),
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.analytics.feature({
+          params: { project: key.project, feature: key.feature },
+          query: {
+            ...(key.environment === undefined ? {} : { environment: key.environment }),
+            ...(key.component === undefined ? {} : { component: key.component }),
+          },
+        })
+      }),
     ),
 )
 
 /** Each of the project's components' version policies; a component without one isn't listed. */
-export const versionPoliciesAtom = Atom.family((project: ProjectKey) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.releases.versionPolicies({ params: { project } })
-      }),
-    ),
+export const versionPoliciesAtom = keptFamily((project: ProjectKey) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.releases.versionPolicies({ params: { project } })
+    }),
   ),
 )
 
@@ -1155,14 +1103,12 @@ export const clearVersionPolicyAtom = CluenoriClient.runtime.fn(
 )
 
 /** A component's SDK keys, the newest first, revoked ones too. */
-export const sdkKeysAtom = Atom.family((key: { readonly project: ProjectKey; readonly component: ComponentKey }) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.projects.sdkKeys({ params: { project: key.project, component: key.component } })
-      }),
-    ),
+export const sdkKeysAtom = keptFamily((key: { readonly project: ProjectKey; readonly component: ComponentKey }) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.projects.sdkKeys({ params: { project: key.project, component: key.component } })
+    }),
   ),
 )
 
@@ -1196,14 +1142,12 @@ export const revokeSdkKeyAtom = CluenoriClient.runtime.fn(
 )
 
 /** A component's ingest keys, the newest first: those that work, and those that ended in the last 30 days. */
-export const ingestKeysAtom = Atom.family((key: { readonly project: ProjectKey; readonly component: ComponentKey }) =>
-  kept(
-    CluenoriClient.runtime.atom(
-      Effect.gen(function* () {
-        const client = yield* CluenoriClient
-        return yield* client.projects.ingestKeys({ params: { project: key.project, component: key.component } })
-      }),
-    ),
+export const ingestKeysAtom = keptFamily((key: { readonly project: ProjectKey; readonly component: ComponentKey }) =>
+  CluenoriClient.runtime.atom(
+    Effect.gen(function* () {
+      const client = yield* CluenoriClient
+      return yield* client.projects.ingestKeys({ params: { project: key.project, component: key.component } })
+    }),
   ),
 )
 
@@ -1257,18 +1201,16 @@ export const revokeIngestKeyAtom = CluenoriClient.runtime.fn(
 )
 
 /** One trace, read from the archive around when it happened. */
-export const traceAtom = Atom.family(
+export const traceAtom = keptFamily(
   (key: { readonly project: ProjectKey; readonly trace: TraceId; readonly around?: DateTime.Utc }) =>
-    kept(
-      CluenoriClient.runtime.atom(
-        Effect.gen(function* () {
-          const client = yield* CluenoriClient
-          return yield* client.signals.trace({
-            params: { project: key.project, trace: key.trace },
-            query: key.around === undefined ? {} : { around: key.around },
-          })
-        }),
-      ),
+    CluenoriClient.runtime.atom(
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        return yield* client.signals.trace({
+          params: { project: key.project, trace: key.trace },
+          query: key.around === undefined ? {} : { around: key.around },
+        })
+      }),
     ),
 )
 
