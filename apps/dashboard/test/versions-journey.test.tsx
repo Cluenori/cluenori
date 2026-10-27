@@ -39,6 +39,9 @@ describe("versions journey", () => {
       yield* Effect.promise(() => expect.element(menu.getByRole("menuitem", { name: "Major 2.0.0" })).toBeVisible())
       yield* Effect.promise(() => menu.getByRole("menuitem", { name: "Minor 1.5.0" }).click())
       yield* Effect.promise(() => expect.element(api.getByText("1.5.0+58")).toBeVisible())
+      // Checked once the menu has closed: while it closes, its focus guards are still there, and on a
+      // busy machine the check can start before its closing animation does, so it wouldn't wait.
+      yield* Effect.promise(() => expect.element(menu).not.toBeInTheDocument())
       yield* expectAccessible()
 
       // A first version for the iPhone app, its builds numbered on from those made before.
