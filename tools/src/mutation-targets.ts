@@ -17,14 +17,14 @@ export interface MutationTarget {
  */
 export const mutationTargets: ReadonlyArray<MutationTarget> = [
   { folder: "product/foundation", floor: 72.77 },
-  { folder: "product/engines/feeds", floor: 65.93 },
+  { folder: "product/engines/feeds", floor: 66.66 },
   { folder: "product/engines/github-app", floor: 53.67 },
   { folder: "product/engines/incidents", floor: 67.62 },
   { folder: "product/engines/members", floor: 58 },
   { folder: "product/engines/notifications", floor: 76.47 },
   { folder: "product/engines/phones", floor: 61.46 },
-  { folder: "product/engines/projects", floor: 62.67 },
-  { folder: "product/engines/signals", floor: 63.31 },
+  { folder: "product/engines/projects", floor: 62.74 },
+  { folder: "product/engines/signals", floor: 64.37 },
   { folder: "product/engines/today", floor: 45.11 },
   { folder: "product/modules/analytics", floor: 55.65 },
   { folder: "product/modules/releases", floor: 70.91 },
