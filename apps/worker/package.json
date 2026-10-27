@@ -28,6 +28,7 @@
     "@cluenori/releases": "workspace:*",
     "@cluenori/signals": "workspace:*",
     "@cluenori/today": "workspace:*",
+    "@cluenori/watcher": "workspace:*",
     "@effect/ai-cloudflare": "catalog:",
     "@effect/platform-browser": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",

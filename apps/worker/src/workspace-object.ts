@@ -1,7 +1,7 @@
 import { Feeds } from "@cluenori/feeds"
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, MemberId, WorkspaceKey } from "@cluenori/foundation"
-import { GitHubConnection } from "@cluenori/github-app"
+import { GitHubConnection, gitHubAsApp } from "@cluenori/github-app"
 import type { Access } from "@cluenori/members"
 import { Members } from "@cluenori/members"
 import type { PushUnavailable } from "@cluenori/notifications"
@@ -9,6 +9,7 @@ import { NoPushToken, Notifications } from "@cluenori/notifications"
 import type { PhoneId } from "@cluenori/phones"
 import { PhoneKeyRejected, PhoneNotFound, Phones } from "@cluenori/phones"
 import { ProjectIndex } from "@cluenori/projects"
+import { Watcher } from "@cluenori/watcher"
 import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
 import { DurableObject } from "cloudflare:workers"
@@ -20,7 +21,7 @@ import { SyncScheduler } from "./sync-scheduler.ts"
 import type { WorkspaceCallName } from "./workspace-calls.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
 
-type WorkspaceServices = ProjectIndex | Phones | Notifications | Members | GitHubConnection | Feeds
+type WorkspaceServices = ProjectIndex | Phones | Notifications | Members | GitHubConnection | Feeds | Watcher
 
 // When APNs doesn't take a feed's alert, it is tried again this much later.
 const alertRetry = Duration.toMillis(Duration.minutes(1))
@@ -77,6 +78,19 @@ const pushSettings = Config.option(
   }),
 )
 
+// After a call that can change which owners' phones have push tokens (one registered, a phone or a
+// member removed, a token APNs called gone), the watcher's secrets are brought up to date. Its
+// failures stay in its status: they never fail the call. It runs when the call fails too, since a
+// push that failed may still have forgotten a token.
+const thenSyncWatcher = <A, E>(call: Effect.Effect<A, E, WorkspaceServices>): Effect.Effect<A, E, WorkspaceServices> =>
+  Effect.ensuring(
+    call,
+    Effect.gen(function* () {
+      const watcher = yield* Watcher
+      yield* watcher.sync
+    }),
+  )
+
 // Each call the Worker can make, on a visible line, translated to the engines' services; the
 // object's storage holds the alarm for feeds' alerts.
 const servedCalls = (
@@ -129,34 +143,42 @@ const servedCalls = (
     }),
   ),
   removePhone: serve(workspaceCalls.removePhone, ({ actor, access, phone }) =>
-    Effect.gen(function* () {
-      const phones = yield* Phones
-      if (!(yield* mayUsePhone(actor, access, phone))) {
-        return yield* new PhoneNotFound({ phone })
-      }
-      yield* phones.remove(actor, phone)
-    }),
+    thenSyncWatcher(
+      Effect.gen(function* () {
+        const phones = yield* Phones
+        if (!(yield* mayUsePhone(actor, access, phone))) {
+          return yield* new PhoneNotFound({ phone })
+        }
+        yield* phones.remove(actor, phone)
+      }),
+    ),
   ),
   registerPush: serve(workspaceCalls.registerPush, ({ key, caller, push }) =>
-    Effect.gen(function* () {
-      const phones = yield* Phones
-      yield* phones.registerPush(Redacted.make(key), caller, push)
-    }),
+    thenSyncWatcher(
+      Effect.gen(function* () {
+        const phones = yield* Phones
+        yield* phones.registerPush(Redacted.make(key), caller, push)
+      }),
+    ),
   ),
   notify: serve(workspaceCalls.notify, (activity) =>
-    Effect.gen(function* () {
-      const notifications = yield* Notifications
-      yield* notifications.notify(activity)
-    }),
+    thenSyncWatcher(
+      Effect.gen(function* () {
+        const notifications = yield* Notifications
+        yield* notifications.notify(activity)
+      }),
+    ),
   ),
   testAlert: serve(workspaceCalls.testAlert, ({ actor, access, phone }) =>
-    Effect.gen(function* () {
-      const notifications = yield* Notifications
-      if (!(yield* mayUsePhone(actor, access, phone))) {
-        return yield* new NoPushToken({ phone })
-      }
-      yield* notifications.testAlert(phone)
-    }),
+    thenSyncWatcher(
+      Effect.gen(function* () {
+        const notifications = yield* Notifications
+        if (!(yield* mayUsePhone(actor, access, phone))) {
+          return yield* new NoPushToken({ phone })
+        }
+        yield* notifications.testAlert(phone)
+      }),
+    ),
   ),
   signedIn: serve(workspaceCalls.signedIn, ({ token, caller }) =>
     Effect.gen(function* () {
@@ -209,12 +231,14 @@ const servedCalls = (
     }),
   ),
   removeMember: serve(workspaceCalls.removeMember, ({ actor, member }) =>
-    Effect.gen(function* () {
-      const members = yield* Members
-      const phones = yield* Phones
-      yield* members.remove(actor, member)
-      yield* phones.removeAllOf(actor, member)
-    }),
+    thenSyncWatcher(
+      Effect.gen(function* () {
+        const members = yield* Members
+        const phones = yield* Phones
+        yield* members.remove(actor, member)
+        yield* phones.removeAllOf(actor, member)
+      }),
+    ),
   ),
   joinOptions: serve(workspaceCalls.joinOptions, ({ code, site }) =>
     Effect.gen(function* () {
@@ -320,11 +344,25 @@ const servedCalls = (
       return removed.watches
     }),
   ),
-  recordFeeds: serve(workspaceCalls.recordFeeds, (activity) =>
+  watcher: serve(workspaceCalls.watcher, (access) =>
     Effect.gen(function* () {
-      const feeds = yield* Feeds
-      yield* alertFeeds(storage, feeds.record(activity))
+      const watcher = yield* Watcher
+      return yield* watcher.status(access)
     }),
+  ),
+  setWatcher: serve(workspaceCalls.setWatcher, ({ actor, access, repository }) =>
+    Effect.gen(function* () {
+      const watcher = yield* Watcher
+      return yield* watcher.setRepository(actor, access, repository)
+    }),
+  ),
+  recordFeeds: serve(workspaceCalls.recordFeeds, (activity) =>
+    thenSyncWatcher(
+      Effect.gen(function* () {
+        const feeds = yield* Feeds
+        yield* alertFeeds(storage, feeds.record(activity))
+      }),
+    ),
   ),
 })
 
@@ -360,8 +398,26 @@ export class WorkspaceObject extends DurableObject<Env> {
         return Members.layer({ owner, crypto: crypto.subtle })
       }),
     ).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))), Layer.orDie)
+    // The watcher writes its secrets as the workspace's GitHub App, with tokens this object issues.
+    const WatcherLive = Layer.unwrap(
+      Effect.gen(function* () {
+        const push = yield* pushSettings
+        return Watcher.layer({ push })
+      }),
+    ).pipe(
+      Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
+      Layer.orDie,
+      Layer.provide(
+        Layer.unwrap(
+          Effect.gen(function* () {
+            const connection = yield* GitHubConnection
+            return gitHubAsApp(connection.tokenFor)
+          }),
+        ),
+      ),
+    )
     this.#runtime = ManagedRuntime.make(
-      Feeds.layer.pipe(
+      Layer.mergeAll(Feeds.layer, WatcherLive).pipe(
         Layer.provideMerge(Layer.mergeAll(NotificationsLive, GitHubConnection.layer({ signing: crypto.subtle }))),
         Layer.provideMerge(Layer.mergeAll(Phones.layer, MembersLive)),
         Layer.provideMerge(ProjectIndex.layer),
@@ -387,7 +443,7 @@ export class WorkspaceObject extends DurableObject<Env> {
       Effect.gen(function* () {
         const feeds = yield* Feeds
         yield* alertFeeds(storage, feeds.alert)
-      }),
+      }).pipe(thenSyncWatcher),
     )
   }
 }

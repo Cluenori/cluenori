@@ -40,8 +40,10 @@ import { defineConfig } from "vite"
 // store, which would bring the Worker's code (sketches, OTLP, the scrubber: 13 KB) with it. And to
 // 265 KB when a component gained several ingest keys (to 264.5 KB): their three endpoints'
 // Schemas in the typed client, their atoms, and Today's item for a key about to expire; the keys'
-// panel loads after start, and only for an owner.
-const firstLoadBudget = { scriptKb: 265, styleKb: 36 }
+// panel loads after start, and only for an owner. And to 266 KB with the outside watcher (to
+// 265.1 KB): its two endpoints' Schemas in the typed client and their atoms; its panel loads with
+// the GitHub page, after start.
+const firstLoadBudget = { scriptKb: 266, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

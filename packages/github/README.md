@@ -105,7 +105,7 @@ Tokens: the host's function gives each request's, such as a GitHub App's install
 With a token: a fine-grained personal access token, read-only, with Contents, Metadata and Pull
 requests on the repositories it reads. As an app, its installation tokens need Actions: write to
 start workflows and Actions: read to follow them, Contents: write to publish releases, and
-Self-hosted runners: read for an organization's runners. They differ per deployment.
+Self-hosted runners: read for an organization's runners, and Secrets: write to set Actions secrets. They differ per deployment.
 
 ## Decisions and constraints
 
@@ -136,6 +136,11 @@ Self-hosted runners: read for an organization's runners. They differ per deploym
   most 25 inputs.
 - **Rate limits** follow GitHub's documentation: `retry-after` first, then `x-ratelimit-reset` when
   `x-ratelimit-remaining` is 0, else a minute from now.
+- **Actions secrets are sealed here,** with libsodium's sealed box, as GitHub requires: X25519,
+  XSalsa20-Poly1305 and BLAKE2b, from `@noble/curves`, `@noble/ciphers` and `@noble/hashes`
+  (audited, no dependencies beyond each other), since Web Crypto has no XSalsa20 or BLAKE2b. Its
+  tests open what it seals; libsodium's own `crypto_box_seal_open` opened it too, when it was
+  written. The value is never logged or put in an error; a secret is written whole, never read back.
 - **Redirects are the host's.** A renamed or moved repository answers 301; `fetch` follows it. A
   client that doesn't makes it a defect.
 - **Not handled:** a run whose status is null, and a

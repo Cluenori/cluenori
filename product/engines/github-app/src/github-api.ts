@@ -21,7 +21,7 @@ export class GitHubGroup extends HttpApiGroup.make("github")
       error: [NotAllowed.pipe(HttpApiSchema.status(403)), GitHubAlreadyConnected.pipe(HttpApiSchema.status(409))],
     }).annotate(
       OpenApi.Description,
-      "Starts connecting GitHub: the form the owner's browser posts to `action`, with the field `manifest`, so GitHub creates Cluenori's app in `organization` or their own account. It may read code and pull requests, and start workflows, where it is installed. GitHub then sends the browser back to `/api/github/connected`, which finishes, good once within an hour. Owners only; 409 while an app is connected.",
+      "Starts connecting GitHub: the form the owner's browser posts to `action`, with the field `manifest`, so GitHub creates Cluenori's app in `organization` or their own account. It may read code and pull requests, start workflows, and write the outside watcher's Actions secrets, where it is installed. GitHub then sends the browser back to `/api/github/connected`, which finishes, good once within an hour. Owners only; 409 while an app is connected.",
     ),
   )
   .add(

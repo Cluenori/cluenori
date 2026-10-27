@@ -159,6 +159,7 @@ const fakeGitHub = (calls: Array<string>, published: Array<Published> = []): Git
       url: `https://github.com/notes/notes-api/pull/${number}`,
       labels: ["performance"],
     }),
+  setActionsSecret: () => Effect.die("No secret is written in these tests"),
   publishRelease: (publishedIn, release) =>
     Effect.sync(() => {
       published.push({ repository: publishedIn, release })
@@ -556,6 +557,7 @@ describe("GitHub's Releases page", () => {
       sourcesOf(
         {
           ...github,
+          setActionsSecret: () => Effect.die("No secret is written in these tests"),
           publishRelease: (forRepository, release) =>
             allowed.now
               ? github.publishRelease(forRepository, release)

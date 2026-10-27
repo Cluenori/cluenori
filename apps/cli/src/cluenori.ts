@@ -19,6 +19,7 @@ import { today } from "./today-command.ts"
 import { update } from "./update.ts"
 import { versionPolicy } from "./version-policy-commands.ts"
 import { version } from "./versions-commands.ts"
+import { watcher } from "./watcher-commands.ts"
 
 /**
  * The `cluenori` command. `./run`, `./setup`, `./update`, and `./cluenori` call it. Run it from the
@@ -62,6 +63,7 @@ export const cluenori = Command.make("cluenori").pipe(
     promote,
     releaseApproved,
     github,
+    watcher,
     appStore,
     members,
     member,

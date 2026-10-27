@@ -6,6 +6,8 @@ import {
   GitHubAppForm,
   GitHubStatus as GitHubStatusSchema,
 } from "@cluenori/github-app"
+import type { WatcherStatus } from "@cluenori/watcher"
+import { SetWatcher, WatcherStatus as WatcherStatusSchema } from "@cluenori/watcher"
 import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { render } from "vitest-browser-react"
@@ -54,13 +56,34 @@ const form = {
 // The API with Notes in it, and GitHub's connection: none until `status` says one; connecting
 // answers GitHub's form, or that it is connected already once `connectedMeanwhile` is; disconnecting
 // forgets the app.
+// The watcher's status, none named until `PUT /watcher` names one: then its secrets hold one phone,
+// or `refused` says GitHub refused writing them.
 const gitHubApi = ({
   status = { installations: [] },
   connectedMeanwhile = false,
-}: { readonly status?: GitHubStatus; readonly connectedMeanwhile?: boolean } = {}): AnswerApi => {
+  refused = false,
+}: {
+  readonly status?: GitHubStatus
+  readonly connectedMeanwhile?: boolean
+  readonly refused?: boolean
+} = {}): AnswerApi => {
   const notes = notesApi()
   let shown = status
+  let watcher: WatcherStatus = {}
   return (call) => {
+    if (call.path[0] === "watcher") {
+      if (call.method === "PUT") {
+        const repository = SetWatcher.fields.repository.make("notesapp/cluenori-watch")
+        watcher = refused
+          ? {
+              repository,
+              problem:
+                "notesapp/cluenori-watch's Actions secrets can't be written: the token lacks Secrets: write there (Resource not accessible by integration)",
+            }
+          : { repository, phones: 1, writtenAt: DateTime.makeUnsafe("2026-10-27T08:00:00Z") }
+      }
+      return reply(WatcherStatusSchema, watcher)
+    }
     if (call.path[0] !== "github") {
       return notes(call)
     }
@@ -92,6 +115,43 @@ const catchPostsToGitHub = () => {
   document.addEventListener("submit", onSubmit, { capture: true })
   return { posted, stop: () => document.removeEventListener("submit", onSubmit, { capture: true }) }
 }
+
+// An owner names the watcher's repository on the GitHub page; GitHub takes its secrets, or `refused`.
+const namesTheWatcher = (refused: boolean) =>
+  Effect.gen(function* () {
+    answerApi(gitHubApi({ status: connected, refused }))
+    window.history.pushState(null, "", "/github")
+    const screen = yield* Effect.promise(() => render(<App />))
+    const watcher = screen.getByRole("region", { name: "Outside watcher" })
+    yield* Effect.promise(() => expect.element(watcher.getByText(/^Cluenori writes its APNs key/)).toBeVisible())
+    const repository = watcher.getByLabelText("Watcher's repository")
+
+    // A name that isn't owner/name is refused before anything is sent.
+    yield* Effect.promise(() => repository.fill("cluenori-watch"))
+    yield* Effect.promise(() => watcher.getByRole("button", { name: "Name the repository" }).click())
+    yield* Effect.promise(() => expect.element(watcher.getByText(/^A repository is owner\/name/)).toBeVisible())
+    assert.isFalse(apiCalls().some((call) => call.method === "PUT"))
+
+    yield* Effect.promise(() => repository.fill("notesapp/cluenori-watch"))
+    yield* Effect.promise(() => watcher.getByRole("button", { name: "Name the repository" }).click())
+    if (refused) {
+      yield* Effect.promise(() =>
+        expect.element(watcher.getByRole("alert").getByText(/lacks Secrets: write/)).toBeVisible(),
+      )
+    } else {
+      yield* Effect.promise(() => expect.element(watcher.getByText(/^Its secrets hold 1 owner.s phone/)).toBeVisible())
+      yield* Effect.promise(() =>
+        expect.element(watcher.getByRole("button", { name: "Write its secrets again" })).toBeVisible(),
+      )
+    }
+    assert.deepStrictEqual(
+      apiCalls()
+        .filter((call) => call.method === "PUT")
+        .map((call) => [call.path.join("/"), call.body]),
+      [["watcher", '{"repository":"notesapp/cluenori-watch"}']],
+    )
+    yield* expectAccessible()
+  })
 
 describe("GitHub journey", () => {
   it.effect("connects GitHub from the sidebar: the organization checked, then GitHub's form posted as it is", () =>
@@ -188,6 +248,10 @@ describe("GitHub journey", () => {
       assert.isTrue(apiCalls().some((call) => call.method === "DELETE" && call.path.join("/") === "github"))
     }),
   )
+
+  it.effect("names the outside watcher's repository, and says what its secrets hold", () => namesTheWatcher(false))
+
+  it.effect("says why the watcher's secrets couldn't be written", () => namesTheWatcher(true))
 
   it.effect("says it isn't installed anywhere yet, and that GitHub installed it, coming back from there", () =>
     Effect.gen(function* () {

@@ -1,15 +1,17 @@
 import { NotAllowed } from "@cluenori/foundation"
 import type { GitHubAppForm, GitHubAppSummary, GitHubInstallation, GitHubStatus } from "@cluenori/github-app"
 import { GitHubAccount } from "@cluenori/github-app"
+import type { WatcherStatus } from "@cluenori/watcher"
+import { SetWatcher } from "@cluenori/watcher"
 import { useAtom, useAtomValue } from "@effect/atom-react"
 import { cn } from "cn"
 import { Cause, DateTime, Option, Result, Schema } from "effect"
 import { Atom, AsyncResult } from "effect/reactivity"
-import { ArrowUpRightIcon, FolderGit2Icon, GitBranchIcon, LockIcon, UnplugIcon } from "lucide-react"
+import { ArrowUpRightIcon, FolderGit2Icon, GitBranchIcon, LockIcon, RadarIcon, UnplugIcon } from "lucide-react"
 import { useEffect, useId, useState } from "react"
 
 import { moment } from "@/lib/format"
-import { connectGitHubAtom, disconnectGitHubAtom, gitHubAtom } from "@/project-data"
+import { connectGitHubAtom, disconnectGitHubAtom, gitHubAtom, setWatcherAtom, watcherAtom } from "@/project-data"
 import type { GitHubReturn } from "@/router"
 import { navigate } from "@/router"
 import { failureText, Loaded } from "@/views/loaded"
@@ -327,6 +329,111 @@ function Connected({ status, app }: { readonly status: GitHubStatus; readonly ap
   )
 }
 
+const decodeWatcher = Schema.decodeResult(SetWatcher)
+
+/**
+ * The outside watcher, as `status` has it: its repository, what its secrets hold, what is wrong, and
+ * a form to name the repository, which `onSet` sends. A view of plain data: the container connects it.
+ */
+export function WatcherPanel({
+  status,
+  setting,
+  failure,
+  onSet,
+}: {
+  readonly status: WatcherStatus
+  readonly setting: boolean
+  readonly failure: string | undefined
+  readonly onSet: (input: SetWatcher) => void
+}) {
+  const id = useId()
+  const [typed, setTyped] = useState(status.repository ?? "")
+  const [checked, setChecked] = useState(false)
+  const decoded = decodeWatcher({ repository: typed.trim() })
+  const rule =
+    checked && Result.isFailure(decoded) ? "A repository is owner/name, such as octo-org/cluenori-watch." : undefined
+  const submitWords = status.repository === undefined ? "Name the repository" : "Write its secrets again"
+  const held =
+    status.writtenAt === undefined || status.phones === undefined
+      ? undefined
+      : `${status.phones === 1 ? "1 owner's phone" : `${status.phones} owners' phones`}, written ${moment(DateTime.toEpochMillis(status.writtenAt))}`
+  return (
+    <Panel
+      icon={RadarIcon}
+      title="Outside watcher"
+      subtitle="Rings owners' phones through APNs when this deployment is down, from a GitHub Actions schedule"
+    >
+      {status.problem !== undefined && (
+        <p
+          role="alert"
+          className="grid grid-cols-[0.625rem_minmax(0,1fr)] items-baseline gap-x-4 border-b px-5 py-3.5 text-sm"
+        >
+          <span aria-hidden className="size-2.5 bg-failure" />
+          <span className="wrap-anywhere">{status.problem}</span>
+        </p>
+      )}
+      <form
+        className="flex max-w-2xl flex-col gap-4 px-5 py-6"
+        onSubmit={(event) => {
+          event.preventDefault()
+          setChecked(true)
+          if (Result.isSuccess(decoded)) {
+            onSet(decoded.success)
+          }
+        }}
+      >
+        <p className="text-[15px] text-pretty">
+          {held === undefined
+            ? "Cluenori writes its APNs key and every owner's push tokens into the watcher's repository as Actions secrets, through its GitHub App, and again whenever they change. The app needs Secrets: write there."
+            : `Its secrets hold ${held}.`}
+        </p>
+        <div className="flex max-w-md flex-col gap-2">
+          <label htmlFor={`${id}-repository`} className="text-sm">
+            Watcher&apos;s repository
+          </label>
+          <Input
+            id={`${id}-repository`}
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
+            placeholder="octo-org/cluenori-watch"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={rule !== undefined}
+            className="h-9 font-mono"
+          />
+          {rule !== undefined && <p className="text-sm text-failure">{rule}</p>}
+        </div>
+        {failure !== undefined && (
+          <p role="alert" className="text-sm text-failure">
+            {failure}
+          </p>
+        )}
+        <Button type="submit" className="self-start" disabled={setting}>
+          {setting ? "Writing its secrets…" : submitWords}
+        </Button>
+      </form>
+    </Panel>
+  )
+}
+
+/** Connects the watcher's panel to its status and to naming its repository. */
+function Watcher() {
+  const status = useAtomValue(watcherAtom)
+  const [setting, set] = useAtom(setWatcherAtom)
+  return (
+    <Loaded result={status}>
+      {(answer) => (
+        <WatcherPanel
+          status={answer}
+          setting={setting.waiting}
+          failure={AsyncResult.isFailure(setting) && !setting.waiting ? failureText(setting.cause) : undefined}
+          onSet={set}
+        />
+      )}
+    </Loaded>
+  )
+}
+
 // A member is answered that only an owner may ask.
 const isNotAllowed = <A, E>(result: AsyncResult.AsyncResult<A, E>) =>
   AsyncResult.isFailure(result) && Option.exists(Cause.findErrorOption(result.cause), Schema.is(NotAllowed))
@@ -371,6 +478,7 @@ export function GitHubPage({ returned }: { readonly returned?: GitHubReturn }) {
             ) : (
               <div className="flex flex-col gap-4">
                 <Connected status={answer} app={answer.app} />
+                <Watcher />
               </div>
             )
           }

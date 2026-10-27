@@ -108,3 +108,6 @@ export const RateLimitHeaders = Schema.Struct({
   "x-ratelimit-remaining": Schema.optionalKey(Schema.String),
   "x-ratelimit-reset": Schema.optionalKey(Schema.NumberFromString.check(Schema.isInt())),
 })
+
+/** `GET /repos/{owner}/{repo}/actions/secrets/public-key`: the key secrets are sealed with, base64. */
+export const SecretsKeyAnswer = Schema.Struct({ key_id: Schema.String, key: Schema.String })

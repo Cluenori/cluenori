@@ -11,6 +11,9 @@
   },
   "dependencies": {
     "@bagatka/github-app": "catalog:",
+    "@noble/ciphers": "catalog:",
+    "@noble/curves": "catalog:",
+    "@noble/hashes": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

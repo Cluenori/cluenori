@@ -1,0 +1,29 @@
+{
+  "name": "@cluenori/watcher",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "wrangler types -c test/wrangler.jsonc test/worker-configuration.d.ts > /dev/null && tsc && tsc -p test"
+  },
+  "dependencies": {
+    "@cluenori/foundation": "workspace:*",
+    "@cluenori/github": "workspace:*",
+    "@cluenori/members": "workspace:*",
+    "@cluenori/phones": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@bagatka/webauthn": "catalog:",
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@cluenori/projects": "workspace:*",
+    "@effect/platform-browser": "catalog:",
+    "@effect/sql-sqlite-do": "catalog:",
+    "@effect/vitest": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

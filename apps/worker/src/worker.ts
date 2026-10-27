@@ -46,6 +46,7 @@ import { SignalsHandlers } from "./signals-handlers.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 import { SystemHandlers } from "./system-handlers.ts"
 import { TodayHandlers } from "./today-handlers.ts"
+import { WatcherHandlers } from "./watcher-handlers.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
 import { WorkspaceObjects } from "./workspace-objects.ts"
 
@@ -78,37 +79,42 @@ const Projects = Layer.unwrap(
 const Workspace = WorkspaceObjects.layerInJurisdiction(env.WORKSPACE, workspace)
 
 // Every route group is provided on its own line.
-const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi.json" }).pipe(
-  Layer.provide(SystemHandlers.pipe(Layer.provide(Health.layer))),
-  Layer.provide(SignInHandlers),
-  Layer.provide(PasskeysHandlers),
-  Layer.provide(MembersHandlers),
-  Layer.provide(ProjectsHandlers),
-  Layer.provide(SignalsHandlers),
-  Layer.provide(IncidentsHandlers),
-  Layer.provide(PairingHandlers),
-  Layer.provide(PhoneSignInHandlers),
-  Layer.provide(PhonesHandlers),
-  Layer.provide(PhonePushHandlers),
-  Layer.provide(NotificationsHandlers),
-  Layer.provide(TodayHandlers),
-  Layer.provide(FeedsHandlers),
-  Layer.provide(ReleasesHandlers),
-  Layer.provide(AnalyticsHandlers),
-  Layer.provide(GitHubHandlers),
-  Layer.provide(memberAuthorizationLayer),
-  // Handlers reach projects only through it, which keeps to what the member sees (.oxlintrc.json);
-  // they ask for it per request, so it is an output.
-  Layer.provideMerge(MemberProjects.layer),
-  Layer.provideMerge(
-    Layer.unwrap(
-      Effect.gen(function* () {
-        const settings = yield* apiSettings
-        return ApiToken.layer(settings)
-      }),
+const ApiRoutes = HttpApiBuilder.layer(CluenoriApi, { openapiPath: "/api/openapi.json" })
+  .pipe(
+    Layer.provide(SystemHandlers.pipe(Layer.provide(Health.layer))),
+    Layer.provide(SignInHandlers),
+    Layer.provide(PasskeysHandlers),
+    Layer.provide(MembersHandlers),
+    Layer.provide(ProjectsHandlers),
+    Layer.provide(SignalsHandlers),
+    Layer.provide(IncidentsHandlers),
+    Layer.provide(PairingHandlers),
+    Layer.provide(PhoneSignInHandlers),
+    Layer.provide(PhonesHandlers),
+    Layer.provide(PhonePushHandlers),
+    Layer.provide(NotificationsHandlers),
+    Layer.provide(TodayHandlers),
+    Layer.provide(FeedsHandlers),
+    Layer.provide(ReleasesHandlers),
+    Layer.provide(AnalyticsHandlers),
+    Layer.provide(GitHubHandlers),
+    Layer.provide(WatcherHandlers),
+  )
+  .pipe(
+    // What the handlers share: who is asking, and the projects they see.
+    Layer.provide(memberAuthorizationLayer),
+    // Handlers reach projects only through it, which keeps to what the member sees (.oxlintrc.json);
+    // they ask for it per request, so it is an output.
+    Layer.provideMerge(MemberProjects.layer),
+    Layer.provideMerge(
+      Layer.unwrap(
+        Effect.gen(function* () {
+          const settings = yield* apiSettings
+          return ApiToken.layer(settings)
+        }),
+      ),
     ),
-  ),
-)
+  )
 
 // What apps' SDKs call, with a component's SDK key: their batches, and their manifest, which the
 // edge keeps five minutes. Not under /api, and not for members.

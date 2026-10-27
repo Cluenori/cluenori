@@ -1,6 +1,6 @@
 import type { Repository } from "@bagatka/github-app"
-import { Context, DateTime, Effect, Layer, Option, Order } from "effect"
-import type { Redacted } from "effect"
+import { Context, DateTime, Effect, Layer, Option, Order, Redacted, Result } from "effect"
+import { Base64 } from "effect/encoding"
 import { HttpClient } from "effect/http"
 
 import {
@@ -13,6 +13,7 @@ import {
   TagsAnswer,
   WorkflowRunAnswer,
   RunnersAnswer,
+  SecretsKeyAnswer,
   WorkflowRunsAnswer,
 } from "./answers.ts"
 import type { CommitSha } from "./commit-sha.ts"
@@ -20,6 +21,7 @@ import type { GitHubUnavailable } from "./github-errors.ts"
 import { GitHubRefused, WorkflowNotFound, WorkflowRejected } from "./github-errors.ts"
 import type { Answer, Question } from "./github-rest.ts"
 import { ask, failure, read, reasonOf } from "./github-rest.ts"
+import { seal } from "./sealed-box.ts"
 import type { WorkflowFile } from "./workflow-file.ts"
 import type { WorkflowRunStatus } from "./workflow-run-status.ts"
 
@@ -245,6 +247,18 @@ export class GitHub extends Context.Service<
     readonly selfHostedRunners: (
       repository: Repository,
     ) => Effect.Effect<ReadonlyArray<SelfHostedRunner>, GitHubRefused | GitHubUnavailable>
+    /**
+     * Sets the repository's Actions secret `name` to `value`, created or replaced: sealed with the
+     * repository's public key, as GitHub requires, so only its workflows read it. Two requests;
+     * needs Secrets: write. `name` is letters, digits and `_`, not starting with `GITHUB_` or a
+     * digit, or GitHub refuses it. Idempotent: setting it again to the same value changes nothing a
+     * workflow sees. The value never leaves this call unsealed.
+     */
+    readonly setActionsSecret: (
+      repository: Repository,
+      name: string,
+      value: Redacted.Redacted,
+    ) => Effect.Effect<void, GitHubRefused | GitHubUnavailable>
   }
 >()("@cluenori/github/github") {
   /**
@@ -550,7 +564,43 @@ export class GitHub extends Context.Service<
           return yield* failure(answer)
         })
 
+        const setActionsSecret = Effect.fn("GitHub.setActionsSecret")(function* (
+          repository: Repository,
+          name: string,
+          value: Redacted.Redacted,
+        ) {
+          if (!/^(?!GITHUB_)[A-Za-z_][A-Za-z0-9_]{0,99}$/.test(name)) {
+            return yield* Effect.die(`${name} can't be an Actions secret's name`)
+          }
+          const keyAnswer = yield* askAbout(repository, {
+            method: "GET",
+            path: `/repos/${repository}/actions/secrets/public-key`,
+          })
+          if (keyAnswer.status !== 200) {
+            return yield* refusedSecrets(repository, keyAnswer)
+          }
+          const key = yield* read(SecretsKeyAnswer, keyAnswer)
+          const recipient = Base64.decode(key.key)
+          if (Result.isFailure(recipient) || recipient.success.length !== 32) {
+            return yield* Effect.die(`GitHub's public key for ${repository}'s secrets isn't 32 bytes of base64`)
+          }
+          // The value's UTF-8 bytes, through Effect's own encoder: capabilities have no TextEncoder.
+          const bytes = Result.getOrThrow(Base64.decode(Base64.encode(Redacted.value(value))))
+          const sealed = Base64.encode(seal(recipient.success, bytes))
+          const answer = yield* askAbout(repository, {
+            method: "PUT",
+            path: `/repos/${repository}/actions/secrets/${name}`,
+            body: { encrypted_value: sealed, key_id: key.key_id },
+          })
+          // 201: created; 204: replaced.
+          if (answer.status === 201 || answer.status === 204) {
+            return
+          }
+          return yield* refusedSecrets(repository, answer)
+        })
+
         return GitHub.of({
+          setActionsSecret,
           selfHostedRunners,
           tagsContaining,
           commit,
@@ -577,6 +627,19 @@ const refusedRepository = (repository: Repository) =>
       reason: `GitHub shows no repository ${repository} to this token: it doesn't exist, or the token can't read it`,
     }),
   )
+
+// Secrets need Secrets: write on the repository; GitHub answers 403 or 404 without it.
+const refusedSecrets = (repository: Repository, answer: Answer) =>
+  answer.status === 403 || answer.status === 404
+    ? Effect.flatMap(reasonOf(answer), (reason) =>
+        Effect.fail(
+          new GitHubRefused({
+            status: answer.status,
+            reason: `${repository}'s Actions secrets can't be written: the token lacks Secrets: write there (${reason})`,
+          }),
+        ),
+      )
+    : failure(answer)
 
 // An instant as GitHub's search syntax takes it, to the second: `2026-10-22T10:00:00Z`. Dropping
 // the milliseconds rounds down, so a run created in that second is still found.

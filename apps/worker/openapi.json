@@ -4535,12 +4535,120 @@
             }
           }
         },
-        "description": "Starts connecting GitHub: the form the owner's browser posts to `action`, with the field `manifest`, so GitHub creates Cluenori's app in `organization` or their own account. It may read code and pull requests, and start workflows, where it is installed. GitHub then sends the browser back to `/api/github/connected`, which finishes, good once within an hour. Owners only; 409 while an app is connected.",
+        "description": "Starts connecting GitHub: the form the owner's browser posts to `action`, with the field `manifest`, so GitHub creates Cluenori's app in `organization` or their own account. It may read code and pull requests, start workflows, and write the outside watcher's Actions secrets, where it is installed. GitHub then sends the browser back to `/api/github/connected`, which finishes, good once within an hour. Owners only; 409 while an app is connected.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ConnectGitHub"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/watcher": {
+      "get": {
+        "tags": [
+          "watcher"
+        ],
+        "operationId": "watcher.watcher",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "WatcherStatus",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatcherStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          }
+        },
+        "description": "The outside watcher (Cluenori/cluenori-watch): the repository it runs in, absent until named, how many owners' phones its secrets hold and when they were last written, and what is wrong. Never the tokens or the key. Owners only."
+      },
+      "put": {
+        "tags": [
+          "watcher"
+        ],
+        "operationId": "watcher.setWatcher",
+        "parameters": [],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "WatcherStatus",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatcherStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          }
+        },
+        "description": "Names the outside watcher's repository, `owner/name`, and writes its Actions secrets there at once, as the workspace's GitHub App: CLUENORI_APNS_KEY, the deployment's APNs key, and CLUENORI_PHONES, the push tokens of every owner's phone, written again whenever they change. The app needs Secrets: write on it. Owners only; `problem` says why a write failed.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWatcher"
               }
             }
           },
@@ -10276,6 +10384,39 @@
         ],
         "additionalProperties": false
       },
+      "WatcherStatus": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "phones": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "writtenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "problem": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetWatcher": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository"
+        ],
+        "additionalProperties": false
+      },
       "GitHubAlreadyConnected": {
         "type": "object",
         "properties": {
@@ -13969,6 +14110,9 @@
     },
     {
       "name": "github"
+    },
+    {
+      "name": "watcher"
     },
     {
       "name": "releases"

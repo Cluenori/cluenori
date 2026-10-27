@@ -16,6 +16,11 @@ const toolkit = [
   "@bagatka/webauthn",
 ]
 
+// libsodium's sealed box, which GitHub requires to write a repository's secrets: Paul Miller's
+// audited X25519, XSalsa20-Poly1305 and BLAKE2b, with no dependencies of their own beyond each
+// other. Web Crypto has none of the last two (packages/github's README, "Decisions and constraints").
+const sealing = ["@noble/ciphers", "@noble/curves", "@noble/hashes"]
+
 // Product packages run inside a project's Durable Object, so their tests do too: in workerd, on the
 // Durable Object's SQLite.
 // Effect's Crypto on Web Crypto, which the Worker provides and their tests too.
@@ -60,7 +65,7 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     contract: true,
     mayUse: ["packages/*"],
     // Kit's packages are capabilities too, of the same layer, from npm.
-    mayInstall: ["effect", ...toolkit],
+    mayInstall: ["effect", ...toolkit, ...sealing],
     mayInstallForDevelopment: forTests,
   },
   {

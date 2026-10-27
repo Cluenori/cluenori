@@ -11,6 +11,7 @@ import { ProjectsGroup, SdkKey } from "@cluenori/projects"
 import { ReleasesGroup } from "@cluenori/releases"
 import { SignalsGroup } from "@cluenori/signals"
 import { TodayGroup } from "@cluenori/today"
+import { WatcherGroup } from "@cluenori/watcher"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
@@ -120,6 +121,7 @@ export class CluenoriApi extends HttpApi.make("cluenori")
   .add(TodayGroup.middleware(MemberAuthorization))
   .add(FeedsGroup.middleware(MemberAuthorization))
   .add(GitHubGroup.middleware(MemberAuthorization))
+  .add(WatcherGroup.middleware(MemberAuthorization))
   // Modules' routes, each module on a line: its group, not its definition, so clients that build on
   // this definition don't bundle the queries it runs in projects' objects.
   .add(ReleasesGroup.middleware(MemberAuthorization))

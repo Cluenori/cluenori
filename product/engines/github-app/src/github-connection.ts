@@ -24,10 +24,13 @@ const openConnects = 5
 // What the app may do where it is installed: read repositories' code and pull requests, for
 // releases, and publish releases on their Releases pages, which takes writing contents (GitHub has
 // no narrower permission for releases); start their workflows, to promote them; and see whether an
-// organization's self-hosted runners are online, to choose where a build runs. Metadata is every
-// app's. An app made before keeps its permissions until an owner changes them on GitHub.
+// organization's self-hosted runners are online, to choose where a build runs; and write Actions
+// secrets, for the outside watcher's repository alone, which only the watcher engine writes to, with
+// a token limited to it (GitHub grants the permission wherever the app is installed). Metadata is
+// every app's. An app made before keeps its permissions until an owner changes them on GitHub.
 const permissions = {
   contents: "write",
+  secrets: "write",
   pull_requests: "read",
   actions: "write",
   metadata: "read",

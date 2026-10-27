@@ -24,6 +24,7 @@
     "@cluenori/releases": "workspace:*",
     "@cluenori/sdk": "workspace:*",
     "@cluenori/signals": "workspace:*",
+    "@cluenori/watcher": "workspace:*",
     "@cluenori/worker": "workspace:*",
     "@effect/atom-react": "catalog:",
     "@fontsource-variable/geist-mono": "catalog:",

@@ -50,6 +50,7 @@ import {
   RegisterPush,
 } from "@cluenori/phones"
 import { Project, ProjectList, ProjectNotFound } from "@cluenori/projects"
+import { SetWatcher, WatcherStatus } from "@cluenori/watcher"
 import { Schema } from "effect"
 
 import type { ObjectCall, PlainSchema } from "./object-calls.ts"
@@ -92,6 +93,8 @@ export type WorkspaceCallName =
   | "saveFeed"
   | "removeFeed"
   | "recordFeeds"
+  | "watcher"
+  | "setWatcher"
 
 /** One thing the Worker asks the workspace's Durable Object: its input, its answer, and how it fails. */
 export type WorkspaceCall<I extends PlainSchema, S extends PlainSchema, F extends PlainSchema> = ObjectCall<
@@ -280,4 +283,11 @@ export const workspaceCalls = {
   // Activity from the queue: the events feeds watch become their entries, and their alerts go out,
   // or wait for the object's alarm.
   recordFeeds: workspaceCall("recordFeeds", Schema.Array(Envelope), Schema.Void, Schema.Never),
+  watcher: workspaceCall("watcher", Access, WatcherStatus, NotAllowed),
+  setWatcher: workspaceCall(
+    "setWatcher",
+    Schema.Struct({ ...Calling.fields, ...SetWatcher.fields }),
+    WatcherStatus,
+    NotAllowed,
+  ),
 }

@@ -251,7 +251,7 @@ An alarm is an AlarmKit alarm: the push wakes the app's notification extension, 
 
 A push names the project, the detector and what it saw: "notes · Failing: POST /api/export, 18% failed, usually 0.1%". Acknowledge is one press on the notification itself.
 
-When a push cannot be delivered, Cluenori tries again, then shows the failure on Today. When the checks themselves stop, Today says since when. If Cluenori itself is down, nothing can tell me; an outside heartbeat comes later. Email, Slack and the morning brief come later.
+When a push cannot be delivered, Cluenori tries again, then shows the failure on Today. When the checks themselves stop, Today says since when. If Cluenori itself is down, the outside watcher tells me: a GitHub Actions schedule in a repository I name (`@cluenori/watcher`) checks its health every 5 minutes and rings my phone through APNs, with Telegram and email too. Email, Slack and the morning brief come later.
 
 ### The iOS app
 

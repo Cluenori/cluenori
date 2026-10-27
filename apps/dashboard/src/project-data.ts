@@ -33,6 +33,7 @@ import type {
   VersionPolicyTo,
 } from "@cluenori/releases"
 import type { AppUserId, ErrorGroupId, IndexedLevel, LogCountsBy, LogMessageId, SeriesStep } from "@cluenori/signals"
+import type { SetWatcher } from "@cluenori/watcher"
 import type { CluenoriApi } from "@cluenori/worker"
 import { useAtomValue } from "@effect/atom-react"
 import { DateTime, Duration, Effect, Option, Redacted } from "effect"
@@ -1384,6 +1385,27 @@ export const disconnectGitHubAtom = CluenoriClient.runtime.fn(() =>
     const client = yield* CluenoriClient
     yield* client.github.disconnectGitHub()
     yield* Atom.refresh(gitHubAtom)
+  }),
+)
+
+/**
+ * The outside watcher: its repository, how many owners' phones its secrets hold, and what is wrong.
+ * Owners only.
+ */
+export const watcherAtom = CluenoriClient.runtime.atom(
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    return yield* client.watcher.watcher()
+  }),
+)
+
+/** Names the watcher's repository; Cluenori writes its secrets there at once, and answers how it went. */
+export const setWatcherAtom = CluenoriClient.runtime.fn((input: SetWatcher) =>
+  Effect.gen(function* () {
+    const client = yield* CluenoriClient
+    const status = yield* client.watcher.setWatcher({ payload: input })
+    yield* Atom.refresh(watcherAtom)
+    return status
   }),
 )
 

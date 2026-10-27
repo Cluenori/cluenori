@@ -143,6 +143,7 @@ describe("GitHub's connection", () => {
             public: true,
             default_permissions: {
               contents: "write",
+              secrets: "write",
               pull_requests: "read",
               actions: "write",
               metadata: "read",

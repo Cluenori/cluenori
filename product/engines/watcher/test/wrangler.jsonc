@@ -1,0 +1,10 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  // The Worker the engine's tests run in: one Durable Object with SQLite, the way the workspace's records
+  // are kept.
+  "name": "watcher-test",
+  "main": "test-worker.ts",
+  "compatibility_date": "2026-10-01",
+  "durable_objects": { "bindings": [{ "name": "WORKSPACE", "class_name": "TestWorkspace" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestWorkspace"] }],
+}

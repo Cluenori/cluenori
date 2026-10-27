@@ -979,9 +979,10 @@ public nonisolated struct CluenoriAPI: Sendable {
 
     /// Starts connecting GitHub: the form the owner's browser posts to `action`, with the field
     /// `manifest`, so GitHub creates Cluenori's app in `organization` or their own account. It may
-    /// read code and pull requests, and start workflows, where it is installed. GitHub then sends
-    /// the browser back to `/api/github/connected`, which finishes, good once within an hour.
-    /// Owners only; 409 while an app is connected.
+    /// read code and pull requests, start workflows, and write the outside watcher's Actions
+    /// secrets, where it is installed. GitHub then sends the browser back to
+    /// `/api/github/connected`, which finishes, good once within an hour. Owners only; 409 while an
+    /// app is connected.
     ///
     /// Fails with `.unauthorized`, `.notAllowed`, `.gitHubAlreadyConnected`, or as any call can.
     @concurrent
@@ -989,6 +990,29 @@ public nonisolated struct CluenoriAPI: Sendable {
         _ `request body`: ConnectGitHub,
     ) async throws(APIError) -> GitHubAppForm {
         let `the answer` = try await self.send("POST", "/api/github/connect", body: try Self.encoded(`request body`))
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// The outside watcher (Cluenori/cluenori-watch): the repository it runs in, absent until
+    /// named, how many owners' phones its secrets hold and when they were last written, and what is
+    /// wrong. Never the tokens or the key. Owners only.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, or as any call can.
+    @concurrent
+    public func watcher() async throws(APIError) -> WatcherStatus {
+        let `the answer` = try await self.send("GET", "/api/watcher")
+        return try Self.decoded(from: `the answer`)
+    }
+
+    /// Names the outside watcher's repository, `owner/name`, and writes its Actions secrets there
+    /// at once, as the workspace's GitHub App: CLUENORI_APNS_KEY, the deployment's APNs key, and
+    /// CLUENORI_PHONES, the push tokens of every owner's phone, written again whenever they change.
+    /// The app needs Secrets: write on it. Owners only; `problem` says why a write failed.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, or as any call can.
+    @concurrent
+    public func setWatcher(_ `request body`: SetWatcher) async throws(APIError) -> WatcherStatus {
+        let `the answer` = try await self.send("PUT", "/api/watcher", body: try Self.encoded(`request body`))
         return try Self.decoded(from: `the answer`)
     }
 
@@ -10486,6 +10510,28 @@ public nonisolated struct SetProjects: Codable, Hashable, Sendable {
     }
 }
 
+public nonisolated struct SetWatcher: Codable, Hashable, Sendable {
+    public let repository: String
+
+    public init(repository: String) {
+        self.repository = repository
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case repository = "repository"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.repository = try container.`value at`(.repository)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encode(self.repository, forKey: .repository)
+    }
+}
+
 public nonisolated struct SignIn: Codable, Hashable, Sendable {
     public let token: String
 
@@ -11783,6 +11829,48 @@ public nonisolated struct VersionTo: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: `JSON keys`.self)
         try container.encode(self.version, forKey: .version)
         try container.encodeIfPresent(self.firstBuild, forKey: .firstBuild)
+    }
+}
+
+public nonisolated struct WatcherStatus: Codable, Hashable, Sendable {
+    public let repository: String?
+    public let phones: Int?
+    public let writtenAt: Date?
+    public let problem: String?
+
+    public init(
+        repository: String? = nil,
+        phones: Int? = nil,
+        writtenAt: Date? = nil,
+        problem: String? = nil,
+    ) {
+        self.repository = repository
+        self.phones = phones
+        self.writtenAt = writtenAt
+        self.problem = problem
+    }
+
+    private enum `JSON keys`: String, CodingKey {
+        case repository = "repository"
+        case phones = "phones"
+        case writtenAt = "writtenAt"
+        case problem = "problem"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: `JSON keys`.self)
+        self.repository = try container.`value if present at`(.repository)
+        self.phones = try container.`value if present at`(.phones)
+        self.writtenAt = try container.`value if present at`(.writtenAt)
+        self.problem = try container.`value if present at`(.problem)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: `JSON keys`.self)
+        try container.encodeIfPresent(self.repository, forKey: .repository)
+        try container.encodeIfPresent(self.phones, forKey: .phones)
+        try container.encodeIfPresent(self.writtenAt, forKey: .writtenAt)
+        try container.encodeIfPresent(self.problem, forKey: .problem)
     }
 }
 

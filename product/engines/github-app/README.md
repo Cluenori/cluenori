@@ -33,7 +33,8 @@ yield* github.dispatchWorkflow(repository, workflow, "main", { release, environm
   - A connect's state is good once, for an hour; at most 5 are open.
   - What the app may do where it is installed: read and write code (Contents, write: GitHub has no
     narrower permission for publishing releases), read pull requests, start workflows (Actions,
-    write), and see an organization's self-hosted runners (read), to tell whether a build can run
+    write), write Actions secrets (Secrets, write: only `@cluenori/watcher`, to the outside
+    watcher's repository), and see an organization's self-hosted runners (read), to tell whether a build can run
     on the founder's own machine. It has no webhook yet. An app made before keeps the permissions
     it was made with until an owner changes them in its settings on GitHub and each installation
     accepts them.

@@ -98,6 +98,7 @@ const gitHubWhoseRun = (run?: WorkflowRun) =>
       workflowRuns: () => Effect.succeed(run === undefined ? [] : [run]),
       workflowRun: () => Effect.succeed(Option.fromNullishOr(run)),
       selfHostedRunners: () => Effect.succeed([]),
+      setActionsSecret: () => Effect.die("No secret is written in these tests"),
       publishRelease: () => Effect.die("No release is published in these tests"),
     }),
   )
