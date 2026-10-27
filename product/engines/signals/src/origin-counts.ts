@@ -1,5 +1,5 @@
 import type { ComponentKey } from "@cluenori/foundation"
-import { ComponentKey as ComponentKeySchema, EnvelopeName } from "@cluenori/foundation"
+import { ComponentKey as ComponentKeySchema, EnvelopeName, Period } from "@cluenori/foundation"
 import { DateTime, Duration, Effect, Schema } from "effect"
 import { SqlClient, SqlSchema } from "effect/sql"
 
@@ -106,7 +106,7 @@ export const originCounts = Effect.gen(function* () {
         ORDER BY count DESC, component, operation, origin`,
     })(undefined).pipe(Effect.orDie)
     const table: OriginTable = {
-      covered: { from: DateTime.makeUnsafe(from), to: DateTime.makeUnsafe(to) },
+      covered: new Period({ from: DateTime.makeUnsafe(from), to: DateTime.makeUnsafe(to) }),
       rows: rows.map((row) => ({
         component: row.component,
         operation: row.operation,

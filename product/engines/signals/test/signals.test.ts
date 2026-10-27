@@ -11,13 +11,13 @@ import {
   TraceId,
 } from "@cluenori/foundation"
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Duration, Effect, Result } from "effect"
+import { DateTime, Duration, Effect, Result, Schema } from "effect"
 import { Base64 } from "effect/encoding"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 
 import type { KeptTrace, OperationCounts, TraceExport } from "../src/index.ts"
-import { BatchDigest, readMetrics, readTraces, Signals } from "../src/index.ts"
+import { BatchDigest, OriginTable, readMetrics, readTraces, Signals } from "../src/index.ts"
 import { dotnetTraces } from "./fixtures/dotnet-traces.ts"
 import { dropAppTables, dropFeatureSignals, dropLogMessages, inProject, WebCrypto } from "./in-object.ts"
 
@@ -1240,6 +1240,8 @@ describe("Signals by origin", () => {
       )
       // A period after now has nothing counted yet, and covers nothing.
       assert.deepStrictEqual(later, { rows: [] })
+      // Each answer crosses to the Worker encoded, as the project object sends it.
+      yield* Schema.encodeEffect(OriginTable)(all)
     }),
   )
 })
