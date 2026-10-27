@@ -144,9 +144,10 @@ struct DeliverySection: View {
                 AnswerPlaceholder(problem: delivery.answer.problem)
             } else if delivery.components.isEmpty {
                 Text(
-                    "No components yet. Add one from a terminal: ./cluenori component add",
+                    "No components yet. An owner adds them from a terminal: ./cluenori component add",
                     bundle: #bundle,
-                    comment: "A project without components. ./cluenori component add is a command, as is."
+                    comment:
+                        "A project without components; only owners add them. ./cluenori component add is a command, as is."
                 )
                 .foregroundStyle(.secondary)
             }

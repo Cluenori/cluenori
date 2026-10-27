@@ -68,7 +68,11 @@ const selfTelemetryOn = Command.make("on", { project: projectFlag }, (input) =>
       components.filter((component) => !has(component.key)),
       (component) =>
         client.projects.addComponent({ params: { project }, payload: component }).pipe(
-          Effect.catchTags({ ...failures, ComponentExists: () => refuse(`${component.key} exists.`) }),
+          Effect.catchTags({
+            ...failures,
+            ComponentExists: () => refuse(`${component.key} exists.`),
+            NotAllowed: () => refuse("Only an owner turns self-telemetry on."),
+          }),
           Effect.tap(() => Console.log(`Added ${component.key} to ${project}.`)),
         ),
     )

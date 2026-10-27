@@ -231,9 +231,10 @@ public nonisolated struct CluenoriAPI: Sendable {
     }
 
     /// Adds a component to a project and returns its ingest key, which its telemetry is sent with.
-    /// The key is shown only in this answer.
+    /// The key is shown only in this answer. Owners only, as the key is a credential.
     ///
-    /// Fails with `.unauthorized`, `.projectNotFound`, `.componentExists`, or as any call can.
+    /// Fails with `.unauthorized`, `.notAllowed`, `.projectNotFound`, `.componentExists`, or as any
+    /// call can.
     @concurrent
     public func addComponent(
         project: String,

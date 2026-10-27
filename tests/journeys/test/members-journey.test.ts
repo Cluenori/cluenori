@@ -4,7 +4,7 @@ import {
   PublicKeyCredentialRequestOptionsJSON,
   softwareAuthenticator,
 } from "@bagatka/webauthn"
-import { ProjectKey } from "@cluenori/foundation"
+import { ComponentKey, ProjectKey } from "@cluenori/foundation"
 import { Email, InviteCode, Member, SignInList } from "@cluenori/members"
 import { AppVersion, ModelIdentifier, PairedPhone, PairingCode, SystemVersion } from "@cluenori/phones"
 import { ProjectList, ProjectName } from "@cluenori/projects"
@@ -107,6 +107,18 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("members", (it) => {
       assert.strictEqual((yield* fromBrowser("GET", `/projects/${shared}/incidents`, cookie)).status, 200)
       assert.strictEqual((yield* fromBrowser("GET", "/members", cookie)).status, 403)
       assert.strictEqual((yield* fromBrowser("POST", "/projects", cookie, { key: "adas", name: "Ada's" })).status, 403)
+      // Nor a component of a project Ada sees, which would come with a working ingest key, nor its keys.
+      const component = { key: ComponentKey.make("adas-api"), name: "Ada's API" }
+      assert.strictEqual((yield* fromBrowser("POST", `/projects/${shared}/components`, cookie, component)).status, 403)
+      const detail = yield* client.projects.project({ params: { project: shared } })
+      assert.notInclude(
+        detail.components.map((each) => each.key),
+        component.key,
+      )
+      assert.strictEqual(
+        (yield* fromBrowser("GET", `/projects/${shared}/components/adas-api/ingest-keys`, cookie)).status,
+        403,
+      )
 
       // Ada's phone, paired from Ada's browser, acts for Ada: it sees what Ada sees.
       const pairing = yield* fromBrowser("POST", "/phones/pairings", cookie).pipe(

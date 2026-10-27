@@ -352,6 +352,12 @@ export const momentTracesAtom = Atom.family((key: Scope & { readonly from: numbe
   ),
 )
 
+/** Whether the one signed in is an owner, who manages projects, components and keys; false until known. */
+export const useIsOwner = () => {
+  const me = useAtomValue(meAtom)
+  return AsyncResult.isSuccess(me) && me.value.role === "owner"
+}
+
 /**
  * The operations over the last day and over the 7 days before, whatever the period: what "slower"
  * compares (`slowerOf` in `@cluenori/signals`). Both questions go at once.

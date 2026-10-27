@@ -83,9 +83,13 @@ export const ProjectsHandlers = HttpApiBuilder.group(CluenoriApi, "projects", (h
         })
       }),
     )
+    // A new component comes with its first ingest key, a credential: only owners add one.
     .handle("addComponent", ({ params, payload }) =>
       Effect.gen(function* () {
         const member = yield* CurrentMember
+        if (member.access._tag !== "Everything") {
+          return yield* new NotAllowed()
+        }
         const { actor } = member
         const projects = yield* MemberProjects
         return yield* projects.call(member, params.project, projectCalls.addComponent, { actor, component: payload })

@@ -70,10 +70,14 @@ export class ProjectsGroup extends HttpApiGroup.make("projects")
       params: { project: ProjectKey },
       payload: AddComponent,
       success: AddedComponentResponse.pipe(HttpApiSchema.status(201)),
-      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), ComponentExists.pipe(HttpApiSchema.status(409))],
+      error: [
+        ProjectNotFound.pipe(HttpApiSchema.status(404)),
+        ComponentExists.pipe(HttpApiSchema.status(409)),
+        NotAllowed.pipe(HttpApiSchema.status(403)),
+      ],
     }).annotate(
       OpenApi.Description,
-      "Adds a component to a project and returns its ingest key, which its telemetry is sent with. The key is shown only in this answer.",
+      "Adds a component to a project and returns its ingest key, which its telemetry is sent with. The key is shown only in this answer. Owners only, as the key is a credential.",
     ),
   )
   .add(

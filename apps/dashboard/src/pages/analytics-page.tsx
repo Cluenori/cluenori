@@ -26,6 +26,7 @@ import {
   sdkKeysAtom,
   setVersionPolicyAtom,
   usageAtom,
+  useIsOwner,
   versionPoliciesAtom,
 } from "@/project-data"
 import type { Environments } from "@/project-facts"
@@ -368,6 +369,7 @@ function AppsPanel({
   readonly component: ComponentKey | undefined
 }) {
   const policies = useAtomValue(versionPoliciesAtom(project))
+  const owner = useIsOwner()
   const keys = components.map((each) => each.key)
   const shown = components.filter((each) => component === undefined || each.key === component)
   return (
@@ -378,11 +380,17 @@ function AppsPanel({
     >
       {shown.length === 0 ? (
         <p className="px-5 py-6 text-sm text-muted-foreground">
-          No components yet. Add the app&apos;s:{" "}
-          <span className="font-mono">
-            ./cluenori component add {project} notes-ios --name &quot;Notes for iPhone&quot;
-          </span>
-          .
+          {owner ? (
+            <>
+              No components yet. Add the app&apos;s:{" "}
+              <span className="font-mono">
+                ./cluenori component add {project} notes-ios --name &quot;Notes for iPhone&quot;
+              </span>
+              .
+            </>
+          ) : (
+            "No components yet. An owner adds them."
+          )}
         </p>
       ) : (
         <div className="flex flex-col divide-y">

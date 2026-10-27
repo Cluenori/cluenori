@@ -124,6 +124,7 @@ export const componentAdd = Command.make(
               `${target.url} has no project ${project}. Create it: ./cluenori project create ${project} --name <name>`,
             ),
           ComponentExists: () => refuse(`${project} already has a component with the key ${key}.`),
+          NotAllowed: () => refuse("Only an owner adds a component, as it comes with an ingest key."),
         }),
       )
       const ingestKey = Redacted.make(added.ingestKey)

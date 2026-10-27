@@ -13,13 +13,13 @@ import { count, duration, share } from "@/lib/format"
 import {
   errorsAtom,
   incidentsAtom,
-  meAtom,
   logCountsAtom,
   operationsAtom,
   periodAtom,
   projectAtom,
   updateSettingsAtom,
   useComponentKeys,
+  useIsOwner,
   usualOperationsAtom,
 } from "@/project-data"
 import type { Environments } from "@/project-facts"
@@ -342,6 +342,7 @@ function Incidents({ project, environments }: { readonly project: ProjectKey; re
 
 /** Each component's numbers over the period, one click from its own requests, errors, logs and releases. */
 function Components({ project, environment }: { readonly project: ProjectKey; readonly environment?: EnvironmentKey }) {
+  const owner = useIsOwner()
   const inShown = environment === undefined ? {} : { environment }
   const scope = { project, ...inShown }
   const period = useAtomValue(periodAtom)
@@ -358,6 +359,9 @@ function Components({ project, environment }: { readonly project: ProjectKey; re
         {({ detail: { components }, operations: table, compared: usual }) => {
           const keys = components.map((component) => component.key)
           const slower = slowerOperations(usual)
+          if (components.length === 0 && !owner) {
+            return <p className="max-w-2xl px-5 py-6 text-[15px]">No components yet. An owner adds them.</p>
+          }
           if (components.length === 0) {
             return (
               <p className="max-w-2xl px-5 py-6 text-[15px]">
@@ -533,8 +537,7 @@ export function TechPage({
   const filters: Filters = environment === undefined ? {} : { environment }
   const detail = useAtomValue(projectAtom(project))
   const operations = useAtomValue(operationsAtom({ project, ...filters }))
-  const me = useAtomValue(meAtom)
-  const owner = AsyncResult.isSuccess(me) && me.value.role === "owner"
+  const owner = useIsOwner()
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 p-4 md:p-6">
       <ProjectHeader

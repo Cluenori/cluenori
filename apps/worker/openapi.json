@@ -985,6 +985,16 @@
               }
             }
           },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
           "404": {
             "description": "ProjectNotFound",
             "content": {
@@ -1006,7 +1016,7 @@
             }
           }
         },
-        "description": "Adds a component to a project and returns its ingest key, which its telemetry is sent with. The key is shown only in this answer.",
+        "description": "Adds a component to a project and returns its ingest key, which its telemetry is sent with. The key is shown only in this answer. Owners only, as the key is a credential.",
         "requestBody": {
           "content": {
             "application/json": {

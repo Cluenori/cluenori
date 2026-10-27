@@ -9,7 +9,7 @@ import { compact, count } from "@/lib/format"
 import type { ProductLine, ProjectLines } from "@/product-lines"
 import { hasNews, newsNamesOf, projectsNowOf } from "@/product-lines"
 import type { ProjectPulse } from "@/project-data"
-import { feedsAtom, todayAtom } from "@/project-data"
+import { feedsAtom, todayAtom, useIsOwner } from "@/project-data"
 import { dayLoadOf } from "@/project-facts"
 import { Link } from "@/router"
 import { LoadBars } from "@/views/load-bars"
@@ -37,6 +37,16 @@ const summaryOf = (needing: ReadonlyArray<{ readonly name: string; readonly line
 
 /** The start of a workspace without projects: how to create the first. */
 function NoProjects() {
+  const owner = useIsOwner()
+  if (!owner) {
+    return (
+      <Panel icon={FolderPlusIcon} title="No projects yet" subtitle="An owner chooses the projects you see">
+        <p className="max-w-2xl px-5 py-6 text-[15px]">
+          No project is shared with you yet. Ask an owner of this deployment to add you to one.
+        </p>
+      </Panel>
+    )
+  }
   return (
     <Panel
       icon={FolderPlusIcon}
