@@ -4,6 +4,6 @@
  * through them. The entry the platform runs is `src/worker.ts`.
  */
 export { CluenoriIngestApi } from "./app-ingest-api.ts"
-export { CluenoriApi } from "./cluenori-api.ts"
+export { ClientTelemetry, CluenoriApi } from "./cluenori-api.ts"
 export { CurrentMember, MemberAuthorization, Unauthorized } from "./member-authorization.ts"
 export { CurrentSdkComponent, SdkKeyAuthorization } from "./sdk-key-authorization.ts"

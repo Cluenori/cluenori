@@ -248,6 +248,49 @@ export const FeatureUseTable = Schema.Struct({ features: Schema.Array(FeatureUse
 })
 export type FeatureUseTable = typeof FeatureUseTable.Type
 
+/** How long something took, as measured: how many times, and the p50 and p95. */
+export const DurationSpread = Schema.Struct({
+  count: Count,
+  p50Ms: Milliseconds,
+  p95Ms: Milliseconds,
+}).annotate({ identifier: "DurationSpread" })
+export type DurationSpread = typeof DurationSpread.Type
+
+/**
+ * One screen as the apps measured it in a period: how long it took to show its first content from
+ * what the device kept and from the network; its visits, with their time in sight, the CPU time
+ * the app used per minute in sight, and the hitches while scrolling, in ms per second scrolled
+ * (Apple's hitch ratio); and the hangs on it. A measure the apps didn't send is absent, never zero.
+ */
+export const ScreenUse = Schema.Struct({
+  /** Absent for hangs while no screen was named. */
+  screen: Schema.optionalKey(EnvelopeName),
+  readyKept: Schema.optionalKey(DurationSpread),
+  readyFresh: Schema.optionalKey(DurationSpread),
+  /** Visits measured as they ended, with how long each was in sight. */
+  visible: Schema.optionalKey(DurationSpread),
+  cpuMsPerMinute: Schema.optionalKey(Milliseconds),
+  hitchMsPerSecond: Schema.optionalKey(Milliseconds),
+  hangs: Schema.optionalKey(DurationSpread),
+}).annotate({ identifier: "ScreenUse" })
+export type ScreenUse = typeof ScreenUse.Type
+
+/** One timing the apps measured, by the name they gave it: `export.render`. */
+export const TimingUse = Schema.Struct({ name: EnvelopeName, ...DurationSpread.fields }).annotate({
+  identifier: "TimingUse",
+})
+export type TimingUse = typeof TimingUse.Type
+
+/**
+ * A period's screens, those visited the most first, then those measured otherwise by name; and its
+ * timings, the most measured first.
+ */
+export const ScreenTable = Schema.Struct({
+  screens: Schema.Array(ScreenUse),
+  timings: Schema.Array(TimingUse),
+}).annotate({ identifier: "ScreenTable" })
+export type ScreenTable = typeof ScreenTable.Type
+
 /** One UTC day of a feature's use: the people who did anything in it, and its events and screens. */
 export const FeatureUseDay = Schema.Struct({
   day: CalendarDay,

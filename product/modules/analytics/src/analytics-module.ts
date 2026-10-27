@@ -11,6 +11,7 @@ import {
   PersonLookup,
   PersonNotFound,
   RetentionQuery,
+  ScreenTable,
 } from "@cluenori/signals"
 import { Effect, Schema } from "effect"
 
@@ -35,6 +36,11 @@ const featureUse = Effect.fn("Analytics.featureUse")(function* (query: AppQuery)
   return yield* apps.features(query)
 })
 
+const screens = Effect.fn("Analytics.screens")(function* (query: AppQuery) {
+  const apps = yield* AppSignals
+  return yield* apps.screens(query)
+})
+
 const person = Effect.fn("Analytics.person")(function* (lookup: PersonLookup) {
   const apps = yield* AppSignals
   return yield* apps.person(lookup)
@@ -56,6 +62,8 @@ export const analyticsModule = defineModule({
     appHealth: moduleQuery({ input: AppReleaseQuery, success: AppHealthList, error: Schema.Never, run: appHealthOf }),
     /** Each feature's people, events, screens and memory, and those of no feature. Reads only. */
     featureUse: moduleQuery({ input: AppQuery, success: FeatureUseTable, error: Schema.Never, run: featureUse }),
+    /** Each screen's readiness, visits, CPU time, hitches and hangs, and the apps' timings. Reads only. */
+    screens: moduleQuery({ input: AppQuery, success: ScreenTable, error: Schema.Never, run: screens }),
     /**
      * One feature's story over everything kept of it: its use by day, its people, its releases, and its
      * services' warnings, errors and operations by day. Fails with `FeatureNotFound`. Reads only.

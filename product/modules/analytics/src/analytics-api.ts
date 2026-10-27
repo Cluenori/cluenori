@@ -8,7 +8,15 @@ import {
   ReleaseVersion,
 } from "@cluenori/foundation"
 import { ProjectNotFound } from "@cluenori/projects"
-import { AppPerson, AppRetention, AppUsage, AppUserId, FeatureUseTable, PersonNotFound } from "@cluenori/signals"
+import {
+  AppPerson,
+  AppRetention,
+  AppUsage,
+  AppUserId,
+  FeatureUseTable,
+  PersonNotFound,
+  ScreenTable,
+} from "@cluenori/signals"
 import { DateTime, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 
@@ -84,6 +92,17 @@ export class AnalyticsGroup extends HttpApiGroup.make("analytics")
     ),
   )
   .add(
+    HttpApiEndpoint.get("screens", "/projects/:project/screens", {
+      params: { project: ProjectKey },
+      query: AppFilters,
+      success: ScreenTable,
+      error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
+    }).annotate(
+      OpenApi.Description,
+      "How each screen of a project's apps did in a period, by UTC day, those visited the most first: how long it took to show its first content from what the device kept and from the network (p50 and p95, as the app marked it ready), its visits and their time in sight, the CPU time the app used per minute in sight, its hitches while scrolling in ms per second scrolled, and the hangs on it (the main thread held 250 ms or more); and the timings the apps measured, by name, with their p50 and p95. A measure the apps didn't send is absent, not zero. Kept 15 months.",
+    ),
+  )
+  .add(
     HttpApiEndpoint.get("person", "/projects/:project/people/:person", {
       params: { project: ProjectKey, person: PersonId },
       success: AppPerson,
@@ -107,11 +126,11 @@ export class AnalyticsGroup extends HttpApiGroup.make("analytics")
   .add(
     HttpApiEndpoint.get("feature", "/projects/:project/features/:feature", {
       params: { project: ProjectKey, feature: FeatureKey },
-      query: { environment: Schema.optionalKey(EnvironmentKey) },
+      query: { environment: Schema.optionalKey(EnvironmentKey), component: Schema.optionalKey(ComponentKey) },
       success: FeatureStory,
       error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), FeatureNotFound.pipe(HttpApiSchema.status(404))],
     }).annotate(
       OpenApi.Description,
-      "One feature's story, by its key exactly, over everything kept of it, with no period, in one environment or every one: how the apps used it, each UTC day's people, events and screens (15 months), everyone who used it, the 20 who used it last, its releases and the app's memory in it; and what its services sent naming it in `cluenori.feature`: each UTC day's warnings and errors and its 10 most frequent errors (90 days), and each day's operations by component and operation, with how many failed (15 months). A part nothing named the feature in is empty; 404 when nothing kept names it.",
+      "One feature's story, by its key exactly, over everything kept of it, with no period, in one environment or every one, of every client or one component (`component`: an app's use and errors, a service's operations, warnings and errors): how the apps used it, each UTC day's people, events and screens (15 months), everyone who used it, the 20 who used it last, its releases and the app's memory in it; and what its services sent naming it in `cluenori.feature`: each UTC day's warnings and errors and its 10 most frequent errors (90 days), and each day's operations by component and operation, with how many failed (15 months). A part nothing named the feature in is empty; 404 when nothing kept names it, of any client: narrowed to a component, every part may be empty.",
     ),
   ) {}

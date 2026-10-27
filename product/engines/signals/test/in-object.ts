@@ -44,12 +44,12 @@ export const WebCrypto = BrowserCrypto.layer
 /**
  * Runs `program` inside the Durable Object of project `project` at the time `now` (Unix ms), with
  * the apps' signals built on its storage the way a host builds them: their batches kept in `files`,
- * and `limits` on how much they take.
+ * and `limits` on how much they take; and the services' signals beside them, as a host has them.
  */
 export const inApps = <A, E>(
   project: string,
   now: number,
-  program: Effect.Effect<A, E, AppSignals | SqlClient.SqlClient>,
+  program: Effect.Effect<A, E, AppSignals | Signals | SqlClient.SqlClient>,
   options: { readonly files?: Map<string, string>; readonly limits?: AppRateLimits } = {},
 ) =>
   Effect.promise(() =>
@@ -63,6 +63,10 @@ export const inApps = <A, E>(
               project: ProjectKey.make(project),
               ...(options.limits === undefined ? {} : { limits: options.limits }),
             }).pipe(
+              Layer.provideMerge(
+                Signals.layer({ workspace: WorkspaceKey.make("main"), project: ProjectKey.make(project) }),
+              ),
+              Layer.provideMerge(ArchiveStore.layerMemory),
               Layer.provideMerge(AppBatchStore.layerMemory(options.files)),
               Layer.provideMerge(WebCrypto),
               Layer.provideMerge(SqliteClient.layer({ storage: state.storage })),
@@ -106,8 +110,8 @@ export const dropFeatureSignals = Effect.gen(function* () {
 })
 
 /**
- * Removes what migrations 0013 and later made (log messages, and the timeline's index of events), so a
- * test can build a database from before 0013.
+ * Removes what migrations 0013 and later made (log messages, the timeline's index of events, and
+ * 0015's tables), so a test can build a database from before 0013.
  */
 export const dropLogMessages = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
@@ -117,4 +121,12 @@ export const dropLogMessages = Effect.gen(function* () {
   // Gone already when the app's tables were dropped.
   yield* sql`DROP INDEX IF EXISTS signals_app_timeline_events`
   yield* sql`DROP TABLE IF EXISTS signals_app_event_last`
+  yield* dropScreensAndOrigins
+})
+
+/** Removes what migration 0015 made, screens' and timings' measures and origins' counts. */
+export const dropScreensAndOrigins = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`DROP TABLE IF EXISTS signals_app_subject_measures`
+  yield* sql`DROP TABLE IF EXISTS signals_origin_hours`
 })

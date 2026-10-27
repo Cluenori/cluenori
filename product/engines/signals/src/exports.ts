@@ -5,6 +5,7 @@ import { FeatureOperationCounts } from "./feature-queries.ts"
 import { KeptTrace } from "./kept-trace.ts"
 import { ErrorGroupId, LogEntry } from "./log-entry.ts"
 import { BatchDigest, OperationCounts } from "./operation-counts.ts"
+import { OriginOperationCounts } from "./operation-queries.ts"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
@@ -27,6 +28,8 @@ export const TraceExport = Schema.Struct({
   counts: Schema.Array(OperationCounts),
   /** Its operations that named their feature, counted by feature and UTC day too; absent for none. */
   features: Schema.optionalKey(Schema.Array(FeatureOperationCounts)),
+  /** Its operations that named the client they came from, counted by origin and hour too; absent for none. */
+  origins: Schema.optionalKey(Schema.Array(OriginOperationCounts)),
   /** Of each operation, environment and hour, its slowest traces and its slowest failed ones. */
   kept: Schema.Array(KeptTrace),
   /** The traces it holds spans of, each once: how a trace's files are found. */

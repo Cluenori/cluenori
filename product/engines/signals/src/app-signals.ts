@@ -29,6 +29,7 @@ import type {
   EventCountQuery,
   FeatureUseLife,
   FeatureUseTable,
+  ScreenTable,
   PersonLookup,
   PersonNotFound,
   RetentionQuery,
@@ -41,7 +42,13 @@ import { appStore } from "./app-store.ts"
 import { keptSignalOf, talliesOf } from "./app-tallies.ts"
 import type { ArchiveSettings } from "./archive-index.ts"
 import type { ArchiveUnavailable } from "./archive-store.ts"
+import type { ErrorGroupShape } from "./exports.ts"
+import { featureAttribute } from "./feature-attribute.ts"
 import type { FeatureQuery } from "./feature-queries.ts"
+import { errorShapeOf } from "./fingerprint.ts"
+import type { ErrorGroupId, LogEntry } from "./log-entry.ts"
+import { logStore } from "./log-store.ts"
+import { errorIdOf, logRetention } from "./read-logs.ts"
 import { scrubbedText } from "./scrubbed.ts"
 import { migrateSignals } from "./signals-migrations.ts"
 
@@ -176,7 +183,7 @@ export class AppSignals extends Context.Service<
      * counted as duplicates, so a batch sent again counts once. Texts are scrubbed first, and the
      * signals' times corrected when the device's clock is more than a minute off from `sentAt`. The
      * new signals are archived first, with each person instead of the app's user ID, then counted in
-     * one transaction. Fails with `TooManySignals` when the key sent 1,200 batches this minute or the
+     * one transaction, the app's errors with them as its component's errors (`Signals.errors`). Fails with `TooManySignals` when the key sent 1,200 batches this minute or the
      * installation 20, having read nothing; with `ArchiveUnavailable` when they can't be archived,
      * having counted nothing, so the batch should be sent again.
      */
@@ -199,6 +206,12 @@ export class AppSignals extends Context.Service<
     readonly health: (release: AppReleaseKey) => Effect.Effect<AppHealth>
     /** Each feature's people, events, screens and memory in the query's period, and those of no feature. */
     readonly features: (query: AppQuery) => Effect.Effect<FeatureUseTable>
+    /**
+     * The query's screens, as the apps measured them by UTC day: each one's readiness from what the
+     * device kept and from the network, its visits, CPU time and hitches, and the hangs on it; and
+     * the timings the apps measured, by name. Reads one row per day, release, screen and measure.
+     */
+    readonly screens: (query: AppQuery) => Effect.Effect<ScreenTable>
     /**
      * One feature's use over everything kept of it (15 months), that key exactly, optionally in one
      * environment: each day's people, events and screens, everyone who used it, the 20 who used it
@@ -233,6 +246,7 @@ export class AppSignals extends Context.Service<
         const batches = yield* AppBatchStore
         yield* migrateSignals.pipe(Effect.orDie)
         const store = yield* appStore
+        const logs = yield* logStore
         const limits = settings.limits ?? defaultAppRateLimits
         const rateWindow = yield* Ref.make(emptyWindow)
         const lastCleanup = yield* Ref.make(0)
@@ -244,6 +258,8 @@ export class AppSignals extends Context.Service<
             return
           }
           yield* store.cleanUp(now)
+          // Apps' errors are log lines and error groups too, kept as long as services'.
+          yield* logs.cleanUp(now)
           yield* Ref.set(lastCleanup, now)
         })
 
@@ -275,11 +291,58 @@ export class AppSignals extends Context.Service<
           yield* batches.put(archiveKeyOf(source, plan, now), json)
         })
 
+        // The batch's errors as its component's errors, each a line of the logs grouped as a service's
+        // are, so Tech's errors, an error's page and a feature's story show them; those older than
+        // the 90 days lines are kept aren't. By the signal they came from, as they are written once
+        // that signal is known to be new.
+        const errorLinesOf = Effect.fn("AppSignals.errorLinesOf")(function* (
+          source: BatchSource,
+          fresh: ReadonlyArray<AppSignal>,
+          now: number,
+        ) {
+          const lines = new Map<string, { readonly entry: LogEntry; readonly group: ErrorGroupShape }>()
+          for (const signal of fresh) {
+            if (signal._tag !== "error" || DateTime.toEpochMillis(signal.at) < now - Duration.toMillis(logRetention)) {
+              continue
+            }
+            const exception = {
+              type: signal.type,
+              message: signal.message,
+              ...(signal.stack === undefined ? {} : { stack: signal.stack }),
+            }
+            const category = source.component
+            const shape = errorShapeOf({ category, message: signal.message, exception })
+            const error = yield* errorIdOf(shape)
+            const entry: LogEntry = {
+              time: signal.at,
+              level: signal.handled ? "error" : "fatal",
+              category,
+              message: signal.message === "" ? signal.type : signal.message,
+              environment: source.batch.environment,
+              release: source.batch.release,
+              exception,
+              error,
+              attributes: {
+                ...(signal.feature === undefined ? {} : { [featureAttribute]: signal.feature }),
+                ...(signal.screen === undefined ? {} : { "cluenori.screen": signal.screen }),
+                "cluenori.session": signal.session,
+                handled: signal.handled,
+              },
+            }
+            lines.set(signal.id, {
+              entry,
+              group: { id: error, kind: shape.kind, title: shape.title, culprit: shape.culprit },
+            })
+          }
+          return lines
+        })
+
         // Inside the transaction: checks again for signals that arrived meanwhile, then writes.
         const commit = Effect.fn("AppSignals.commit")(function* (
           source: BatchSource,
           fresh: ReadonlyArray<AppSignal>,
           candidates: ReadonlyArray<PersonId>,
+          errorLines: ReadonlyMap<string, { readonly entry: LogEntry; readonly group: ErrorGroupShape }>,
           now: number,
         ) {
           const again = yield* store.seenOf(fresh.map((signal) => signal.id))
@@ -287,6 +350,16 @@ export class AppSignals extends Context.Service<
           if (still.length === 0) {
             return 0
           }
+          const lines = still.flatMap((signal) => {
+            const line = errorLines.get(signal.id)
+            return line === undefined ? [] : [line]
+          })
+          const groups = new Map<ErrorGroupId, ErrorGroupShape>(lines.map((line) => [line.group.id, line.group]))
+          yield* logs.add(
+            source.component,
+            lines.map((line) => line.entry),
+            [...groups.values()],
+          )
           // Not handled: a person made by a batch that arrived while this one was archived, which
           // this one planned to make too; its archive file then names an ID the database doesn't
           // have. Handling it takes archiving after the commit, with its own retry.
@@ -335,7 +408,10 @@ export class AppSignals extends Context.Service<
           const source: BatchSource = { component: sender.component, country: sender.country, batch }
           const plan = yield* store.peopleOf(batch.installation, fresh, candidates)
           yield* archive(source, plan, now)
-          const accepted = yield* sql.withTransaction(commit(source, fresh, candidates, now)).pipe(Effect.orDie)
+          const errorLines = yield* errorLinesOf(source, fresh, now).pipe(Effect.provideService(Crypto.Crypto, crypto))
+          const accepted = yield* sql
+            .withTransaction(commit(source, fresh, candidates, errorLines, now))
+            .pipe(Effect.orDie)
           const answer: AppBatchAccepted = { accepted, duplicates: batch.signals.length - accepted }
           return answer
         })
@@ -357,6 +433,11 @@ export class AppSignals extends Context.Service<
           return yield* store.features(query, now)
         })
 
+        const screens = Effect.fn("AppSignals.screens")(function* (query: AppQuery) {
+          const now = yield* nowMillis
+          return yield* store.screens(query, now)
+        })
+
         const feature = Effect.fn("AppSignals.feature")(function* (query: FeatureQuery) {
           const now = yield* nowMillis
           return yield* store.featureLife(query, now)
@@ -374,6 +455,7 @@ export class AppSignals extends Context.Service<
           releases: store.releases,
           health: store.health,
           features,
+          screens,
           feature,
           person,
           eventCount: store.eventCount,

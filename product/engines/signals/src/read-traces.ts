@@ -2,10 +2,11 @@ import type { Attributes, Span } from "@bagatka/otlp-protobuf"
 import { decodeTraces, encodeTraces } from "@bagatka/otlp-protobuf"
 import { sketchOf } from "@bagatka/quantile-sketch"
 import type { FeatureKey } from "@cluenori/foundation"
-import { dayNumberOf, EnvelopeName, EnvironmentKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
+import { ComponentKey, dayNumberOf, EnvelopeName, EnvironmentKey, ReleaseVersion, TraceId } from "@cluenori/foundation"
 import { Crypto, DateTime, Duration, Effect, Schema } from "effect"
 import { Hex } from "effect/encoding"
 
+import { originComponentAttribute } from "./baggage.ts"
 import type { TraceExport } from "./exports.ts"
 import { featureAttribute, featureIn } from "./feature-attribute.ts"
 import type { FeatureOperationCounts } from "./feature-queries.ts"
@@ -13,6 +14,7 @@ import type { KeptTrace } from "./kept-trace.ts"
 import { HttpStatus, keptPerHour } from "./kept-trace.ts"
 import type { OperationCounts } from "./operation-counts.ts"
 import { BatchDigest } from "./operation-counts.ts"
+import type { OriginOperationCounts } from "./operation-queries.ts"
 import { scrubbedTraces, unarchivable } from "./scrubbed.ts"
 
 /**
@@ -118,6 +120,16 @@ interface Group {
   readonly durations: Array<number>
 }
 
+interface OriginGroup {
+  readonly hour: number
+  readonly origin: ComponentKey
+  readonly operation: EnvelopeName
+  readonly environment: EnvironmentKey | undefined
+  count: number
+  errors: number
+  totalMs: number
+}
+
 interface FeatureGroup {
   readonly day: number
   readonly feature: FeatureKey
@@ -130,7 +142,8 @@ interface FeatureGroup {
 /**
  * Reads the body of an OTLP/HTTP protobuf trace export: removes credentials and personal data,
  * writes the file the archive keeps, counts its operations by name, environment, release, and minute,
- * and those that named their feature in `cluenori.feature` by feature and UTC day too, and
+ * and those that named their feature in `cluenori.feature` by feature and UTC day too, those that
+ * named the client they came from in `cluenori.origin.component` by origin and hour too, and
  * picks the traces that may be kept. An operation's span is a server or consumer span, or an
  * internal span that starts its trace, a job (`isOperationSpan`); its name is the operation's
  * (`GET /api/notes/{id}`, `cleanup.run`); it failed when its status is an error. Pure apart from
@@ -148,6 +161,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
 
   const groups = new Map<string, Group>()
   const features = new Map<string, FeatureGroup>()
+  const origins = new Map<string, OriginGroup>()
   const hours = new Map<string, Array<KeptTrace>>()
   let rejectedCount = 0
   let firstProblem: string | undefined
@@ -194,6 +208,24 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
             tally.errors += failed ? 1 : 0
             features.set(featureKey, tally)
           }
+          const origin = span.attributes.get(originComponentAttribute)
+          if (Schema.is(ComponentKey)(origin)) {
+            const hour = start - (start % hourMillis)
+            const originKey = [hour, origin, operation, environment ?? ""].join("\u0000")
+            const tally = origins.get(originKey) ?? {
+              hour,
+              origin,
+              operation,
+              environment,
+              count: 0,
+              errors: 0,
+              totalMs: 0,
+            }
+            tally.count += 1
+            tally.errors += failed ? 1 : 0
+            tally.totalMs += durationMs
+            origins.set(originKey, tally)
+          }
           if (Schema.is(TraceId)(span.traceId)) {
             const status = statusOf(span)
             const hourKey = [start - (start % hourMillis), operation, environment ?? ""].join("\u0000")
@@ -234,6 +266,15 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
     count: counted.count,
     errors: counted.errors,
   }))
+  const byOrigin: ReadonlyArray<OriginOperationCounts> = Array.from(origins.values(), (counted) => ({
+    hour: DateTime.makeUnsafe(counted.hour),
+    origin: counted.origin,
+    operation: counted.operation,
+    ...(counted.environment === undefined ? {} : { environment: counted.environment }),
+    count: counted.count,
+    errors: counted.errors,
+    totalMs: counted.totalMs,
+  }))
   const spans = resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
   const earliest = spans.reduce(
     (least, span) => Math.min(least, Number(span.startTimeUnixNano / 1_000_000n)),
@@ -252,6 +293,7 @@ export const readTraces = Effect.fn("readTraces")(function* (body: Uint8Array) {
       spans: spans.length,
       counts,
       features: byFeature,
+      origins: byOrigin,
       kept: [...hours.values()].flatMap(toKeep),
       traces: [...traces],
     },

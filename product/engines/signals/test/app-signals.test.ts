@@ -12,10 +12,11 @@ import { SdkKey } from "@cluenori/projects"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Schema } from "effect"
 import { SqlClient } from "effect/sql"
+import { TestClock } from "effect/testing"
 
 import type { AppBatch, AppSignal } from "../src/index.ts"
-import { AppSignalId, AppSignals, AppUserId } from "../src/index.ts"
-import { inApps } from "./in-object.ts"
+import { AppSignalId, AppSignals, AppUserId, Signals } from "../src/index.ts"
+import { dropScreensAndOrigins, inApps } from "./in-object.ts"
 
 // Thursday 2026-10-22, noon UTC: the week started on Monday the 19th.
 const now = 1792670400000
@@ -383,6 +384,165 @@ describe("AppSignals", () => {
     ),
   )
 
+  it.effect("measures each screen's readiness, visits, CPU time, hitches and hangs, and the apps' timings", () =>
+    inApps(
+      "apps-screens",
+      now,
+      Effect.gen(function* () {
+        const apps = yield* AppSignals
+        const at = now - hour
+        const session = sessionAt(at, 1)
+        let n = 0
+        // Each signal's own ID and time, a millisecond apart, in the one session.
+        const next = () => {
+          n += 1
+          return { id: AppSignalId.make(uuidAt(at, n)), at: DateTime.makeUnsafe(at + n), session }
+        }
+        const card = EnvelopeName.make("card")
+        const feed = EnvelopeName.make("feed")
+        const visit = AppSignalId.make(uuidAt(at, 99))
+        yield* record(
+          batchOf(installationOf(1), [
+            { ...next(), _tag: "screen.ready", screen: card, visit, content: "kept", ms: 100 },
+            { ...next(), _tag: "screen.ready", screen: card, visit, content: "kept", ms: 300 },
+            { ...next(), _tag: "screen.ready", screen: card, visit, content: "fresh", ms: 900 },
+            { ...next(), _tag: "screen.ready", screen: feed, visit, content: "fresh", ms: 400 },
+            {
+              ...next(),
+              _tag: "screen.left",
+              screen: card,
+              visit,
+              visibleMs: 60_000,
+              cpuMs: 3_000,
+              scrollMs: 10_000,
+              hitchMs: 50,
+            },
+            { ...next(), _tag: "screen.left", screen: card, visit, visibleMs: 30_000, cpuMs: 1_500 },
+            { ...next(), _tag: "screen.left", screen: feed, visit, visibleMs: 20_000 },
+            // Longer than a day, which is left out: their sum would be no finite number.
+            { ...next(), _tag: "screen.left", screen: feed, visit, visibleMs: 1e308 },
+            { ...next(), _tag: "screen.left", screen: feed, visit, visibleMs: 1e308 },
+            { ...next(), _tag: "app.hang", screen: card, ms: 400 },
+            { ...next(), _tag: "app.hang", ms: 1_000 },
+            ...[120, 80, 200].map((ms): AppSignal => ({
+              ...next(),
+              _tag: "timing",
+              name: EnvelopeName.make("export.render"),
+              ms,
+            })),
+          ]),
+        )
+        const { screens, timings } = yield* apps.screens({ period: lastDays(1) })
+        assert.deepStrictEqual(
+          screens.map((each) => [
+            each.screen,
+            each.readyKept?.count,
+            each.readyFresh?.count,
+            each.visible?.count,
+            each.hangs?.count,
+          ]),
+          [
+            [card, 2, 1, 2, 1],
+            [feed, undefined, 1, 1, undefined],
+            // A hang while no screen was named.
+            [undefined, undefined, undefined, undefined, 1],
+          ],
+        )
+        const [cardUse, feedUse, none] = screens
+        assert.closeTo(cardUse?.readyKept?.p50Ms ?? 0, 100, 2)
+        assert.closeTo(cardUse?.readyKept?.p95Ms ?? 0, 300, 6)
+        assert.closeTo(cardUse?.readyFresh?.p50Ms ?? 0, 900, 18)
+        // CPU over both visits' time in sight: 4.5 s in 90 s, so 3 s a minute; hitches only over the
+        // visit that scrolled: 50 ms in 10 s, so 5 ms a second.
+        assert.closeTo(cardUse?.cpuMsPerMinute ?? 0, 3_000, 0.001)
+        assert.closeTo(cardUse?.hitchMsPerSecond ?? 0, 5, 0.001)
+        assert.closeTo(cardUse?.hangs?.p50Ms ?? 0, 400, 8)
+        // What the feed's visit didn't measure is unknown, not zero.
+        assert.deepStrictEqual([feedUse?.cpuMsPerMinute, feedUse?.hitchMsPerSecond], [undefined, undefined])
+        assert.closeTo(none?.hangs?.p95Ms ?? 0, 1_000, 20)
+        assert.deepStrictEqual(
+          timings.map((each) => [each.name, each.count]),
+          [["export.render", 3]],
+        )
+        assert.closeTo(timings[0]?.p50Ms ?? 0, 120, 3)
+        assert.closeTo(timings[0]?.p95Ms ?? 0, 200, 4)
+        // Another component's screens are its own.
+        const web = yield* apps.screens({ period: lastDays(1), component: ComponentKey.make("notes-web") })
+        assert.deepStrictEqual(web, { screens: [], timings: [] })
+      }),
+    ),
+  )
+
+  it.effect("keeps an app's errors as its component's errors, by feature, an unhandled one fatal, once", () =>
+    inApps(
+      "apps-errors",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        const at = now - hour
+        const session = sessionAt(at, 1)
+        const flip = FeatureKey.make("cards.flip")
+        const batch = batchOf(installationOf(1), [
+          {
+            _tag: "error",
+            id: AppSignalId.make(uuidAt(at, 1)),
+            at: DateTime.makeUnsafe(at),
+            session,
+            feature: flip,
+            screen: EnvelopeName.make("card"),
+            type: "TypeError",
+            message: "card is undefined",
+            stack: "TypeError: card is undefined\n    at flip (https://notes.example/assets/card.js:12:5)",
+            handled: true,
+          },
+          {
+            _tag: "error",
+            id: AppSignalId.make(uuidAt(at, 2)),
+            at: DateTime.makeUnsafe(at + 1),
+            session,
+            type: "RangeError",
+            message: "Invalid time value",
+            handled: false,
+          },
+        ])
+        yield* record(batch)
+        // Sent again, the batch's errors are counted once.
+        yield* record(batch)
+        const all = yield* signals.errors({ period: lastDays(1), component: ios })
+        assert.deepStrictEqual(
+          all.groups.map((group) => [group.title, group.occurrences, group.lastComponent, group.lastRelease]),
+          [
+            ["RangeError: Invalid time value", 1, ios, "0.3.0+20"],
+            ["TypeError: card is undefined", 1, ios, "0.3.0+20"],
+          ],
+        )
+        const inFeature = yield* signals.errors({ period: lastDays(1), feature: flip })
+        assert.deepStrictEqual(
+          inFeature.groups.map((group) => group.title),
+          ["TypeError: card is undefined"],
+        )
+        const page = yield* signals.logs({ period: lastDays(1), component: ios })
+        assert.deepStrictEqual(
+          page.lines
+            .map((line) => [line.level, line.exception?.type])
+            .toSorted((a, b) => String(a[0]).localeCompare(String(b[0]), "en")),
+          [
+            ["error", "TypeError"],
+            ["fatal", "RangeError"],
+          ],
+        )
+        // Past every retention, the next batch removes them, though no service sent anything since.
+        const later = now + 456 * day
+        yield* TestClock.setTime(later)
+        yield* record(batchOf(installationOf(1), sessionSignals(later - hour, 3), { sentAt: later }))
+        const sql = yield* SqlClient.SqlClient
+        const kept = yield* sql<{ readonly n: number }>`
+          SELECT (SELECT count(*) FROM signals_logs) + (SELECT count(*) FROM signals_error_groups) AS n`
+        assert.strictEqual(kept[0]?.n, 0)
+      }),
+    ),
+  )
+
   it.effect("counts one event of a component in a period, of one environment if asked, up to a limit", () =>
     inApps(
       "apps-event-count",
@@ -471,6 +631,7 @@ describe("AppSignals", () => {
           yield* record(batchOf(installationOf(1), events(now - 11 * 60_000, "payment.completed", 1)))
           yield* sql`DROP INDEX signals_app_timeline_events`
           yield* sql`DROP TABLE signals_app_event_last`
+          yield* dropScreensAndOrigins
           yield* sql`DELETE FROM signals_migrations WHERE migration_id >= 14`
         }).pipe(Effect.orDie),
       )

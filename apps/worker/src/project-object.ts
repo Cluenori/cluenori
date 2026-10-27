@@ -15,7 +15,7 @@ import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
 import type { ReleaseRecords, ReleaseSources } from "@cluenori/releases"
 import { promotionItems, releasesLayer, releasesModule, versionPolicyFor } from "@cluenori/releases"
-import { AppSignals, SdkKeyRejected, Signals } from "@cluenori/signals"
+import { AppSignals, SdkKeyRejected, SelfTelemetry, Signals } from "@cluenori/signals"
 import { Today } from "@cluenori/today"
 import { BrowserCrypto } from "@effect/platform-browser"
 import { SqliteClient } from "@effect/sql-sqlite-do"
@@ -43,6 +43,7 @@ import { exitText, serve } from "./object-calls.ts"
 import type { EngineCallName, ProjectCall, ProjectCallName } from "./project-calls.ts"
 import { moduleActionCall, moduleCall, moduleIngestCall, projectCalls } from "./project-calls.ts"
 import { r2AppBatchLayer, r2ArchiveLayer } from "./r2-archive.ts"
+import { selfTelemetryLayer } from "./self-telemetry.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
 import { workspaceCalls } from "./workspace-calls.ts"
 import { WorkspaceObjects } from "./workspace-objects.ts"
@@ -92,6 +93,10 @@ const draftTokens = 1500
 
 // How often the detectors look: the object's alarm runs `Incidents.check` this often.
 const checkEvery = Duration.toMillis(Duration.minutes(1))
+
+// What the alarms record of their own work is sent every few of them, so a project costs the
+// deployment one export of its own every five minutes, not every minute.
+const sendOwnTelemetryEvery = Duration.minutes(5)
 
 // An SDK key the project doesn't have, a revoked one, or one for a project that doesn't exist: the
 // same refusal, which tells an SDK to stop sending until its app is updated.
@@ -292,6 +297,15 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
       Effect.gen(function* () {
         const signals = yield* Signals
         return yield* signals.keptTraces(query)
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  origins: served(
+    projectCalls.origins,
+    (query) =>
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        return yield* signals.origins(query)
       }),
     new ProjectNotFound({ project }),
   ),
@@ -513,9 +527,10 @@ const servedModules = (project: ProjectKey) =>
  * keep their records in it, built once per object. The Worker reaches it through `call`.
  */
 export class ProjectObject extends DurableObject<Env> {
+  readonly #state: DurableObjectState
   readonly #storage: DurableObjectStorage
   readonly #activity: Queue
-  readonly #runtime: ManagedRuntime.ManagedRuntime<ProjectServices | ActivityLog, never>
+  readonly #runtime: ManagedRuntime.ManagedRuntime<ProjectServices | ActivityLog | SelfTelemetry, never>
   readonly #calls: ReadonlyMap<string, Served>
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -525,6 +540,7 @@ export class ProjectObject extends DurableObject<Env> {
     const [workspaceName, projectName] = (ctx.id.name ?? "").split("/")
     const workspace = WorkspaceKey.make(workspaceName ?? "")
     const project = ProjectKey.make(projectName ?? "")
+    this.#state = ctx
     this.#storage = ctx.storage
     this.#activity = env.ACTIVITY
     this.#calls = new Map([...Object.entries(servedCalls(project)), ...servedModules(project)])
@@ -582,6 +598,8 @@ export class ProjectObject extends DurableObject<Env> {
         // In the runtime itself, so every call runs on it as the Worker's requests do. A scheduler
         // is a reference, so it doesn't show in the runtime's type.
         Layer.provideMerge(SyncScheduler),
+        // The alarm's own telemetry: its tracer and logger are the runtime's, and calls run untraced.
+        Layer.provideMerge(selfTelemetryLayer(env)),
       ),
     )
   }
@@ -603,7 +621,11 @@ export class ProjectObject extends DurableObject<Env> {
     if (!created) {
       this.#storage.kv.put(projectCreated, true)
     }
-    return this.#runtime.runPromise(this.#watched.pipe(Effect.andThen(call.serve(input))))
+    // Untraced: the Worker's request that made the call is the operation, with the call's time
+    // inside it, and receiving telemetry, which most calls are, must make none.
+    return this.#runtime.runPromise(
+      this.#watched.pipe(Effect.andThen(call.serve(input)), Effect.withTracerEnabled(false)),
+    )
   }
 
   /**
@@ -612,18 +634,25 @@ export class ProjectObject extends DurableObject<Env> {
    * once by the platform; its failure is logged.
    */
   override alarm(): Promise<void> {
+    const state = this.#state
     const storage = this.#storage
     const activity = this.#activity
+    const runtime = this.#runtime
     return this.#runtime.runPromise(
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
         yield* Effect.promise(() => storage.setAlarm(now + checkEvery))
         const incidents = yield* Incidents
-        yield* incidents.check.pipe(Effect.catchCause((cause) => Effect.logError("The detectors' check failed", cause)))
+        // Each step is an operation of the deployment's own: a job it runs every minute.
+        yield* incidents.check.pipe(
+          Effect.withSpan("detectors.check"),
+          Effect.catchCause((cause) => Effect.logError("The detectors' check failed", cause)),
+        )
         // Each module's background work; one that fails doesn't hold up the others or the delivery.
         for (const module of modules) {
           if (module.background !== undefined) {
             yield* module.background.pipe(
+              Effect.withSpan(`${module.id}.background`),
               Effect.catchCause((cause) => Effect.logError(`The ${module.id} module's background work failed`, cause)),
             )
           }
@@ -633,7 +662,14 @@ export class ProjectObject extends DurableObject<Env> {
         const log = yield* ActivityLog
         yield* log
           .deliver((entries) => sendActivity(activity, entries))
-          .pipe(Effect.catchCause((cause) => Effect.logError("Delivering activity failed", cause)))
+          .pipe(
+            Effect.withSpan("activity.deliver"),
+            Effect.catchCause((cause) => Effect.logError("Delivering activity failed", cause)),
+          )
+        const telemetry = yield* SelfTelemetry
+        yield* Effect.sync(() =>
+          state.waitUntil(runtime.runPromise(telemetry.flush({ olderThan: sendOwnTelemetryEvery }))),
+        )
       }),
     )
   }

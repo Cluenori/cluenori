@@ -176,6 +176,48 @@ describe("A feature's story", () => {
     ),
   )
 
+  it.effect("tells one client's part of a feature when narrowed to its component, the rest left out", () =>
+    inProject(
+      "story-by-component",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        yield* useAt(now - hour, 1)
+        yield* signals.recordTraces(api, {
+          digest: BatchDigest.make("c".repeat(64)),
+          archive: new Uint8Array(0),
+          from: DateTime.makeUnsafe(now - hour),
+          to: DateTime.makeUnsafe(now - hour),
+          spans: 2,
+          counts: [],
+          features: [
+            {
+              day: 20748,
+              feature: exportFeature,
+              operation: EnvelopeName.make("POST /api/exports"),
+              count: 2,
+              errors: 0,
+            },
+          ],
+          kept: [],
+          traces: [],
+        })
+        const narrowed = (component: ComponentKey) =>
+          analyticsModule.queries.feature.run({ feature: exportFeature, component })
+        const app = yield* narrowed(ios)
+        assert.deepStrictEqual([app.use.people, app.operations.length], [1, 0])
+        const service = yield* narrowed(api)
+        assert.deepStrictEqual(
+          [service.use.people, service.operations.map((each) => [each.component, each.count])],
+          [0, [[api, 2]]],
+        )
+        // A client that never used it has an empty part, not a missing feature.
+        const web = yield* narrowed(ComponentKey.make("notes-web"))
+        assert.deepStrictEqual([web.use.days, web.logs.days, web.operations], [[], [], []])
+      }),
+    ),
+  )
+
   it.effect("says nothing kept names a feature, rather than telling an empty story", () =>
     inProject(
       "story-none",

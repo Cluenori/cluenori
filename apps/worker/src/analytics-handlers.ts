@@ -55,6 +55,17 @@ export const AnalyticsHandlers = HttpApiBuilder.group(CluenoriApi, "analytics", 
         })
       }),
     )
+    .handle("screens", ({ params, query }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        const { from, to, ...scope } = query
+        return yield* projects.call(member, params.project, moduleCall(analyticsModule, "screens"), {
+          period: new Period({ from, to }),
+          ...scope,
+        })
+      }),
+    )
     .handle("feature", ({ params, query }) =>
       Effect.gen(function* () {
         const member = yield* CurrentMember

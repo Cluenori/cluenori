@@ -142,11 +142,8 @@ export const timeOf = (record: LogRecord, now: number) => {
   return reported === 0n ? now : Number(reported / 1_000_000n)
 }
 
-/** The error group of an error record: the first 16 hex digits of its fingerprint's SHA-256. */
-const errorIdOf = Effect.fn("errorIdOf")(function* (shape: ErrorShape | undefined) {
-  if (shape === undefined) {
-    return undefined
-  }
+/** The error group of an error: the first 16 hex digits of its fingerprint's SHA-256. */
+export const errorIdOf = Effect.fn("errorIdOf")(function* (shape: ErrorShape) {
   const crypto = yield* Crypto.Crypto
   const hash = yield* crypto.digest("SHA-256", utf8.encode(shape.fingerprint)).pipe(Effect.orDie)
   return ErrorGroupId.make(Hex.encode(hash).slice(0, 16))
@@ -199,7 +196,7 @@ export const readLogs = Effect.fn("readLogs")(function* (body: Uint8Array) {
         if (level !== undefined && isIndexed && !tooOld && !tooNew) {
           const entry = yield* entryOf(record, time, scope.name, resource.attributes)
           const shape = errors.has(level) ? errorShapeOf(entry) : undefined
-          const errorId = yield* errorIdOf(shape)
+          const errorId = shape === undefined ? undefined : yield* errorIdOf(shape)
           if (shape !== undefined && errorId !== undefined && !shapes.has(errorId)) {
             shapes.set(errorId, { id: errorId, kind: shape.kind, title: shape.title, culprit: shape.culprit })
           }

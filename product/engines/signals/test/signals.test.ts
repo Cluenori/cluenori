@@ -1141,3 +1141,105 @@ describe("Signals by feature", () => {
     ),
   )
 })
+
+// A span of a request from the client `origin`, as the Cluenori helpers name it from its baggage.
+const fromOrigin = (id: string, name: string, kind: Span["kind"], origin: string, failed = false): Span => ({
+  ...span(id, id, name, kind, undefined, failed),
+  attributes: new Map([["cluenori.origin.component", origin]]),
+})
+
+describe("Signals by origin", () => {
+  it.effect("splits each operation by the client that asked for it, and counts only spans that named one", () =>
+    Effect.gen(function* () {
+      const body = yield* encodeTraces([
+        {
+          resource: { attributes: new Map([["service.name", "notes-api"]]), droppedAttributesCount: 0 },
+          schemaUrl: "",
+          scopeSpans: [
+            {
+              scope: { name: "Notes", version: "", attributes: new Map(), droppedAttributesCount: 0 },
+              schemaUrl: "",
+              spans: [
+                fromOrigin("a", "GET /notes", "server", "notes-ios"),
+                fromOrigin("b", "GET /notes", "server", "notes-ios", true),
+                fromOrigin("c", "GET /notes", "server", "notes-web"),
+                fromOrigin("d", "POST /notes", "server", "notes-web"),
+                // A client that never reported to the project itself: its word alone isn't counted.
+                fromOrigin("9", "GET /notes", "server", "notes-android"),
+                // No component key, no origin, and a client span, which is no operation: none is counted.
+                fromOrigin("e", "GET /notes", "server", "Notes iOS"),
+                span("f", "f", "GET /notes", "server", undefined),
+                fromOrigin("1", "GET https://api.stripe.com", "client", "notes-web"),
+              ],
+            },
+          ],
+        },
+      ])
+      const { export: batch } = yield* TestClock.setTime(now).pipe(
+        Effect.andThen(readTraces(body)),
+        Effect.provide(WebCrypto),
+      )
+      // The two clients report themselves too, each with its own key.
+      const clients = yield* Effect.forEach(["notes-ios", "notes-web"], (client) =>
+        encodeTraces([
+          {
+            resource: { attributes: new Map([["service.name", client]]), droppedAttributesCount: 0 },
+            schemaUrl: "",
+            scopeSpans: [
+              {
+                scope: { name: "Notes", version: "", attributes: new Map(), droppedAttributesCount: 0 },
+                schemaUrl: "",
+                spans: [span("8", "8", "notes.open", "internal", undefined)],
+              },
+            ],
+          },
+        ]).pipe(
+          Effect.flatMap((each) => TestClock.setTime(now).pipe(Effect.andThen(readTraces(each)))),
+          Effect.map((read) => [ComponentKey.make(client), read.export] as const),
+          Effect.provide(WebCrypto),
+        ),
+      )
+      const { all, one, later } = yield* inProject(
+        "by-origin",
+        now,
+        Effect.gen(function* () {
+          const signals = yield* Signals
+          for (const [client, exported] of clients) {
+            yield* signals.recordTraces(client, exported)
+          }
+          yield* signals.recordTraces(api, batch)
+          return {
+            all: yield* signals.origins({ period: lastHour }),
+            one: yield* signals.origins({ period: lastHour, operation: EnvelopeName.make("POST /notes") }),
+            later: yield* signals.origins({
+              period: new Period({
+                from: DateTime.makeUnsafe(now + 3_600_000),
+                to: DateTime.makeUnsafe(now + 7_200_000),
+              }),
+            }),
+          }
+        }),
+      )
+
+      assert.deepStrictEqual(
+        all.rows.map((row) => [row.component, row.operation, row.origin, row.count, row.errors, row.averageMs]),
+        [
+          [api, "GET /notes", "notes-ios", 2, 1, 1200],
+          [api, "GET /notes", "notes-web", 1, 0, 1200],
+          [api, "POST /notes", "notes-web", 1, 0, 1200],
+        ],
+      )
+      // Counted by the hour: the last hour of the question touches two, from the start of the first.
+      assert.deepStrictEqual(
+        [all.covered?.from, all.covered?.to].map((at) => (at === undefined ? undefined : DateTime.formatIso(at))),
+        ["2026-10-19T19:00:00.000Z", "2026-10-19T21:00:00.000Z"],
+      )
+      assert.deepStrictEqual(
+        one.rows.map((row) => [row.operation, row.origin, row.count]),
+        [["POST /notes", "notes-web", 1]],
+      )
+      // A period after now has nothing counted yet, and covers nothing.
+      assert.deepStrictEqual(later, { rows: [] })
+    }),
+  )
+})

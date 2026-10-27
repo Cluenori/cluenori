@@ -1,12 +1,13 @@
 import { AuthenticationResponseJSON } from "@bagatka/webauthn"
 import { AnalyticsGroup } from "@cluenori/analytics"
 import { FeedsGroup } from "@cluenori/feeds"
+import { EnvironmentKey, ReleaseVersion } from "@cluenori/foundation"
 import { GitHubGroup } from "@cluenori/github-app"
 import { IncidentsGroup } from "@cluenori/incidents"
 import { MembersGroup, PasskeyRejected, PasskeysGroup } from "@cluenori/members"
 import { NotificationsGroup } from "@cluenori/notifications"
 import { PairedPhoneAnswer, PairingGroup, PhoneDetails, PhonePushGroup, PhonesGroup } from "@cluenori/phones"
-import { ProjectsGroup } from "@cluenori/projects"
+import { ProjectsGroup, SdkKey } from "@cluenori/projects"
 import { ReleasesGroup } from "@cluenori/releases"
 import { SignalsGroup } from "@cluenori/signals"
 import { TodayGroup } from "@cluenori/today"
@@ -16,12 +17,32 @@ import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "
 import { MemberAuthorization, Unauthorized } from "./member-authorization.ts"
 
 /** Endpoints about the deployment itself, not about any project. */
-export class SystemGroup extends HttpApiGroup.make("system", { topLevel: true }).add(
-  HttpApiEndpoint.get("health", "/health", { success: HttpApiSchema.NoContent }).annotate(
-    OpenApi.Description,
-    "Answers 204 when the Worker is deployed and serving. Use it for uptime checks; it reads no storage.",
-  ),
-) {}
+/**
+ * How the deployment's own clients report themselves to it: its release and environment, and the
+ * SDK key of each client it measures. A key is absent when the deployment doesn't measure that
+ * client; with none, its clients send nothing.
+ */
+export const ClientTelemetry = Schema.Struct({
+  release: Schema.optionalKey(ReleaseVersion),
+  environment: EnvironmentKey,
+  dashboard: Schema.optionalKey(SdkKey),
+  cli: Schema.optionalKey(SdkKey),
+}).annotate({ identifier: "ClientTelemetry" })
+export type ClientTelemetry = typeof ClientTelemetry.Type
+
+export class SystemGroup extends HttpApiGroup.make("system", { topLevel: true })
+  .add(
+    HttpApiEndpoint.get("health", "/health", { success: HttpApiSchema.NoContent }).annotate(
+      OpenApi.Description,
+      "Answers 204 when the Worker is deployed and serving. Use it for uptime checks; it reads no storage.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("clientTelemetry", "/client-telemetry", { success: ClientTelemetry }).annotate(
+      OpenApi.Description,
+      "How the deployment's own web dashboard and CLI report themselves to it: its release and environment, and each one's SDK key, public as every SDK key is; a key is absent when the deployment doesn't measure that client (`./cluenori self-telemetry`). Needs no sign-in, since the dashboard measures its sign-in screen too; reads no storage.",
+    ),
+  ) {}
 
 /** The API token, as a browser signs in with it. */
 export const SignIn = Schema.Struct({ token: Schema.RedactedFromValue(Schema.String) }).annotate({

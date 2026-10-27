@@ -19,10 +19,11 @@ export const FeatureOperationCounts = Schema.Struct({
 })
 export type FeatureOperationCounts = typeof FeatureOperationCounts.Type
 
-/** Which feature's operations to count: that key exactly, optionally in one environment. */
+/** Which feature's operations to count: that key exactly, optionally in one environment, or of one component. */
 export const FeatureQuery = Schema.Struct({
   feature: FeatureKey,
   environment: Schema.optionalKey(EnvironmentKey),
+  component: Schema.optionalKey(ComponentKey),
 }).annotate({ identifier: "FeatureQuery" })
 export type FeatureQuery = typeof FeatureQuery.Type
 

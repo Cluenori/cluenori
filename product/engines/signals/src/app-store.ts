@@ -3,6 +3,7 @@ import { countOf, Quantile, QuantileSketch, quantileOf, sketchOf } from "@bagatk
 import {
   calendarDayOfNumber,
   ComponentKey,
+  EnvelopeName,
   InstallationId,
   dayNumberOf,
   dayStartMillis,
@@ -34,15 +35,18 @@ import type {
   FeatureUse,
   FeatureUseLife,
   FeatureUseTable,
+  DurationSpread,
   LaunchTimes,
   MemoryUse,
   PersonLookup,
   RetentionCohort,
   RetentionQuery,
+  ScreenTable,
+  ScreenUse,
   UsageDay,
 } from "./app-queries.ts"
 import { CountryCode as CountryCodeSchema, PersonNotFound, TimelineEntry } from "./app-queries.ts"
-import type { PersonSignal, Tallies } from "./app-tallies.ts"
+import type { PersonSignal, SubjectMeasure, Tallies } from "./app-tallies.ts"
 import type { FeatureQuery } from "./feature-queries.ts"
 import { mergedSketch } from "./merged-sketch.ts"
 
@@ -108,6 +112,8 @@ export interface BatchSource {
 }
 
 // Weeks are numbered from 1970-01-01, a Thursday, so each starts on a Monday: day 4 is week 1's first.
+// How often a screen was seen, which orders the screen table.
+const visitsOf = (use: ScreenUse) => use.visible?.count ?? 0
 const weekOf = (day: number) => Math.floor((day + 3) / 7)
 const weekStart = (week: number) => calendarDayOfNumber(week * 7 - 3)
 
@@ -279,6 +285,22 @@ export const appStore = Effect.gen(function* () {
         AND release = ${key.release} AND feature = ${key.feature} AND measure = ${key.measure}`,
   })
 
+  const findSubjectMeasure = SqlSchema.findOneOption({
+    Request: Schema.Struct({
+      day: Schema.Int,
+      component: Schema.String,
+      environment: Schema.String,
+      release: Schema.String,
+      subject: Schema.String,
+      measure: Schema.String,
+    }),
+    Result: Schema.Struct({ sketch: SketchJson }),
+    execute: (key) => sql`
+      SELECT sketch FROM signals_app_subject_measures
+      WHERE day = ${key.day} AND component = ${key.component} AND environment = ${key.environment}
+        AND release = ${key.release} AND subject = ${key.subject} AND measure = ${key.measure}`,
+  })
+
   /**
    * Writes a batch's new signals, as `plan` assigns them to people and `tallies` adds them up.
    * Runs inside the caller's transaction.
@@ -406,6 +428,19 @@ export const appStore = Effect.gen(function* () {
           count = count + excluded.count,
           sketch = excluded.sketch`
     }
+    for (const tally of tallies.subjects) {
+      const key = { day: tally.day, component, environment, release, subject: tally.subject, measure: tally.measure }
+      const stored = yield* findSubjectMeasure(key)
+      const added = sketchOf(tally.values).sketch
+      const sketch = yield* encodeSketch(Option.isSome(stored) ? mergedSketch([stored.value.sketch, added]) : added)
+      const total = tally.values.reduce((sum, value) => sum + value, 0)
+      yield* sql`
+        INSERT INTO signals_app_subject_measures ${sql.insert({ ...key, count: tally.values.length, total, sketch })}
+        ON CONFLICT (day, component, environment, release, subject, measure) DO UPDATE SET
+          count = count + excluded.count,
+          total = total + excluded.total,
+          sketch = excluded.sketch`
+    }
     for (const tally of tallies.diagnostics) {
       yield* sql`
         INSERT INTO signals_app_diagnostics ${sql.insert({
@@ -508,6 +543,7 @@ export const appStore = Effect.gen(function* () {
       "signals_app_days",
       "signals_app_feature_days",
       "signals_app_measures",
+      "signals_app_subject_measures",
       "signals_app_diagnostics",
     ]) {
       yield* sql`DELETE FROM ${sql(table)} WHERE day < ${day}`
@@ -888,6 +924,94 @@ export const appStore = Effect.gen(function* () {
     return table
   }, Effect.orDie)
 
+  // --- Screens and timings ---
+
+  const SubjectRow = Schema.Struct({
+    subject: Schema.String,
+    measure: Schema.String,
+    count: Count,
+    total: Schema.Finite,
+    sketch: SketchJson,
+  })
+
+  /** The period's screens and timings, from the rows by day of each subject and measure. */
+  const screens = Effect.fn("AppStore.screens")(function* (query: AppQuery, now: number) {
+    const days = daysOf(query.period, now)
+    const rows = yield* SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: SubjectRow,
+      execute: () => sql`
+        SELECT subject, measure, count, total, sketch FROM signals_app_subject_measures
+        WHERE ${sql.and([sql`day >= ${days.from}`, sql`day <= ${days.to}`, ...scopeOf(query)])}`,
+    })(undefined)
+    // Each subject's measures, their days' rows merged.
+    const merged = new Map<string, { count: number; total: number; sketches: Array<Sketch> }>()
+    for (const row of rows) {
+      const key = `${row.subject}\u0000${row.measure}`
+      const entry = merged.get(key) ?? { count: 0, total: 0, sketches: [] }
+      entry.count += row.count
+      entry.total += row.total
+      entry.sketches.push(row.sketch)
+      merged.set(key, entry)
+    }
+    const spreadOf = (subject: string, measure: SubjectMeasure) =>
+      Effect.gen(function* () {
+        const entry = merged.get(`${subject}\u0000${measure}`)
+        if (entry === undefined) {
+          return undefined
+        }
+        const sketch = mergedSketch(entry.sketches)
+        const spread: DurationSpread = {
+          count: entry.count,
+          p50Ms: yield* quantile(sketch, p50),
+          p95Ms: yield* quantile(sketch, p95),
+        }
+        return spread
+      })
+    const totalOf = (subject: string, measure: SubjectMeasure) => merged.get(`${subject}\u0000${measure}`)?.total
+    const screenNames = [...new Set(rows.filter((row) => row.measure !== "timing").map((row) => row.subject))]
+    const screenRows = yield* Effect.forEach(screenNames, (subject) =>
+      Effect.gen(function* () {
+        const readyKept = yield* spreadOf(subject, "ready.kept")
+        const readyFresh = yield* spreadOf(subject, "ready.fresh")
+        const visible = yield* spreadOf(subject, "visible")
+        const hangs = yield* spreadOf(subject, "hang")
+        const visibleMs = totalOf(subject, "visible")
+        const cpuMs = totalOf(subject, "cpu")
+        const scrollMs = totalOf(subject, "scroll")
+        const hitchMs = totalOf(subject, "hitch")
+        const use: ScreenUse = {
+          ...(Schema.is(EnvelopeName)(subject) ? { screen: subject } : {}),
+          ...(readyKept === undefined ? {} : { readyKept }),
+          ...(readyFresh === undefined ? {} : { readyFresh }),
+          ...(visible === undefined ? {} : { visible }),
+          ...(cpuMs === undefined || visibleMs === undefined || visibleMs === 0
+            ? {}
+            : { cpuMsPerMinute: (cpuMs / visibleMs) * 60_000 }),
+          ...(hitchMs === undefined || scrollMs === undefined || scrollMs === 0
+            ? {}
+            : { hitchMsPerSecond: (hitchMs / scrollMs) * 1000 }),
+          ...(hangs === undefined ? {} : { hangs }),
+        }
+        return use
+      }),
+    )
+    const timingNames = [...new Set(rows.filter((row) => row.measure === "timing").map((row) => row.subject))]
+    const timings = yield* Effect.forEach(timingNames, (subject) =>
+      Effect.gen(function* () {
+        const spread = yield* spreadOf(subject, "timing")
+        return spread === undefined || !Schema.is(EnvelopeName)(subject) ? [] : [{ name: subject, ...spread }]
+      }),
+    )
+    const table: ScreenTable = {
+      screens: screenRows.toSorted(
+        (a, b) => visitsOf(b) - visitsOf(a) || (a.screen ?? "").localeCompare(b.screen ?? "", "en"),
+      ),
+      timings: timings.flat().toSorted((a, b) => b.count - a.count || a.name.localeCompare(b.name, "en")),
+    }
+    return table
+  }, Effect.orDie)
+
   // --- One feature's life ---
 
   const FeatureDayRow = Schema.Struct({ day: Schema.Int, people: Count, events: Count, screens: Count })
@@ -915,6 +1039,7 @@ export const appStore = Effect.gen(function* () {
       sql`feature = ${query.feature}`,
       sql`day >= ${keptFrom}`,
       ...(query.environment === undefined ? [] : [sql`environment = ${query.environment}`]),
+      ...(query.component === undefined ? [] : [sql`component = ${query.component}`]),
     ])
     const days = yield* SqlSchema.findAll({
       Request: Schema.Void,
@@ -1119,6 +1244,7 @@ export const appStore = Effect.gen(function* () {
     releases,
     health,
     features,
+    screens,
     featureLife,
     person,
     eventCount,

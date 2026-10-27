@@ -24,7 +24,7 @@ import {
 } from "./error-groups.ts"
 import { ErrorGroupId, LogLine, LogMessageId } from "./log-entry.ts"
 import { LogMessageDetail, LogMessageNotFound, LogMessageTable } from "./log-messages.ts"
-import { OperationTable, KeptTraces, LoadSeries, SeriesStep } from "./operation-queries.ts"
+import { OperationTable, KeptTraces, LoadSeries, OriginTable, SeriesStep } from "./operation-queries.ts"
 import { TraceView } from "./trace-view.ts"
 
 // Every question can be narrowed to one environment, component, or release, as its component reports
@@ -47,6 +47,18 @@ const operationFilters = { ...filters, operation: Schema.optionalKey(EnvelopeNam
 
 /** The filters of a question about operations, as query parameters: `from` and `to` are ISO 8601 UTC. */
 export const OperationFilters = Schema.Struct(operationFilters).check(fromBeforeTo)
+
+/**
+ * The filters of operations split by the client that asked for them: a period, and optionally one
+ * environment, component, or operation. Origins aren't counted by release.
+ */
+export const OriginFilters = Schema.Struct({
+  from: Instant,
+  to: Instant,
+  environment: Schema.optionalKey(EnvironmentKey),
+  component: Schema.optionalKey(ComponentKey),
+  operation: Schema.optionalKey(EnvelopeName),
+}).check(fromBeforeTo)
 
 /** The filters of a series, with how wide each point is. */
 export const SeriesFilters = Schema.Struct({ ...operationFilters, step: SeriesStep }).check(fromBeforeTo)
@@ -111,6 +123,17 @@ export class SignalsGroup extends HttpApiGroup.make("signals")
     }).annotate(
       OpenApi.Description,
       "The load over a period: how many operations ran and failed, one point per step that had any, with their p50, p80, p95 and p99 durations, on a project's services, or on one operation with `operation`. A step without a point had nothing reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used.",
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("origins", "/projects/:project/origins", {
+      params: { project: ProjectKey },
+      query: OriginFilters,
+      success: OriginTable,
+      error: ProjectNotFound.pipe(HttpApiSchema.status(404)),
+    }).annotate(
+      OpenApi.Description,
+      "A period's operations split by the client that asked for them, the most first: of each component's operation, how many times each client's requests ran it, how many failed, and their average, as the client's SDK named itself in the request's baggage (`cluenori.origin.component`) and the service copied it to its span. Requests that named no client aren't listed: they are the rest of the operation's count. Counted by the UTC hour, kept 15 months; `covered` is the whole hours the period touches.",
     ),
   )
   .add(

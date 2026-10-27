@@ -176,16 +176,29 @@ the ingest API's, which apps' SDKs call with an SDK key (`AppBatch` is its wire 
 
 ## Decisions and constraints
 
-- **Self-telemetry is one hop.** A request with `cluenori-telemetry: self` is the deployment's own
-  telemetry, and is handled untraced (`selfTelemetryUntraced`, `selfTelemetryUntracedServer`, which
-  the host installs), so ingesting it never makes more. The deployment's exporter sends that header,
-  and `cluenori.self = true` on its resource so the archive says so too. The header is honored only
-  on routes that take telemetry (`/otlp/v1/*`, `/ingest/v1/app/batch`): anyone may send it, and
-  there it hides only the Worker's trace of ingesting, never a sign-in's or any other route's.
-- **Apps' newer kinds are archived, and counted where a view needs them:** `screen.ready`,
-  `screen.left`, `app.hang`, `timing` and `error` are kept in apps' batches; an `error` nothing
-  handled is also a crash of its batch's release, in app health beside MetricKit's. Their views by
-  screen come with the first page that shows them.
+- **Receiving telemetry is never traced.** A request to a route that takes telemetry
+  (`telemetryRouteOf`: `/otlp/v1/*`, `/ingest/v1/app/batch`) is handled untraced, whoever sent it
+  (`telemetryUntraced`, `telemetryUntracedServer`, which the host installs), so N signals in never
+  make N out: the only telemetry receiving makes is a count per route and status, sent at most once
+  a minute (`SelfTelemetry.countIngest`). `SelfTelemetry` records the deployment's own real work,
+  bounded (`selfTelemetryLimits`: 2,000 spans and 500 log records wait at most; past it, new ones
+  are dropped and counted), and the host flushes it at the end of each request, alarm or batch with
+  `cluenori-telemetry: self` and `cluenori.self = true` on its resource, so the archive says so too
+  (`docs/self-telemetry.md`).
+- **A trace's origin is the client that asked.** Requests whose baggage names
+  `cluenori.origin.component` (Cluenori's SDKs add it) are counted by that origin, operation,
+  environment and hour (`signals_origin_hours`, 15 months), and `origins` splits an operation's
+  runs by it. Baggage is the caller's word, so an origin counts only when it is a component that
+  reported to the project itself (as a service or an app, with a key); any other, invented or not
+  reported yet, is with the requests that named none, the rest of the operation's count.
+- **Apps' newer kinds are kept where a view needs them:** `screen.ready`, `screen.left`, `app.hang`
+  and `timing` are tallied by screen or timing name, UTC day and release
+  (`signals_app_subject_measures`, 15 months), which `screens` reads: each screen's visits, its
+  readiness from the device's copy and from the network, its CPU, hitches and hangs, and each
+  timing's spread. An `error` is also a log line and an error group of its component, `error` when
+  handled and `fatal` when not, with its feature and screen, so the errors pages show apps' errors
+  beside services'; one nothing handled is also a crash of its batch's release, in app health
+  beside MetricKit's.
 - **Everything is archived; views are derived.** Every export is kept 90 days, so a new view can be
   built from data that arrived before it. Records below warning are only in the archive.
 - **Every archive can be read back.** The OTLP reader allows one span, record or value for each 16

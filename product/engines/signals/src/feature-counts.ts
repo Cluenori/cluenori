@@ -80,6 +80,7 @@ export const featureCounts = Effect.gen(function* () {
           sql`feature = ${query.feature}`,
           sql`day >= ${dayNumberOf(now - Duration.toMillis(hourlyRetention))}`,
           ...(query.environment === undefined ? [] : [sql`environment = ${query.environment}`]),
+          ...(query.component === undefined ? [] : [sql`component = ${query.component}`]),
         ])}
         GROUP BY day, component, operation
         ORDER BY day, component, operation`,

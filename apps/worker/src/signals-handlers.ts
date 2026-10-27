@@ -9,6 +9,8 @@ import type {
   LogQuery,
   OperationFilters,
   OperationQuery,
+  OriginFilters,
+  OriginQuery,
 } from "@cluenori/signals"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
@@ -30,6 +32,13 @@ const queryOf = (
 
 const operationQueryOf = (filters: typeof OperationFilters.Type): OperationQuery => ({
   ...queryOf(filters),
+  ...(filters.operation === undefined ? {} : { operation: filters.operation }),
+})
+
+const originQueryOf = (filters: typeof OriginFilters.Type): OriginQuery => ({
+  period: new Period({ from: filters.from, to: filters.to }),
+  ...(filters.environment === undefined ? {} : { environment: filters.environment }),
+  ...(filters.component === undefined ? {} : { component: filters.component }),
   ...(filters.operation === undefined ? {} : { operation: filters.operation }),
 })
 
@@ -77,6 +86,13 @@ export const SignalsHandlers = HttpApiBuilder.group(CluenoriApi, "signals", (han
           query: operationQueryOf(query),
           step: query.step,
         })
+      }),
+    )
+    .handle("origins", ({ params, query }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        const projects = yield* MemberProjects
+        return yield* projects.call(member, params.project, projectCalls.origins, originQueryOf(query))
       }),
     )
     .handle("keptTraces", ({ params, query }) =>

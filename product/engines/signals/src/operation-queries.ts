@@ -162,3 +162,54 @@ export const MinutesRan = Schema.Struct({
   minutes: Schema.Array(Instant),
 })
 export type MinutesRan = typeof MinutesRan.Type
+
+/**
+ * How many times one operation ran and failed in one hour and environment for the client that asked
+ * for it: what a trace export counts of the spans whose baggage named their origin in
+ * `cluenori.origin.component`. Spans that named none aren't counted here: they are the rest of the
+ * operation's count.
+ */
+export const OriginOperationCounts = Schema.Struct({
+  /** The start of the UTC hour they started in. */
+  hour: Instant,
+  /** The component the request came from, such as `notes-ios`. */
+  origin: ComponentKey,
+  operation: EnvelopeName,
+  /** Absent when the component didn't say. */
+  environment: Schema.optionalKey(EnvironmentKey),
+  count: Count,
+  errors: Count,
+  totalMs: Milliseconds,
+})
+export type OriginOperationCounts = typeof OriginOperationCounts.Type
+
+/** Which operations to split by origin: those that ran in `period`, optionally of one environment, component, or operation. */
+export const OriginQuery = Schema.Struct({
+  period: Period,
+  environment: Schema.optionalKey(EnvironmentKey),
+  component: Schema.optionalKey(ComponentKey),
+  operation: Schema.optionalKey(EnvelopeName),
+})
+export type OriginQuery = typeof OriginQuery.Type
+
+/** One operation's runs for one client over a period: how many, how many failed, and their average. */
+export const OriginRow = Schema.Struct({
+  component: ComponentKey,
+  operation: EnvelopeName,
+  origin: ComponentKey,
+  count: Count,
+  errors: Count,
+  averageMs: Milliseconds,
+}).annotate({ identifier: "OriginRow" })
+export type OriginRow = typeof OriginRow.Type
+
+/**
+ * Operations split by the client that asked for them, the most first. `covered` is the period as
+ * counted: whole UTC hours, so it may start before the period and end after it; absent when nothing
+ * of it is kept (15 months).
+ */
+export const OriginTable = Schema.Struct({
+  covered: Schema.optionalKey(Period),
+  rows: Schema.Array(OriginRow),
+}).annotate({ identifier: "OriginTable" })
+export type OriginTable = typeof OriginTable.Type

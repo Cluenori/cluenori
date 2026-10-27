@@ -438,6 +438,38 @@ export const migrateSignals = Migrator.make({})({
         FROM signals_app_timeline WHERE json_extract(entry, '$.signal._tag') = 'event'
         GROUP BY 1, 2, 3`
     }),
+    // What apps measure of their screens and timings, by UTC day and subject (the screen, or the
+    // timing's name): screens' readiness from what the device kept and from the network, their
+    // visits' time in sight, CPU time, scrolling and hitches, the hangs on each, and timings; each
+    // with its count, its values' sum, and their quantile sketch. Kept 15 months, as app measures are.
+    // And operations counted by the client that asked for them, by the hour, as their baggage names
+    // it (`cluenori.origin.component`), '' for none; kept 15 months, as hourly counts are.
+    "0015_screens_and_origins": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE signals_app_subject_measures (
+        day INTEGER NOT NULL,
+        component TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        release TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        measure TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        total REAL NOT NULL,
+        sketch TEXT NOT NULL,
+        PRIMARY KEY (day, component, environment, release, subject, measure)
+      ) WITHOUT ROWID`
+      yield* sql`CREATE TABLE signals_origin_hours (
+        hour INTEGER NOT NULL,
+        component TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        errors INTEGER NOT NULL,
+        total_ms REAL NOT NULL,
+        PRIMARY KEY (hour, component, operation, environment, origin)
+      ) WITHOUT ROWID`
+    }),
   }),
 })
 

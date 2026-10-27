@@ -52,6 +52,25 @@ export interface MeasureTally {
   count: number
 }
 
+/**
+ * What a measure of a screen or a timing measures: a screen's readiness from what the device kept or
+ * from the network, its visits' time in sight, CPU time, scrolling and hitches, the hangs on it, and
+ * a timing's durations.
+ */
+export type SubjectMeasure = "ready.kept" | "ready.fresh" | "visible" | "cpu" | "scroll" | "hitch" | "hang" | "timing"
+
+// The longest a measure of a screen or a timing is counted at.
+const longestSubjectMs = 86_400_000
+
+/** One measure of a screen or a timing on one day: its values, each at most a day. */
+export interface SubjectTally {
+  readonly day: number
+  /** The screen, '' for a hang on none; or the timing's name. */
+  readonly subject: string
+  readonly measure: SubjectMeasure
+  readonly values: Array<number>
+}
+
 export interface DiagnosticTally {
   readonly day: number
   readonly release: ReleaseVersion
@@ -84,6 +103,7 @@ export interface Tallies {
   readonly days: ReadonlyArray<DayTally>
   readonly features: ReadonlyArray<FeatureTally>
   readonly measures: ReadonlyArray<MeasureTally>
+  readonly subjects: ReadonlyArray<SubjectTally>
   readonly diagnostics: ReadonlyArray<DiagnosticTally>
   readonly sessions: ReadonlyArray<SessionTally>
   readonly timeline: ReadonlyArray<TimelineTally>
@@ -141,13 +161,15 @@ export const keptSignalOf = (signal: AppSignal): AppSignal => {
  * its person active that day, and in its feature ("" for none), except MetricKit's reports, which
  * aren't of a session; a session counts the day it starts; launches are measured by kind, prewarmed
  * ones only counted; memory by its peak and footprint; MetricKit's diagnostics by kind and the
- * release each is of, and an error nothing handled as a crash of `release`. Memory, screens' readiness
- * and visits, hangs, errors and timings aren't in the timeline.
+ * release each is of, and an error nothing handled as a crash of `release`; screens' readiness, visits
+ * and hangs by screen, and timings by name. Memory, screens' readiness and visits, hangs, errors and
+ * timings aren't in the timeline.
  */
 export const talliesOf = (signals: ReadonlyArray<PersonSignal>, release: ReleaseVersion): Tallies => {
   const days = new Map<string, DayTally>()
   const features = new Map<string, FeatureTally>()
   const measures = new Map<string, MeasureTally>()
+  const subjects = new Map<string, SubjectTally>()
   const diagnostics = new Map<string, DiagnosticTally>()
   const sessions = new Map<string, SessionTally>()
   const timeline: Array<TimelineTally> = []
@@ -182,6 +204,17 @@ export const talliesOf = (signals: ReadonlyArray<PersonSignal>, release: Release
     if (value !== undefined) {
       tally.values.push(value)
     }
+  }
+  const ofSubject = (day: number, subject: string, measured: SubjectMeasure, value: number | undefined) => {
+    // Not handled: a measure over a day, which no screen or timing takes; it stays in the archive,
+    // left out of the tally, so the sums kept of it stay finite whatever an app sends.
+    if (value === undefined || value > longestSubjectMs) {
+      return
+    }
+    const key = keyOf(day, subject, measured)
+    const tally = subjects.get(key) ?? { day, subject, measure: measured, values: [] }
+    subjects.set(key, tally)
+    tally.values.push(value)
   }
   const diagnosticOf = (day: number, of: ReleaseVersion, kind: DiagnosticKind) => {
     const key = keyOf(day, of, kind)
@@ -280,18 +313,32 @@ export const talliesOf = (signals: ReadonlyArray<PersonSignal>, release: Release
         }
         break
       }
-      // Kept in the archive, whose views of them come with the first page that shows them.
-      case "screen.ready":
-      case "screen.left":
-      case "app.hang":
-      case "timing":
+      case "screen.ready": {
+        ofSubject(day, signal.screen, `ready.${signal.content}`, signal.ms)
         break
+      }
+      case "screen.left": {
+        ofSubject(day, signal.screen, "visible", signal.visibleMs)
+        ofSubject(day, signal.screen, "cpu", signal.cpuMs)
+        ofSubject(day, signal.screen, "scroll", signal.scrollMs)
+        ofSubject(day, signal.screen, "hitch", signal.hitchMs)
+        break
+      }
+      case "app.hang": {
+        ofSubject(day, signal.screen ?? "", "hang", signal.ms)
+        break
+      }
+      case "timing": {
+        ofSubject(day, signal.name, "timing", signal.ms)
+        break
+      }
     }
   }
   return {
     days: [...days.values()],
     features: [...features.values()],
     measures: [...measures.values()],
+    subjects: [...subjects.values()],
     diagnostics: [...diagnostics.values()],
     sessions: [...sessions.values()],
     timeline,

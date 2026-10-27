@@ -36,7 +36,9 @@ import type {
   ReleaseTable,
   SeriesStep,
 } from "./operation-queries.ts"
+import type { OriginQuery, OriginTable } from "./operation-queries.ts"
 import { operationStore } from "./operation-store.ts"
+import { originCounts } from "./origin-counts.ts"
 import { traceViewOf } from "./read-archived-trace.ts"
 import { migrateSignals } from "./signals-migrations.ts"
 import type { TraceView } from "./trace-view.ts"
@@ -62,8 +64,9 @@ export class Signals extends Context.Service<
   Signals,
   {
     /**
-     * Archives a trace export, adds its operations to the counts of `component`, and to its
-     * features' counts those that named their feature in `cluenori.feature`, and keeps those of
+     * Archives a trace export, adds its operations to the counts of `component`, to its
+     * features' counts those that named their feature in `cluenori.feature`, and to its origins'
+     * counts those that named the client they came from in `cluenori.origin.component`; and keeps those of
      * its traces that are now among the slowest or the slowest failed of their operation and hour,
      * once: an export whose digest arrived in the last hour, an exporter's retry, is skipped. Fails
      * with `ArchiveUnavailable` when it can't be archived, having counted nothing, so the exporter
@@ -126,6 +129,13 @@ export class Signals extends Context.Service<
      * environments added up unless the query names one. Reads one row per day and operation.
      */
     readonly featureOperations: (query: FeatureQuery) => Effect.Effect<ReadonlyArray<FeatureOperationDay>>
+    /**
+     * The query's operations split by the client that asked for them, as their spans named it in
+     * `cluenori.origin.component`, the most first, over the whole UTC hours the period touches (15
+     * months kept). Operations that named no client aren't listed: they are the rest of each
+     * operation's count. Reads one row per hour, operation and client.
+     */
+    readonly origins: (query: OriginQuery) => Effect.Effect<OriginTable>
     /** The errors of the query's period, most frequent first. Reads only. */
     readonly errors: (query: ErrorQuery) => Effect.Effect<ErrorTable>
     /**
@@ -178,6 +188,7 @@ export class Signals extends Context.Service<
         const counts = yield* operationStore
         const logs = yield* logStore
         const features = yield* featureCounts
+        const origins = yield* originCounts
         const index = yield* archiveIndex(settings)
         const lastCleanup = yield* Ref.make(0)
 
@@ -194,6 +205,7 @@ export class Signals extends Context.Service<
           }
           yield* counts.cleanUp(now)
           yield* features.cleanUp(now)
+          yield* origins.cleanUp(now)
           yield* logs.cleanUp(now)
           yield* index.cleanUp(now)
           yield* sql`DELETE FROM signals_batches WHERE received_at < ${now - Duration.toMillis(batchWindow)}`
@@ -261,7 +273,10 @@ export class Signals extends Context.Service<
             exported.traces,
             counts
               .add(component, exported.counts, exported.kept)
-              .pipe(Effect.andThen(features.add(component, exported.features ?? []))),
+              .pipe(
+                Effect.andThen(features.add(component, exported.features ?? [])),
+                Effect.andThen(origins.add(component, exported.origins ?? [])),
+              ),
           )
         })
 
@@ -287,6 +302,11 @@ export class Signals extends Context.Service<
         const featureOperations = Effect.fn("Signals.featureOperations")(function* (query: FeatureQuery) {
           const now = yield* nowMillis
           return yield* features.days(query, now)
+        })
+
+        const splitByOrigin = Effect.fn("Signals.origins")(function* (query: OriginQuery) {
+          const now = yield* nowMillis
+          return yield* origins.split(query, now)
         })
 
         const errors = Effect.fn("Signals.errors")(function* (query: ErrorQuery) {
@@ -360,6 +380,7 @@ export class Signals extends Context.Service<
           releases: counts.releases,
           environments: counts.environments,
           featureOperations,
+          origins: splitByOrigin,
           errors,
           error,
           logLine,

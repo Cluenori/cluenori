@@ -1,6 +1,12 @@
 import { MemberId, WorkspaceKey } from "@cluenori/foundation"
 import { releasesModule } from "@cluenori/releases"
-import { selfTelemetryUntraced, selfTelemetryUntracedServer } from "@cluenori/signals"
+import {
+  fromBaggage,
+  SelfTelemetry,
+  telemetryCounted,
+  telemetryUntraced,
+  telemetryUntracedServer,
+} from "@cluenori/signals"
 import { BrowserCrypto } from "@effect/platform-browser"
 import { env } from "cloudflare:workers"
 import { Config, ConfigProvider, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
@@ -33,6 +39,7 @@ import { ProjectObjects } from "./project-objects.ts"
 import { ProjectsHandlers } from "./projects-handlers.ts"
 import { ReleasesHandlers } from "./releases-handlers.ts"
 import { sdkKeyAuthorizationLayer } from "./sdk-key-authorization-layer.ts"
+import { selfTelemetryLayer } from "./self-telemetry.ts"
 import { MembersHandlers, PasskeysHandlers, SignInHandlers } from "./sign-in-handlers.ts"
 import { SignalsHandlers } from "./signals-handlers.ts"
 import { SyncScheduler } from "./sync-scheduler.ts"
@@ -51,6 +58,12 @@ const apiSettings = Config.all({
 })
 // Set by wrangler.jsonc's `eu` environment, which ./setup deploys for data kept in the EU.
 const jurisdiction = Config.option(Config.schema(Schema.Literal("eu"), "CLUENORI_JURISDICTION"))
+
+// The deployment's own telemetry, built once per isolate and shared by the app and the activity
+// queue's consumer through one memo map, so `flush` sends what either recorded.
+const memoMap = Layer.makeMemoMapUnsafe()
+const SelfTelemetryLive = selfTelemetryLayer(env)
+const telemetry = ManagedRuntime.make(SelfTelemetryLive, { memoMap })
 
 // The Durable Objects, projects' and the workspace's, are made in the EU when the deployment's data
 // stays there.
@@ -110,9 +123,10 @@ const IngestRoutes = HttpApiBuilder.layer(CluenoriIngestApi).pipe(
 // entry"). Building does no I/O, which Workers don't allow outside a request. Each route's path
 // prefix is in wrangler.jsonc's `run_worker_first`, in every environment; any other path is the
 // dashboard's, whose files answer a POST with 405. Tests call the Worker directly, past that. A
-// request of the deployment's own telemetry is handled untraced, so ingesting what the Worker
-// reports of itself never makes more of it (`selfTelemetryUntraced`). Apps' ingest routes answer web
-// apps of any origin (`appIngestFromAnyOrigin`).
+// request that brings telemetry is handled untraced, whoever sent it, so receiving N exports makes
+// none of the Worker's own but a count (`telemetryUntraced`, `telemetryCounted`); every other
+// request's span names the feature and the client its baggage says (`fromBaggage`). Apps' ingest
+// routes answer web apps of any origin (`appIngestFromAnyOrigin`).
 const app = HttpRouter.toWebHandler(
   Layer.mergeAll(
     ApiRoutes,
@@ -135,9 +149,13 @@ const app = HttpRouter.toWebHandler(
     Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
     Layer.provide(HttpServer.layerServices),
     Layer.provideMerge(SyncScheduler),
-    Layer.provideMerge(selfTelemetryUntracedServer),
+    Layer.provideMerge(telemetryUntracedServer),
+    Layer.provideMerge(SelfTelemetryLive),
   ),
-  { middleware: (handled) => selfTelemetryUntraced(appIngestFromAnyOrigin(handled)) },
+  {
+    middleware: (handled) => telemetryUntraced(telemetryCounted(fromBaggage(appIngestFromAnyOrigin(handled)))),
+    memoMap,
+  },
 )
 
 // What the activity queue's consumer runs on, built once per isolate like the app.
@@ -145,8 +163,17 @@ const reactions = ManagedRuntime.make(
   Workspace.pipe(
     Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
     Layer.provideMerge(SyncScheduler),
+    Layer.provideMerge(SelfTelemetryLive),
   ),
+  { memoMap },
 )
+
+// Hands what the deployment recorded of its own work to the platform, to send after the answer.
+const sendOwnTelemetry = (context: ExecutionContext) =>
+  Effect.gen(function* () {
+    const recorded = yield* SelfTelemetry
+    yield* Effect.sync(() => context.waitUntil(telemetry.runPromise(recorded.flush())))
+  })
 
 /**
  * The activity queue's consumer: each batch goes to the workspace's object, whose feeds take the
@@ -165,11 +192,24 @@ const reactTo = (batch: MessageBatch) =>
       return yield* Effect.sync(() => batch.retryAll())
     }
     yield* Effect.sync(() => batch.ackAll())
-  })
+  }).pipe(
+    Effect.withSpan("activity.react", {
+      kind: "consumer",
+      attributes: { "messaging.batch.message_count": batch.messages.length },
+    }),
+  )
 
 export default {
-  fetch: (request) => app.handler(request),
-  queue: (batch) => reactions.runPromise(reactTo(batch)),
+  fetch: (request, _env, context) =>
+    telemetry.runPromise(
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() => app.handler(request))
+        yield* sendOwnTelemetry(context)
+        return response
+      }),
+    ),
+  queue: (batch, _env, context) =>
+    reactions.runPromise(reactTo(batch).pipe(Effect.ensuring(sendOwnTelemetry(context)))),
 } satisfies ExportedHandler<Env>
 
 // The platform finds Durable Object classes among the entry's exports.

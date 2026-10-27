@@ -21,6 +21,29 @@
         "description": "Answers 204 when the Worker is deployed and serving. Use it for uptime checks; it reads no storage."
       }
     },
+    "/api/client-telemetry": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "operationId": "clientTelemetry",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "ClientTelemetry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientTelemetry"
+                }
+              }
+            }
+          }
+        },
+        "description": "How the deployment's own web dashboard and CLI report themselves to it: its release and environment, and each one's SDK key, public as every SDK key is; a key is absent when the deployment doesn't measure that client (`./cluenori self-telemetry`). Needs no sign-in, since the dashboard measures its sign-in screen too; reads no storage."
+      }
+    },
     "/api/sign-in": {
       "post": {
         "tags": [
@@ -1624,6 +1647,118 @@
           }
         },
         "description": "The load over a period: how many operations ran and failed, one point per step that had any, with their p50, p80, p95 and p99 durations, on a project's services, or on one operation with `operation`. A step without a point had nothing reported. Past two days the counts are hourly, so a finer step becomes an hour; `step` says which was used."
+      }
+    },
+    "/api/projects/{project}/origins": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "operationId": "signals.origins",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "allOf": [
+                {
+                  "pattern": "^\\P{Cc}*$"
+                }
+              ]
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OriginTable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OriginTable"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "A period's operations split by the client that asked for them, the most first: of each component's operation, how many times each client's requests ran it, how many failed, and their average, as the client's SDK named itself in the request's baggage (`cluenori.origin.component`) and the service copied it to its span. Requests that named no client aren't listed: they are the rest of the operation's count. Counted by the UTC hour, kept 15 months; `covered` is the whole hours the period touches."
       }
     },
     "/api/projects/{project}/kept-traces": {
@@ -5767,6 +5902,111 @@
         "description": "How each feature key was used in a period, the most people first: the people who did anything in it, its events and screens, and the app's memory there (peak and footprint p95); signals the app marked with no feature are the row without a key, \"(no feature)\", whose share says how much is tagged."
       }
     },
+    "/api/projects/{project}/screens": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "operationId": "analytics.screens",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ScreenTable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreenTable"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "How each screen of a project's apps did in a period, by UTC day, those visited the most first: how long it took to show its first content from what the device kept and from the network (p50 and p95, as the app marked it ready), its visits and their time in sight, the CPU time the app used per minute in sight, its hitches while scrolling in ms per second scrolled, and the hangs on it (the main thread held 250 ms or more); and the timings the apps measured, by name, with their p50 and p95. A measure the apps didn't send is absent, not zero. Kept 15 months."
+      }
+    },
     "/api/projects/{project}/people/{person}": {
       "get": {
         "tags": [
@@ -5950,6 +6190,15 @@
               "maxLength": 40
             },
             "required": false
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": false
           }
         ],
         "security": [
@@ -5999,7 +6248,7 @@
             }
           }
         },
-        "description": "One feature's story, by its key exactly, over everything kept of it, with no period, in one environment or every one: how the apps used it, each UTC day's people, events and screens (15 months), everyone who used it, the 20 who used it last, its releases and the app's memory in it; and what its services sent naming it in `cluenori.feature`: each UTC day's warnings and errors and its 10 most frequent errors (90 days), and each day's operations by component and operation, with how many failed (15 months). A part nothing named the feature in is empty; 404 when nothing kept names it."
+        "description": "One feature's story, by its key exactly, over everything kept of it, with no period, in one environment or every one, of every client or one component (`component`: an app's use and errors, a service's operations, warnings and errors): how the apps used it, each UTC day's people, events and screens (15 months), everyone who used it, the 20 who used it last, its releases and the app's memory in it; and what its services sent naming it in `cluenori.feature`: each UTC day's warnings and errors and its 10 most frequent errors (90 days), and each day's operations by component and operation, with how many failed (15 months). A part nothing named the feature in is empty; 404 when nothing kept names it, of any client: narrowed to a component, every part may be empty."
       }
     }
   },
@@ -7076,6 +7325,125 @@
           "linux",
           "windows"
         ]
+      },
+      "ScreenTable": {
+        "type": "object",
+        "properties": {
+          "screens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScreenUse"
+            }
+          },
+          "timings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimingUse"
+            }
+          }
+        },
+        "required": [
+          "screens",
+          "timings"
+        ],
+        "additionalProperties": false
+      },
+      "TimingUse": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "p50Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p95Ms": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "name",
+          "count",
+          "p50Ms",
+          "p95Ms"
+        ],
+        "additionalProperties": false
+      },
+      "ScreenUse": {
+        "type": "object",
+        "properties": {
+          "screen": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "readyKept": {
+            "$ref": "#/components/schemas/DurationSpread"
+          },
+          "readyFresh": {
+            "$ref": "#/components/schemas/DurationSpread"
+          },
+          "visible": {
+            "$ref": "#/components/schemas/DurationSpread"
+          },
+          "cpuMsPerMinute": {
+            "type": "number",
+            "minimum": 0
+          },
+          "hitchMsPerSecond": {
+            "type": "number",
+            "minimum": 0
+          },
+          "hangs": {
+            "$ref": "#/components/schemas/DurationSpread"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DurationSpread": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "p50Ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p95Ms": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "count",
+          "p50Ms",
+          "p95Ms"
+        ],
+        "additionalProperties": false
       },
       "FeatureUseTable": {
         "type": "object",
@@ -11961,6 +12329,71 @@
         ],
         "additionalProperties": false
       },
+      "OriginTable": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OriginRow"
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "OriginRow": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "averageMs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "component",
+          "operation",
+          "origin",
+          "count",
+          "errors",
+          "averageMs"
+        ],
+        "additionalProperties": false
+      },
       "LoadSeries": {
         "type": "object",
         "properties": {
@@ -12916,6 +13349,29 @@
         },
         "required": [
           "token"
+        ],
+        "additionalProperties": false
+      },
+      "ClientTelemetry": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "dashboard": {
+            "type": "string"
+          },
+          "cli": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment"
         ],
         "additionalProperties": false
       }

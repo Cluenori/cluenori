@@ -62,6 +62,8 @@ import {
   LogQuery,
   MetricsExport,
   OperationQuery,
+  OriginQuery,
+  OriginTable,
   LoadSeries,
   SeriesStep,
   SdkKeyRejected,
@@ -93,6 +95,7 @@ export type EngineCallName =
   | "operations"
   | "loadOverTime"
   | "keptTraces"
+  | "origins"
   | "errors"
   | "error"
   | "logLine"
@@ -217,6 +220,7 @@ export const projectCalls = {
     ProjectNotFound,
   ),
   keptTraces: projectCall("keptTraces", OperationQuery, KeptTraces, ProjectNotFound),
+  origins: projectCall("origins", OriginQuery, OriginTable, ProjectNotFound),
   errors: projectCall("errors", ErrorQuery, ErrorTable, ProjectNotFound),
   error: projectCall(
     "error",

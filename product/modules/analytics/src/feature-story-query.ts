@@ -9,7 +9,10 @@ import { FeatureNotFound } from "./feature-story.ts"
 // How many of a feature's errors the story lists, the most frequent first.
 const errorsListed = 10
 
-/** One feature's story, its parts asked together. Fails with `FeatureNotFound` when nothing kept names it. */
+/**
+ * One feature's story, its parts asked together. Fails with `FeatureNotFound` when nothing kept
+ * names it; narrowed to a component, its parts may all be empty instead, as other clients may use it.
+ */
 export const featureStoryOf = Effect.fn("Analytics.featureStory")(function* (query: FeatureQuery) {
   const apps = yield* AppSignals
   const signals = yield* Signals
@@ -18,6 +21,7 @@ export const featureStoryOf = Effect.fn("Analytics.featureStory")(function* (que
   const scope = {
     feature: query.feature,
     ...(query.environment === undefined ? {} : { environment: query.environment }),
+    ...(query.component === undefined ? {} : { component: query.component }),
   }
   const [use, counted, errors, operations] = yield* Effect.all(
     [
@@ -28,7 +32,12 @@ export const featureStoryOf = Effect.fn("Analytics.featureStory")(function* (que
     ],
     { concurrency: "unbounded" },
   )
-  if (use.days.length === 0 && counted.series.length === 0 && operations.length === 0) {
+  if (
+    query.component === undefined &&
+    use.days.length === 0 &&
+    counted.series.length === 0 &&
+    operations.length === 0
+  ) {
     return yield* new FeatureNotFound({ feature: query.feature })
   }
   const byDay = new Map<string, { warnings: number; errors: number }>()

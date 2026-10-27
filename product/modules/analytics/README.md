@@ -53,7 +53,8 @@ const person = yield* client.analytics.personByUser({ params: { project }, query
   sessions more, with 200 sessions and MetricKit's reports in both. Too early until it ran an hour
   and a measure compares; `first` without a release before it.
 - **A feature's story** (`src/feature-story.ts`): how the apps used it and what its services sent
-  for it, asked together, and when nothing names it.
+  for it, asked together, and when nothing names it; narrowed to one component, that component's
+  part, which may be none, never `FeatureNotFound`.
 - **Data:** none. It reads the apps' signals and the services' counts and logs Signals keeps.
 
 ## Does not own

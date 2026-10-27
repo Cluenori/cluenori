@@ -58,6 +58,10 @@ export {
   FeatureUseDay,
   FeatureUseLife,
   FeatureUseTable,
+  DurationSpread,
+  ScreenTable,
+  ScreenUse,
+  TimingUse,
   LaunchTimes,
   MemoryUse,
   MetricKitSummary,
@@ -99,6 +103,7 @@ export {
 export { ErrorGroupShape, ExportSignal, LogExport, MetricsExport, TraceExport } from "./exports.ts"
 export { featureAttribute } from "./feature-attribute.ts"
 export { FeatureOperationCounts, FeatureOperationDay, FeatureQuery } from "./feature-queries.ts"
+export { OriginOperationCounts, OriginQuery, OriginRow, OriginTable } from "./operation-queries.ts"
 export { ErrorGroupId, LogEntry, LogException, LogLevel, LogLine, LogMessageId, SpanId } from "./log-entry.ts"
 export { LogMessage, LogMessageDetail, LogMessageNotFound, LogMessageQuery, LogMessageTable } from "./log-messages.ts"
 export type { ReadLogs } from "./read-logs.ts"
@@ -130,6 +135,7 @@ export {
   LogFilters,
   LogMessageFilters,
   OperationFilters,
+  OriginFilters,
   SeriesFilters,
   SignalsGroup,
   TraceFilters,
@@ -148,10 +154,14 @@ export {
   usualOf,
 } from "./verdicts.ts"
 export {
-  isSelfTelemetry,
   selfTelemetryAttribute,
   selfTelemetryHeader,
-  selfTelemetryUntraced,
-  selfTelemetryUntracedServer,
   selfTelemetryValue,
+  takesTelemetry,
+  telemetryRouteOf,
+  telemetryUntraced,
+  telemetryUntracedServer,
 } from "./self-telemetry.ts"
+export type { SelfTelemetryPath, SelfTelemetrySettings } from "./self-telemetry-exporter.ts"
+export { SelfTelemetry, selfTelemetryLimits, serverSpanName, telemetryCounted } from "./self-telemetry-exporter.ts"
+export { cluenoriBaggage, fromBaggage, originComponentAttribute, originReleaseAttribute } from "./baggage.ts"
