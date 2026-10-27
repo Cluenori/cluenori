@@ -333,7 +333,8 @@ public final class TodayModel {
                 projectKey: item.project,
                 project: names[item.project] ?? item.project,
                 evidence: .silent(lastDataAt: item.lastDataAt),
-                route: .project(item.project)
+                // Its tech, as on the web: a row on the project's screen never opens that screen again.
+                route: .tech(project: item.project)
             )
         case .keyExpiring(let item):
             TodayRow(

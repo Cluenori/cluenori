@@ -458,6 +458,27 @@ describe("productLinesOf", () => {
     ])
   })
 
+  it("says an operation quiet by a guess, with its row, when nothing measured speaks", () => {
+    const quiet: TodayList["items"][number] = {
+      _tag: "quiet",
+      project,
+      component: api,
+      environment: production,
+      operation: EnvelopeName.make("POST /api/sync"),
+      usualGapMs: 30 * 60 * 1000,
+      lastRanAt: at(now - 3 * hour),
+    }
+    const pulse = { project, load: [{ start: at(now - hour), count: 1, errors: 0 }] }
+    const line = productLinesOf({ ...today([quiet]), pulses: [pulse] }, project).find(
+      (each) => each.product === "performance",
+    )
+    assert.deepStrictEqual(
+      [line?.tone, line?.words, line?.items.length],
+      ["warning", "POST /api/sync quiet, a guess", 1],
+    )
+    assert.deepStrictEqual(line?.to, { page: "performance", project })
+  })
+
   it("says the load and the people a pulse counts, and a fall in people of a tenth or more", () => {
     const load = [{ start: at(now - hour), count: 1200, errors: 3 }]
     const analytics = (latest: number, weekBefore?: number) =>

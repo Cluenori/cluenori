@@ -1,6 +1,7 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { render } from "vitest-browser-react"
+import { userEvent } from "vitest/browser"
 
 import { App } from "@/app"
 
@@ -81,6 +82,36 @@ describe("versions journey", () => {
           .toHaveTextContent("1.3.9 is lower than notes-api's 1.4.0: a version only goes up"),
       )
       yield* expectAccessible()
+    }),
+  )
+
+  // The save is held back 800 ms (the fake API answers on the real clock), so the menu closes while it is still on its way.
+  it.effect("keeps the keyboard on Bump while a slow bump saves", () =>
+    Effect.gen(function* () {
+      const api = notesApi()
+      answerApi((call) =>
+        call.method === "PUT" && call.path[2] === "versions" ? Effect.delay(api(call), "800 millis") : api(call),
+      )
+      window.history.pushState(null, "", "/projects/notes/releases")
+      const screen = yield* Effect.promise(() => render(<App />))
+      const bump = screen.getByRole("region", { name: "notes-api" }).getByRole("button", { name: "Bump notes-api" })
+      yield* Effect.promise(() => expect.element(bump).toBeVisible())
+      // Its name says “Bumping…” while it saves, so it is held as the element itself.
+      const button = bump.element()
+      if (!(button instanceof HTMLElement)) {
+        return assert.fail("Bump isn't an element")
+      }
+      button.focus()
+      yield* Effect.promise(() => userEvent.keyboard("{Enter}"))
+      const minor = screen.getByRole("menu").getByRole("menuitem", { name: "Minor 1.5.0" })
+      yield* Effect.promise(() => expect.element(minor).toBeVisible())
+      minor.element().focus()
+      yield* Effect.promise(() => userEvent.keyboard("{Enter}"))
+      yield* Effect.promise(() => expect.element(screen.getByRole("menu")).not.toBeInTheDocument())
+      // Before the save ends, and after it.
+      assert.strictEqual(document.activeElement, button)
+      yield* Effect.promise(() => expect.element(screen.getByText("1.5.0+58")).toBeVisible())
+      assert.strictEqual(document.activeElement, button)
     }),
   )
 })

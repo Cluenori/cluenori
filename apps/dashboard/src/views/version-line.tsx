@@ -203,7 +203,10 @@ export function VersionLine({
         <span className="flex gap-2">
           {line !== undefined && (
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={bumping} />}>
+              {/* Focusable while bumping, so focus comes back to it when the menu closes before the save ends. */}
+              <DropdownMenuTrigger
+                render={<Button variant="outline" size="sm" disabled={bumping} focusableWhenDisabled />}
+              >
                 {bumping ? "Bumping…" : "Bump"}
                 <span className="sr-only"> {component}</span>
                 <ChevronDownIcon data-icon="inline-end" />

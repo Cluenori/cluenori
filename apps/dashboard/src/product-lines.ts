@@ -150,8 +150,8 @@ const declared: Readonly<Record<Product, (facts: Facts) => Said | undefined>> = 
     ].join(" · ")
     return { tone: first.row.tone, words, items: errors.map(({ row }) => row) }
   },
-  // A project that sent nothing in a day, its slower operations, an ingest key about to expire, else
-  // its last day's load.
+  // A project that sent nothing in a day, its slower operations, an ingest key about to expire, an
+  // operation quiet by a guess, else its last day's load.
   performance: ({ items, pulse, now }) => {
     const silent = items.find(({ item }) => item._tag === "silent")
     if (silent?.item._tag === "silent") {
@@ -176,6 +176,17 @@ const declared: Readonly<Record<Product, (facts: Facts) => Said | undefined>> = 
     const [soonest] = expiring
     if (soonest !== undefined) {
       return { tone: "warning", words: `An ingest key expires ${soonest.when ?? "soon"}`, items: expiring }
+    }
+    // A guess says less than what is measured, so it speaks only when nothing measured does.
+    const quiet = items.filter(({ item }) => item._tag === "quiet").map(({ row }) => row)
+    const [guessed] = quiet
+    if (guessed !== undefined) {
+      return {
+        tone: "warning",
+        // The first speaks, as on the iPhone; every quiet operation keeps its row.
+        words: `${guessed.title} quiet, a guess`,
+        items: quiet,
+      }
     }
     if (pulse === undefined || pulse.load.length === 0) {
       return undefined

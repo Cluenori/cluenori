@@ -356,6 +356,19 @@ struct ProductLineTests {
         #expect(rows.allSatisfy { $0.route == $0.product.route(of: "quiet") })
     }
 
+    @Test func `leads a project that went silent to its tech, never back to the project itself`() async throws {
+        let today = try await today(
+            #"""
+            {"items":[{"_tag":"silent","project":"notes","lastDataAt":"2026-10-18T13:00:00.000Z"}],
+             "projects":[{"key":"notes","name":"Notes","createdAt":"2026-10-01T10:00:00.000Z"}],
+             "unanswered":[],"at":"2026-10-21T13:00:00.000Z"}
+            """#)
+        let notes = try #require(today.project("notes"))
+        let performance = try #require(ProductLine.lines(of: notes).first { $0.product == .performance })
+        #expect(performance.route == .operations(of: .project("notes")))
+        #expect(performance.rows.map(\.route) == [.tech(project: "notes")])
+    }
+
     // Today with no items, of Alpha and Zulu, whose daily people are these against a week before.
     private func peopleAnswer(alpha: (Int, Int), zulu: (Int, Int)) -> String {
         func pulse(_ key: String, _ people: (Int, Int)) -> String {
