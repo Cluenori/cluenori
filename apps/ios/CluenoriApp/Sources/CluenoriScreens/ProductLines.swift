@@ -77,7 +77,7 @@ public struct ProductLine: Identifiable, Equatable, Sendable {
     public let product: Product
     public let tone: Tone
     public let says: Says
-    /// The one thing it is about, else the product's screen of the project.
+    /// The product's screen of the project, whatever the line is about.
     public let route: Route
     /// Today's items behind it, the most urgent first; none for a line without news.
     public let rows: [TodayRow]
@@ -107,12 +107,10 @@ public struct ProductLine: Identifiable, Equatable, Sendable {
         let key = project.key
         var lines: [ProductLine] = []
         func add(_ product: Product, _ tone: Tone, _ says: Says, _ rows: [TodayRow] = []) {
-            // A line about one thing leads to it, unless that is the project itself.
-            var route = product.route(of: key)
-            if rows.count == 1, let only = rows.first?.route, only != .project(key) {
-                route = only
-            }
-            lines.append(ProductLine(product: product, tone: tone, says: says, route: route, rows: rows))
+            // A product's line always opens the product's screen, so all of it is a tap away; what
+            // the line is about has a row of its own under it.
+            lines.append(
+                ProductLine(product: product, tone: tone, says: says, route: product.route(of: key), rows: rows))
         }
 
         let incidents = project.rows.filter { if case .incident = $0.kind { true } else { false } }

@@ -29,18 +29,15 @@ const rowLink =
   "outline-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
 
 /**
- * One product's line, as a row that leads where the line does: its tone's dot, the product's name,
+ * One product's line, as a row that opens the product's page: its tone's dot, the product's name,
  * what it says, and `aside`, such as a small chart of what it counts.
  */
 export function ProductLineRow({
   line,
-  detail,
   aside,
   className,
 }: {
   readonly line: ProductLine
-  /** A line of evidence under what it says, such as its one item's. */
-  readonly detail?: string
   readonly aside?: ReactNode
   readonly className?: string
 }) {
@@ -59,7 +56,6 @@ export function ProductLineRow({
           )}
         >
           {line.words}
-          {detail !== undefined && <span className="block text-sm text-muted-foreground">{detail}</span>}
         </span>
       </span>
       {aside}

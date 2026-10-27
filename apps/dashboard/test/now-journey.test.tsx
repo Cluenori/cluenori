@@ -78,9 +78,15 @@ describe("now journey", () => {
       const things = productRows.getByRole("list", { name: "What it is about" })
       yield* Effect.promise(() => expect.element(things.getByRole("link", { name: /NpgsqlException/ })).toBeVisible())
       yield* Effect.promise(() => expect.element(things.getByRole("link", { name: /TimeoutException/ })).toBeVisible())
+      // Performance about one slower operation opens Performance; the operation is a row of its own.
       yield* Effect.promise(() =>
         expect
           .element(productRows.getByRole("link", { name: /^Performance/ }))
+          .toHaveAttribute("href", "/projects/notes/performance"),
+      )
+      yield* Effect.promise(() =>
+        expect
+          .element(things.getByRole("link", { name: /GET \/api\/feed/ }))
           .toMatchTextContent(/p95 620 ms over the last day, usually 300 ms/),
       )
       yield* Effect.promise(() =>
@@ -162,10 +168,11 @@ describe("now journey", () => {
       yield* Effect.promise(() => expect.element(slower).toBeVisible())
       slower.element().focus()
       yield* Effect.promise(() => userEvent.keyboard("{Enter}"))
+      // A line about one slower operation opens Performance, every operation, never only that one.
       yield* Effect.promise(() =>
-        expect.element(screen.getByRole("heading", { level: 1, name: /\/api\/feed/ })).toBeVisible(),
+        expect.element(screen.getByText(/GET \/api\/feed got slower: p95 620 ms/)).toBeVisible(),
       )
-      assert.strictEqual(window.location.pathname, "/projects/notes/operations/GET%20/api/feed")
+      assert.strictEqual(window.location.pathname, "/projects/notes/performance")
     }),
   )
 

@@ -408,7 +408,7 @@ const peopleNow = (latest: number, weekBefore?: number) => ({
 const pulsed = (pulse: NonNullable<TodayList["pulses"]>[number]): TodayList => ({ ...today([]), pulses: [pulse] })
 
 describe("productLinesOf", () => {
-  it("says each product's news about a project, in Today's order, each leading to its one thing or its page", () => {
+  it("says each product's news about a project, in Today's order, each leading to its product's page", () => {
     const lines = productLinesOf({ ...answered, items: [...answered.items, promotion("approved")] }, project)
     assert.deepStrictEqual(
       lines.map((line) => [line.product, line.tone, line.words, line.items.length]),
@@ -419,10 +419,11 @@ describe("productLinesOf", () => {
         ["releases", "release", "2.5.0+318 passed App Store review", 1],
       ],
     )
-    // One thing behind a line: its page. Several: the product's page of the project.
-    assert.deepStrictEqual(lines[0]?.to, lines[0]?.items[0]?.to)
+    // Every line opens its product's page, even one about one thing; the thing has its own link.
+    assert.deepStrictEqual(lines[0]?.to, { page: "incidents", project })
     assert.deepStrictEqual(lines[1]?.to, { page: "errors", project })
-    assert.deepStrictEqual(lines[2]?.to, lines[2]?.items[0]?.to)
+    assert.deepStrictEqual(lines[2]?.to, { page: "performance", project })
+    assert.notDeepEqual(lines[2]?.items[0]?.to, lines[2]?.to)
   })
 
   it("puts the product with Today's most urgent thing first, whatever the products' order", () => {

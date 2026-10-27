@@ -44,15 +44,14 @@ function ProductRow({
   readonly pulse: ProjectPulse | undefined
   readonly at: DateTime.Utc
 }) {
-  const [only] = line.items
   return (
     <li>
       <ProductLineRow
         line={line}
-        {...(line.items.length === 1 && only !== undefined ? { detail: only.detail } : {})}
         aside={line.product === "performance" ? <DaySpark pulse={pulse} at={at} /> : undefined}
       />
-      {line.items.length > 1 && <LineItems items={line.items} />}
+      {/* The line opens the product; what it is about, even one thing, has rows of its own. */}
+      {line.items.length > 0 && <LineItems items={line.items} />}
     </li>
   )
 }

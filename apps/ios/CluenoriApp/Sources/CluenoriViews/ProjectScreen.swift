@@ -69,8 +69,8 @@ struct ProjectSummary {
     }
 }
 
-/// Every product of a project, a row each, the most urgent first; under a line with several things
-/// behind it, each of them.
+/// Every product of a project, a row each, the most urgent first, opening the product; under a line
+/// with things behind it, each of them, opening it.
 struct ProductsSection: View {
     let project: ProjectNow
     /// Nil until the delivery arrives.
@@ -89,7 +89,7 @@ struct ProductsSection: View {
                         PanelDivider()
                     }
                     NavigationLink(value: line.route) {
-                        ProductLineRow(line: line, detail: true) {
+                        ProductLineRow(line: line) {
                             if line.product == .performance, let hours = project.pulse?.hours, !hours.isEmpty,
                                 !dynamicTypeSize.isAccessibilitySize
                             {
@@ -98,7 +98,8 @@ struct ProductsSection: View {
                         }
                     }
                     .buttonStyle(PanelRowStyle())
-                    if line.rows.count > 1 {
+                    // What the line is about, each thing its own row: the line itself opens the product.
+                    if !line.rows.isEmpty {
                         ForEach(line.rows) { row in
                             if let route = row.route {
                                 NavigationLink(value: route) {

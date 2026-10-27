@@ -410,7 +410,7 @@ struct ProjectsSection: View {
 }
 
 /// A project on Now: its name and what its lines come to, opening its screen; each line with news,
-/// opening what it is about; then the steady ones in one row.
+/// opening its product; then the steady ones in one row.
 struct ProjectLinesPanel: View {
     let project: ProjectNow
 

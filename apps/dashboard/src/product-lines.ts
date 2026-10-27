@@ -41,13 +41,13 @@ export type ProductLine = {
   readonly tone: LineTone
   /** What it says, after the product's name: "1 new", "GET /api/feed slower". */
   readonly words: string
-  /** Where it leads: the one thing it is about, else the product's own page of the project. */
+  /** Where it leads: the product's own page of the project, whatever the line is about. */
   readonly to: Route
   /** Today's items behind it, the most urgent first; none for a line without news. */
   readonly items: ReadonlyArray<NeedsYou>
 }
 
-/** A product's page of a project: where its line leads when it isn't about one thing. */
+/** A product's page of a project: where its line leads. */
 export const productPageOf = (product: Product, project: ProjectKey): Route => {
   switch (product) {
     case "uptime":
@@ -232,8 +232,8 @@ const toneRank: Readonly<Record<LineTone, number>> = {
 
 /**
  * Each product's line about `project`, from Today's answer, the most urgent first: those with items
- * in Today's order of their first, then the rest by tone and product. A line about one thing leads to
- * it; the rest to the product's page. A product with nothing to say has no line, and a project that
+ * in Today's order of their first, then the rest by tone and product. Every line leads to the
+ * product's page, so all of it is one click away; its items lead to their own. A product with nothing to say has no line, and a project that
  * didn't answer has none. `shipped`, on the project's page, gives Releases a line when no release
  * needs a member.
  */
@@ -262,15 +262,13 @@ export const productLinesOf = (
     if (said === undefined) {
       return []
     }
-    const items = said.items ?? []
-    const [only] = items
     return [
       {
         product,
         tone: said.tone,
         words: said.words,
-        to: items.length === 1 && only !== undefined ? only.to : productPageOf(product, project),
-        items,
+        to: productPageOf(product, project),
+        items: said.items ?? [],
       },
     ]
   })

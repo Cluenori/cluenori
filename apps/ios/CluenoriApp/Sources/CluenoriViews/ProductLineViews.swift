@@ -204,11 +204,10 @@ struct LineWords: View {
     }
 }
 
-/// One product's line, as a row: its tone's dot, the product's name over what it says, a line of
-/// evidence when `detail` is on and it is about one thing, and `aside`, such as a small chart.
+/// One product's line, as a row: its tone's dot, the product's name over what it says, and `aside`,
+/// such as a small chart.
 struct ProductLineRow<Aside: View>: View {
     let line: ProductLine
-    var detail = false
     @ViewBuilder var aside: Aside
 
     var body: some View {
@@ -221,11 +220,6 @@ struct ProductLineRow<Aside: View>: View {
                 LineWords(line: line)
                     .font(.callout.weight(line.tone.isNews ? .medium : .regular))
                     .foregroundStyle(line.tone.isNews || line.tone == .steady ? Palette.text : Palette.secondary)
-                if detail, line.rows.count == 1, let only = line.rows.first {
-                    ItemDetail(evidence: only.evidence)
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.secondary)
-                }
             }
             Spacer(minLength: 4)
             aside
@@ -237,8 +231,8 @@ struct ProductLineRow<Aside: View>: View {
 }
 
 extension ProductLineRow where Aside == EmptyView {
-    init(line: ProductLine, detail: Bool = false) {
-        self.init(line: line, detail: detail) { EmptyView() }
+    init(line: ProductLine) {
+        self.init(line: line) { EmptyView() }
     }
 }
 

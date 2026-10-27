@@ -309,7 +309,9 @@ struct ProductLineTests {
         let notes = ProductLine.lines(of: try #require(today.project("notes")))
         #expect(notes.map(\.product) == [.uptime, .releases, .errors, .performance, .analytics])
         #expect(notes.map(\.tone) == [.failure, .release, .steady, .steady, .steady])
-        #expect(notes[0].route == .incident(project: "notes", id: "019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f53"))
+        // A line opens its product's screen, even when it is about one thing, which has its own row.
+        #expect(notes[0].route == .incidents(project: "notes"))
+        #expect(notes[0].rows.map(\.route) == [.incident(project: "notes", id: "019a0f2e-5c1e-7d3a-9b2f-4e8a1c6d0f53")])
         #expect(notes[2].route == .errors(of: .project("notes")))
         #expect(notes[3].says == .load(operations: 2_100, failed: 15))
         #expect(notes[4].says == .people(daily: 1_284, percent: 6))
@@ -318,11 +320,14 @@ struct ProductLineTests {
         let atlas = ProductLine.lines(of: try #require(today.project("atlas")))
         #expect(atlas.map(\.product) == [.performance, .releases, .uptime, .errors])
         #expect(atlas[1].tone == .failure)
+        // One slower operation: Performance opens all of them, and the operation is a row of its own.
+        #expect(atlas[0].route == .operations(of: .project("atlas")))
         #expect(
-            atlas[0].route
-                == .operation(
+            atlas[0].rows.map(\.route) == [
+                .operation(
                     OperationRef(project: "atlas", component: "atlas-api", environment: "prod", name: "GET /api/search")
-                ))
+                )
+            ])
 
         // Without load or people, Performance and Analytics have nothing to say.
         #expect(ProductLine.lines(of: try #require(today.project("kiln"))).map(\.product) == [.uptime, .errors])
