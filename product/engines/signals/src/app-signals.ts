@@ -107,15 +107,24 @@ const scrubbedJson = (value: unknown, name: string): unknown => {
   return value
 }
 
-/** A signal without credentials or personal data in its names, its properties, or MetricKit's report. */
+// The screen a signal was recorded on, without credentials or personal data.
+const scrubbedScreen = <S extends { readonly screen?: EnvelopeName }>(signal: S): S =>
+  signal.screen === undefined ? signal : { ...signal, screen: scrubbedName(signal.screen) }
+
+// Text an error carries, without credentials or personal data, within the contract's length.
+const scrubbedErrorText = (text: string, limit: number) => scrubbedText(text).slice(0, limit)
+
+/** A signal without credentials or personal data in its names, its properties, its error, or MetricKit's report. */
 const scrubbedSignal = (signal: AppSignal): AppSignal => {
   switch (signal._tag) {
     case "screen":
+    case "screen.ready":
+    case "screen.left":
       return { ...signal, screen: scrubbedName(signal.screen) }
     case "event": {
       const properties = signal.properties
       return {
-        ...signal,
+        ...scrubbedScreen(signal),
         name: scrubbedName(signal.name),
         ...(properties === undefined
           ? {}
@@ -126,13 +135,26 @@ const scrubbedSignal = (signal: AppSignal): AppSignal => {
             }),
       }
     }
+    case "timing":
+      return { ...scrubbedScreen(signal), name: scrubbedName(signal.name) }
+    case "error": {
+      const stack = signal.stack
+      const type = scrubbedErrorText(signal.type, 256)
+      return {
+        ...scrubbedScreen(signal),
+        type: type.length === 0 ? "[scrubbed]" : type,
+        message: scrubbedErrorText(signal.message, 1024),
+        ...(stack === undefined ? {} : { stack: scrubbedErrorText(stack, 16_384) }),
+      }
+    }
     case "metrickit":
       return { ...signal, payload: scrubbedJson(signal.payload, "payload") }
     case "session.started":
     case "session.ended":
     case "app.launched":
     case "app.memory":
-      return signal
+    case "app.hang":
+      return scrubbedScreen(signal)
   }
 }
 

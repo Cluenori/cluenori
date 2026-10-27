@@ -1,8 +1,7 @@
 import type { AppManifest } from "@cluenori/manifest"
 import { AppBatch, CountryCode } from "@cluenori/signals"
 import { DateTime, Duration, Effect, Option, Result, Schema } from "effect"
-import type { HttpServerRequest } from "effect/http"
-import { HttpServerRespondable, HttpServerResponse } from "effect/http"
+import { HttpMiddleware, HttpServerRequest, HttpServerRespondable, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 
 import { CluenoriIngestApi } from "./app-ingest-api.ts"
@@ -39,6 +38,26 @@ const countryOf = (request: HttpServerRequest.HttpServerRequest) => {
   const country = cf !== undefined && "country" in cf ? cf.country : undefined
   return Schema.is(CountryCode)(country) && country !== "XX" ? Option.some(country) : Option.none()
 }
+
+// Web apps call these routes from their own origin, so the browser asks first (CORS). They are
+// authorized by the component's SDK key, never a cookie, and the key is public in the app, so any
+// origin may call them; nothing else under the Worker answers another origin.
+const appIngestCors = HttpMiddleware.cors({
+  allowedMethods: ["GET", "POST"],
+  allowedHeaders: ["authorization", "content-type"],
+  exposedHeaders: ["retry-after"],
+  maxAge: 86_400,
+})
+
+/** The host's middleware for every route: apps' ingest routes, `/ingest/v1/app/*`, answer any origin. */
+export const appIngestFromAnyOrigin = <E, R>(
+  app: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R | HttpServerRequest.HttpServerRequest>,
+): Effect.Effect<HttpServerResponse.HttpServerResponse, E, R | HttpServerRequest.HttpServerRequest> =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const path = request.url.split("?")[0] ?? ""
+    return yield* path.startsWith("/ingest/v1/app/") ? appIngestCors(app) : app
+  })
 
 /**
  * `POST /ingest/v1/app/batch`: reads the body itself, so one over 1 MB is refused (413) before it is

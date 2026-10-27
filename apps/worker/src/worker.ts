@@ -1,5 +1,6 @@
 import { MemberId, WorkspaceKey } from "@cluenori/foundation"
 import { releasesModule } from "@cluenori/releases"
+import { selfTelemetryUntraced, selfTelemetryUntracedServer } from "@cluenori/signals"
 import { BrowserCrypto } from "@effect/platform-browser"
 import { env } from "cloudflare:workers"
 import { Config, ConfigProvider, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
@@ -10,7 +11,7 @@ import { activityOf } from "./activity-queue.ts"
 import { AnalyticsHandlers } from "./analytics-handlers.ts"
 import { ApiToken } from "./api-token.ts"
 import { CluenoriIngestApi } from "./app-ingest-api.ts"
-import { AppIngestHandlers, AppManifestHandlers } from "./app-ingest.ts"
+import { AppIngestHandlers, AppManifestHandlers, appIngestFromAnyOrigin } from "./app-ingest.ts"
 import { AppleAppSiteAssociation } from "./apple-app-site.ts"
 import { CluenoriApi } from "./cluenori-api.ts"
 import { FeedsHandlers } from "./feeds-handlers.ts"
@@ -108,7 +109,10 @@ const IngestRoutes = HttpApiBuilder.layer(CluenoriIngestApi).pipe(
 // Built once per isolate, at module scope, and reused for every request (PATTERNS.md, "The Worker
 // entry"). Building does no I/O, which Workers don't allow outside a request. Each route's path
 // prefix is in wrangler.jsonc's `run_worker_first`, in every environment; any other path is the
-// dashboard's, whose files answer a POST with 405. Tests call the Worker directly, past that.
+// dashboard's, whose files answer a POST with 405. Tests call the Worker directly, past that. A
+// request of the deployment's own telemetry is handled untraced, so ingesting what the Worker
+// reports of itself never makes more of it (`selfTelemetryUntraced`). Apps' ingest routes answer web
+// apps of any origin (`appIngestFromAnyOrigin`).
 const app = HttpRouter.toWebHandler(
   Layer.mergeAll(
     ApiRoutes,
@@ -131,7 +135,9 @@ const app = HttpRouter.toWebHandler(
     Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
     Layer.provide(HttpServer.layerServices),
     Layer.provideMerge(SyncScheduler),
+    Layer.provideMerge(selfTelemetryUntracedServer),
   ),
+  { middleware: (handled) => selfTelemetryUntraced(appIngestFromAnyOrigin(handled)) },
 )
 
 // What the activity queue's consumer runs on, built once per isolate like the app.

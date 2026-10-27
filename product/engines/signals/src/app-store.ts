@@ -821,7 +821,7 @@ export const appStore = Effect.gen(function* () {
       ...(warm === undefined ? {} : { warm }),
       prewarmed: merged.countOf("launch.prewarmed"),
       ...(memory === undefined ? {} : { memory }),
-      ...(kind("report") === 0
+      ...(kinds.length === 0
         ? {}
         : {
             diagnostics: {

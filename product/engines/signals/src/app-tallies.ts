@@ -123,6 +123,16 @@ export const keptSignalOf = (signal: AppSignal): AppSignal => {
       return withoutUser(signal)
     case "event":
       return withoutUser(signal)
+    case "screen.ready":
+      return withoutUser(signal)
+    case "screen.left":
+      return withoutUser(signal)
+    case "app.hang":
+      return withoutUser(signal)
+    case "error":
+      return withoutUser(signal)
+    case "timing":
+      return withoutUser(signal)
   }
 }
 
@@ -131,7 +141,8 @@ export const keptSignalOf = (signal: AppSignal): AppSignal => {
  * its person active that day, and in its feature ("" for none), except MetricKit's reports, which
  * aren't of a session; a session counts the day it starts; launches are measured by kind, prewarmed
  * ones only counted; memory by its peak and footprint; MetricKit's diagnostics by kind and the
- * release each is of. Memory isn't in the timeline.
+ * release each is of, and an error nothing handled as a crash of `release`. Memory, screens' readiness
+ * and visits, hangs, errors and timings aren't in the timeline.
  */
 export const talliesOf = (signals: ReadonlyArray<PersonSignal>, release: ReleaseVersion): Tallies => {
   const days = new Map<string, DayTally>()
@@ -172,6 +183,12 @@ export const talliesOf = (signals: ReadonlyArray<PersonSignal>, release: Release
       tally.values.push(value)
     }
   }
+  const diagnosticOf = (day: number, of: ReleaseVersion, kind: DiagnosticKind) => {
+    const key = keyOf(day, of, kind)
+    const tally = diagnostics.get(key) ?? { day, release: of, kind, count: 0 }
+    diagnostics.set(key, tally)
+    return tally
+  }
   const sessionOf = (person: PersonId, session: SessionId, at: number) => {
     const existing = sessions.get(session)
     if (existing !== undefined) {
@@ -200,10 +217,7 @@ export const talliesOf = (signals: ReadonlyArray<PersonSignal>, release: Release
     if (signal._tag === "metrickit") {
       const counted = diagnosticsOf(signal, release)
       for (const { release: of, kind, count } of counted) {
-        const key = keyOf(day, of, kind)
-        const tally = diagnostics.get(key) ?? { day, release: of, kind, count: 0 }
-        diagnostics.set(key, tally)
-        tally.count += count
+        diagnosticOf(day, of, kind).count += count
       }
       const crashes = counted.filter((each) => each.kind === "crash").reduce((sum, each) => sum + each.count, 0)
       const hangs = counted.filter((each) => each.kind === "hang").reduce((sum, each) => sum + each.count, 0)
@@ -259,6 +273,19 @@ export const talliesOf = (signals: ReadonlyArray<PersonSignal>, release: Release
         timeline.push({ person, at, signal: withoutUser(signal) })
         break
       }
+      case "error": {
+        // An error nothing handled is a crash of the release that sent it (GLOSSARY.md, "Crash").
+        if (!signal.handled) {
+          diagnosticOf(day, release, "crash").count += 1
+        }
+        break
+      }
+      // Kept in the archive, whose views of them come with the first page that shows them.
+      case "screen.ready":
+      case "screen.left":
+      case "app.hang":
+      case "timing":
+        break
     }
   }
   return {

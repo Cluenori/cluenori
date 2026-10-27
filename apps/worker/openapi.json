@@ -6644,6 +6644,17 @@
             "type": "string",
             "maxLength": 100
           },
+          "screen": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
           "name": {
             "type": "string",
             "minLength": 1,
@@ -6741,6 +6752,17 @@
             "type": "string",
             "maxLength": 100
           },
+          "screen": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
           "start": {
             "$ref": "#/components/schemas/LaunchStart"
           },
@@ -6800,6 +6822,17 @@
             "type": "string",
             "maxLength": 100
           },
+          "screen": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
+          },
           "foregroundMs": {
             "type": "number",
             "minimum": 0
@@ -6839,6 +6872,17 @@
           "feature": {
             "type": "string",
             "maxLength": 100
+          },
+          "screen": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "allOf": [
+              {
+                "pattern": "^\\P{Cc}*$"
+              }
+            ]
           }
         },
         "required": [
@@ -7027,7 +7071,10 @@
           "macOS",
           "visionOS",
           "watchOS",
-          "tvOS"
+          "tvOS",
+          "web",
+          "linux",
+          "windows"
         ]
       },
       "FeatureUseTable": {

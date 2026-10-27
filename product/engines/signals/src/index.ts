@@ -10,6 +10,7 @@ export {
   AppBatch,
   AppBatchAccepted,
   AppDevice,
+  AppHang,
   AppLaunched,
   AppMemory,
   AppPlatform,
@@ -17,17 +18,22 @@ export {
   AppSignal,
   AppSignalId,
   AppUserId,
+  ErrorRecorded,
   EventProperties,
   EventTracked,
   LaunchStart,
   MemoryReason,
   MetricKitKind,
   MetricKitReport,
+  ScreenContent,
+  ScreenLeft,
+  ScreenReady,
   ScreenShown,
   SdkKeyRejected,
   SessionEnded,
   SessionStarted,
   signalsPerBatch,
+  TimingMeasured,
   TooManySignals,
 } from "./app-batch.ts"
 export { AppIngestGroup } from "./app-ingest-api.ts"
@@ -141,3 +147,11 @@ export {
   slowerRule,
   usualOf,
 } from "./verdicts.ts"
+export {
+  isSelfTelemetry,
+  selfTelemetryAttribute,
+  selfTelemetryHeader,
+  selfTelemetryUntraced,
+  selfTelemetryUntracedServer,
+  selfTelemetryValue,
+} from "./self-telemetry.ts"

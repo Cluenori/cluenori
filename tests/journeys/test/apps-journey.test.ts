@@ -432,6 +432,106 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("apps", (it) => {
     }),
   )
 
+  it.effect(
+    "a web app's screens, their readiness and visits, hangs, errors and timings are taken, and a crash counts against its release",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* CluenoriClient
+        const started = yield* DateTime.now
+        const now = DateTime.toEpochMillis(started)
+        const { project, iosKey } = yield* projectWithApps("apps-web")
+        const ingest = yield* ingestClient(iosKey)
+        const browser = InstallationId.make(uuidAt(now - 86_400_000, 7))
+        const at = now - 60_000
+        const session = SessionId.make(uuidAt(at, 700))
+        const screen = EnvelopeName.make("feed")
+        const visit = AppSignalId.make(uuidAt(at + 10, 702))
+        const on = { session, screen }
+        const id = (n: number) => AppSignalId.make(uuidAt(at + n, 700 + n))
+        const time = (n: number) => DateTime.makeUnsafe(at + n)
+        const signals: ReadonlyArray<AppSignal> = [
+          { _tag: "session.started", id: id(1), at: time(1), session },
+          { _tag: "screen", id: visit, at: time(10), ...on },
+          { _tag: "screen.ready", id: id(130), at: time(130), ...on, visit, content: "kept", ms: 120 },
+          { _tag: "screen.ready", id: id(510), at: time(510), ...on, visit, content: "fresh", ms: 500 },
+          { _tag: "app.hang", id: id(900), at: time(900), ...on, ms: 612 },
+          { _tag: "timing", id: id(950), at: time(950), ...on, name: EnvelopeName.make("export.render"), ms: 840 },
+          {
+            _tag: "error",
+            id: id(990),
+            at: time(990),
+            ...on,
+            type: "TypeError",
+            message: "token cluenori.apps-web.notes-api.Secret123 refused",
+            handled: false,
+          },
+          { _tag: "screen.left", id: id(2000), at: time(2000), ...on, visit, visibleMs: 1990, cpuMs: 310 },
+        ]
+        const taken = yield* ingest.appIngest.sendBatch({
+          payload: {
+            installation: browser,
+            environment: production,
+            release: ReleaseVersion.make("1.4.0+52"),
+            device: {
+              model: "Firefox 141",
+              platform: "web",
+              osVersion: "unknown",
+              locale: "uk-UA",
+              timeZone: "Europe/Kyiv",
+            },
+            sdk: { name: "cluenori-js", version: "0.1.0" },
+            sentAt: DateTime.makeUnsafe(now),
+            signals: [...signals],
+          },
+        })
+        assert.deepStrictEqual(taken, { accepted: signals.length, duplicates: 0 })
+        // The web app's page, on its own origin, may send batches: the browser asks first, and is let.
+        const asked = yield* Effect.promise(() =>
+          exports.default.fetch(`${baseUrl}/ingest/v1/app/batch`, {
+            method: "OPTIONS",
+            headers: {
+              origin: "https://notes.example",
+              "access-control-request-method": "POST",
+              "access-control-request-headers": "authorization,content-type",
+            },
+          }),
+        )
+        assert.deepStrictEqual(
+          [
+            asked.status,
+            asked.headers.get("access-control-allow-origin"),
+            asked.headers.get("access-control-allow-methods"),
+            asked.headers.get("access-control-allow-headers"),
+          ],
+          [204, "*", "GET, POST", "authorization,content-type"],
+        )
+        const sent = yield* Effect.promise(() =>
+          exports.default.fetch(`${baseUrl}/ingest/v1/app/batch`, {
+            method: "POST",
+            headers: { origin: "https://notes.example", authorization: `Bearer ${iosKey}` },
+            body: "{}",
+          }),
+        )
+        assert.deepStrictEqual([sent.status, sent.headers.get("access-control-allow-origin")], [400, "*"])
+        // Members' API answers no other origin.
+        const api = yield* Effect.promise(() =>
+          exports.default.fetch(`${baseUrl}/api/projects`, {
+            method: "OPTIONS",
+            headers: { origin: "https://notes.example", "access-control-request-method": "GET" },
+          }),
+        )
+        assert.isNull(api.headers.get("access-control-allow-origin"))
+        const health = yield* client.analytics.appHealth({
+          params: { project },
+          query: { from: DateTime.makeUnsafe(now - 86_400_000), to: DateTime.makeUnsafe(now + 60_000) },
+        })
+        assert.deepStrictEqual<unknown>(
+          health.releases.map((row) => [row.release.release, row.health.sessions, row.health.diagnostics?.crashes]),
+          [[ReleaseVersion.make("1.4.0+52"), 1, 1]],
+        )
+      }),
+  )
+
   it.effect("an installation that sends too much in a minute is asked to send later", () =>
     Effect.gen(function* () {
       const started = yield* DateTime.now

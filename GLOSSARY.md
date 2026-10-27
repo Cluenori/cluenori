@@ -92,6 +92,12 @@ its exact rule.
 | Error group | Errors that are the same error: one exception type and stack top, or one logger and message template | `ErrorGroup`, `ErrorGroupId` | issue (a record people track), exception, crash |
 | Log message | Warnings or errors that are the same message: one level (warning or error), one logger, and one message template, or the same text but for its numbers, IDs and quoted values; what Logs lists, each opening its lines | `LogMessage`, `LogMessageId`, `@cluenori/signals` | pattern (Modules' planned clustering), message (a line's own text, `LogLine.message`), log group |
 | Log line | One warning or error kept, by its ID, 90 days: what Logs' item is | `LogLine`, `@cluenori/signals` | record (OTLP's word, for every level), entry, event |
+| Screen | A place in an app the person sees, by the name the app gives it (`feed`, `profile.edit`); a program's command is its screen. Every signal says the screen it was recorded on | `ScreenShown`, `screen` on every signal, `@cluenori/signals` | page (a dashboard's), view (code that draws), route |
+| Visit | One time a screen showed, from appearing until the next screen or the session's end: how long it was in sight, the CPU time used, time scrolled and hitches | `ScreenLeft`, its `visit`, the ID of its `screen` signal | page view, impression |
+| Screen readiness | When a visit's screen first showed content of one kind: `kept`, from what the device kept, or `fresh`, from the network; the first of a launch is its ready | `ScreenReady`, `ScreenContent`, `ScreenReadiness` (Swift) | time to interactive, load time |
+| Hitch | Time a frame came after it was due, while the person scrolled | `hitchMs` on `ScreenLeft` | jank, dropped frame, failed animation |
+| Hang | The main thread not answering for 250 ms or more while the app is in sight | `AppHang`, `app.hang` | freeze, ANR (Android's word), long task (the browser's) |
+| Self-telemetry | Telemetry a deployment sends to itself, marked by `cluenori-telemetry: self`, whose ingest makes none | `selfTelemetryHeader`, `@cluenori/signals` | internal metrics, meta-telemetry |
 | Culprit | Where an error group happens: the top frame of its stack, or its logger | `culprit` | cause, source |
 
 ## Words that already mean a product concept

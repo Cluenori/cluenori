@@ -32,7 +32,18 @@ export const AppUserId = Schema.String.check(
 export type AppUserId = typeof AppUserId.Type
 
 /** The operating system an app runs on. */
-export const AppPlatform = Schema.Literals(["iOS", "iPadOS", "macOS", "visionOS", "watchOS", "tvOS"]).annotate({
+export const AppPlatform = Schema.Literals([
+  "iOS",
+  "iPadOS",
+  "macOS",
+  "visionOS",
+  "watchOS",
+  "tvOS",
+  /** A browser, whatever the system under it: the device's `model` is the browser, `Chrome 141`. */
+  "web",
+  "linux",
+  "windows",
+]).annotate({
   identifier: "AppPlatform",
 })
 export type AppPlatform = typeof AppPlatform.Type
@@ -77,6 +88,11 @@ const inSession = {
    * and actions: so adoption, speed, memory and errors can be told apart by feature.
    */
   feature: Schema.optionalKey(FeatureKey),
+  /**
+   * The screen the person was on when it was recorded (`card`), as the app names its screens; a
+   * program's command is its screen. For a `screen` signal, the screen shown.
+   */
+  screen: Schema.optionalKey(EnvelopeName),
 }
 
 /** The app came to the foreground: a session starts. */
@@ -177,6 +193,77 @@ export const MetricKitReport = Schema.TaggedStruct("metrickit", {
   payload: Schema.Unknown,
 }).annotate({ identifier: "MetricKitReport" })
 
+/** How a screen's content came: `kept`, from what the device kept; `fresh`, from the network. */
+export const ScreenContent = Schema.Literals(["kept", "fresh"]).annotate({ identifier: "ScreenContent" })
+
+/**
+ * A screen first showed its content of one kind: how long after it appeared. At most one of each
+ * kind for a visit, the `screen` signal it refers to by `visit`.
+ */
+export const ScreenReady = Schema.TaggedStruct("screen.ready", {
+  ...inSession,
+  screen: EnvelopeName,
+  /** The `screen` signal recorded as this screen appeared. */
+  visit: AppSignalId,
+  content: ScreenContent,
+  /** From the screen appearing to its first content of this kind. */
+  ms: Milliseconds,
+}).annotate({ identifier: "ScreenReady" })
+
+/**
+ * A screen's visit, measured while the app was in the foreground: recorded as it ends, or as its
+ * session ends while it shows. The measures are absent when the SDK didn't measure them, such as
+ * where the platform can't tell: CPU time the process used meanwhile; time the person scrolled, and
+ * how much of it frames came late (hitches), the frames' delay beyond their due time.
+ */
+export const ScreenLeft = Schema.TaggedStruct("screen.left", {
+  ...inSession,
+  screen: EnvelopeName,
+  visit: AppSignalId,
+  /** How long it showed with the app in the foreground. */
+  visibleMs: Milliseconds,
+  cpuMs: Schema.optionalKey(Milliseconds),
+  scrollMs: Schema.optionalKey(Milliseconds),
+  hitchMs: Schema.optionalKey(Milliseconds),
+}).annotate({ identifier: "ScreenLeft" })
+
+/**
+ * The app's main thread didn't answer for `ms`, 250 ms or more: the person's taps waited. Recorded as
+ * it answers again; a hang that ends the app is MetricKit's to report.
+ */
+export const AppHang = Schema.TaggedStruct("app.hang", { ...inSession, ms: Milliseconds }).annotate({
+  identifier: "AppHang",
+})
+
+/** An error's type: `TypeError`, 1 to 256 characters. */
+const ErrorType = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(256),
+  Schema.isPattern(/^\P{Cc}+$/u, { expected: "text without control characters" }),
+)
+
+/**
+ * An error the app met: `handled` when it caught it, else a crash: in a browser one nothing caught, in
+ * a program one that ended it. Its message and stack are scrubbed of secrets and personal data when
+ * they arrive.
+ */
+export const ErrorRecorded = Schema.TaggedStruct("error", {
+  ...inSession,
+  type: ErrorType,
+  /** At most 1,024 characters. */
+  message: Schema.String.check(Schema.isMaxLength(1024)),
+  /** As the platform writes it, at most 16,384 characters. */
+  stack: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16_384))),
+  handled: Schema.Boolean,
+}).annotate({ identifier: "ErrorRecorded" })
+
+/** How long something the app timed took, by the app's own name: `export.render`. */
+export const TimingMeasured = Schema.TaggedStruct("timing", {
+  ...inSession,
+  name: EnvelopeName,
+  ms: Milliseconds,
+}).annotate({ identifier: "TimingMeasured" })
+
 /** One signal an app recorded. New kinds are added, never changed; a Worker refuses a kind it doesn't know. */
 export const AppSignal = Schema.Union([
   SessionStarted,
@@ -186,6 +273,11 @@ export const AppSignal = Schema.Union([
   ScreenShown,
   EventTracked,
   MetricKitReport,
+  ScreenReady,
+  ScreenLeft,
+  AppHang,
+  ErrorRecorded,
+  TimingMeasured,
 ]).annotate({ identifier: "AppSignal" })
 export type AppSignal = typeof AppSignal.Type
 

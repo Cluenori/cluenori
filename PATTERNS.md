@@ -433,6 +433,13 @@ export const apnsSettings = Config.all({
 - **Spans come from `Effect.fn` names** (entry 4). Add `Effect.withSpan` only around work that isn't
   already a named function, such as one item of a batch.
 - **Export** is configured once, in the host, with `effect/observability`.
+- **Cluenori's telemetry about itself goes one hop at most.** The Worker's own exports, to itself,
+  carry the header `cluenori-telemetry: self` and the resource attribute `cluenori.self = true`, and
+  the Worker handles a request that has the header with tracing off (Signals'
+  `selfTelemetryUntraced` and `selfTelemetryUntracedServer`, on visible lines in
+  `apps/worker/src/worker.ts`). Ingesting N signals then makes the spans of N requests, and ingesting
+  those makes none (`product/engines/signals/test/self-telemetry.test.ts`). SDKs never record their
+  own work: a failure to send is logged, never a signal.
 
 ## 13. Persistence
 

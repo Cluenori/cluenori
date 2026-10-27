@@ -176,6 +176,16 @@ the ingest API's, which apps' SDKs call with an SDK key (`AppBatch` is its wire 
 
 ## Decisions and constraints
 
+- **Self-telemetry is one hop.** A request with `cluenori-telemetry: self` is the deployment's own
+  telemetry, and is handled untraced (`selfTelemetryUntraced`, `selfTelemetryUntracedServer`, which
+  the host installs), so ingesting it never makes more. The deployment's exporter sends that header,
+  and `cluenori.self = true` on its resource so the archive says so too. The header is honored only
+  on routes that take telemetry (`/otlp/v1/*`, `/ingest/v1/app/batch`): anyone may send it, and
+  there it hides only the Worker's trace of ingesting, never a sign-in's or any other route's.
+- **Apps' newer kinds are archived, and counted where a view needs them:** `screen.ready`,
+  `screen.left`, `app.hang`, `timing` and `error` are kept in apps' batches; an `error` nothing
+  handled is also a crash of its batch's release, in app health beside MetricKit's. Their views by
+  screen come with the first page that shows them.
 - **Everything is archived; views are derived.** Every export is kept 90 days, so a new view can be
   built from data that arrived before it. Records below warning are only in the archive.
 - **Every archive can be read back.** The OTLP reader allows one span, record or value for each 16

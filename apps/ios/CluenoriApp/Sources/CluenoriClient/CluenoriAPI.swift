@@ -1710,6 +1710,7 @@ public nonisolated struct AppLaunched: Codable, Hashable, Sendable {
     public let session: String
     public let user: String?
     public let feature: String?
+    public let screen: String?
     public let start: LaunchStart
     public let prewarmed: Bool
     public let firstFrameMs: Double
@@ -1721,6 +1722,7 @@ public nonisolated struct AppLaunched: Codable, Hashable, Sendable {
         session: String,
         user: String? = nil,
         feature: String? = nil,
+        screen: String? = nil,
         start: LaunchStart,
         prewarmed: Bool,
         firstFrameMs: Double,
@@ -1731,6 +1733,7 @@ public nonisolated struct AppLaunched: Codable, Hashable, Sendable {
         self.session = session
         self.user = user
         self.feature = feature
+        self.screen = screen
         self.start = start
         self.prewarmed = prewarmed
         self.firstFrameMs = firstFrameMs
@@ -1744,6 +1747,7 @@ public nonisolated struct AppLaunched: Codable, Hashable, Sendable {
         case session = "session"
         case user = "user"
         case feature = "feature"
+        case screen = "screen"
         case start = "start"
         case prewarmed = "prewarmed"
         case firstFrameMs = "firstFrameMs"
@@ -1760,6 +1764,7 @@ public nonisolated struct AppLaunched: Codable, Hashable, Sendable {
         self.session = try container.`value at`(.session)
         self.user = try container.`value if present at`(.user)
         self.feature = try container.`value if present at`(.feature)
+        self.screen = try container.`value if present at`(.screen)
         self.start = try container.`value at`(.start)
         self.prewarmed = try container.`value at`(.prewarmed)
         self.firstFrameMs = try container.`value at`(.firstFrameMs)
@@ -1774,6 +1779,7 @@ public nonisolated struct AppLaunched: Codable, Hashable, Sendable {
         try container.encode(self.session, forKey: .session)
         try container.encodeIfPresent(self.user, forKey: .user)
         try container.encodeIfPresent(self.feature, forKey: .feature)
+        try container.encodeIfPresent(self.screen, forKey: .screen)
         try container.encode(self.start, forKey: .start)
         try container.encode(self.prewarmed, forKey: .prewarmed)
         try container.encode(self.firstFrameMs, forKey: .firstFrameMs)
@@ -1861,6 +1867,9 @@ public nonisolated struct AppPlatform: RawRepresentable, Codable, Hashable, Send
     public static let visionOS = AppPlatform(rawValue: "visionOS")
     public static let watchOS = AppPlatform(rawValue: "watchOS")
     public static let tvOS = AppPlatform(rawValue: "tvOS")
+    public static let web = AppPlatform(rawValue: "web")
+    public static let linux = AppPlatform(rawValue: "linux")
+    public static let windows = AppPlatform(rawValue: "windows")
 }
 
 public nonisolated struct AppRelease: Codable, Hashable, Sendable {
@@ -3345,6 +3354,7 @@ public nonisolated struct EventTracked: Codable, Hashable, Sendable {
     public let session: String
     public let user: String?
     public let feature: String?
+    public let screen: String?
     public let name: String
     public let properties: [String: JSONValue]?
 
@@ -3354,6 +3364,7 @@ public nonisolated struct EventTracked: Codable, Hashable, Sendable {
         session: String,
         user: String? = nil,
         feature: String? = nil,
+        screen: String? = nil,
         name: String,
         properties: [String: JSONValue]? = nil,
     ) {
@@ -3362,6 +3373,7 @@ public nonisolated struct EventTracked: Codable, Hashable, Sendable {
         self.session = session
         self.user = user
         self.feature = feature
+        self.screen = screen
         self.name = name
         self.properties = properties
     }
@@ -3373,6 +3385,7 @@ public nonisolated struct EventTracked: Codable, Hashable, Sendable {
         case session = "session"
         case user = "user"
         case feature = "feature"
+        case screen = "screen"
         case name = "name"
         case properties = "properties"
     }
@@ -3387,6 +3400,7 @@ public nonisolated struct EventTracked: Codable, Hashable, Sendable {
         self.session = try container.`value at`(.session)
         self.user = try container.`value if present at`(.user)
         self.feature = try container.`value if present at`(.feature)
+        self.screen = try container.`value if present at`(.screen)
         self.name = try container.`value at`(.name)
         self.properties = try container.`value if present at`(.properties)
     }
@@ -3399,6 +3413,7 @@ public nonisolated struct EventTracked: Codable, Hashable, Sendable {
         try container.encode(self.session, forKey: .session)
         try container.encodeIfPresent(self.user, forKey: .user)
         try container.encodeIfPresent(self.feature, forKey: .feature)
+        try container.encodeIfPresent(self.screen, forKey: .screen)
         try container.encode(self.name, forKey: .name)
         try container.encodeIfPresent(self.properties, forKey: .properties)
     }
@@ -9699,6 +9714,7 @@ public nonisolated struct SessionEnded: Codable, Hashable, Sendable {
     public let session: String
     public let user: String?
     public let feature: String?
+    public let screen: String?
     public let foregroundMs: Double
 
     public init(
@@ -9707,6 +9723,7 @@ public nonisolated struct SessionEnded: Codable, Hashable, Sendable {
         session: String,
         user: String? = nil,
         feature: String? = nil,
+        screen: String? = nil,
         foregroundMs: Double,
     ) {
         self.id = id
@@ -9714,6 +9731,7 @@ public nonisolated struct SessionEnded: Codable, Hashable, Sendable {
         self.session = session
         self.user = user
         self.feature = feature
+        self.screen = screen
         self.foregroundMs = foregroundMs
     }
 
@@ -9724,6 +9742,7 @@ public nonisolated struct SessionEnded: Codable, Hashable, Sendable {
         case session = "session"
         case user = "user"
         case feature = "feature"
+        case screen = "screen"
         case foregroundMs = "foregroundMs"
     }
 
@@ -9737,6 +9756,7 @@ public nonisolated struct SessionEnded: Codable, Hashable, Sendable {
         self.session = try container.`value at`(.session)
         self.user = try container.`value if present at`(.user)
         self.feature = try container.`value if present at`(.feature)
+        self.screen = try container.`value if present at`(.screen)
         self.foregroundMs = try container.`value at`(.foregroundMs)
     }
 
@@ -9748,6 +9768,7 @@ public nonisolated struct SessionEnded: Codable, Hashable, Sendable {
         try container.encode(self.session, forKey: .session)
         try container.encodeIfPresent(self.user, forKey: .user)
         try container.encodeIfPresent(self.feature, forKey: .feature)
+        try container.encodeIfPresent(self.screen, forKey: .screen)
         try container.encode(self.foregroundMs, forKey: .foregroundMs)
     }
 }
@@ -9758,6 +9779,7 @@ public nonisolated struct SessionStarted: Codable, Hashable, Sendable {
     public let session: String
     public let user: String?
     public let feature: String?
+    public let screen: String?
 
     public init(
         id: String,
@@ -9765,12 +9787,14 @@ public nonisolated struct SessionStarted: Codable, Hashable, Sendable {
         session: String,
         user: String? = nil,
         feature: String? = nil,
+        screen: String? = nil,
     ) {
         self.id = id
         self.at = at
         self.session = session
         self.user = user
         self.feature = feature
+        self.screen = screen
     }
 
     private enum `JSON keys`: String, CodingKey {
@@ -9780,6 +9804,7 @@ public nonisolated struct SessionStarted: Codable, Hashable, Sendable {
         case session = "session"
         case user = "user"
         case feature = "feature"
+        case screen = "screen"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -9792,6 +9817,7 @@ public nonisolated struct SessionStarted: Codable, Hashable, Sendable {
         self.session = try container.`value at`(.session)
         self.user = try container.`value if present at`(.user)
         self.feature = try container.`value if present at`(.feature)
+        self.screen = try container.`value if present at`(.screen)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -9802,6 +9828,7 @@ public nonisolated struct SessionStarted: Codable, Hashable, Sendable {
         try container.encode(self.session, forKey: .session)
         try container.encodeIfPresent(self.user, forKey: .user)
         try container.encodeIfPresent(self.feature, forKey: .feature)
+        try container.encodeIfPresent(self.screen, forKey: .screen)
     }
 }
 

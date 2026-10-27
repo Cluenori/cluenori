@@ -28,8 +28,10 @@ import { defineConfig } from "vite"
 // and a monitor's checks, in the typed client, their routes and atoms; the pages load after start.
 // And to 259 KB when a monitor became a subject, a condition and a level (257.6 KB to 258.8 KB): its
 // five conditions' and subjects' Schemas in the typed client, the add and remove atoms, and Today's
-// quiet hint; the wording of monitors, and the forms, load after start.
-const firstLoadBudget = { scriptKb: 259, styleKb: 36 }
+// quiet hint; the wording of monitors, and the forms, load after start. And to 260 KB when every app
+// signal gained the screen it was recorded on (258.8 KB to 259.2 KB): the field in each of the
+// timeline's Schemas in the typed client.
+const firstLoadBudget = { scriptKb: 260, styleKb: 36 }
 
 const gzippedKb = (text: string) =>
   Effect.promise(() =>

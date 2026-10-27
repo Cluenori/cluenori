@@ -210,7 +210,8 @@ export type AppDiagnostics = typeof AppDiagnostics.Type
 
 /**
  * One release's health over everything kept of it: its sessions and people, its launches by kind,
- * prewarmed ones only counted, its memory, and MetricKit's diagnostics. A part is absent when the
+ * prewarmed ones only counted, its memory, and its diagnostics: MetricKit's, and errors nothing
+ * handled as crashes. A part is absent when the
  * release sent none of it: unknown, not zero.
  */
 export const AppHealth = Schema.Struct({
@@ -221,7 +222,10 @@ export const AppHealth = Schema.Struct({
   /** Launches iOS prewarmed, whose times aren't comparable, so they aren't in the percentiles. */
   prewarmed: Count,
   memory: Schema.optionalKey(MemoryUse),
-  /** Absent until MetricKit sent a report of the release. */
+  /**
+   * Absent until the release reported a diagnostic: a MetricKit report, or an error nothing
+   * handled, which counts as a crash.
+   */
   diagnostics: Schema.optionalKey(AppDiagnostics),
 }).annotate({ identifier: "AppHealth" })
 export type AppHealth = typeof AppHealth.Type
