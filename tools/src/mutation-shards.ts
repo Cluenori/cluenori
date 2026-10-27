@@ -46,7 +46,8 @@ const imports = /\b(?:import|export)\s+(type\s+)?([^;"']*?)\s*from\s*"([^"]+)"|\
 
 // `{ type A, type B }`: names only types, so the compiler removes the import.
 const onlyTypes = (clause: string) => {
-  const names = /^\{([^}]*)\}$/.exec(clause.trim())
+  // The import matcher already consumes the whitespace on either side of the clause.
+  const names = /^\{([^}]*)\}$/.exec(clause)
   if (names === null) {
     return false
   }
