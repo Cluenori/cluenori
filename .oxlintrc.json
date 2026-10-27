@@ -96,6 +96,29 @@
   },
   "overrides": [
     {
+      // The web SDK reads Signals for the types of what it sends, never its code, which is the
+      // server's and would grow every app's bundle (sdks/web/README.md).
+      "files": ["sdks/web/src/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@effect/schema", "@effect/platform", "@effect/sql", "@effect/cli", "@effect/ai"],
+                "message": "Effect 4 has these in `effect`: effect/http, effect/sql, effect/cli, effect/ai."
+              },
+              {
+                "group": ["@cluenori/signals"],
+                "allowTypeImports": true,
+                "message": "The SDK takes Signals' types alone: `import type`."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       // The platforms call these by their default export: Workers call the Worker's entry, and
       // Vitest and Vite read their configuration.
       "files": ["**/src/worker.ts", "**/vitest.config.ts", "**/vitest.*.config.ts", "**/vite.config.ts"],

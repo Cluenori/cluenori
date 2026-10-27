@@ -1,0 +1,13 @@
+{
+  // What npm gets: the contract's JavaScript and declarations, from src alone, with imports of
+  // `./x.ts` written as `./x.js`. `bun run build:sdk-web` runs it into the folder it publishes.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}

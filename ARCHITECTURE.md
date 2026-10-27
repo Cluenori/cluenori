@@ -138,7 +138,7 @@ apps/
     CluenoriApp/Sources/CluenoriClient/CluenoriAPI.swift   generated from the API definition
     CluenoriAlerts/            the notification extension, which rings alarms
 sdks/
-  web/                         @cluenori/sdk: browsers and JavaScript backends (MIT)
+  web/                         @cluenori/sdk: web apps and command-line programs (MIT), published to npm
   swift/                       the Swift SDK for Apple's platforms (MIT): a Swift package, no workspace package
     openapi.json, Sources/CluenoriIngest/CluenoriIngestAPI.swift   generated from the ingest API's definition
 tests/
@@ -166,8 +166,8 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 | Engines | `product/engines/<engine>` | Shared product capabilities, each with the first module or slice that needs it (`concept/Foundation.md`, "Shared engines") | Built: `projects` (projects, components, ingest keys and SDK keys, components' links to their repository and App Store app, and each project's production environments) and `signals` (the archive, operation counts by release, kept traces, warnings and errors, error groups, traces; and apps' signals: people and installations, activity, sessions and measures by day and release, retention, timelines, apps' batches archived), `manifest` (the manifest's contract, which the Worker composes), `incidents` (detectors, incidents, monitors), `phones` (pairing, phone keys, last seen, push tokens), `today` (what needs attention now, and each project's pulse, across projects), `notifications` (alerts on phones), `members` (members, what each sees, passkeys and sign-ins), `feeds` (live lists of chosen events across projects, and their alerts), and `github` (the workspace's GitHub App, connected from the web, and tokens that act as it in projects); the first action, Releases' promote, is served for the members who see the project, and the rest of Actions and policy come with the first action that needs each |
 | Modules | `product/modules/<module>` | The catalog and phases in `concept/Modules.md` | Built: `releases`, each component's releases from its telemetry, its CI's deploy reports and App Store Connect, each compared with the release before it, with its commit and changes from GitHub; each build numbered by the component's version, so a number is one commit; releases promoted by their deploy targets, through a workflow and on through App Store review; and release notes the project's language model drafts; and each app component's version policy, which the manifest serves. `analytics`, apps' usage, retention, each release's app health beside the release before it, features, and one person, from Signals. The rest planned |
 | Capabilities | `packages/<capability>` | General-purpose packages, added when an engine or module needs one | Built: `github`, for releases' commits, tags and changes, workflows started and followed, and organizations' self-hosted runners. From bagatka/kit, on npm at exact versions: `@bagatka/otlp-protobuf`, for OpenTelemetry exports; `@bagatka/quantile-sketch`, for percentiles; `@bagatka/scrub`, to remove secrets and personal data; `@bagatka/qr-code`, for the links phones pair by; `@bagatka/apns`, for pushes to phones; `@bagatka/app-store-connect`, for apps' builds and App Store versions, submitting them for review and releasing them; `@bagatka/github-app`, for the workspace's GitHub App: its manifest flow, installations and tokens; `@bagatka/ai-cloudflare-binding`, for the language model that drafts release notes, on the Worker's AI binding; `@bagatka/webauthn`, for passkeys; `@bagatka/bun-workspace-rules`, for the architecture check; `@bagatka/openapi-swift`, for the Swift clients of the API and the ingest API. `Crypto` in workerd is Effect's own, `@effect/platform-browser`'s `BrowserCrypto.layer` |
-| Web SDK | `sdks/web` | Init, identify, consent, track, feature, flags, and the client kit views, for browsers and JavaScript backends | Planned |
-| Swift SDK | `sdks/swift` | The SDK in founders' iPhone apps: a core every app links (installation, sessions, identify, consent, the feature in effect, the manifest and the update gate's decision, the queue that sends to ingest, and the release and trace headers for the app's own API), and opt-in libraries where including one has a cost: `CluenoriAnalytics` (events and screens), `CluenoriPerformance` (launches, memory, MetricKit), `CluenoriUpdateGate` (the gate's views) | Built, not yet in an app; published as `Cluenori/cluenori-swift`, a read-only mirror (its README) |
+| Web SDK | `sdks/web` | Cluenori in web apps and command-line programs: sessions, screens (commands), their readiness and visits, features, events, errors, hangs, timings, identify, consent, and the release, trace and origin headers for the app's own API; a CLI's telemetry choice and notice. Flags and the client kit's views later | Built, not yet in an app; `@cluenori/sdk` on npm (its README) |
+| Swift SDK | `sdks/swift` | The SDK in founders' iPhone apps: a core every app links (installation, sessions, identify, consent, the feature in effect, the manifest and the update gate's decision, the queue that sends to ingest, and the release and trace headers for the app's own API), and opt-in libraries where including one has a cost: `CluenoriAnalytics` (events and screens), `CluenoriPerformance` (launches, screens' readiness, hitches, hangs, CPU and memory by screen, MetricKit), `CluenoriUpdateGate` (the gate's views) | Built, not yet in an app; published as `Cluenori/cluenori-swift`, a read-only mirror (its README) |
 | Journeys | `tests/journeys` | The Worker in workerd, through its public API | Built: the deployment and telemetry journeys |
 
 ## Dependency rules
@@ -182,7 +182,7 @@ Every package has the same shape: `package.json`, `tsconfig.json`, `README.md`, 
 | `apps/cli`, `apps/dashboard` | `apps/worker`, whose contract is only the public API definition; foundation's, engines' and modules' contracts, for the Schemas of what they send (open decision: "How clients import the API definition"); capabilities, `effect`; the CLI also `@effect/platform-bun`; the dashboard also React, Vite, Tailwind CSS, and the libraries of shadcn/ui's views, and for its build and tests React Compiler, Playwright, and axe (its README) | engine and module implementations |
 | `tools` | capabilities, `apps/worker`, whose contract is only the public API definition, to generate from it; `effect`, `@effect/platform-bun` | product packages; the hosts' private files |
 | `apps/ios` | Its own layers, each only the one beneath: the app's Xcode target, `CluenoriViews` (SwiftUI), `CluenoriScreens` (Observation), `CluenoriClient` (Foundation); Apple's SDKs, no third-party code. The API's contract only as `CluenoriAPI.swift`, generated from it | Apple-only frameworks in `CluenoriClient` and `CluenoriScreens`, which build on Linux too |
-| `@cluenori/sdk` | capabilities, `effect`, the API definition of what it calls | server packages |
+| `@cluenori/sdk` | capabilities, `effect`, `@effect/platform-browser` for `Crypto`; `@cluenori/signals`' types alone, for the wire shape, which a test checks its own against | server packages' code (`.oxlintrc.json` refuses a value import) |
 | `sdks/swift` | Its own libraries, each only the core beneath it, and the core only `CluenoriIngest`; Apple's SDKs, no third-party code. The ingest API's contract only as `CluenoriIngestAPI.swift`, generated from it; `CluenoriIngest` imports Foundation alone. Checked by `bun run check:sdk-swift`: it isn't a workspace package, so the architecture check doesn't read it | third-party code, server packages, anything else in this repository |
 | Package tests | the package they test, `@effect/vitest`, Vitest; product packages also `@cloudflare/vitest-plugin`, Wrangler, and `@effect/sql-sqlite-do`, to run inside a Durable Object | other packages' private files |
 | `tests/journeys` | `apps/worker`, foundation's, engines' and modules' contracts, capabilities, for what a journey plays a client with (a passkey's authenticator), `effect`, `@cloudflare/vitest-plugin`, Wrangler, Vitest | the Worker's private files |
@@ -307,7 +307,8 @@ From `concept/`; each gets its pattern when it is built.
 
 - **Nix pins the toolchain:** Bun, and Node's newest release (Wrangler requires Node 22 or later);
   Git is the machine's own, which cloned the repository. Bun installs every dependency, so there is
-  no npm in it: nothing here is published. Wrangler,
+  no npm in it: the one package published, the web SDK, goes to npm from CI
+  (`.github/workflows/sdk-web-publish.yml`). Wrangler,
   TypeScript, and everything else come from `bun.lock`, so every machine uses the same versions.
 - **Five entry points, one command each:**
   - `./dev` opens the pinned shell.
@@ -436,8 +437,11 @@ Each needs evidence or a product choice before the code that depends on it.
    Pipelines binding makes Wrangler use the developer's stored login whenever it generates types.
    Converting archive files into Iceberg tables in R2 works the same locally. Decide with the first
    question that needs it.
-5. **Publishing.** The build for published packages (TypeScript's own emit or a bundler), the
-   versioning tool. The scope is `@cluenori` and the license MIT, like the SDKs (decided 2026-10-22).
+5. **Publishing.** The scope is `@cluenori` and the license MIT, like the SDKs (decided 2026-10-22).
+   The web SDK is built with TypeScript's own emit, JavaScript and declarations, by
+   `bun run build:sdk-web`, and published by `.github/workflows/sdk-web-publish.yml` on a
+   `web-v<version>` tag, its version set by hand in its `package.json` (decided 2026-10-27). A
+   versioning tool waits for a second published package.
 
 ## Module map
 

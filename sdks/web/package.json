@@ -1,0 +1,24 @@
+{
+  "name": "@cluenori/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cluenori for web apps and command-line programs: sessions, screens, features, events, errors, timings, consent and traces to your own API.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@effect/platform-browser": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@cluenori/signals": "workspace:*",
+    "@effect/vitest": "catalog:",
+    "vitest": "catalog:"
+  }
+}

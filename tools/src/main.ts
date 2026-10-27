@@ -3,6 +3,7 @@ import { Cause, Effect } from "effect"
 import { Command } from "effect/cli"
 
 import { appleModels } from "./apple-models.ts"
+import { buildSdkWeb } from "./build-sdk-web.ts"
 import { check } from "./check.ts"
 import { generate } from "./generate.ts"
 import { mutation } from "./mutation.ts"
@@ -14,9 +15,9 @@ import { mutation } from "./mutation.ts"
  */
 const tools = Command.make("tools").pipe(
   Command.withDescription(
-    "Check this repository, rewrite the files generated from code, and plan and score mutation testing.",
+    "Check this repository, rewrite the files generated from code, plan and score mutation testing, and build the web SDK for npm.",
   ),
-  Command.withSubcommands([check, generate, appleModels, mutation]),
+  Command.withSubcommands([check, generate, appleModels, mutation, buildSdkWeb]),
 )
 
 const program = tools.pipe(

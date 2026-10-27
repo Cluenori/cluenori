@@ -132,8 +132,11 @@ export const dependencyRules: ReadonlyArray<PackageRule> = [
     folders: "sdks/web",
     name: "@cluenori/sdk",
     contract: true,
-    mayUse: ["packages/*", "apps/worker"],
-    mayInstall: ["effect"],
+    // Signals' types alone, for the wire shape of what it sends; .oxlintrc.json refuses a value
+    // import, so none of the server's code reaches an app (its README, "Decisions and constraints").
+    mayUse: ["packages/*", "product/engines/signals"],
+    // Effect's Crypto on Web Crypto, which browsers, Bun and Node all have.
+    mayInstall: ["effect", "@effect/platform-browser"],
     mayInstallForDevelopment: forTests,
   },
   {

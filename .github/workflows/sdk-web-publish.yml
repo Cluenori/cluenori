@@ -1,0 +1,115 @@
+# Stages @cluenori/sdk (sdks/web) on npm when a web-v<version> tag is pushed, such as web-v0.1.0 for
+# the version in sdks/web/package.json, with provenance. The staged version is public only once the
+# founder approves it with 2FA, on npmjs.com's "Staged Packages" or with `npm stage approve <id>`, as
+# bagatka/kit's packages are. npm never takes a version twice, so a change reaches npm only with a
+# new version.
+#
+# Two jobs, so nothing that installs or runs dependencies can publish:
+# - `build` installs, checks the SDK, tests it, and packs the folder `bun run build:sdk-web` writes.
+#   It can read the repository and nothing else.
+# - `publish` installs only npm and runs no code of the repository's: it takes that tarball and
+#   stages it. Only it may ask GitHub for the OIDC token npm accepts, in the `npm` environment.
+#
+# Setting up, once, by the founder:
+# - The repository's `npm` environment, with "Deployment tags" limited to `web-v*`.
+# - The first version goes with the NPM_TOKEN secret of that environment: a granular access token
+#   ("Read and write (stage only)", for @cluenori, expiring in a day), set with
+#   `gh secret set NPM_TOKEN --repo Cluenori/cluenori --env npm` and deleted afterwards.
+# - Then this workflow as the package's trusted publisher, signed in to npm with 2FA:
+#     npm trust github @cluenori/sdk --repo Cluenori/cluenori --file sdk-web-publish.yml --env npm --allow-stage-publish --yes
+#     npm access set mfa=publish @cluenori/sdk
+name: Web SDK publish
+
+on:
+  push:
+    tags: ["web-v*"]
+
+permissions: {}
+
+concurrency:
+  group: sdk-web-publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'Cluenori/cluenori'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Get the commit
+        run: |
+          set -euo pipefail
+          git init --quiet .
+          git fetch --quiet --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "$GITHUB_SHA"
+          git checkout --quiet --detach FETCH_HEAD
+
+      - uses: ./.github/actions/install-nix
+
+      - name: Check, test and pack the SDK
+        run: |
+          set -euo pipefail
+          tagged="${GITHUB_REF#refs/tags/web-v}"
+          ./dev sh -c '
+            set -eu
+            bun install --frozen-lockfile
+            version=$(node -p "require(\"./sdks/web/package.json\").version")
+            if [ "$version" != "$1" ]; then
+              echo "::error::The tag says $1, sdks/web/package.json says $version."
+              exit 1
+            fi
+            bun run --cwd sdks/web typecheck
+            bunx oxlint sdks/web
+            TZ=Pacific/Chatham LANG=tr_TR.UTF-8 bunx vitest run --project @cluenori/sdk
+            bun run build:sdk-web "$2/package"
+            mkdir -p "$2/release"
+            (cd "$2/package" && npm pack --silent --pack-destination "$2/release")
+          ' sh "$tagged" "$RUNNER_TEMP"
+          ls "$RUNNER_TEMP/release"
+
+      - name: Keep the tarball for publishing
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      contents: read
+      # The OIDC token npm's trusted publishing and provenance read.
+      id-token: write
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.12.0
+
+      - name: Set up npm
+        run: npm install --global --silent npm@12.2.1
+
+      - name: Take the tarball
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+
+      - name: Stage it
+        working-directory: ${{ runner.temp }}/release
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$NPM_TOKEN" ]; then
+            # For the first version. npm reads the variable when it runs, so the token isn't written down.
+            echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > "$HOME/.npmrc"
+          fi
+          tarball=$(ls cluenori-sdk-*.tgz)
+          npm stage publish "./$tarball" --provenance --access public
+          echo "::notice::$tarball is staged: approve it on npmjs.com, Staged Packages."

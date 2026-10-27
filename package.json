@@ -78,6 +78,7 @@
     "check": "bun run typecheck && bun run lint && oxfmt --check && bun tools/src/main.ts check && bun run --cwd apps/dashboard build",
     "check:ios": "apps/ios/check",
     "check:sdk-swift": "sdks/swift/check",
+    "build:sdk-web": "bun tools/src/main.ts build-sdk-web",
     "testflight:ios": "apps/ios/testflight",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "oxlint",

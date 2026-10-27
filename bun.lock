@@ -352,6 +352,19 @@
         "wrangler": "catalog:",
       },
     },
+    "sdks/web": {
+      "name": "@cluenori/sdk",
+      "version": "0.1.0",
+      "dependencies": {
+        "@effect/platform-browser": "catalog:",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@cluenori/signals": "workspace:*",
+        "@effect/vitest": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "tests/journeys": {
       "name": "@cluenori/journeys",
       "devDependencies": {
@@ -602,6 +615,8 @@
     "@cluenori/projects": ["@cluenori/projects@workspace:product/engines/projects"],
 
     "@cluenori/releases": ["@cluenori/releases@workspace:product/modules/releases"],
+
+    "@cluenori/sdk": ["@cluenori/sdk@workspace:sdks/web"],
 
     "@cluenori/signals": ["@cluenori/signals@workspace:product/engines/signals"],
 

@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // It runs in browsers and in programs, so it sees the DOM's types; `browser()` alone uses them.
+  "compilerOptions": { "lib": ["es2024", "dom"] },
+  "include": ["src", "test", "vitest.config.ts"]
+}
