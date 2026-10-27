@@ -405,6 +405,25 @@ describe("Signals", () => {
     ),
   )
 
+  it.effect("reads the hourly counts when a question asks for hours, whatever its length", () =>
+    inProject(
+      "by-the-hour",
+      now,
+      Effect.gen(function* () {
+        const signals = yield* Signals
+        yield* signals.recordTraces(api, batchOf("a", [counts("GET /api/notes/{id}", 3)]))
+        // The minute after the one counted: by the minute, nothing ran in it; by the hour, its hour did.
+        const afterIt = new Period({ from: minuteOf(-60_000), to: DateTime.makeUnsafe(now) })
+        const byMinute = yield* signals.operations({ period: afterIt })
+        const byHour = yield* signals.operations({ period: afterIt, buckets: "hours" })
+        const load = yield* signals.loadOverTime({ period: afterIt, buckets: "hours" }, "1m")
+
+        assert.deepStrictEqual([byMinute.count, byHour.count], [0, 3])
+        assert.deepStrictEqual([load.step, load.points.map((point) => point.count)], ["1h", [3]])
+      }),
+    ),
+  )
+
   it.effect("counts a component's operations past 500 as (other operations)", () =>
     inProject(
       "too-many-operations",

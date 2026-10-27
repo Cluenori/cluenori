@@ -72,9 +72,13 @@ export class Today extends Context.Service<
         const settings = yield* projects.settings
         const production = (environment: Parameters<typeof isProduction>[1]) => isProduction(settings, environment)
         const now = yield* DateTime.now
-        const dayAgo = DateTime.subtract(now, { days: 1 })
+        // Whole hours, as the hourly counts are: the current hour so far and the 23 before it, then
+        // the 7 days before those, so no hour is in both.
+        const dayAgo = DateTime.makeUnsafe(
+          Math.floor(DateTime.toEpochMillis(now) / hourMillis) * hourMillis - 23 * hourMillis,
+        )
         const lastDay = new Period({ from: dayAgo, to: now })
-        const weekBefore = new Period({ from: DateTime.subtract(now, { days: 8 }), to: dayAgo })
+        const weekBefore = new Period({ from: DateTime.subtract(dayAgo, { days: 7 }), to: dayAgo })
         const all = yield* incidents.incidents
         const productionOnly = (table: OperationTable): OperationTable => {
           const rows = table.rows.filter((row) => production(row.environment))
@@ -89,7 +93,8 @@ export class Today extends Context.Service<
         // where it was last seen. Not handled: errors logged without an environment, which every
         // environment's question leaves out; that takes errors that filter by "no environment".
         const tables = yield* Effect.forEach(settings.productionEnvironments, (environment) =>
-          signals.errors({ period: lastDay, environment }),
+          // Errors over exactly the last 24 hours: their store isn't by the hour.
+          signals.errors({ period: new Period({ from: DateTime.subtract(now, { days: 1 }), to: now }), environment }),
         )
         const merged = new Map<string, ErrorTable["groups"][number]>()
         for (const group of tables.flatMap((table) => table.groups)) {
@@ -110,8 +115,10 @@ export class Today extends Context.Service<
           },
           errors: { groups, occurrences: groups.reduce((total, group) => total + group.occurrences, 0) },
           operations: {
-            lastDay: productionOnly(yield* signals.operations({ period: lastDay })),
-            usual: productionOnly(yield* signals.operations({ period: weekBefore })),
+            // By the hour: whether an operation got slower over a day needs no minutes, and a day by
+            // the minute is 60 times the rows to read and merge.
+            lastDay: productionOnly(yield* signals.operations({ period: lastDay, buckets: "hours" })),
+            usual: productionOnly(yield* signals.operations({ period: weekBefore, buckets: "hours" })),
           },
           components: components.length,
           expiringKeys: yield* projects.expiringIngestKeys,
@@ -134,10 +141,10 @@ export class Today extends Context.Service<
         // environment".
         const asked: ReadonlyArray<OperationQuery> =
           named.length === 0
-            ? [{ period: lastHours }]
+            ? [{ period: lastHours, buckets: "hours" }]
             : named
                 .filter((environment) => isProduction(settings, environment))
-                .map((environment) => ({ period: lastHours, environment }))
+                .map((environment) => ({ period: lastHours, buckets: "hours", environment }))
         const load = yield* Effect.forEach(asked, (query) => signals.loadOverTime(query, "1h"))
         // The latest whole UTC day, and the same day a week before, each in every production
         // environment. Apps' signals always name their environment, so none is left out. Not

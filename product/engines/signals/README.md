@@ -109,7 +109,8 @@ never had, with `LogLineNotFound`.
   - operations counted by name, environment and release (`''` unknown, as for every count from
     before October 2026), by the minute (`signals_minute_counts`, 14 days) and by the hour
     (`signals_hour_counts`, 15 months), each component's operations, at most 500, each with the
-    end of the last minute it ran in (`signals_operations`);
+    end of the last minute it ran in (`signals_operations`). A question reads minutes for two
+    days or less and hours beyond, unless its `buckets` chooses (`OperationQuery`);
   - each release's span, from the first minute it ran in to the end of the last
     (`signals_releases`, 15 months after last seen);
   - the traces kept to open from their operations (`signals_kept_traces`, 14 days);

@@ -88,7 +88,8 @@ export class Signals extends Context.Service<
     ) => Effect.Effect<"recorded" | "duplicate", ArchiveUnavailable>
     /**
      * Every operation in the query's period, the most counted first: by the minute for two
-     * days or less, by the hour beyond. Reads only.
+     * days or less, by the hour beyond, unless the query's `buckets` chooses. Reads only; by the
+     * hour, a day's question reads about 60 times fewer rows.
      */
     readonly operations: (query: OperationQuery) => Effect.Effect<OperationTable>
     /**

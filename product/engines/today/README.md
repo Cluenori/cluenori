@@ -35,7 +35,9 @@ didn't answer in `unanswered`, never as one with nothing to do, and has no pulse
   - **An error new or happening now:** first seen in the last day, or seen in the last 15 minutes
     (Signals' `errorStatusOf`).
   - **A slower operation:** its p95 over the last day at least 1.5 times its p95 over the 7 days
-    before, and 100 ms more (Signals' `slowerOf`).
+    before, and 100 ms more (Signals' `slowerOf`). Both are read by the hour: the last day is the
+    current hour so far and the 23 before it, so it reads about 60 times fewer rows than by the
+    minute.
   - **An ingest key that expires within 7 days,** shown to owners only (Projects'
     `expiringIngestKeys`); one revoked before it would expire is never named.
   - **A silent project:** it has components, and sent no operation in the last day; with when it
@@ -55,7 +57,7 @@ didn't answer in `unanswered`, never as one with nothing to do, and has no pulse
     each production environment; the days counted summed, a week's or month's people only when
     every summed day has them. Absent when no environment counts the latest day; the week before
     absent when none counts it.
-  - **Cost:** the pulse about doubles the work each project's object does for Today; not yet
+  - **Cost:** operations and load are read by the hour. The pulse about doubles the work each project's object does for Today; not yet
     measured with hundreds of projects.
 
 ## Does not own

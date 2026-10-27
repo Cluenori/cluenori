@@ -114,6 +114,7 @@ export { bucketMillis, environmentOf, readTraces, countRetention } from "./read-
 export { HttpStatus, KeptTrace, keptPerHour } from "./kept-trace.ts"
 export { BatchDigest, OperationCounts } from "./operation-counts.ts"
 export {
+  CountBuckets,
   OperationRow,
   OperationTable,
   KeptTraceRow,

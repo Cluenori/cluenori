@@ -7,12 +7,22 @@ const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Milliseconds = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 
 /**
+ * Which counts a question reads: by the minute, kept 14 days, or by the hour, kept 15 months, about
+ * 60 times fewer rows a day.
+ */
+export const CountBuckets = Schema.Literals(["minutes", "hours"]).annotate({ identifier: "CountBuckets" })
+export type CountBuckets = typeof CountBuckets.Type
+
+/**
  * What to count: the operations that ran in `period`, optionally of one environment, one
  * component, one operation, or one release. Counts from before October 2026 have no release, so a
- * release finds none of them.
+ * release finds none of them. `buckets` chooses the counts read; without it, minutes for two days
+ * or less and hours beyond. By the hour, the period widens to whole hours, so the current hour
+ * counts so far. Only operations and load read it; kept traces and minutes ran are by the minute.
  */
 export const OperationQuery = Schema.Struct({
   period: Period,
+  buckets: Schema.optionalKey(CountBuckets),
   environment: Schema.optionalKey(EnvironmentKey),
   component: Schema.optionalKey(ComponentKey),
   operation: Schema.optionalKey(EnvelopeName),

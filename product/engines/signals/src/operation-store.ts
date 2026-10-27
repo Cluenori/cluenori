@@ -113,10 +113,15 @@ const byCountThenName = Order.combineAll<OperationRow>([
 ])
 
 // Which store answers a question about `period`: minutes for two days or less, hours beyond.
-const resolutionFor = (period: Period) =>
-  DateTime.toEpochMillis(period.to) - DateTime.toEpochMillis(period.from) <= Duration.toMillis(longestByMinute)
+const resolutionFor = (query: OperationQuery) => {
+  if (query.buckets !== undefined) {
+    return query.buckets === "hours" ? byHour : byMinute
+  }
+  const { period } = query
+  return DateTime.toEpochMillis(period.to) - DateTime.toEpochMillis(period.from) <= Duration.toMillis(longestByMinute)
     ? byMinute
     : byHour
+}
 
 // The period cut to what `resolution` keeps and to now, in its whole buckets: [from, to) in ms.
 const coveredOf = (period: Period, resolution: Resolution, now: number) => {
@@ -504,7 +509,7 @@ export const operationStore = Effect.gen(function* () {
   const countsIn = Effect.fn("OperationStore.countsIn")(function* (query: OperationQuery) {
     const current = yield* DateTime.now
     const now = DateTime.toEpochMillis(current)
-    const resolution = resolutionFor(query.period)
+    const resolution = resolutionFor(query)
     const covered = coveredOf(query.period, resolution, now)
     if (covered._tag === "None") {
       return { covered: Option.none<Period>(), rows: [], now, resolution }
