@@ -100,6 +100,13 @@ const items = yield* promotionItems
   - releases that reached production, to publish on GitHub, and their pages once published (`releases_github_releases`);
   - each component's version policy (`releases_version_policies`).
 
+  A reset (`ReleaseRecords.reset`, which the host runs when the project's data is reset) deletes
+  all of it, for good, but the version lines, the version policies and the notes style: a build
+  number never goes back, as numbers given live on in tags and App Store builds, so a commit
+  numbered before gets the next number. App Store Connect lists builds from before the reset again:
+  its sync keeps only those uploaded from the project's `resetAt` on. GitHub's answers to a sync
+  that started before a reset aren't saved: the sync stops when it finds `resetAt` moved.
+
 ## Does not own
 
 - **Counting by release, each release's span, errors by release, and apps' people by release:** `@cluenori/signals` (`Signals`, `AppSignals`).

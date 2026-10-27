@@ -10,6 +10,12 @@ import { SdkKey } from "./sdk-key.ts"
 /** A project was created. */
 export const ProjectCreated = Schema.TaggedStruct("project.created", { project: ProjectKey, name: ProjectName })
 
+/**
+ * A project's data was reset `at`: what its engines and modules knew of it before is deleted, and
+ * its configuration kept.
+ */
+export const ProjectReset = Schema.TaggedStruct("project.reset", { project: ProjectKey, at: Instant })
+
 /** A component was added to a project, with its ingest key. */
 export const ComponentAdded = Schema.TaggedStruct("component.added", { component: ComponentKey, name: ComponentName })
 

@@ -13,8 +13,8 @@ import type { GitHub } from "@cluenori/github"
 import { gitHubAsApp } from "@cluenori/github-app"
 import { Incidents } from "@cluenori/incidents"
 import { IngestKeyRejected, ProjectNotFound, Projects } from "@cluenori/projects"
-import type { ReleaseRecords, ReleaseSources } from "@cluenori/releases"
-import { promotionItems, releasesLayer, releasesModule, versionPolicyFor } from "@cluenori/releases"
+import type { ReleaseSources } from "@cluenori/releases"
+import { promotionItems, ReleaseRecords, releasesLayer, releasesModule, versionPolicyFor } from "@cluenori/releases"
 import { AppSignals, SdkKeyRejected, SelfTelemetry, Signals } from "@cluenori/signals"
 import { Today } from "@cluenori/today"
 import { BrowserCrypto } from "@effect/platform-browser"
@@ -153,6 +153,29 @@ const servedCalls = (project: ProjectKey): Readonly<Record<EngineCallName, Serve
           settings,
           environments,
         }
+      }),
+    new ProjectNotFound({ project }),
+  ),
+  // Each engine and module deletes what it keeps of the project, on its own line, once the project
+  // is marked reset; every step is SQL alone, so no other call runs between them. Each is a
+  // transaction of its own: one that stops leaves the rest, which resetting again finishes. Files in
+  // R2 go on the alarm (`purgeArchive`, `purgeBatches`); the Worker tells the workspace's feeds.
+  reset: served(
+    projectCalls.reset,
+    ({ actor }) =>
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const reset = yield* projects.reset(actor)
+        const { resetAt } = reset
+        const signals = yield* Signals
+        yield* signals.reset(resetAt)
+        const apps = yield* AppSignals
+        yield* apps.reset(resetAt)
+        const incidents = yield* Incidents
+        yield* incidents.reset
+        const releases = yield* ReleaseRecords
+        yield* releases.reset
+        return reset
       }),
     new ProjectNotFound({ project }),
   ),
@@ -680,6 +703,17 @@ export class ProjectObject extends DurableObject<Env> {
         const projects = yield* Projects
         yield* projects.checkIngestKeys.pipe(
           Effect.catchCause((cause) => Effect.logError("Checking the ingest keys failed", cause)),
+        )
+        // After a reset, the files in R2 from before it go, a few thousand a minute.
+        const signals = yield* Signals
+        yield* signals.purgeArchive.pipe(
+          Effect.withSpan("signals.purgeArchive"),
+          Effect.catchCause((cause) => Effect.logError("Purging the archive failed", cause)),
+        )
+        const apps = yield* AppSignals
+        yield* apps.purgeBatches.pipe(
+          Effect.withSpan("signals.purgeBatches"),
+          Effect.catchCause((cause) => Effect.logError("Purging apps' batches failed", cause)),
         )
         // Each module's background work; one that fails doesn't hold up the others or the delivery.
         for (const module of modules) {

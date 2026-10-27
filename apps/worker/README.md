@@ -77,7 +77,11 @@ Apps' SDKs call the ingest API, `CluenoriIngestApi`, with a component's SDK key,
   `AppBatchStore` on `APP_BATCHES`, their files compressed with gzip.
 - **Each project's Durable Object,** `src/project-object.ts`, named `<workspace>/<project>`: the
   engines' layers built once per object, and one served call per operation (`src/project-calls.ts`).
-  An object builds no database before its project is created.
+  An object builds no database before its project is created. Resetting a project's data
+  (`POST /api/projects/:project/reset`, owners only) is composed there, a line for each engine and
+  module that deletes its own (Projects marks it first), and the workspace's feeds forget the
+  project's entries after; on the alarm, Signals goes on deleting the project's files in R2 from
+  before the reset.
 - **The workspace's Durable Object,** `src/workspace-object.ts`, named `<workspace>`: the index of
   its projects, its phones, and their alerts (`src/workspace-calls.ts`). Both kinds of object are called the same way
   (`src/object-calls.ts`).

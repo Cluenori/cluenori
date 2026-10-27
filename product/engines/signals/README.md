@@ -148,6 +148,13 @@ never had, with `LogLineNotFound`.
   the link, never in a timeline or the archive.
 - **The layout of apps' batches:** `<workspace>/<project>/<day>/<component>/<installation>/<first
   signal>.json`, the new signals of one batch, scrubbed, each with its person.
+- **A reset:** `Signals.reset` and `AppSignals.reset` delete everything above, for good, each in one
+  transaction, but the duplicate windows (`signals_batches`, `signals_app_seen`), so what was sent
+  before and is sent again still counts once; each marks its store's files from before the reset
+  (`signals_purges`, one row a store while its purge runs), which `purgeArchive` and `purgeBatches`
+  delete on the project's alarm, 5,000 a run, listed by key from where the last run stopped. The
+  project goes on writing under the same keys, so only files stored before the reset go, by the
+  store's own time.
 
 ## Does not own
 
@@ -176,6 +183,14 @@ the ingest API's, which apps' SDKs call with an SDK key (`AppBatch` is its wire 
   `ProjectNotFound` its API answers.
 
 ## Decisions and constraints
+
+- **A reset deletes files by when they were stored, not by their keys:** the project writes new
+  files under the same prefix while the purge runs. Not handled: an export archived just before a
+  reset whose counts commit just after it (the archive's write waits for R2, and the reset can run
+  then); its file goes with the purge, its counts stay. Handling it would take holding exports
+  through the reset. A file written again while a page of the purge is listed and deleted (an
+  export retried just after the reset) stays: the host's store holds its writes until the page's
+  delete is done, as R2 deletes without a condition.
 
 - **Receiving telemetry is never traced.** A request to a route that takes telemetry
   (`telemetryRouteOf`: `/otlp/v1/*`, `/ingest/v1/app/batch`) is handled untraced, whoever sent it

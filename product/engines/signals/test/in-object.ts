@@ -49,7 +49,7 @@ export const WebCrypto = BrowserCrypto.layer
 export const inApps = <A, E>(
   project: string,
   now: number,
-  program: Effect.Effect<A, E, AppSignals | Signals | SqlClient.SqlClient>,
+  program: Effect.Effect<A, E, AppSignals | Signals | AppBatchStore | SqlClient.SqlClient>,
   options: { readonly files?: Map<string, string>; readonly limits?: AppRateLimits } = {},
 ) =>
   Effect.promise(() =>
@@ -124,9 +124,13 @@ export const dropLogMessages = Effect.gen(function* () {
   yield* dropScreensAndOrigins
 })
 
-/** Removes what migration 0015 made, screens' and timings' measures and origins' counts. */
+/**
+ * Removes what migrations 0015 and later made: screens' and timings' measures, origins' counts, and
+ * resets' purges.
+ */
 export const dropScreensAndOrigins = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
   yield* sql`DROP TABLE IF EXISTS signals_app_subject_measures`
   yield* sql`DROP TABLE IF EXISTS signals_origin_hours`
+  yield* sql`DROP TABLE IF EXISTS signals_purges`
 })

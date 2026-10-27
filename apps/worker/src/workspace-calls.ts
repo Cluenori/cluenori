@@ -93,6 +93,7 @@ export type WorkspaceCallName =
   | "saveFeed"
   | "removeFeed"
   | "recordFeeds"
+  | "forgetProjectFeeds"
   | "watcher"
   | "setWatcher"
 
@@ -283,6 +284,13 @@ export const workspaceCalls = {
   // Activity from the queue: the events feeds watch become their entries, and their alerts go out,
   // or wait for the object's alarm.
   recordFeeds: workspaceCall("recordFeeds", Schema.Array(Envelope), Schema.Void, Schema.Never),
+  // A project's data was reset: its entries leave every feed.
+  forgetProjectFeeds: workspaceCall(
+    "forgetProjectFeeds",
+    Schema.Struct({ project: ProjectKey, before: Instant }),
+    Schema.Void,
+    Schema.Never,
+  ),
   watcher: workspaceCall("watcher", Access, WatcherStatus, NotAllowed),
   setWatcher: workspaceCall(
     "setWatcher",

@@ -939,6 +939,76 @@
         "description": "One project and its components, by key."
       }
     },
+    "/api/projects/{project}/reset": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "operationId": "projects.resetProject",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "signIn": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NotAllowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotAllowed"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ProjectNotFound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNotFound"
+                }
+              }
+            }
+          }
+        },
+        "description": "Deletes everything the project's telemetry, apps and sources brought, for good, and keeps its configuration, so it starts clean: its operations, counts, traces, logs, errors, apps' signals and their people, incidents and monitors' checks, its releases' commits, changes, store builds, deploys, commits' numbers, notes and promotions, the entries its feeds made, and its files in R2, which go in the background within minutes. Kept: the project, its components with their links and deploy targets, ingest keys and SDK keys, monitors, settings, version lines (so build numbers never go back), version policies, the notes style, members' access and phones. App Store builds uploaded before the reset aren't read again. Returns the project, with `resetAt`. Running it again resets what came since. Owners only."
+      }
+    },
     "/api/projects/{project}/components": {
       "post": {
         "tags": [
@@ -10932,6 +11002,10 @@
             "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
           },
           "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resetAt": {
             "type": "string",
             "format": "date-time"
           }

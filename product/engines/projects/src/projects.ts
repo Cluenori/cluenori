@@ -31,6 +31,7 @@ import {
   IngestKeyExpiring,
   IngestKeyRevoked,
   ProjectCreated,
+  ProjectReset,
   ProjectSettingsChanged,
   SdkKeyIssued,
   SdkKeyRevoked,
@@ -93,6 +94,17 @@ interface MadeKey {
 // When a key stops working: its expiry or its revocation, whichever comes first; never, without either.
 const endOf = (row: IngestKeyRow) => Math.min(row.expiresAt ?? Infinity, row.revokedAt ?? Infinity)
 
+// The project as its row holds it: `resetAt` is null until its data is reset.
+const ProjectRow = Schema.Struct({
+  key: Project.fields.key,
+  name: Project.fields.name,
+  createdAt: Instant,
+  resetAt: Schema.NullOr(Instant),
+})
+
+const projectOf = ({ resetAt, ...row }: typeof ProjectRow.Type) =>
+  new Project({ ...row, ...(resetAt === null ? {} : { resetAt }) })
+
 // A component as its row holds it: links are null until set.
 const ComponentRow = Schema.Struct({
   key: ComponentKey,
@@ -140,6 +152,15 @@ export class Projects extends Context.Service<
     readonly create: (actor: Actor, name: ProjectName) => Effect.Effect<Project, ProjectExists>
     /** The project. */
     readonly project: Effect.Effect<Project, ProjectNotFound>
+    /**
+     * Marks the project's data reset now, with `project.reset`, and returns it and `resetAt`. Only
+     * the mark: each engine and module deletes its own data, which the host has them do after
+     * this, before the time `resetAt` names. Running it again moves `resetAt` to the later time.
+     * Its configuration (components, keys, settings) is kept. Writes one row.
+     */
+    readonly reset: (
+      actor: Actor,
+    ) => Effect.Effect<{ readonly project: Project; readonly resetAt: DateTime.Utc }, ProjectNotFound>
     /** The project's components, by key. */
     readonly components: Effect.Effect<ReadonlyArray<Component>, ProjectNotFound>
     /**
@@ -269,8 +290,8 @@ export class Projects extends Context.Service<
 
         const findProject = SqlSchema.findOneOption({
           Request: Schema.Void,
-          Result: Project,
-          execute: () => sql`SELECT key, name, created_at AS "createdAt" FROM projects_project`,
+          Result: ProjectRow,
+          execute: () => sql`SELECT key, name, created_at AS "createdAt", reset_at AS "resetAt" FROM projects_project`,
         })
 
         const findComponents = SqlSchema.findAll({
@@ -329,11 +350,26 @@ export class Projects extends Context.Service<
           Effect.flatMap(
             Option.match({
               onNone: () => Effect.fail(new ProjectNotFound({ project: settings.project })),
-              onSome: Effect.succeed,
+              onSome: (row) => Effect.succeed(projectOf(row)),
             }),
           ),
           Effect.withSpan("Projects.project"),
         )
+
+        const encodeReset = Schema.encodeEffect(ProjectReset)
+
+        const markReset = Effect.fn("Projects.markReset")(function* (at: DateTime.Utc) {
+          const current = yield* project
+          yield* sql`UPDATE projects_project SET reset_at = ${DateTime.formatIso(at)}`.pipe(Effect.orDie)
+          const reset = new Project({ key: current.key, name: current.name, createdAt: current.createdAt, resetAt: at })
+          return { project: reset, resetAt: at }
+        })
+
+        const reset = Effect.fn("Projects.reset")(function* (actor: Actor) {
+          const at = yield* DateTime.now
+          const payload = yield* encodeReset(ProjectReset.make({ project: settings.project, at })).pipe(Effect.orDie)
+          return yield* log.commit({ source, actor, write: markReset(at), activity: () => [{ payload }] })
+        })
 
         const insertProject = Effect.fn("Projects.insertProject")(function* (name: ProjectName) {
           const existing = yield* findProject(undefined).pipe(Effect.orDie)
@@ -781,6 +817,7 @@ export class Projects extends Context.Service<
         return Projects.of({
           create,
           project,
+          reset,
           components,
           addComponent,
           authenticate,

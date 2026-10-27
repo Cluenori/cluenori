@@ -51,6 +51,7 @@ export {
   IngestKeyExpiring,
   IngestKeyRevoked,
   ProjectCreated,
+  ProjectReset,
   ProjectSettingsChanged,
   SdkKeyIssued,
   SdkKeyRevoked,

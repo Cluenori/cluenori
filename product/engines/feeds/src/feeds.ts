@@ -94,6 +94,12 @@ export class Feeds extends Context.Service<
       access: Access,
       id: FeedId,
     ) => Effect.Effect<FeedChange<void>, NotAllowed | FeedNotFound>
+    /**
+     * Deletes `project`'s entries from every feed, for good, as its data was reset at `before`;
+     * its events from activity committed before then, delivered later, make none. Its sources stay,
+     * so new events come in again. Running it again with a later time forgets what came since.
+     */
+    readonly forgetProject: (project: ProjectKey, before: DateTime.Utc) => Effect.Effect<void>
     /** The event names `project`'s feeds watch. Reads only. */
     readonly watchedBy: (project: ProjectKey) => Effect.Effect<ProjectWatch>
     /**
@@ -129,6 +135,11 @@ export class Feeds extends Context.Service<
         Result: FeedRow,
         execute: () =>
           sql`SELECT id, name, level, last_alert_at AS "lastAlertAt", alerting FROM feeds_feeds ORDER BY name, id`,
+      })
+      const findForgotten = SqlSchema.findAll({
+        Request: Schema.Void,
+        Result: Schema.Struct({ project: ProjectKey, before: Schema.Int }),
+        execute: () => sql`SELECT project, before FROM feeds_forgotten`,
       })
       const findSources = SqlSchema.findAll({
         Request: Schema.Void,
@@ -399,8 +410,14 @@ export class Feeds extends Context.Service<
 
       const record = Effect.fn("Feeds.record")(function* (activity: ReadonlyArray<Envelope>) {
         const now = yield* Clock.currentTimeMillis
+        const forgotten = new Map(
+          (yield* findForgotten(undefined).pipe(Effect.orDie)).map((row) => [row.project, row.before] as const),
+        )
         for (const entry of activity) {
           if (entry.kind !== "activity" || entry.project === undefined || entry.name !== "feed_event.seen") {
+            continue
+          }
+          if (DateTime.toEpochMillis(entry.ts) < (forgotten.get(entry.project) ?? 0)) {
             continue
           }
           const seen = decodeSeen({ ...entry.attrs, _tag: entry.name })
@@ -435,7 +452,19 @@ export class Feeds extends Context.Service<
         return yield* alert
       })
 
-      return Feeds.of({ list, entries, save, remove, watchedBy, record, alert })
+      const forgetProject = Effect.fn("Feeds.forgetProject")(function* (project: ProjectKey, before: DateTime.Utc) {
+        const at = DateTime.toEpochMillis(before)
+        yield* sql
+          .withTransaction(
+            sql`INSERT INTO feeds_forgotten ${sql.insert({ project, before: at })}
+              ON CONFLICT (project) DO UPDATE SET before = max(before, excluded.before)`.pipe(
+              Effect.andThen(sql`DELETE FROM feeds_entries WHERE project = ${project}`),
+            ),
+          )
+          .pipe(Effect.orDie)
+      })
+
+      return Feeds.of({ list, entries, save, remove, forgetProject, watchedBy, record, alert })
     }),
   )
 }

@@ -66,6 +66,16 @@ export class ProjectsGroup extends HttpApiGroup.make("projects")
     ),
   )
   .add(
+    HttpApiEndpoint.post("resetProject", "/projects/:project/reset", {
+      params: { project: ProjectKey },
+      success: Project,
+      error: [ProjectNotFound.pipe(HttpApiSchema.status(404)), NotAllowed.pipe(HttpApiSchema.status(403))],
+    }).annotate(
+      OpenApi.Description,
+      "Deletes everything the project's telemetry, apps and sources brought, for good, and keeps its configuration, so it starts clean: its operations, counts, traces, logs, errors, apps' signals and their people, incidents and monitors' checks, its releases' commits, changes, store builds, deploys, commits' numbers, notes and promotions, the entries its feeds made, and its files in R2, which go in the background within minutes. Kept: the project, its components with their links and deploy targets, ingest keys and SDK keys, monitors, settings, version lines (so build numbers never go back), version policies, the notes style, members' access and phones. App Store builds uploaded before the reset aren't read again. Returns the project, with `resetAt`. Running it again resets what came since. Owners only.",
+    ),
+  )
+  .add(
     HttpApiEndpoint.post("addComponent", "/projects/:project/components", {
       params: { project: ProjectKey },
       payload: AddComponent,

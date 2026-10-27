@@ -94,5 +94,10 @@ export const migrateProjects = Migrator.make({})({
         )`
       yield* sql`ALTER TABLE projects_components DROP COLUMN ingest_key_digest`
     }),
+    // When the project's data was last reset, ISO 8601 as `created_at`; null until it is.
+    "0008_reset_at": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`ALTER TABLE projects_project ADD COLUMN reset_at TEXT`
+    }),
   }),
 })

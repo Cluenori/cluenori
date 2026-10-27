@@ -64,8 +64,8 @@ on Today, and as a badge on the key. A key revoked before it would expire never 
 
 ## Owns
 
-- **Data:** the project of its Durable Object and its settings, the environments it calls
-  production (`projects_project`, one row), and its components
+- **Data:** the project of its Durable Object, its settings, the environments it calls
+  production, and when its data was last reset (`projects_project`, one row), and its components
   and their links: a GitHub repository, where their
   releases come from beside telemetry, a deploy target for each environment, a workflow and
   an App Store Connect app, where they go, and the component each ships with, whose deploys deploy
@@ -84,6 +84,9 @@ on Today, and as a badge on the key. A key revoked before it would expire never 
 
 ## Does not own
 
+- **What a reset deletes:** `reset` only marks the project reset, with `project.reset`; each engine
+  and module deletes its own data, as the host has them do (apps/worker), and the project keeps
+  its configuration: everything this engine owns.
 - **Which object holds which project:** the host names each object `<workspace>/<project>`, and the
   workspace's own `<workspace>`.
 - **Keeping the index whole:** the host records each project it creates. Its two objects share no
@@ -99,7 +102,7 @@ on Today, and as a badge on the key. A key revoked before it would expire never 
 
 `src/index.ts`. The host builds `Projects` in each project's object and `ProjectIndex` in the
 workspace's; the API's `ProjectsGroup` defines listing projects, showing one with its components,
-creating projects, adding components, linking them to their repository and deploy targets, and
+creating projects, resetting their data (owners only), adding components, linking them to their repository and deploy targets, and
 adding, listing and revoking their ingest keys, and issuing, listing and revoking their SDK keys; `IngestKey` and `ingestKeyScope`, and `SdkKey` and
 `sdkKeyScope`, let the Worker route a key to its project before the project checks it.
 
@@ -110,7 +113,8 @@ adding, listing and revoking their ingest keys, and issuing, listing and revokin
 
 ## Activity
 
-Emits `project.created` when the project is created, `component.added`, with the component's key,
+Emits `project.created` when the project is created, `project.reset`, with when, when its data is
+reset, `component.added`, with the component's key,
 when a component is added, `component.linked`, with its links, when they change,
 `project.settings_changed` when its settings do, and `sdk_key.issued` and `sdk_key.revoked`, with
 the component and the key, when an SDK key is issued or revoked; `ingest_key.added` and

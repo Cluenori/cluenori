@@ -230,6 +230,23 @@ public nonisolated struct CluenoriAPI: Sendable {
         return try Self.decoded(from: `the answer`)
     }
 
+    /// Deletes everything the project's telemetry, apps and sources brought, for good, and keeps
+    /// its configuration, so it starts clean: its operations, counts, traces, logs, errors, apps'
+    /// signals and their people, incidents and monitors' checks, its releases' commits, changes,
+    /// store builds, deploys, commits' numbers, notes and promotions, the entries its feeds made,
+    /// and its files in R2, which go in the background within minutes. Kept: the project, its
+    /// components with their links and deploy targets, ingest keys and SDK keys, monitors,
+    /// settings, version lines (so build numbers never go back), version policies, the notes style,
+    /// members' access and phones. App Store builds uploaded before the reset aren't read again.
+    /// Returns the project, with `resetAt`. Running it again resets what came since. Owners only.
+    ///
+    /// Fails with `.unauthorized`, `.notAllowed`, `.projectNotFound`, or as any call can.
+    @concurrent
+    public func resetProject(project: String) async throws(APIError) -> Project {
+        let `the answer` = try await self.send("POST", "/api/projects/\(Self.segment(Self.text(project)))/reset")
+        return try Self.decoded(from: `the answer`)
+    }
+
     /// Adds a component to a project and returns its ingest key, which its telemetry is sent with.
     /// The key is shown only in this answer. Owners only, as the key is a credential.
     ///
@@ -8152,17 +8169,20 @@ public nonisolated struct Project: Codable, Hashable, Sendable {
     public let key: String
     public let name: String
     public let createdAt: Date
+    public let resetAt: Date?
 
-    public init(key: String, name: String, createdAt: Date) {
+    public init(key: String, name: String, createdAt: Date, resetAt: Date? = nil) {
         self.key = key
         self.name = name
         self.createdAt = createdAt
+        self.resetAt = resetAt
     }
 
     private enum `JSON keys`: String, CodingKey {
         case key = "key"
         case name = "name"
         case createdAt = "createdAt"
+        case resetAt = "resetAt"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -8170,6 +8190,7 @@ public nonisolated struct Project: Codable, Hashable, Sendable {
         self.key = try container.`value at`(.key)
         self.name = try container.`value at`(.name)
         self.createdAt = try container.`value at`(.createdAt)
+        self.resetAt = try container.`value if present at`(.resetAt)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -8177,6 +8198,7 @@ public nonisolated struct Project: Codable, Hashable, Sendable {
         try container.encode(self.key, forKey: .key)
         try container.encode(self.name, forKey: .name)
         try container.encode(self.createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(self.resetAt, forKey: .resetAt)
     }
 }
 

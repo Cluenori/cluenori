@@ -122,6 +122,7 @@ const syncRepository = Effect.fn("Releases.syncRepository")(function* (
   component: ComponentKey,
   repository: Repository,
   releases: ReadonlyArray<KnownRelease>,
+  wasReset: Effect.Effect<boolean>,
 ) {
   const records = yield* ReleaseRecords
   const now = yield* DateTime.now
@@ -141,6 +142,9 @@ const syncRepository = Effect.fn("Releases.syncRepository")(function* (
     }
     lookups += 1
     const commit = yield* findCommit(github, repository, release)
+    if (yield* wasReset) {
+      return
+    }
     if (Option.isSome(commit)) {
       yield* records.saveCommit(component, release.release, commit.value)
       found.set(release.release, commit.value)
@@ -166,6 +170,9 @@ const syncRepository = Effect.fn("Releases.syncRepository")(function* (
     }
     compares += 1
     const changes = yield* compareCommits(github, repository, base, head)
+    if (yield* wasReset) {
+      return
+    }
     yield* records.saveChanges(component, release.release, previous.release, changes)
   }
 })
@@ -185,6 +192,7 @@ const syncStore = Effect.fn("Releases.syncStore")(function* (
   publishes: boolean,
 ) {
   const records = yield* ReleaseRecords
+  const projects = yield* Projects
   const app = yield* appStoreConnect.app(bundleId)
   if (Option.isNone(app)) {
     return Option.some(`App Store Connect has no app with the bundle ID ${bundleId} on the API key's team.`)
@@ -228,11 +236,16 @@ const syncStore = Effect.fn("Releases.syncStore")(function* (
     return [{ component, release: release.value, build: storeBuild }]
   })
   const before = (yield* records.storeBuilds(component)).filter((each) => each.environment === environment)
-  yield* records.replaceStoreBuilds(component, environment, stored)
+  // Builds uploaded before the project's data was reset stay forgotten: App Store Connect lists them
+  // again. Read just before the write, with no wait between, so a reset during the reads above holds.
+  const { resetAt } = yield* projects.project.pipe(Effect.orDie)
+  const kept =
+    resetAt === undefined ? stored : stored.filter((each) => !DateTime.isLessThan(each.build.uploadedAt, resetAt))
+  yield* records.replaceStoreBuilds(component, environment, kept)
   if (publishes && before.length > 0) {
     const wasOut = new Set(before.filter((each) => isOut(each.build.stage)).map((each) => each.release))
     const now = yield* DateTime.now
-    for (const each of stored) {
+    for (const each of kept) {
       if (isOut(each.build.stage) && !wasOut.has(each.release)) {
         yield* records.queueGitHubRelease({ component, release: each.release, environment, reachedAt: now })
       }
@@ -314,12 +327,21 @@ export const syncReleases = Effect.gen(function* () {
   if (components.every((component) => component.repository === undefined && appsOf(component).length === 0)) {
     return
   }
+  // A reset while GitHub is asked forgets the releases this run started from: each of the
+  // repository's saves checks first, with no wait between, and stops if one happened. The next run
+  // starts afresh. The time is read before the releases are.
+  const resetAtOf = projects.project.pipe(
+    Effect.map(({ resetAt }) => (resetAt === undefined ? undefined : DateTime.toEpochMillis(resetAt))),
+    Effect.orDie,
+  )
+  const startedAfter = yield* resetAtOf
+  const wasReset = Effect.map(resetAtOf, (resetAt) => resetAt !== startedAfter)
   const releases = yield* knownReleases
   const syncs = yield* records.syncs
   for (const component of components) {
     if (component.repository !== undefined) {
       const repository = component.repository
-      yield* syncRepository(github, component.key, repository, releases).pipe(
+      yield* syncRepository(github, component.key, repository, releases, wasReset).pipe(
         Effect.andThen(DateTime.now),
         Effect.flatMap((at) =>
           records.saveSync({ component: component.key, source: "github", at, problem: undefined }),

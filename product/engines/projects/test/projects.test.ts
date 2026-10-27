@@ -223,6 +223,7 @@ describe("Projects", () => {
           yield* sql`DROP TABLE projects_sdk_keys`
           yield* sql`ALTER TABLE projects_components ADD COLUMN ingest_key_digest TEXT NOT NULL DEFAULT ''`
           yield* sql`DROP TABLE projects_ingest_keys`
+          yield* sql`ALTER TABLE projects_project DROP COLUMN reset_at`
           yield* sql`DELETE FROM projects_migrations WHERE migration_id >= 4`
         }),
       )
@@ -508,6 +509,7 @@ describe("Projects", () => {
           yield* sql`UPDATE projects_components SET ingest_key_digest =
             (SELECT digest FROM projects_ingest_keys WHERE projects_ingest_keys.component = projects_components.key)`
           yield* sql`DROP TABLE projects_ingest_keys`
+          yield* sql`ALTER TABLE projects_project DROP COLUMN reset_at`
           yield* sql`DELETE FROM projects_migrations WHERE migration_id >= 7`
           return { ...made, worker }
         }),
@@ -668,6 +670,64 @@ describe("Projects", () => {
         const projects = yield* Projects
         const failure = yield* projects.issueSdkKey(owner, notesApi.key).pipe(Effect.flip)
         assert.deepStrictEqual(failure, new ProjectNotFound({ project: ProjectKey.make("sdk-keys-no-project") }))
+      }),
+    ),
+  )
+
+  it.effect("a reset marks the project reset, with project.reset, and keeps every row of its configuration", () =>
+    inProjectAt(
+      "reset-keeps",
+      noon,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const sql = yield* SqlClient.SqlClient
+        yield* createWithApi
+        yield* projects.issueSdkKey(owner, notesApi.key)
+        yield* projects.updateSettings(owner, { productionEnvironments: [EnvironmentKey.make("prod")] })
+        // Every table the engine keeps in the project's database, and how many rows each holds.
+        const rows = Effect.gen(function* () {
+          const tables = yield* sql<{ readonly name: string }>`SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name GLOB 'projects_*' AND name NOT GLOB '*_migrations' ORDER BY name`
+          return yield* Effect.forEach(tables, ({ name }) =>
+            sql<{ readonly count: number }>`SELECT count(*) AS count FROM ${sql(name)}`.pipe(
+              Effect.map(([row]) => [name, row?.count ?? 0] as const),
+            ),
+          )
+        })
+        const before = yield* rows
+
+        yield* TestClock.adjust(hour)
+        const reset = yield* projects.reset(owner)
+        const project = yield* projects.project
+
+        assert.deepStrictEqual(before, [
+          ["projects_components", 1],
+          ["projects_ingest_keys", 1],
+          ["projects_project", 1],
+          ["projects_sdk_keys", 1],
+        ])
+        assert.deepStrictEqual(yield* rows, before)
+        assert.strictEqual(DateTime.toEpochMillis(reset.resetAt), noon + hour)
+        assert.deepStrictEqual(project, reset.project)
+        assert.strictEqual(project.resetAt === undefined ? 0 : DateTime.toEpochMillis(project.resetAt), noon + hour)
+        assert.deepStrictEqual((yield* projects.settings).productionEnvironments, [EnvironmentKey.make("prod")])
+        assert.strictEqual((yield* activityNames)[0], "project.reset")
+
+        // Again later: the later time.
+        yield* TestClock.adjust(hour)
+        const again = yield* projects.reset(owner)
+        assert.strictEqual(DateTime.toEpochMillis(again.resetAt), noon + 2 * hour)
+      }),
+    ),
+  )
+
+  it.effect("resets no project that doesn't exist", () =>
+    inProject(
+      "reset-no-project",
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const failure = yield* projects.reset(owner).pipe(Effect.flip)
+        assert.deepStrictEqual(failure, new ProjectNotFound({ project: ProjectKey.make("reset-no-project") }))
       }),
     ),
   )

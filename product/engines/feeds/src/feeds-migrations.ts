@@ -40,6 +40,15 @@ export const migrateFeeds = Migrator.make({})({
       yield* sql`CREATE INDEX feeds_entries_due ON feeds_entries (feed) WHERE alerted = 0`
       yield* sql`CREATE INDEX feeds_entries_at ON feeds_entries (at)`
     }),
+    // Projects whose data was reset, with when (Unix ms): their events from activity committed
+    // before then, delivered late, make no entries.
+    "0002_forgotten": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE feeds_forgotten (
+        project TEXT PRIMARY KEY,
+        before INTEGER NOT NULL
+      ) WITHOUT ROWID`
+    }),
   }),
 })
 

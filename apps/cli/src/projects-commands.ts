@@ -9,7 +9,7 @@ import {
   sdkKeysPerComponent,
 } from "@cluenori/projects"
 import { Console, DateTime, Duration, Effect, Option, Redacted } from "effect"
-import { Argument, Command, Flag } from "effect/cli"
+import { Argument, Command, Flag, Prompt } from "effect/cli"
 
 import { apiClient, reachFailures, refuse } from "./api-client.ts"
 import { apiTarget } from "./api-settings.ts"
@@ -95,6 +95,58 @@ export const projectSettings = Command.make(
 ).pipe(
   Command.withDescription(
     "Show a project's settings, or change the environments it calls production: where its incidents alert and its views start.",
+  ),
+)
+
+/** `cluenori project reset <project>`: asks for the project's key, typed, before it deletes anything. */
+export const projectReset = Command.make(
+  "reset",
+  {
+    project: Argument.String("project").pipe(Argument.withDescription("The project's key.")),
+    local,
+  },
+  (input) =>
+    Effect.gen(function* () {
+      const project = yield* parsed(ProjectKey, input.project, "a project key")
+      const target = yield* apiTarget(input.local)
+      const client = yield* apiClient(target)
+      const failures = {
+        ...reachFailures(target),
+        ProjectNotFound: () => refuse(`${target.url} has no project ${project}.`),
+      }
+      const detail = yield* client.projects.project({ params: { project } }).pipe(Effect.catchTags(failures))
+      const components = detail.components.map((each) => each.key).join(", ")
+      yield* Console.log(
+        [
+          `Resetting ${detail.project.name} (${project}) on ${target.url} deletes, for good, everything its telemetry, apps and sources brought:`,
+          "  operations, counts, traces, logs, errors, apps' signals and their people, incidents and monitors' checks,",
+          "  releases' commits, changes, store builds, deploys, commits' numbers, notes and promotions, its feeds' entries,",
+          "  and its files in R2, which go in the background within minutes.",
+          `It keeps the project, its components (${components === "" ? "none" : components}) with their links and deploy targets,`,
+          "ingest keys and SDK keys, monitors, settings, version lines (build numbers never go back), version policies,",
+          "the notes style, members' access and phones. App Store builds uploaded before now aren't read again.\n",
+        ].join("\n"),
+      )
+      const typed = yield* Prompt.run(
+        Prompt.String({ message: `Type ${project} to delete its data, or anything else to stop` }),
+      ).pipe(Effect.catchTag("QuitError", () => Effect.succeed("")))
+      if (typed.trim() !== project) {
+        return yield* refuse("Stopped: nothing was deleted.")
+      }
+      const reset = yield* client.projects.resetProject({ params: { project } }).pipe(
+        Effect.catchTags({
+          ...failures,
+          NotAllowed: () => refuse("Only an owner resets a project."),
+        }),
+      )
+      const at = reset.resetAt === undefined ? "now" : utcMinute(reset.resetAt)
+      yield* Console.log(
+        `Reset ${reset.name} (${reset.key}) at ${at}. What arrives from now on is counted afresh; its files in R2 from before go within minutes.`,
+      )
+    }),
+).pipe(
+  Command.withDescription(
+    "Delete a project's data for good and keep its configuration, so it starts clean: its telemetry, apps' signals, incidents and releases go; its components, keys, monitors, settings and version lines stay. Owners only; asks for the project's key, typed.",
   ),
 )
 
@@ -469,8 +521,8 @@ export const componentIngestKeys = Command.make(
 
 /** `cluenori project ...`. */
 export const project = Command.make("project").pipe(
-  Command.withDescription("Create projects, and choose their production environments."),
-  Command.withSubcommands([projectCreate, projectSettings]),
+  Command.withDescription("Create projects, choose their production environments, and reset their data."),
+  Command.withSubcommands([projectCreate, projectSettings, projectReset]),
 )
 
 /** `cluenori component ...`. */

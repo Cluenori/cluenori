@@ -235,6 +235,20 @@ const BuildJson = Schema.fromJsonString(StoreBuild)
 const PromotionJson = Schema.fromJsonString(Promotion)
 const PolicyJson = Schema.fromJsonString(ComponentVersionPolicy)
 
+// What a reset empties. Kept: `releases_versions`, `releases_version_policies`, `releases_notes_style`.
+const resetTables = [
+  "releases_commits",
+  "releases_lookups",
+  "releases_changes",
+  "releases_store_builds",
+  "releases_deploys",
+  "releases_syncs",
+  "releases_numbers",
+  "releases_notes",
+  "releases_promotions",
+  "releases_github_releases",
+]
+
 // A release's promotions are listed up to this many, the latest first.
 const promotionsListed = 20
 
@@ -352,6 +366,14 @@ export class ReleaseRecords extends Context.Service<
     readonly startPromotion: (promotion: Promotion, actor: Actor) => Effect.Effect<void>
     /** Records what changed about a promotion: its run, its state, and when it ended. */
     readonly updatePromotion: (promotion: Promotion) => Effect.Effect<void>
+    /**
+     * Deletes the records of releases, for good, in one transaction: commits and lookups, changes,
+     * store builds, deploys, each source's last read, commits' numbers, notes, promotions, and
+     * releases to publish on GitHub and their pages. Kept: each component's version line, so its
+     * build numbers never go back (a commit numbered again gets the next number), its version
+     * policy, and the notes style.
+     */
+    readonly reset: Effect.Effect<void>
   }
 >()("@cluenori/releases/records/ReleaseRecords") {
   /** The records on the project's database, first creating or updating its tables. */
@@ -785,6 +807,9 @@ export class ReleaseRecords extends Context.Service<
             yield* sql`UPDATE releases_promotions SET ended = ${hasEnded(promotion.state) ? 1 : 0},
               promotion_json = ${json} WHERE id = ${promotion.id}`
           }).pipe(Effect.orDie),
+        reset: sql
+          .withTransaction(Effect.forEach(resetTables, (table) => sql`DELETE FROM ${sql(table)}`, { discard: true }))
+          .pipe(Effect.orDie, Effect.withSpan("ReleaseRecords.reset")),
       })
     }),
   )

@@ -7,6 +7,7 @@ import { runInDurableObject } from "cloudflare:test"
 import { env } from "cloudflare:workers"
 import { Effect, Layer } from "effect"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
+import type { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 
 import { Incidents } from "../src/index.ts"
@@ -43,7 +44,7 @@ const fakeWeb = Layer.succeed(
 export const inProject = <A, E>(
   project: string,
   now: number,
-  program: Effect.Effect<A, E, Incidents | Signals | AppSignals | Projects | ActivityLog>,
+  program: Effect.Effect<A, E, Incidents | Signals | AppSignals | Projects | ActivityLog | SqlClient.SqlClient>,
 ) =>
   Effect.promise(() =>
     runInDurableObject(env.PROJECT.getByName(project), (_instance, state) =>
@@ -66,7 +67,7 @@ export const inProject = <A, E>(
               Layer.provide(AppBatchStore.layerMemory()),
               Layer.provide(fakeWeb),
               Layer.provide(BrowserCrypto.layer),
-              Layer.provide(SqliteClient.layer({ storage: state.storage })),
+              Layer.provideMerge(SqliteClient.layer({ storage: state.storage })),
               Layer.provideMerge(TestClock.layer()),
             ),
           ),

@@ -81,7 +81,9 @@ An unknown incident fails with `IncidentNotFound`, an unknown monitor with `Moni
   one row each), URL monitors' last checks (`incidents_monitor_checks`), the guessed rhythms of
   quiet hints (`incidents_rhythms`), every check (`incidents_check_history`) and each
   day's (`incidents_check_days`), what the detectors learned hourly (`incidents_baselines`), and
-  when they last learned and looked (`incidents_state`).
+  when they last learned and looked (`incidents_state`). A reset (`reset`) deletes all of it, for
+  good, but the monitors, which are checked afresh: one of nothing for N minutes waits N from the
+  reset, as from when it was added, since the counts it looks at are gone.
 
 ## Does not own
 

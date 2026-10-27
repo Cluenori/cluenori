@@ -89,6 +89,7 @@ import { objectCall } from "./object-calls.ts"
 export type EngineCallName =
   | "createProject"
   | "detail"
+  | "reset"
   | "addComponent"
   | "linkComponent"
   | "updateSettings"
@@ -157,6 +158,13 @@ export const projectCalls = {
     ProjectExists,
   ),
   detail: projectCall("detail", Schema.Void, ProjectDetail, ProjectNotFound),
+  // Deletes the project's data and keeps its configuration: the project, and when.
+  reset: projectCall(
+    "reset",
+    Schema.Struct({ actor: Actor }),
+    Schema.Struct({ project: Project, resetAt: Instant }),
+    ProjectNotFound,
+  ),
   addComponent: projectCall(
     "addComponent",
     Schema.Struct({ actor: Actor, component: AddComponent }),

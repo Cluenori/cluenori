@@ -344,6 +344,12 @@ const servedCalls = (
       return removed.watches
     }),
   ),
+  forgetProjectFeeds: serve(workspaceCalls.forgetProjectFeeds, ({ project, before }) =>
+    Effect.gen(function* () {
+      const feeds = yield* Feeds
+      yield* feeds.forgetProject(project, before)
+    }),
+  ),
   watcher: serve(workspaceCalls.watcher, (access) =>
     Effect.gen(function* () {
       const watcher = yield* Watcher

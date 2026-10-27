@@ -62,6 +62,22 @@ export const ProjectsHandlers = HttpApiBuilder.group(CluenoriApi, "projects", (h
         return created
       }),
     )
+    // Deleting a project's data for good is an owner's. The project's object deletes what it keeps,
+    // then the workspace's feeds forget its entries: two objects, no transaction between them, so a
+    // reset that stopped between the two is finished by resetting again.
+    .handle("resetProject", ({ params }) =>
+      Effect.gen(function* () {
+        const member = yield* CurrentMember
+        if (member.access._tag !== "Everything") {
+          return yield* new NotAllowed()
+        }
+        const projects = yield* MemberProjects
+        const workspace = yield* WorkspaceObjects
+        const reset = yield* projects.call(member, params.project, projectCalls.reset, { actor: member.actor })
+        yield* workspace.call(workspaceCalls.forgetProjectFeeds, { project: params.project, before: reset.resetAt })
+        return reset.project
+      }),
+    )
     .handle("updateSettings", ({ params, payload }) =>
       Effect.gen(function* () {
         const member = yield* CurrentMember

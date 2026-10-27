@@ -79,6 +79,20 @@ const checker: Actor = { _tag: "System", process: ProcessName.make("incidents.ch
 
 const hour = Duration.toMillis(Duration.hours(1))
 
+// What a reset empties: everything but the monitors, `incidents_monitors`.
+const resetTables = [
+  "incidents_incidents",
+  "incidents_updates",
+  "incidents_firing",
+  "incidents_monitor_checks",
+  "incidents_monitor_measures",
+  "incidents_check_history",
+  "incidents_check_days",
+  "incidents_baselines",
+  "incidents_rhythms",
+  "incidents_state",
+]
+
 // How many resolved incidents the list shows, and from how far back.
 const resolvedListed = 50
 const resolvedShown = Duration.toMillis(Duration.days(7))
@@ -378,6 +392,13 @@ export class Incidents extends Context.Service<
      * `MonitorNotFound` when the project has no monitor with that ID.
      */
     readonly removeMonitor: (actor: Actor, id: MonitorId) => Effect.Effect<void, MonitorNotFound>
+    /**
+     * Deletes the project's incidents, open ones too, and their updates, for good, with what the
+     * detectors learned and every monitor's checks, in one transaction, without activity: the
+     * monitors stay, and are checked afresh, so a monitor still failing opens a new incident once it
+     * fails for long enough again.
+     */
+    readonly reset: Effect.Effect<void>
   }
 >()("@cluenori/incidents/incidents") {
   /**
@@ -846,17 +867,22 @@ export class Incidents extends Context.Service<
       })
 
       // Measures every monitor of counts, keeps what each measured, and says which fire. A monitor
-      // whose condition is "nothing for N" is first judged N after it was added.
+      // whose condition is "nothing for N" is first judged N after it was added, or after the
+      // project's data was reset, which forgot the counts it would look at.
       const countsNow = Effect.fn("Incidents.countsNow")(function* (now: number) {
         const monitors = yield* findMonitors(undefined)
+        const resetAt = yield* projects.project.pipe(
+          Effect.map((project) => (project.resetAt === undefined ? 0 : DateTime.toEpochMillis(project.resetAt))),
+          Effect.catchTag("ProjectNotFound", () => Effect.succeed(0)),
+        )
         const firings: Array<Firing> = []
         for (const monitor of monitors) {
           const condition = monitor.condition
           if (condition._tag === "noAnswer") {
             continue
           }
-          const added = DateTime.toEpochMillis(monitor.addedAt)
-          if (condition._tag === "nothingFor" && now - added < condition.minutes * 60_000) {
+          const watchedSince = Math.max(DateTime.toEpochMillis(monitor.addedAt), resetAt)
+          if (condition._tag === "nothingFor" && now - watchedSince < condition.minutes * 60_000) {
             continue
           }
           const value = measuredOf(condition, yield* readCounts(monitor, condition, now))
@@ -1362,6 +1388,10 @@ export class Incidents extends Context.Service<
         })
       })
 
+      const reset = sql
+        .withTransaction(Effect.forEach(resetTables, (table) => sql`DELETE FROM ${sql(table)}`, { discard: true }))
+        .pipe(Effect.orDie, Effect.withSpan("Incidents.reset"))
+
       return {
         check,
         incidents,
@@ -1371,6 +1401,7 @@ export class Incidents extends Context.Service<
         monitor: monitorDetail,
         addMonitor,
         removeMonitor,
+        reset,
       }
     }),
   )

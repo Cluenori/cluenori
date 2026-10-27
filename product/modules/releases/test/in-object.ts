@@ -11,6 +11,7 @@ import type { Crypto } from "effect"
 import { Effect, Layer, Option, Stream } from "effect"
 import { AiError, LanguageModel } from "effect/ai"
 import { HttpClient, HttpClientError } from "effect/http"
+import type { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 
 import { ReleaseRecords, ReleaseSources } from "../src/index.ts"
@@ -101,6 +102,7 @@ export const inProject = <A, E>(
     | GitHub
     | Crypto.Crypto
     | LanguageModel.LanguageModel
+    | SqlClient.SqlClient
   >,
   sources: Layer.Layer<ReleaseSources | GitHub | LanguageModel.LanguageModel> = noSources,
 ) =>
@@ -127,7 +129,7 @@ export const inProject = <A, E>(
               Layer.provide(ArchiveStore.layerMemory),
               Layer.provide(unreachableWeb),
               Layer.provideMerge(BrowserCrypto.layer),
-              Layer.provide(SqliteClient.layer({ storage: state.storage })),
+              Layer.provideMerge(SqliteClient.layer({ storage: state.storage })),
               Layer.provideMerge(TestClock.layer()),
             ),
           ),

@@ -7,11 +7,15 @@ export const ProjectName = Schema.String.check(Schema.isMinLength(1), Schema.isM
 )
 export type ProjectName = typeof ProjectName.Type
 
-/** A project: one product and one investment. Its key is permanent; its name can change. */
+/**
+ * A project: one product and one investment. Its key is permanent; its name can change. `resetAt`
+ * is when its data was last reset, absent until it is: what was known of it before is gone.
+ */
 export class Project extends Schema.Class<Project>("Project")({
   key: ProjectKey,
   name: ProjectName,
   createdAt: Instant,
+  resetAt: Schema.optionalKey(Instant),
 }) {}
 
 /**

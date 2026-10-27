@@ -15,6 +15,7 @@ import type { OperationCounts } from "@cluenori/signals"
 import { AppSignalId, AppSignals, BatchDigest, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Deferred, Effect, Result, Schema } from "effect"
+import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 
 import type { Monitor } from "../src/index.ts"
@@ -872,4 +873,100 @@ describe("Incidents", () => {
       [true, false, false, false, false, false, false, false, false, false, false, false, false],
     )
   })
+
+  it.effect("a reset gives a monitor of nothing for N its N afresh, its counts forgotten", () =>
+    inProject(
+      "reset-nothing-for",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const signals = yield* Signals
+        const incidents = yield* Incidents
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
+        yield* incidents.addMonitor(member, {
+          component: api,
+          condition: { _tag: "nothingFor", subject: operation("cleanup.run"), minutes: 30 },
+          level: "alarm",
+        })
+        yield* TestClock.setTime(start + hour)
+        yield* record(api, [counts("cleanup.run", start + hour - minute, 1)])
+        yield* incidents.check
+        assert.deepStrictEqual((yield* incidents.incidents).open, [])
+        yield* TestClock.adjust(1_000)
+        const { resetAt } = yield* projects.reset(member)
+        yield* signals.reset(resetAt)
+        yield* incidents.reset
+        yield* TestClock.adjust(minute)
+        yield* incidents.check
+        const opened = (yield* incidents.incidents).open
+        assert.deepStrictEqual(opened, [])
+      }),
+    ),
+  )
+
+  it.effect("a reset deletes every incident, check and thing learned, and keeps the monitors, checked afresh", () =>
+    inProject(
+      "reset",
+      start,
+      Effect.gen(function* () {
+        const projects = yield* Projects
+        const incidents = yield* Incidents
+        const sql = yield* SqlClient.SqlClient
+        yield* projects.create(member, ProjectName.make("Notes"))
+        yield* projects.addComponent(member, { key: api, name: ComponentName.make("Notes API") })
+        // A failing operation, a job that runs every 5 minutes, a monitor of a URL that fails, and
+        // one of an operation's error rate: an incident of each, with what the detectors learn.
+        yield* record(api, [counts("POST /api/export", start - 3 * day, 1000, 1)])
+        for (const ago of [60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5]) {
+          yield* record(jobs, [counts("job sweep", start - ago * minute, 1)])
+        }
+        yield* record(api, [counts("POST /api/export", start - minute, 50, 10)])
+        const url = MonitorUrl.make("https://reset.notes.test/health")
+        answers.set(url, 503)
+        yield* incidents.addMonitor(member, urlMonitor(api, url))
+        yield* incidents.addMonitor(member, {
+          component: api,
+          condition: { _tag: "errorRateAbove", subject: operation("POST /api/export"), percent: 5, minutes: 15 },
+          level: "quiet",
+        })
+        yield* checkAt(start)
+        yield* checkAt(start + minute)
+        yield* checkAt(start + 2 * minute)
+        // Every table the engine keeps in the project's database, but its migrations', with its rows.
+        const rows = Effect.gen(function* () {
+          const tables = yield* sql<{ readonly name: string }>`SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name GLOB 'incidents_*' AND name <> 'incidents_migrations' ORDER BY name`
+          return yield* Effect.forEach(tables, ({ name }) =>
+            sql<{ readonly count: number }>`SELECT count(*) AS count FROM ${sql(name)}`.pipe(
+              Effect.map(([row]) => [name, row?.count ?? 0] as const),
+            ),
+          )
+        }).pipe(Effect.orDie)
+        const rowsBefore = yield* rows
+        const monitors = (yield* incidents.monitors).monitors.length
+
+        yield* incidents.reset
+        const rowsAfter = yield* rows
+        const list = yield* incidents.incidents
+
+        // Every table had rows; only the monitors keep theirs.
+        assert.deepStrictEqual(
+          rowsBefore.filter(([, count]) => count === 0),
+          [],
+        )
+        assert.deepStrictEqual(
+          rowsAfter.filter(([, count]) => count > 0),
+          [["incidents_monitors", 2]],
+        )
+        assert.strictEqual(monitors, 2)
+        assert.deepStrictEqual([list.open, list.resolved], [[], []])
+
+        // The URL still fails: checked afresh, it opens a new incident once it has failed long enough.
+        yield* checkAt(start + 3 * minute)
+        yield* checkAt(start + 4 * minute)
+        assert.isAbove((yield* incidents.incidents).open.length, 0)
+      }),
+    ),
+  )
 })

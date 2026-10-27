@@ -107,6 +107,8 @@ layer(CluenoriClient.layer, { excludeTestServices: true })("members", (it) => {
       assert.strictEqual((yield* fromBrowser("GET", `/projects/${shared}/incidents`, cookie)).status, 200)
       assert.strictEqual((yield* fromBrowser("GET", "/members", cookie)).status, 403)
       assert.strictEqual((yield* fromBrowser("POST", "/projects", cookie, { key: "adas", name: "Ada's" })).status, 403)
+      // Nor reset a project Ada sees: its data would go for good.
+      assert.strictEqual((yield* fromBrowser("POST", `/projects/${shared}/reset`, cookie)).status, 403)
       // Nor a component of a project Ada sees, which would come with a working ingest key, nor its keys.
       const component = { key: ComponentKey.make("adas-api"), name: "Ada's API" }
       assert.strictEqual((yield* fromBrowser("POST", `/projects/${shared}/components`, cookie, component)).status, 403)

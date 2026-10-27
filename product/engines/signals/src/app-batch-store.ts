@@ -1,6 +1,7 @@
-import { Context, Effect, Layer } from "effect"
+import { Clock, Context, Effect, Layer } from "effect"
 
-import type { ArchiveUnavailable } from "./archive-store.ts"
+import type { ArchiveUnavailable, DeleteBefore } from "./archive-store.ts"
+import { deleteBeforeInMemory } from "./archive-store.ts"
 
 /**
  * Where apps' batches are kept as received, scrubbed and with user IDs replaced by people's, each a
@@ -13,17 +14,31 @@ export class AppBatchStore extends Context.Service<
   {
     /** Stores `json` at `key`, replacing what is there; storing the same file again is harmless. */
     readonly put: (key: string, json: string) => Effect.Effect<void, ArchiveUnavailable>
+    /** Deletes one page of the files under `prefix` stored before a time (`DeleteBefore`). */
+    readonly deleteBefore: DeleteBefore
   }
 >()("@cluenori/signals/app-batch-store/AppBatchStore") {
   /** A store in memory, for tests: what is put lands in `files`. */
-  static readonly layerMemory = (files: Map<string, string> = new Map()) =>
-    Layer.succeed(
+  static readonly layerMemory = (files: Map<string, string> = new Map()) => {
+    const storedAt = new Map<string, number>()
+    return Layer.succeed(
       AppBatchStore,
       AppBatchStore.of({
         put: (key, json) =>
+          Clock.currentTimeMillis.pipe(
+            Effect.flatMap((now) =>
+              Effect.sync(() => {
+                files.set(key, json)
+                storedAt.set(key, now)
+              }),
+            ),
+          ),
+        deleteBefore: deleteBeforeInMemory(storedAt, (key) =>
           Effect.sync(() => {
-            files.set(key, json)
+            files.delete(key)
           }),
+        ),
       }),
     )
+  }
 }

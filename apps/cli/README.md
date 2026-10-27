@@ -10,6 +10,7 @@ asks about their operations, numbers and promotes their releases.
 ./setup                  cluenori setup       wrangler deploy; the first time, an API token for this computer
 ./update                 cluenori update      git pull --ff-only, bun install, wrangler deploy
 ./cluenori project create <key> --name <name>
+./cluenori project reset <project>                        deletes its data for good, keeps its configuration; asks for its key, typed
 ./cluenori component add <project> <key> --name <name>     prints the component's ingest key, once
 ./cluenori operations <project> [--last 1h|6h|24h|7d|14d|30d|90d] [--environment <key>] [--component <key>]
 ./cluenori operation <project> "<operation>" [--last ...]  its counts, and its slowest and failed traces

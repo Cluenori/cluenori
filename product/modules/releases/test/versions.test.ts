@@ -1,13 +1,23 @@
 import type { Actor } from "@cluenori/foundation"
 import { ActivityLog, ComponentKey, EnvironmentKey, MemberId, ReleaseVersion } from "@cluenori/foundation"
 import { CommitSha, GitHub, GitHubRefused, Repository } from "@cluenori/github"
+import { StoreVersion } from "@cluenori/manifest"
 import { ComponentName, ProjectName, Projects } from "@cluenori/projects"
 import { assert, describe, it } from "@effect/vitest"
 import { DateTime, Effect, Layer, Option } from "effect"
+import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 
 import type { NotesStyle } from "../src/index.ts"
-import { NoteLocale, NoteText, ReleaseSources, releasesModule, SemanticVersion } from "../src/index.ts"
+import {
+  NoteLocale,
+  NoteText,
+  PromotionId,
+  ReleaseRecords,
+  ReleaseSources,
+  releasesModule,
+  SemanticVersion,
+} from "../src/index.ts"
 import { fakeModel, inProject, noModel, notConnected } from "./in-object.ts"
 
 // 2026-10-21T10:00:00Z, on a minute.
@@ -235,6 +245,97 @@ describe("Release notes", () => {
 
         assert.strictEqual(first._tag, "DraftUnavailable")
         assert.include(first._tag === "DraftUnavailable" ? first.reason : "", "no release before it")
+      }),
+    ),
+  )
+})
+
+describe("Reset", () => {
+  it.effect("deletes every record of releases but the version lines, version policies and notes style", () =>
+    inProject(
+      "reset",
+      start,
+      Effect.gen(function* () {
+        const records = yield* ReleaseRecords
+        const sql = yield* SqlClient.SqlClient
+        yield* project
+        const at = DateTime.makeUnsafe(start)
+        const release = ReleaseVersion.make("0.6.0+10")
+        const previous = ReleaseVersion.make("0.6.0+9")
+        const production = EnvironmentKey.make("production")
+        // A record of each kind: what the module's sources, reports and actions write.
+        yield* setVersion("0.6.0", 10)
+        const numbered = yield* numberOf(shaOf("a"))
+        yield* releasesModule.actions.setVersionPolicy.run(member, {
+          component: ios,
+          minimum: StoreVersion.make("0.5"),
+          storeUrl: "https://apps.apple.com/app/id1234567890",
+        })
+        yield* records.saveNotesStyle("Short, plain words.")
+        yield* records.saveCommit(ios, release, { sha: shaOf("a") })
+        yield* records.saveLookup(ios, previous, at)
+        yield* records.saveChanges(ios, release, previous, { totalCommits: 1, commits: [], pullRequests: [] })
+        yield* records.replaceStoreBuilds(ios, production, [
+          { release, build: { version: "0.6.0", buildNumber: "10", uploadedAt: at, stage: "testing" } },
+        ])
+        yield* records.saveDeploy({
+          component: ios,
+          environment: production,
+          release,
+          commit: shaOf("a"),
+          deployedAt: at,
+          lastDeployedAt: at,
+        })
+        yield* records.saveSync({ component: ios, source: "github", at, problem: undefined })
+        yield* records.saveNotes(
+          ios,
+          release,
+          [{ locale: NoteLocale.make("en-US"), text: NoteText.make("Faster.") }],
+          at,
+        )
+        yield* records.startPromotion(
+          {
+            id: PromotionId.make("019a0a00-0000-7000-8000-000000000001"),
+            component: ios,
+            release,
+            environment: production,
+            startedAt: at,
+            state: "starting",
+          },
+          member,
+        )
+        yield* records.queueGitHubRelease({ component: ios, release, environment: production, reachedAt: at })
+        // Every table the module keeps in the project's database, but its migrations', with its rows.
+        const rows = Effect.gen(function* () {
+          const tables = yield* sql<{ readonly name: string }>`SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name GLOB 'releases_*' AND name <> 'releases_migrations' ORDER BY name`
+          return yield* Effect.forEach(tables, ({ name }) =>
+            sql<{ readonly count: number }>`SELECT count(*) AS count FROM ${sql(name)}`.pipe(
+              Effect.map(([row]) => [name, row?.count ?? 0] as const),
+            ),
+          )
+        }).pipe(Effect.orDie)
+        const before = yield* rows
+
+        yield* records.reset
+        const after = yield* rows
+        // The commit numbered before gets the next number: numbers never go back.
+        const again = yield* numberOf(shaOf("a"))
+
+        assert.strictEqual(numbered.release, release)
+        assert.deepStrictEqual(
+          before.filter(([, count]) => count === 0),
+          [],
+        )
+        assert.deepStrictEqual(
+          after.filter(([, count]) => count > 0),
+          [
+            ["releases_notes_style", 1],
+            ["releases_version_policies", 1],
+            ["releases_versions", 1],
+          ],
+        )
+        assert.strictEqual(again.release, ReleaseVersion.make("0.6.0+11"))
       }),
     ),
   )

@@ -9,10 +9,10 @@ import { BundleId, ComponentName, ProjectName, Projects } from "@cluenori/projec
 import type { OperationCounts } from "@cluenori/signals"
 import { BatchDigest, Signals } from "@cluenori/signals"
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Effect, Layer, Option } from "effect"
+import { DateTime, Deferred, Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 
-import { NoteLocale, NoteText, ReleaseSources, releasesModule } from "../src/index.ts"
+import { NoteLocale, NoteText, ReleaseRecords, ReleaseSources, releasesModule } from "../src/index.ts"
 import { inProject, noModel, notConnected } from "./in-object.ts"
 
 // 2026-10-21T10:00:00Z, on a minute.
@@ -340,6 +340,50 @@ describe("Releases' sources", () => {
     )
   })
 
+  it.effect(
+    "after a reset, keeps the builds uploaded from its moment on, though App Store Connect lists the rest",
+    () => {
+      // One build uploaded exactly as the project is reset, one a millisecond before.
+      const builds = [
+        { ...build("314", 0), uploadedAt: DateTime.makeUnsafe(start) },
+        { ...build("313", 0), uploadedAt: DateTime.makeUnsafe(start - 1) },
+      ]
+      const appStore: AppStoreConnect["Service"] = {
+        ...fakeAppStore({ count: 0 }),
+        builds: () => Effect.succeed(builds),
+        appStoreVersions: () => Effect.succeed([]),
+      }
+      return inProject(
+        "app-store-reset",
+        start,
+        Effect.gen(function* () {
+          const projects = yield* Projects
+          const records = yield* ReleaseRecords
+          const around = new Period({ from: DateTime.makeUnsafe(start - hour), to: DateTime.makeUnsafe(start + hour) })
+          yield* linkedProject
+          yield* sync
+          const before = yield* releasesModule.queries.list.run({ period: around })
+          const { resetAt } = yield* projects.reset(member)
+          yield* records.reset
+          yield* TestClock.setTime(start + minute)
+          yield* sync
+          const after = yield* releasesModule.queries.list.run({ period: around })
+
+          assert.strictEqual(DateTime.toEpochMillis(resetAt), start)
+          assert.deepStrictEqual(
+            before.releases.map((release) => release.release),
+            ["2.4.0+314", "2.4.0+313"].map((release) => ReleaseVersion.make(release)),
+          )
+          assert.deepStrictEqual(
+            after.releases.map((release) => release.release),
+            [ReleaseVersion.make("2.4.0+314")],
+          )
+        }),
+        sourcesOf(undefined, appStore),
+      )
+    },
+  )
+
   it.effect("says when App Store Connect refuses the key", () =>
     inProject(
       "app-store-refused",
@@ -359,6 +403,53 @@ describe("Releases' sources", () => {
         app: () => Effect.fail(new AppStoreConnectCredentialsRefused({ reason: "NOT_AUTHORIZED" })),
       }),
     ),
+  )
+
+  it.effect("a reset while GitHub is asked keeps the answers from bringing back the forgotten releases", () =>
+    Effect.gen(function* () {
+      const fetching = yield* Deferred.make<void>()
+      const resume = yield* Deferred.make<void>()
+      const github = fakeGitHub([])
+      yield* inProject(
+        "reset-while-syncing",
+        start,
+        Effect.gen(function* () {
+          const projects = yield* Projects
+          const records = yield* ReleaseRecords
+          const signals = yield* Signals
+          yield* linkedProject
+          yield* twoReleases
+          yield* Effect.all(
+            [
+              sync,
+              Effect.gen(function* () {
+                yield* Deferred.await(fetching)
+                yield* TestClock.adjust(1_000)
+                const { resetAt } = yield* projects.reset(member)
+                yield* signals.reset(resetAt)
+                yield* records.reset
+                assert.strictEqual((yield* records.commits(api)).size, 0)
+                yield* Deferred.succeed(resume, undefined)
+              }),
+            ],
+            { concurrency: "unbounded" },
+          )
+          const commits = yield* records.commits(api)
+          assert.strictEqual(commits.size, 0)
+        }),
+        sourcesOf(
+          {
+            ...github,
+            commit: (repo, ref) =>
+              Deferred.succeed(fetching, undefined).pipe(
+                Effect.andThen(Deferred.await(resume)),
+                Effect.andThen(github.commit(repo, ref)),
+              ),
+          },
+          undefined,
+        ),
+      )
+    }),
   )
 })
 

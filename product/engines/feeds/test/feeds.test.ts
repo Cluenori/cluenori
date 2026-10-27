@@ -331,6 +331,35 @@ describe("Feeds", () => {
     )
   })
 
+  it.effect("forgets a reset project's entries, and its events from before the reset delivered late", () => {
+    const { layer } = keptAlerts()
+    return inWorkspace(
+      "feeds-forget",
+      now,
+      layer,
+      Effect.gen(function* () {
+        const feeds = yield* Feeds
+        const { result: feed } = yield* save({ ...registrations, level: "none" })
+        yield* feeds.record([
+          seen(notes, registered, signal(51), now - 2 * minute),
+          seen(folio, signedUp, signal(52), now - 2 * minute),
+        ])
+        yield* feeds.forgetProject(notes, DateTime.makeUnsafe(now))
+        // Notes' activity from just before the reset, delivered after it, and from after it.
+        yield* feeds.record([seen(notes, registered, signal(53), now - 1), seen(notes, registered, signal(54), now)])
+        const page = yield* feeds.entries(feed.id, everything, undefined)
+
+        assert.deepStrictEqual(
+          page.entries.map((entry) => [entry.project, DateTime.toEpochMillis(entry.at)]),
+          [
+            [notes, now],
+            [folio, now - 2 * minute],
+          ],
+        )
+      }),
+    )
+  })
+
   it.effect("forgets entries after 90 days", () => {
     const { layer } = keptAlerts()
     return inWorkspace(

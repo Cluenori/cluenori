@@ -49,6 +49,7 @@ import { errorShapeOf } from "./fingerprint.ts"
 import type { ErrorGroupId, LogEntry } from "./log-entry.ts"
 import { logStore } from "./log-store.ts"
 import { errorIdOf, logRetention } from "./read-logs.ts"
+import { purgeFiles, resetTables } from "./reset.ts"
 import { scrubbedText } from "./scrubbed.ts"
 import { migrateSignals } from "./signals-migrations.ts"
 
@@ -170,6 +171,24 @@ const scrubbedSignal = (signal: AppSignal): AppSignal => {
 const correctedSignal = (signal: AppSignal, skew: number): AppSignal =>
   skew === 0 ? signal : { ...signal, at: DateTime.makeUnsafe(DateTime.toEpochMillis(signal.at) + skew) }
 
+// What apps' signals keep in the project's database, which a reset empties; their duplicate window,
+// `signals_app_seen`, stays, so a batch sent again after a reset still counts once.
+const resetTablesOfApps = [
+  "signals_people",
+  "signals_person_users",
+  "signals_installations",
+  "signals_app_releases",
+  "signals_app_first_days",
+  "signals_app_days",
+  "signals_app_feature_days",
+  "signals_app_measures",
+  "signals_app_subject_measures",
+  "signals_app_diagnostics",
+  "signals_app_sessions",
+  "signals_app_timeline",
+  "signals_app_event_last",
+]
+
 /**
  * The signals of a project's apps: what their SDKs send, by installation and person, and the
  * questions asked of it: usage, retention, each release's health, features, and one person. Runs
@@ -234,6 +253,19 @@ export class AppSignals extends Context.Service<
      * arrives when its batch does, which can be later than it happened.
      */
     readonly eventCount: (query: EventCountQuery, atMost: number) => Effect.Effect<number>
+    /**
+     * Deletes everything recorded of apps' signals, for good: people and their user IDs,
+     * installations, sessions, timelines, and what is counted by day and release, in one
+     * transaction; and marks the apps' batches stored before `before` to be deleted by
+     * `purgeBatches`. A signal sent again within 14 days still counts once, as before. Apps' errors
+     * are services' too: `Signals.reset` deletes them.
+     */
+    readonly reset: (before: DateTime.Utc) => Effect.Effect<void>
+    /**
+     * Goes on deleting the apps' batches of the project a reset marked, as `Signals.purgeArchive`
+     * does the archive's files.
+     */
+    readonly purgeBatches: Effect.Effect<void, ArchiveUnavailable>
   }
 >()("@cluenori/signals/app-signals/AppSignals") {
   /** Builds the apps' signals on the object's database and the store of their batches, first creating or updating the tables. */
@@ -448,6 +480,14 @@ export class AppSignals extends Context.Service<
           return yield* store.person(lookup, now)
         })
 
+        const reset = Effect.fn("AppSignals.reset")(function* (before: DateTime.Utc) {
+          yield* resetTables(sql, resetTablesOfApps, "app-batches", DateTime.toEpochMillis(before))
+        })
+
+        const purgeBatches = purgeFiles(sql, "app-batches", settings, batches.deleteBefore).pipe(
+          Effect.withSpan("AppSignals.purgeBatches"),
+        )
+
         return AppSignals.of({
           record,
           usage,
@@ -459,6 +499,8 @@ export class AppSignals extends Context.Service<
           feature,
           person,
           eventCount: store.eventCount,
+          reset,
+          purgeBatches,
         })
       }),
     )

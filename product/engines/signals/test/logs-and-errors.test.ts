@@ -830,6 +830,7 @@ describe("Signals' warnings and errors", () => {
         ArchiveStore.of({
           put: () => Effect.fail(new ArchiveUnavailable({ message: "R2 is down" })),
           get: () => Effect.fail(new ArchiveUnavailable({ message: "R2 is down" })),
+          deleteBefore: () => Effect.fail(new ArchiveUnavailable({ message: "R2 is down" })),
         }),
       )
       const { failure, table } = yield* inProject(

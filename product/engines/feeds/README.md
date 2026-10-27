@@ -32,7 +32,8 @@ const due = yield* feeds.record(activity)
 ## Owns
 
 - **Data:** in the workspace's object, the feeds, their sources and their entries, kept 90 days
-  (`feeds_feeds`, `feeds_sources`, `feeds_entries`); in each project's object, the event names its
+  (`feeds_feeds`, `feeds_sources`, `feeds_entries`), and each reset project with when it was
+  reset (`feeds_forgotten`); in each project's object, the event names its
   feeds watch, and which signals it forwarded in the last 14 days (`feed_watch_events`,
   `feed_watch_forwarded`).
 - **Rules:**
@@ -45,6 +46,8 @@ const due = yield* feeds.record(activity)
     `none`, and entries that arrive at `none` never alert later. An alert APNs didn't take is sent
     again as it was, with the same entries and key, and what arrived meanwhile waits for the next;
     one alert goes at a time, so two deliveries at once don't send it twice.
+  - **A reset project:** `forgetProject` deletes its entries from every feed; its events from
+    activity committed before the reset, delivered after it, make none. Its sources stay.
 
 ## Does not own
 

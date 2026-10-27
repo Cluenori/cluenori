@@ -40,6 +40,7 @@ import type { OriginQuery, OriginTable } from "./operation-queries.ts"
 import { operationStore } from "./operation-store.ts"
 import { originCounts } from "./origin-counts.ts"
 import { traceViewOf } from "./read-archived-trace.ts"
+import { purgeFiles, resetTables } from "./reset.ts"
 import { migrateSignals } from "./signals-migrations.ts"
 import type { TraceView } from "./trace-view.ts"
 
@@ -48,6 +49,23 @@ const batchWindow = Duration.hours(1)
 
 // Old data is removed while recording, at most this often.
 const cleanupInterval = Duration.minutes(10)
+
+// What services' signals keep in the project's database, which a reset empties; their duplicate
+// window, `signals_batches`, stays, so an export sent again after a reset still counts once.
+const resetTablesOfServices = [
+  "signals_operations",
+  "signals_minute_counts",
+  "signals_hour_counts",
+  "signals_kept_traces",
+  "signals_releases",
+  "signals_feature_days",
+  "signals_origin_hours",
+  "signals_logs",
+  "signals_error_groups",
+  "signals_log_messages",
+  "signals_archive",
+  "signals_trace_files",
+]
 
 // A trace is read from at most this many of its archive files, the nearest to the time it is asked
 // about first, or the newest.
@@ -176,6 +194,19 @@ export class Signals extends Context.Service<
      * archive can't be read.
      */
     readonly trace: (trace: TraceId, around?: DateTime.Utc) => Effect.Effect<TraceView, ArchiveUnavailable>
+    /**
+     * Deletes everything recorded of services' signals, apps' errors among them, for good: counts,
+     * kept traces, releases, warnings and errors, error groups and log messages, and the archive's
+     * index, in one transaction; and marks the archive's files stored before `before` to be deleted
+     * by `purgeArchive`. An export sent again within the hour still counts once, as before.
+     */
+    readonly reset: (before: DateTime.Utc) => Effect.Effect<void>
+    /**
+     * Goes on deleting the archive's files of the project a reset marked: at most 5,000 a run, by
+     * key, those stored before the reset; the project's alarm runs it until none is left. Nothing
+     * without a reset. Fails with `ArchiveUnavailable`, to go on from the same place next run.
+     */
+    readonly purgeArchive: Effect.Effect<void, ArchiveUnavailable>
   }
 >()("@cluenori/signals/signals") {
   /** Builds the engine on the object's database and the archive, first creating or updating its tables. */
@@ -370,6 +401,14 @@ export class Signals extends Context.Service<
           return yield* traceViewOf(traceId, searched, files, found.total - files.length)
         })
 
+        const reset = Effect.fn("Signals.reset")(function* (before: DateTime.Utc) {
+          yield* resetTables(sql, resetTablesOfServices, "archive", DateTime.toEpochMillis(before))
+        })
+
+        const purgeArchive = purgeFiles(sql, "archive", settings, archive.deleteBefore).pipe(
+          Effect.withSpan("Signals.purgeArchive"),
+        )
+
         return Signals.of({
           recordTraces,
           recordLogs,
@@ -390,6 +429,8 @@ export class Signals extends Context.Service<
           logMessage,
           logCounts,
           trace,
+          reset,
+          purgeArchive,
         })
       }),
     )

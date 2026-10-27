@@ -470,6 +470,16 @@ export const migrateSignals = Migrator.make({})({
         PRIMARY KEY (hour, component, operation, environment, origin)
       ) WITHOUT ROWID`
     }),
+    // The files a reset deletes in the background, one row a store while it does: those stored before
+    // `before` (Unix ms), listed by key after `after`, the last key reached (null at the start).
+    "0016_purges": Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE signals_purges (
+        store TEXT PRIMARY KEY,
+        before INTEGER NOT NULL,
+        after TEXT
+      ) WITHOUT ROWID`
+    }),
   }),
 })
 
