@@ -349,6 +349,20 @@ describe("@cluenori/sdk", () => {
       )
       cluenori.track("a")
       yield* flushed(cluenori)
+      // Keys shaped like an SDK key that the deployment wouldn't take: an ID not of 22 base64url
+      // characters, or a component over 40.
+      for (const malformed of [
+        "cluenori-sdk.notes.notes-web.!",
+        "cluenori-sdk.notes.notes-web.R2d2C3poBb8Wq0Lk5Xz7A",
+        `cluenori-sdk.notes.${"c".repeat(41)}.R2d2C3poBb8Wq0Lk5Xz7Aa`,
+      ]) {
+        const started = makeEngine(
+          { key: malformed, environment: "production", deployment, release: "1.0.0+1", runtime: runtimeOf(w) },
+          { fetch: w.server.fetch, schedules: false },
+        )
+        started.track("a")
+        yield* flushed(started)
+      }
       assert.strictEqual(w.server.received.length, 0)
     }),
   )

@@ -8,6 +8,7 @@ const keyPattern = new RegExp(`^${key}$`)
 const releasePattern = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/
 const propertyKeyPattern = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/
 const printableAscii = /^[\x21-\x7e]+$/
+const sdkKeyId = /^[A-Za-z0-9_-]{22}$/
 const controlCharacter = /\p{Cc}/u
 const email = /^[^@]+@[^@.][^@]*\.[^@]*[^@.]$/
 
@@ -31,19 +32,17 @@ export const isReleaseVersion = (text: string) => text.length <= 64 && releasePa
 export const isPropertyKey = (text: string) => text.length <= 64 && propertyKeyPattern.test(text)
 
 /**
- * The component an SDK key belongs to: `cluenori-sdk.<project>.<component>.<id>`; undefined for
- * text that isn't such a key.
+ * The component an SDK key belongs to: `cluenori-sdk.<project>.<component>.<id>`, as the deployment
+ * reads one (product/engines/projects/src/sdk-key.ts): the project and component are keys of up to 40
+ * characters, the ID 22 base64url characters. Undefined for text that isn't such a key.
  */
 export const componentOfKey = (text: string): string | undefined => {
   const parts = text.split(".")
   const [prefix, project, component, id] = parts
-  if (parts.length !== 4 || prefix !== "cluenori-sdk" || id === undefined || id.length === 0) {
+  if (parts.length !== 4 || prefix !== "cluenori-sdk" || project === undefined || component === undefined) {
     return undefined
   }
-  if (project === undefined || component === undefined || !isEnvironmentKey(project) || !keyPattern.test(component)) {
-    return undefined
-  }
-  return printableAscii.test(id) ? component : undefined
+  return isEnvironmentKey(project) && isEnvironmentKey(component) && sdkKeyId.test(id ?? "") ? component : undefined
 }
 
 /**
