@@ -8,6 +8,7 @@ import {
   minutesWords,
   printable,
   share,
+  span,
   uptime,
   utcClock,
   utcMinute,
@@ -24,6 +25,34 @@ describe("terminal text", () => {
       String.raw`Sign\u001b[2J\u001b[Hups\u001b]52;c;dG9rZW4=\u0007\u000dFake\u009b31m \u202etxt.exe`,
     )
     assert.strictEqual(printable("Café ✓ 注册\n\tuser-1842"), "Café ✓ 注册\n\tuser-1842")
+    // Both ends of every recognized range, the isolated marks, and their printable neighbors.
+    const cases = [
+      ["\u001f", String.raw`\u001f`],
+      [" ", " "],
+      ["\u007e", "~"],
+      ["\u007f", String.raw`\u007f`],
+      ["\u009f", String.raw`\u009f`],
+      ["\u00a0", "\u00a0"],
+      ["\u061b", "\u061b"],
+      ["\u061c", String.raw`\u061c`],
+      ["\u061d", "\u061d"],
+      ["\u200d", "\u200d"],
+      ["\u200e", String.raw`\u200e`],
+      ["\u200f", String.raw`\u200f`],
+      ["\u2010", "\u2010"],
+      ["\u2027", "\u2027"],
+      ["\u2028", String.raw`\u2028`],
+      ["\u202e", String.raw`\u202e`],
+      ["\u202f", "\u202f"],
+      ["\u2065", "\u2065"],
+      ["\u2066", String.raw`\u2066`],
+      ["\u2069", String.raw`\u2069`],
+      ["\u206a", "\u206a"],
+      ["📝", "📝"],
+    ]
+    for (const [input, expected] of cases) {
+      assert.strictEqual(printable(`a${input}z`), `a${expected}z`)
+    }
     // In columns, a cell is measured as it is printed, so the next column still lines up.
     assert.deepStrictEqual(
       columns([
@@ -96,5 +125,21 @@ describe("terminal text", () => {
       "2 days",
       "25 hours",
     ])
+  })
+
+  it("rounds elapsed time down and changes units only at two hours and two days", () => {
+    const cases = [
+      [0, "1 minute"],
+      [119_999, "1 minute"],
+      [120_000, "2 minutes"],
+      [7_199_999, "119 minutes"],
+      [7_200_000, "2 hours"],
+      [172_799_999, "47 hours"],
+      [172_800_000, "2 days"],
+      [345_599_999, "3 days"],
+    ] as const
+    for (const [value, expected] of cases) {
+      assert.strictEqual(span(value), expected)
+    }
   })
 })
