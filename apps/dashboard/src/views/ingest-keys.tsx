@@ -122,9 +122,15 @@ function WorkingKey({
           )}
         </span>
         <span className="text-sm text-muted-foreground">
-          {keyInfo.lastUsedAt === undefined
-            ? "Not used yet"
-            : `Last used ${ago(DateTime.toEpochMillis(keyInfo.lastUsedAt), now)}`}
+          {/* Last use is kept as the start of its hour, so it is said as that hour, never as "ago". */}
+          {keyInfo.lastUsedAt === undefined ? (
+            "Not used yet"
+          ) : (
+            <>
+              Last used in the hour from{" "}
+              <span className="font-mono">{moment(DateTime.toEpochMillis(keyInfo.lastUsedAt))}</span>
+            </>
+          )}
           {" · "}added <span className="font-mono">{moment(DateTime.toEpochMillis(keyInfo.createdAt))}</span>
         </span>
       </span>

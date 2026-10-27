@@ -778,9 +778,11 @@ struct IngestKeyRow: View {
                 .font(.body.monospaced())
                 .foregroundStyle(ended ? .secondary : .primary)
             if let lastUsedAt = key.lastUsedAt {
+                // Kept as the start of its hour, so said as that hour, never as "ago".
                 Text(
-                    "Last used \(lastUsedAt, format: .relative(presentation: .named))", bundle: #bundle,
-                    comment: "When an ingest key was last used, within an hour. The variable is a relative time."
+                    "Last used in the hour from \(lastUsedAt, format: .dateTime.month(.abbreviated).day().hour().minute())",
+                    bundle: #bundle,
+                    comment: "The hour an ingest key was last used in. The variable is when that hour starts."
                 )
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
