@@ -1,4 +1,6 @@
-import { BunCrypto } from "@effect/platform-bun"
+import { umask } from "node:process"
+
+import { BunCrypto, BunFileSystem } from "@effect/platform-bun"
 import { assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, FileSystem, Layer, Option, Path, Redacted, Schema } from "effect"
 
@@ -38,6 +40,51 @@ const settingsLayer = (files: Map<string, string>, env: Readonly<Record<string, 
   )
 
 describe("deployment settings", () => {
+  it.effect("creates missing configuration directories and keeps new credential files private on disk", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      // A permissive mask exposes omitted modes even on machines whose usual mask is 077.
+      // Tests in this file run sequentially; restore the forked test process's mask on every exit.
+      yield* Effect.acquireRelease(
+        Effect.sync(() => umask(0o022)),
+        (previous) => Effect.sync(() => void umask(previous)),
+      )
+      const root = yield* fs.makeTempDirectoryScoped()
+      yield* fs.makeDirectory(path.join(root, "apps", "worker"), { recursive: true })
+      const localFs: FileSystem.FileSystem = {
+        ...fs,
+        exists: (file) => fs.exists(path.resolve(root, file)),
+        readFileString: (file, encoding) => fs.readFileString(path.resolve(root, file), encoding),
+        writeFileString: (file, text, options) => fs.writeFileString(path.resolve(root, file), text, options),
+      }
+      yield* ensureLocalApiSettings.pipe(Effect.provideService(FileSystem.FileSystem, localFs))
+      assert.strictEqual((yield* fs.stat(path.join(root, devVars))).mode & 0o777, 0o600)
+
+      const deployment = { jurisdiction: "eu", url: "https://cluenori.example", token: "made-up-test-token" } as const
+      for (const existing of [false, true]) {
+        const config = path.join(root, existing ? "existing" : "missing", "config")
+        const directory = path.join(config, "cluenori")
+        const file = path.join(directory, "deployment.json")
+        if (existing) {
+          yield* fs.makeDirectory(directory, { recursive: true, mode: 0o755 })
+          assert.strictEqual((yield* fs.stat(directory)).mode & 0o777, 0o755)
+        } else {
+          assert.isFalse(yield* fs.exists(config))
+        }
+        assert.isFalse(yield* fs.exists(file))
+        const saved = yield* saveDeployment(deployment).pipe(
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ HOME: root, XDG_CONFIG_HOME: config }))),
+        )
+        assert.strictEqual(saved, file)
+        assert.strictEqual((yield* fs.stat(file)).mode & 0o777, 0o600)
+        assert.strictEqual((yield* fs.stat(directory)).mode & 0o777, existing ? 0o755 : 0o700)
+        const text = yield* fs.readFileString(file)
+        assert.deepStrictEqual(yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(text), deployment)
+      }
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(BunCrypto.layer, BunFileSystem.layer, Path.layer))),
+  )
+
   it.effect("adds only missing local settings, preserving other lines and credentials across repeated runs", () =>
     Effect.gen(function* () {
       const cases = [

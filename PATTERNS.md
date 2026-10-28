@@ -710,6 +710,9 @@ The configuration files are the specification; this entry says what each one own
 | `flake.nix`, `flake.lock` | Bun, Node |
 | `apps/worker/wrangler.jsonc` | The Worker's bindings, routes, and compatibility date |
 
+- **Mutation tests use forked processes,** like normal Vitest, so a CLI filesystem test can set
+  and restore its process's umask. Worker threads forbid that; `stryker.config.json` sets the
+  Vitest runner's pool explicitly, because Stryker otherwise overrides Vitest's default.
 - **Compiler settings.** `strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`,
   `noImplicitOverride`, `noPropertyAccessFromIndexSignature`, `noUnusedLocals`,
   `verbatimModuleSyntax`, `isolatedModules`, `erasableSyntaxOnly`, `module: preserve`,
