@@ -217,6 +217,50 @@ describe("mutation commands", () => {
       assert.isTrue(listed.some((line) => line.includes("tools/src/survived.ts:")))
       assert.isTrue(listed.some((line) => line.includes("tools/src/uncovered.ts:")))
       assert.isFalse(output.includes("caught.ts"))
+
+      // Reports arrive in shard order, not file or location order. The handoff must group the
+      // statuses and retain each location, even when replacements have newlines or are absent.
+      yield* writeShard(1, {
+        files: {
+          "src/z.ts": { mutants: [mutant("Survived")] },
+          "src/a.ts": {
+            mutants: [
+              { ...mutant("Survived"), location: { start: { line: 9, column: 2 } }, replacement: "x".repeat(101) },
+              { ...mutant("NoCoverage"), location: { start: { line: 2, column: 1 } } },
+              { ...mutant("Survived"), location: { start: { line: 3, column: 8 } }, replacement: "x".repeat(100) },
+            ],
+          },
+        },
+      })
+      const { replacement: _, ...withoutReplacement } = mutant("Survived")
+      yield* writeShard(2, {
+        files: {
+          "src/a.ts": {
+            mutants: [
+              { ...withoutReplacement, location: { start: { line: 3, column: 2 } } },
+              { ...mutant("Survived"), location: { start: { line: 1, column: 4 } }, replacement: " \n a\t  b \n " },
+            ],
+          },
+        },
+      })
+      const ordered = yield* run(["survivors", reports, "--only", "tools"])
+      assert.isTrue(Result.isSuccess(ordered.result))
+      const [survived, uncovered] = ordered.output.split("Not covered, as no test ran it:")
+      assert.isDefined(uncovered)
+      assert.deepStrictEqual(
+        survived?.split("\n").filter((line) => line.startsWith("- tools/")),
+        [
+          "- tools/src/a.ts:1:4 BooleanLiteral: `a b`",
+          "- tools/src/a.ts:3:2 BooleanLiteral",
+          `- tools/src/a.ts:3:8 BooleanLiteral: \`${"x".repeat(100)}\``,
+          `- tools/src/a.ts:9:2 BooleanLiteral: \`${"x".repeat(99)}…\``,
+          "- tools/src/z.ts:1:1 BooleanLiteral: `false`",
+        ],
+      )
+      assert.deepStrictEqual(
+        uncovered?.split("\n").filter((line) => line.startsWith("- tools/")),
+        ["- tools/src/a.ts:2:1 BooleanLiteral: `false`"],
+      )
     }).pipe(Effect.provide(BunServices.layer)),
   )
 
