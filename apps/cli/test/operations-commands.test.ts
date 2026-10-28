@@ -117,6 +117,16 @@ describe("operation commands", () => {
       assert.include(missing.output, "no part of the period is kept (counts are kept 15 months)")
       assert.include(missing.output, "Nothing from folio in this period.")
       assert.notInclude(missing.output, "0 counted")
+      const retained = yield* run(["operations", "folio"], () => Response.json({ ...empty, covered }))
+      assert.strictEqual(retained.result._tag, "Success")
+      assert.include(retained.output, "2026-10-19 08:00 UTC to 2026-10-19 09:00 UTC")
+      assert.notInclude(retained.output, "no part of the period is kept")
+      assert.notInclude(retained.output, "0 counted")
+      const { dataUntil: _latest, ...withoutLatest } = table
+      const unknownLatest = yield* run(["operations", "folio"], () => Response.json(withoutLatest))
+      assert.strictEqual(unknownLatest.result._tag, "Success")
+      assert.include(unknownLatest.output, "8 counted, 12.5% failed.")
+      assert.notInclude(unknownLatest.output, "data until")
     }),
   )
 
@@ -229,6 +239,17 @@ describe("operation commands", () => {
       assert.include(answer.output, "Past two days the load is counted by the hour, so each line is 1h.")
       assert.match(answer.output, /2026-10-19 08:00 UTC\s+8\s+12.5%/)
       assert.include(answer.output, "A step that isn't listed had nothing reported.")
+      const unchanged = yield* run(
+        ["load", "folio", "--step", "5m", "--environment", "production", "--component", "notes-api"],
+        () => Response.json({ covered, step: "5m", points: [{ ...row, start: covered.from }] }),
+      )
+      assert.strictEqual(unchanged.result._tag, "Success")
+      const url = new URL(unchanged.requests[0]?.url ?? "")
+      assert.strictEqual(url.searchParams.get("step"), "5m")
+      assert.strictEqual(url.searchParams.get("environment"), "production")
+      assert.strictEqual(url.searchParams.get("component"), "notes-api")
+      assert.match(unchanged.output, /2026-10-19 08:00 UTC\s+8\s+12.5%/)
+      assert.notInclude(unchanged.output, "Past two days")
     }),
   )
 
@@ -252,6 +273,19 @@ describe("operation commands", () => {
       const invalid = yield* run(["operations", "folio"], () => Response.json({ rows: "not a table" }))
       assert.strictEqual(invalid.result._tag, "Failure")
       assert.include(invalid.errors, "answered in a way this CLI doesn't expect")
+      for (const args of [
+        ["operations", "folio"],
+        ["operation", "folio", "GET /notes"],
+        ["load", "folio"],
+      ]) {
+        const missing = yield* run(args, () =>
+          Response.json({ _tag: "ProjectNotFound", project: "folio" }, { status: 404 }),
+        )
+        assert.strictEqual(missing.result._tag, "Failure")
+        assert.strictEqual(missing.requests.length, 1)
+        assert.include(missing.errors, "https://cluenori.example has no project folio.")
+        assert.strictEqual(missing.output, "")
+      }
     }),
   )
 })
