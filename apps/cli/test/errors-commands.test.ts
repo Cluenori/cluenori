@@ -246,6 +246,7 @@ describe("error, log and trace commands", () => {
       })) {
         assert.strictEqual(url.searchParams.get(key), value)
       }
+      assert.include(answer.output, "folio on https://cluenori.example, 2026-10-19 08:00 UTC to 2026-10-19 09:00 UTC")
       assert.include(
         answer.output,
         "ERROR  notes-api  Notes.Exports\n  Export 42 failed\n  ExportError: Storage unavailable\n  trace " + traceId,
@@ -267,15 +268,21 @@ describe("error, log and trace commands", () => {
   it.effect("counts unshown log messages without confusing them with shown lines", () =>
     Effect.gen(function* () {
       const answer = yield* run(["log-messages", "folio", "--level", "error", "--search", "Export"], () =>
-        Response.json({ covered, messages: [message], lines: 19, unshown: 2 }),
+        Response.json({
+          covered,
+          messages: [message, { ...message, id: 5, lines: 6 }, { ...message, id: 6, lines: 3 }],
+          lines: 19,
+          unshown: 2,
+        }),
       )
       assert.strictEqual(answer.result._tag, "Success")
       const url = new URL(answer.requests[0]?.url ?? "")
       assert.strictEqual(url.pathname, "/api/projects/folio/logs/messages")
       assert.strictEqual(url.searchParams.get("level"), "error")
       assert.strictEqual(url.searchParams.get("search"), "Export")
+      assert.include(answer.output, "folio on https://cluenori.example, 2026-10-19 08:00 UTC to 2026-10-19 09:00 UTC")
       assert.match(answer.output, /ERROR\s+Export \{id\} failed\s+Notes.Exports\s+7\s+2026-10-19 09:00 UTC\s+4/)
-      assert.include(answer.output, "19 lines in 3 messages, the 1 with the most shown.")
+      assert.include(answer.output, "19 lines in 5 messages, the 3 with the most shown.")
       assert.include(answer.output, "./cluenori logs folio --message <ID>")
       const once = yield* run(["log-messages", "folio"], () =>
         Response.json({ messages: [{ ...message, lines: 1 }], lines: 1, unshown: 0 }),
