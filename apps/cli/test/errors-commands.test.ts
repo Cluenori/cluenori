@@ -300,6 +300,24 @@ describe("error, log and trace commands", () => {
     }),
   )
 
+  it.effect("accepts each supported explicit log level and refuses levels outside the indexed logs", () =>
+    Effect.gen(function* () {
+      for (const command of ["logs", "log-messages"]) {
+        for (const level of ["warn", "error", "fatal"]) {
+          const answer = yield* run([command, "folio", "--level", level], () =>
+            Response.json(command === "logs" ? { lines: [] } : { messages: [], lines: 0, unshown: 0 }),
+          )
+          assert.strictEqual(answer.result._tag, "Success")
+          assert.strictEqual(answer.requests.length, 1)
+          assert.strictEqual(new URL(answer.requests[0]?.url ?? "").searchParams.get("level"), level)
+        }
+        const refused = yield* run([command, "folio", "--level", "info"], () => Response.json({}))
+        assert.strictEqual(refused.result._tag, "Failure")
+        assert.isEmpty(refused.requests)
+      }
+    }),
+  )
+
   it.effect("opens a trace near the supplied time, with nested spans, logs and unread-file counts", () =>
     Effect.gen(function* () {
       const { level: _, ...unknownLevel } = plainLine
