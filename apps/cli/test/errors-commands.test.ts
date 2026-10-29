@@ -259,6 +259,7 @@ describe("error, log and trace commands", () => {
       assert.strictEqual(query.get("level"), "warn")
       for (const key of ["search", "category", "trace", "error", "message", "before"]) assert.isFalse(query.has(key))
       assert.notInclude(defaults.output, "Older ones")
+      assert.isTrue(defaults.output.endsWith("Queue busy"))
       const empty = yield* run(["logs", "folio"], () => Response.json({ lines: [] }))
       assert.strictEqual(empty.result._tag, "Success")
       assert.include(empty.output, "No warnings or errors match.")
@@ -385,6 +386,10 @@ describe("error, log and trace commands", () => {
       assert.strictEqual(complete.result._tag, "Success")
       assert.notInclude(complete.output, "wasn't read")
       assert.notInclude(complete.output, "weren't read")
+      assert.isTrue(complete.output.endsWith("notes-api"))
+      const logsOnly = yield* run(["trace", "folio", traceId], () => Response.json({ ...view, logs: [plainLine] }))
+      assert.strictEqual(logsOnly.result._tag, "Success")
+      assert.isTrue(logsOnly.output.endsWith("Queue busy"))
     }),
   )
 
