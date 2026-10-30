@@ -213,7 +213,8 @@ describe("today command", () => {
           assert.strictEqual(answer.result._tag, "Success")
           assert.include(answer.output, `${label}  folio  1.4.0 of notes-api, ${explanation}`)
           if (label === "Release failed") {
-            assert.include(answer.output, endedAt === undefined ? "2026-10-19 08:00 UTC" : "2026-10-19 09:00 UTC")
+            const expectedTime = endedAt === undefined ? "2026-10-19 08:00 UTC" : "2026-10-19 09:00 UTC"
+            assert.include(answer.output, `${explanation} ${expectedTime}`)
           }
           if (state === "lost") assert.include(answer.output, "GitHub or App Store Connect has the rest")
         }
