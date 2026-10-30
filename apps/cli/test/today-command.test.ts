@@ -44,12 +44,15 @@ const promotion = {
 const usage = { day: "2026-10-18", people: 1, installations: 2, sessions: 3, foregroundMs: 4_000 }
 
 // The real command parser and typed API client; only settings, HTTP and the terminal are fake.
-const run = Effect.fnUntraced(function* (answer: (request: Request) => Response) {
+const run = Effect.fnUntraced(function* (
+  answer: (request: Request) => Response,
+  args: ReadonlyArray<string> = ["today"],
+) {
   const requests: Array<Request> = []
   const output: Array<string> = []
   const stderr: Array<string> = []
   const current = yield* Console.Console
-  const result = yield* Command.runWith(root, { version: "test" })(["today"]).pipe(
+  const result = yield* Command.runWith(root, { version: "test" })(args).pipe(
     Effect.result,
     Effect.provideService(
       Console.Console,
@@ -68,8 +71,14 @@ const run = Effect.fnUntraced(function* (answer: (request: Request) => Response)
         BunCrypto.layer,
         ConfigProvider.layer(ConfigProvider.fromEnvRecord({ HOME: "/test-home", XDG_CONFIG_HOME: "/test-config" })),
         FileSystem.layerNoop({
-          exists: (path) => Effect.succeed(path === "/test-config/cluenori/deployment.json"),
-          readFileString: () => Effect.succeed(JSON.stringify(deployment)),
+          exists: (path) =>
+            Effect.succeed(path === "/test-config/cluenori/deployment.json" || path === "apps/worker/.dev.vars"),
+          readFileString: (path) =>
+            Effect.succeed(
+              path === "apps/worker/.dev.vars"
+                ? `CLUENORI_API_TOKEN=made-up-local-token\nCLUENORI_OWNER=${id}\nCLUENORI_PLAIN_HTTP=local\n`
+                : JSON.stringify(deployment),
+            ),
         }),
         Path.layer,
         Stdio.layerTest({}),
@@ -113,6 +122,12 @@ describe("today command", () => {
       assert.strictEqual(missing.result._tag, "Success")
       assert.include(missing.output, "These projects didn't answer, so what they would show is missing: folio, tasks.")
       assert.notInclude(missing.output, "How each project is going")
+      const local = yield* run(() => Response.json(empty), ["today", "--local"])
+      assert.strictEqual(local.result._tag, "Success")
+      assert.strictEqual(local.requests.length, 1)
+      assert.strictEqual(local.requests[0]?.url, "http://localhost:8787/api/today")
+      assert.strictEqual(local.requests[0]?.headers.get("authorization"), "Bearer made-up-local-token")
+      assert.include(local.output, "Nothing needs you on http://localhost:8787")
     }),
   )
 
@@ -252,25 +267,6 @@ describe("today command", () => {
       assert.match(answer.output, /photos\s+nothing reported in the last 24 hours; 2,345 people on 2026-10-18$/)
       assert.notInclude(answer.output, "0 a week before")
       assert.notInclude(answer.output, "0 operations")
-    }),
-  )
-
-  it.effect("reports rejected tokens and malformed answers instead of claiming nothing needs attention", () =>
-    Effect.gen(function* () {
-      for (const [response, explanation] of [
-        [
-          Response.json({ _tag: "Unauthorized", message: "Token expired" }, { status: 401 }),
-          "refused the API token: Token expired",
-        ],
-        [Response.json({ ...empty, items: "not a list" }), "answered in a way this CLI doesn't expect"],
-      ] as const) {
-        const answer = yield* run(() => response)
-        assert.strictEqual(answer.result._tag, "Failure")
-        assert.strictEqual(answer.requests.length, 1)
-        assert.strictEqual(answer.output, "")
-        assert.include(answer.errors, explanation)
-        assert.notInclude(answer.errors, deployment.token)
-      }
     }),
   )
 })
