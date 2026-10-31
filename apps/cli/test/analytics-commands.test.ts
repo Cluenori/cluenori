@@ -124,7 +124,7 @@ describe("feature command", () => {
       )
       assert.strictEqual(answer.result._tag, "Success")
       assert.include(answer.output, "Apps: 17 people used it, from 2026-10-01 to 2026-10-16.")
-      const appRows = answer.output.split("\n").filter((line) => /^2026-10-/.test(line))
+      const appRows = answer.output.split("\n").filter((line) => line.startsWith("2026-10-"))
       assert.strictEqual(appRows.length, 14)
       assert.match(appRows[0] ?? "", /^2026-10-03\s+2\s+7\s+3$/)
       assert.match(appRows[13] ?? "", /^2026-10-16\s+2\s+7\s+3$/)
