@@ -5,9 +5,9 @@ import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { ChildProcessSpawner } from "effect/process"
 
-import { feature } from "../src/analytics-commands.ts"
+import { feature, person } from "../src/analytics-commands.ts"
 
-const root = Command.make("cluenori").pipe(Command.withSubcommands([feature]))
+const root = Command.make("cluenori").pipe(Command.withSubcommands([feature, person]))
 const at = "2026-10-19T09:00:00.000Z"
 const id = "01960000-0000-7000-8000-000000000001"
 const empty = {
@@ -237,6 +237,176 @@ describe("feature command", () => {
         assert.strictEqual(answer.requests.length, 1)
         assert.include(answer.errors, message)
         assert.strictEqual(answer.output, "")
+      }
+    }),
+  )
+})
+
+describe("person command", () => {
+  const nobody = {
+    person: id,
+    users: [],
+    firstSeen: "2026-10-17T08:10:00.000Z",
+    lastSeen: at,
+    installations: [],
+    days: [],
+    features: [],
+    timeline: [],
+  }
+
+  it.effect("looks up person IDs and opaque user IDs without confusing UUID-shaped user IDs with person IDs", () =>
+    Effect.gen(function* () {
+      for (const user of [undefined, id, "reader+one?kind=guest&region=eu"]) {
+        const args = user === undefined ? ["person", "folio", id] : ["person", "folio", user, "--user"]
+        const answer = yield* run(args, () => Response.json(nobody))
+        assert.strictEqual(answer.result._tag, "Success")
+        assert.strictEqual(answer.requests.length, 1)
+        const request = answer.requests[0]
+        assert(request !== undefined)
+        const url = new URL(request.url)
+        assert.strictEqual(url.origin, "https://cluenori.example")
+        assert.strictEqual(url.pathname, `/api/projects/folio/people${user === undefined ? `/${id}` : ""}`)
+        assert.deepStrictEqual([...url.searchParams], user === undefined ? [] : [["user", user]])
+        assert.strictEqual(request.headers.get("authorization"), "Bearer made-up-test-token")
+        assert.include(answer.output, `Person ${id} of folio\n  user IDs: none`)
+        assert.include(answer.output, "first seen 2026-10-17 08:10 UTC, last seen 2026-10-19 09:00 UTC")
+        assert.include(answer.output, "Features they use, the last used first:\nNone marked.")
+        assert.include(answer.output, "Timeline, newest first (0 of 0):")
+        assert.notInclude(answer.output, "undefined")
+      }
+    }),
+  )
+
+  it.effect("shows linked users, feature totals, installations and each kind of timeline signal", () =>
+    Effect.gen(function* () {
+      const signal = { id, at, session: id }
+      const signals = [
+        { ...signal, _tag: "session.started" },
+        { ...signal, _tag: "session.ended", foregroundMs: 12_600 },
+        { ...signal, _tag: "app.launched", start: "warm", prewarmed: false, firstFrameMs: 237 },
+        { ...signal, _tag: "screen", screen: "share.sheet", feature: "notes.share" },
+        { ...signal, _tag: "event", name: "share.completed" },
+        { id, at, _tag: "metrickit", report: "diagnostics", crashes: 2, hangs: 5 },
+        { id, at, _tag: "metrickit", report: "metrics", crashes: 0, hangs: 0 },
+      ]
+      const installation = {
+        installation: id,
+        component: "notes-ios",
+        environment: "beta",
+        release: "1.4.0+58",
+        device: { model: "iPhone17,2", platform: "iOS", osVersion: "27.2", locale: "en-US", timeZone: "UTC" },
+        sdk: { name: "cluenori-swift", version: "0.1.0" },
+        firstSeen: nobody.firstSeen,
+        lastSeen: at,
+      }
+      const answer = yield* run(["person", "folio", id], () =>
+        Response.json({
+          ...nobody,
+          users: ["reader-one", "reader-two"],
+          features: [
+            { feature: "notes.share", days: 2, events: 7, screens: 3, lastDay: "2026-10-19" },
+            { days: 1, events: 4, screens: 8, lastDay: "2026-10-18" },
+          ],
+          installations: [
+            installation,
+            {
+              ...installation,
+              installation: "01960000-0000-7000-8000-000000000002",
+              component: "notes-web",
+              environment: "production",
+              release: "2.1.0",
+              device: { ...installation.device, model: "Chrome 141", platform: "web", osVersion: "Linux" },
+              lastSeen: "2026-10-18T10:20:00.000Z",
+            },
+          ],
+          timeline: signals.map((each, index) => ({
+            component: "notes-ios",
+            environment: "beta",
+            release: `1.4.${index}`,
+            installation: id,
+            signal: each,
+          })),
+        }),
+      )
+      assert.strictEqual(answer.result._tag, "Success")
+      assert.include(answer.output, "user IDs: reader-one, reader-two")
+      assert.match(
+        answer.output,
+        /notes.share\s+2 days, 7 events, 3 screens\s+last on 2026-10-19\n\(no feature\)\s+1 days, 4 events, 8 screens\s+last on 2026-10-18/,
+      )
+      assert.match(
+        answer.output,
+        /notes-ios beta 1.4.0\+58\s+iPhone17,2, iOS 27.2\s+last seen 2026-10-19 09:00 UTC\nnotes-web production 2.1.0\s+Chrome 141, web Linux\s+last seen 2026-10-18 10:20 UTC/,
+      )
+      const timeline = answer.output.split("\n").filter((line) => line.startsWith("2026-10-19 09:00:00"))
+      assert.deepStrictEqual(timeline, [
+        "2026-10-19 09:00:00 UTC  1.4.0  Session started",
+        "2026-10-19 09:00:00 UTC  1.4.1  Session ended, 13 s in the foreground",
+        "2026-10-19 09:00:00 UTC  1.4.2  Launched warm, first frame 237 ms",
+        "2026-10-19 09:00:00 UTC  1.4.3  Screen share.sheet  [notes.share]",
+        "2026-10-19 09:00:00 UTC  1.4.4  share.completed",
+        "2026-10-19 09:00:00 UTC  1.4.5  MetricKit diagnostics: 2 crashes, 5 hangs",
+        "2026-10-19 09:00:00 UTC  1.4.6  MetricKit metrics",
+      ])
+      assert.include(answer.output, "Timeline, newest first (7 of 7):")
+    }),
+  )
+
+  it.effect("keeps only the newest fourteen active days and fifty timeline entries without hiding their total", () =>
+    Effect.gen(function* () {
+      const days = Array.from({ length: 15 }, (_, index) => ({
+        day: `2026-10-${String(19 - index).padStart(2, "0")}`,
+        sessions: index + 2,
+        foregroundMs: 1234,
+      }))
+      const timeline = Array.from({ length: 51 }, (_, index) => ({
+        component: "notes-ios",
+        environment: "beta",
+        release: "1.4.0",
+        installation: id,
+        signal: { _tag: "event", id, at, session: id, name: `event.${index}` },
+      }))
+      const answer = yield* run(["person", "folio", id], () => Response.json({ ...nobody, days, timeline }))
+      assert.strictEqual(answer.result._tag, "Success")
+      const dayRows = answer.output.split("\n").filter((line) => /^2026-10-\d\d  \d+ sessions$/.test(line))
+      assert.strictEqual(dayRows.length, 14)
+      assert.strictEqual(dayRows[0], "2026-10-19  2 sessions")
+      assert.strictEqual(dayRows[13], "2026-10-06  15 sessions")
+      assert.include(answer.output, "Timeline, newest first (50 of 51):")
+      const entries = answer.output.split("\n").filter((line) => line.startsWith("2026-10-19 09:00:00"))
+      assert.strictEqual(entries.length, 50)
+      assert.strictEqual(entries[0], "2026-10-19 09:00:00 UTC  1.4.0  event.0")
+      assert.strictEqual(entries[49], "2026-10-19 09:00:00 UTC  1.4.0  event.49")
+    }),
+  )
+
+  it.effect("rejects invalid identifiers and distinguishes missing people, missing projects and invalid answers", () =>
+    Effect.gen(function* () {
+      for (const args of [
+        ["person", "Not a key", id],
+        ["person", "folio", "reader-one"],
+        ["person", "folio", "has spaces", "--user"],
+      ]) {
+        const answer = yield* run(args, () => Response.json(nobody))
+        assert.strictEqual(answer.result._tag, "Failure")
+        assert.isEmpty(answer.requests)
+        assert.include(answer.errors, "isn't")
+      }
+      for (const user of [false, true]) {
+        const who = user ? "reader-one" : id
+        for (const [body, status, message] of [
+          [{ _tag: "ProjectNotFound", project: "folio" }, 404, "has no project folio"],
+          [{ _tag: "PersonNotFound" }, 404, `has the ${user ? "user ID" : "ID"} ${who}`],
+          [{ _tag: "Unauthorized", message: "Token expired" }, 401, "refused the API token: Token expired"],
+          [{ person: "invalid" }, 200, "answered in a way this CLI doesn't expect"],
+        ] as const) {
+          const args = ["person", "folio", who, ...(user ? ["--user"] : [])]
+          const answer = yield* run(args, () => Response.json(body, { status }))
+          assert.strictEqual(answer.result._tag, "Failure")
+          assert.strictEqual(answer.requests.length, 1)
+          assert.include(answer.errors, message)
+          assert.strictEqual(answer.output, "")
+        }
       }
     }),
   )
