@@ -5,9 +5,9 @@ import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { ChildProcessSpawner } from "effect/process"
 
-import { incident, incidents } from "../src/incidents-commands.ts"
+import { incident, incidents, monitor, monitors } from "../src/incidents-commands.ts"
 
-const root = Command.make("cluenori").pipe(Command.withSubcommands([incidents, incident]))
+const root = Command.make("cluenori").pipe(Command.withSubcommands([incidents, incident, monitors, monitor]))
 const deployment = { jurisdiction: "eu", url: "https://cluenori.example", token: "made-up-test-token" }
 const id = "01960000-0000-7000-8000-000000000001"
 const otherId = "01960000-0000-7000-8000-000000000002"
@@ -78,6 +78,306 @@ const run = Effect.fnUntraced(function* (args: ReadonlyArray<string>, answer: (r
     ),
   )
   return { result, requests, output: output.join("\n"), errors: errors.join("\n") }
+})
+
+describe("monitor queries", () => {
+  const watched = {
+    id: monitorId,
+    component: "notes-api",
+    condition: { _tag: "noAnswer", subject: { _tag: "url", url: "https://notes.example/health" } },
+    level: "alarm",
+    addedAt: openedAt,
+  }
+  const state = { monitor: watched, days: [], firing: false }
+  const detail = { state, recent: [], failures: [], incidents: [] }
+
+  it.effect("lists conditions, environments and alert levels without confusing unchecked, passed and firing", () =>
+    Effect.gen(function* () {
+      const cases = [
+        [
+          watched,
+          {},
+          "notes-api",
+          "https://notes.example/health: doesn't answer two checks in a row",
+          "alarm",
+          "not looked at yet",
+        ],
+        [
+          watched,
+          { lastCheck: { at } },
+          "notes-api",
+          "https://notes.example/health: doesn't answer two checks in a row",
+          "alarm",
+          "passed",
+        ],
+        [
+          watched,
+          { lastCheck: { at, problem: "HTTP 503" } },
+          "notes-api",
+          "https://notes.example/health: doesn't answer two checks in a row",
+          "alarm",
+          "HTTP 503",
+        ],
+        [
+          {
+            ...watched,
+            environment: "staging",
+            condition: { _tag: "nothingFor", subject: { _tag: "operation", operation: "cleanup.run" }, minutes: 30 },
+            level: "quiet",
+          },
+          { measured: { at, value: 0 } },
+          "notes-api (staging)",
+          "cleanup.run: nothing for 30 minutes",
+          "quiet",
+          "fine",
+        ],
+        [
+          {
+            ...watched,
+            condition: { _tag: "moreThan", subject: { _tag: "event", event: "exported" }, count: 17, minutes: 60 },
+            level: "timeSensitive",
+          },
+          { measured: { at, value: 23 }, firing: true },
+          "notes-api",
+          "event exported: more than 17 in 1 hour",
+          "time sensitive",
+          "firing",
+        ],
+        [
+          {
+            ...watched,
+            condition: {
+              _tag: "moreThan",
+              subject: { _tag: "error", error: "123456789abcdef0" },
+              count: 3,
+              minutes: 15,
+            },
+          },
+          {},
+          "notes-api",
+          "error 123456789abcdef0: more than 3 in 15 minutes",
+          "alarm",
+          "not looked at yet",
+        ],
+        [
+          {
+            ...watched,
+            condition: { _tag: "moreThan", subject: { _tag: "message", message: 42 }, count: 5, minutes: 15 },
+          },
+          {},
+          "notes-api",
+          "log message 42: more than 5 in 15 minutes",
+          "alarm",
+          "not looked at yet",
+        ],
+        [
+          {
+            ...watched,
+            condition: {
+              _tag: "latencyAbove",
+              subject: { _tag: "operation", operation: "POST /notes" },
+              percentile: 95,
+              ms: 1500,
+              minutes: 15,
+            },
+          },
+          {},
+          "notes-api",
+          "POST /notes: p95 above 1.5s over 15 minutes",
+          "alarm",
+          "not looked at yet",
+        ],
+        [
+          {
+            ...watched,
+            condition: {
+              _tag: "errorRateAbove",
+              subject: { _tag: "operation", operation: "POST /notes" },
+              percent: 12.5,
+              minutes: 15,
+            },
+          },
+          {},
+          "notes-api",
+          "POST /notes: more than 12.5% failed over 15 minutes",
+          "alarm",
+          "not looked at yet",
+        ],
+      ] as const
+      const answer = yield* run(["monitors", "folio"], () =>
+        Response.json({
+          monitors: cases.map(([watchedMonitor, status]) => ({ ...state, monitor: watchedMonitor, ...status })),
+        }),
+      )
+      assert.strictEqual(answer.result._tag, "Success")
+      assert.strictEqual(answer.requests.length, 1)
+      assert.strictEqual(answer.requests[0]?.url, "https://cluenori.example/api/projects/folio/monitors")
+      assert.strictEqual(answer.requests[0]?.method, "GET")
+      assert.strictEqual(answer.requests[0]?.headers.get("authorization"), "Bearer made-up-test-token")
+      assert.deepStrictEqual(
+        answer.output
+          .split("\n")
+          .slice(1)
+          .map((row) => row.replace(/ {2,}/g, " | ")),
+        cases.map(([, , where, condition, level, now]) => `${where} | ${condition} | ${level} | ${now} | ${monitorId}`),
+      )
+      const none = yield* run(["monitors", "folio"], () => Response.json({ monitors: [] }))
+      assert.strictEqual(none.result._tag, "Success")
+      assert.include(none.output, "folio has no monitors.")
+      assert.include(none.output, "./cluenori monitor add folio <component> --url <url>")
+    }),
+  )
+
+  it.effect("keeps absent URL check data unknown and totals unequal days and failures for uptime", () =>
+    Effect.gen(function* () {
+      const cases = [
+        [{}, "Not checked yet."],
+        [{ lastCheck: { at } }, "Up; last checked 2026-10-19 09:00 UTC."],
+        [
+          { lastCheck: { at, ms: 0 }, since: openedAt },
+          "Up since 2026-10-19 08:00 UTC; last checked 2026-10-19 09:00 UTC, answered in 0.00ms.",
+        ],
+        [
+          { lastCheck: { at, problem: "HTTP 503", ms: 1250 }, since: openedAt },
+          "Down: HTTP 503 since 2026-10-19 08:00 UTC; last checked 2026-10-19 09:00 UTC, answered in 1.3s.",
+        ],
+      ] as const
+      for (const [status, expected] of cases) {
+        const answer = yield* run(["monitor", "show", "folio", monitorId, "--local"], () =>
+          Response.json({
+            ...detail,
+            state: { ...state, ...status },
+          }),
+        )
+        assert.strictEqual(answer.result._tag, "Success")
+        assert.strictEqual(answer.requests.length, 1)
+        assert.strictEqual(answer.requests[0]?.url, `http://localhost:8787/api/projects/folio/monitors/${monitorId}`)
+        assert.strictEqual(answer.requests[0]?.headers.get("authorization"), "Bearer made-up-local-token")
+        assert.strictEqual(
+          answer.output,
+          `https://notes.example/health: doesn't answer two checks in a row, of notes-api; alerts alarm; looked at every minute since 2026-10-19 08:00 UTC.\n${expected}`,
+        )
+      }
+      const answer = yield* run(["monitor", "show", "folio", monitorId], () =>
+        Response.json({
+          ...detail,
+          state: {
+            ...state,
+            days: [
+              { day: "2026-10-18", checks: 7, failed: 2, averageMs: 0 },
+              { day: "2026-10-19", checks: 13, failed: 1 },
+            ],
+          },
+          failures: [
+            { at, problem: "HTTP 503" },
+            { at: openedAt, problem: "Timed out" },
+          ],
+          incidents: [
+            { ...found, resolvedAt: at },
+            { ...found, id: otherId },
+          ],
+        }),
+      )
+      assert.strictEqual(answer.result._tag, "Success")
+      assert.include(answer.output, "Up 85% of 20 checks over its last 2 days with checks:")
+      assert.match(answer.output, /2026-10-18 +7 +2 +0\.00ms\n2026-10-19 +13 +1\n/)
+      assert.match(answer.output, /2026-10-19 09:00 UTC +HTTP 503\n2026-10-19 08:00 UTC +Timed out/)
+      assert.match(
+        answer.output,
+        new RegExp(
+          `2026-10-19 08:00 UTC +resolved 2026-10-19 09:00 UTC +${id}\\n2026-10-19 08:00 UTC +open +${otherId}$`,
+        ),
+      )
+    }),
+  )
+
+  it.effect("distinguishes no measurement, too few runs, zero runs and measured latency or error rate", () =>
+    Effect.gen(function* () {
+      const operation = { _tag: "operation", operation: "POST /notes" }
+      const cases = [
+        [{ _tag: "nothingFor", subject: operation, minutes: 30 }, {}, "Not looked at yet."],
+        [
+          { _tag: "latencyAbove", subject: operation, percentile: 99, ms: 1500, minutes: 15 },
+          { measured: { at } },
+          "Fine: too few runs to judge, at 2026-10-19 09:00 UTC.",
+        ],
+        [
+          { _tag: "latencyAbove", subject: operation, percentile: 50, ms: 80, minutes: 15 },
+          { measured: { at, value: 120 }, firing: true },
+          "Firing: p50 120ms, at 2026-10-19 09:00 UTC.",
+        ],
+        [
+          { _tag: "errorRateAbove", subject: operation, percent: 12.5, minutes: 15 },
+          { measured: { at, value: 17.25 }, firing: true },
+          "Firing: 17.3% failed, at 2026-10-19 09:00 UTC.",
+        ],
+        [
+          { _tag: "nothingFor", subject: operation, minutes: 30 },
+          { measured: { at, value: 0 } },
+          "Fine: 0 in its window, at 2026-10-19 09:00 UTC.",
+        ],
+        [
+          { _tag: "moreThan", subject: { _tag: "event", event: "exported" }, count: 4, minutes: 15 },
+          { measured: { at, value: 7 }, firing: true },
+          "Firing: 7 in its window, at 2026-10-19 09:00 UTC.",
+        ],
+      ] as const
+      for (const [condition, status, expected] of cases) {
+        const answer = yield* run(["monitor", "show", "folio", monitorId], () =>
+          Response.json({
+            ...detail,
+            state: { ...state, monitor: { ...watched, condition, environment: "staging", level: "quiet" }, ...status },
+          }),
+        )
+        assert.strictEqual(answer.result._tag, "Success")
+        assert.include(answer.output, "of notes-api (staging); alerts quiet;")
+        assert.strictEqual(answer.output.split("\n")[1], expected)
+        assert.strictEqual(answer.output.split("\n").length, 2)
+      }
+    }),
+  )
+
+  it.effect("rejects invalid monitor identifiers before HTTP and reports missing or malformed answers", () =>
+    Effect.gen(function* () {
+      for (const args of [
+        ["monitors", "Not a key"],
+        ["monitor", "show", "Not a key", monitorId],
+        ["monitor", "show", "folio", "bad-id"],
+      ]) {
+        const answer = yield* run(args, () => Response.json(detail))
+        assert.strictEqual(answer.result._tag, "Failure")
+        assert.isEmpty(answer.requests)
+        assert.include(answer.errors, "isn't")
+        assert.strictEqual(answer.output, "")
+      }
+      for (const args of [
+        ["monitors", "folio"],
+        ["monitor", "show", "folio", monitorId],
+      ]) {
+        const failures = [
+          [{ _tag: "ProjectNotFound", project: "folio" }, 404, "https://cluenori.example has no project folio."],
+          [{ _tag: "Unauthorized", message: "Token expired" }, 401, "refused the API token: Token expired"],
+          [{ state: "not a monitor" }, 200, "answered in a way this CLI doesn't expect"],
+          ...(args[0] === "monitor"
+            ? [
+                [
+                  { _tag: "MonitorNotFound", monitor: monitorId },
+                  404,
+                  `folio has no monitor ${monitorId}. See them: ./cluenori monitors folio`,
+                ] as const,
+              ]
+            : []),
+        ] as const
+        for (const [body, status, expected] of failures) {
+          const answer = yield* run(args, () => Response.json(body, { status }))
+          assert.strictEqual(answer.result._tag, "Failure")
+          assert.strictEqual(answer.requests.length, 1)
+          assert.include(answer.errors, expected)
+          assert.strictEqual(answer.output, "")
+        }
+      }
+    }),
+  )
 })
 
 describe("incident commands", () => {
