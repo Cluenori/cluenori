@@ -186,12 +186,21 @@ describe("today command", () => {
           "nothing in the last day; last at 2026-10-19 08:00 UTC",
         ],
         [{ _tag: "silent", project: "tasks" }, "No data", "nothing in the last 8 days"],
+        [
+          {
+            _tag: "keyExpiring",
+            project: "folio",
+            key: { id, component: "notes-api", name: "Deploy", createdAt: startedAt },
+          },
+          "Key expires",
+          'notes-api\'s ingest key "Deploy"; add a key and deploy it before then',
+        ],
       ] as const
       const answer = yield* run(() =>
         Response.json({ ...empty, projects: [project], items: cases.map(([item]) => item) }),
       )
       assert.strictEqual(answer.result._tag, "Success")
-      assert.include(answer.output, "10 things need you on https://cluenori.example, looked at 2026-10-19 09:00 UTC:")
+      assert.include(answer.output, "11 things need you on https://cluenori.example, looked at 2026-10-19 09:00 UTC:")
       const rows = answer.output.split("\n").slice(2)
       assert.strictEqual(rows.length, cases.length)
       for (const [index, [item, kind, evidence]] of cases.entries()) {
