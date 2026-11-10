@@ -5,9 +5,11 @@ import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { ChildProcessSpawner } from "effect/process"
 
-import { incident, incidents, monitor, monitors } from "../src/incidents-commands.ts"
+import { acknowledge, incident, incidents, monitor, monitors } from "../src/incidents-commands.ts"
 
-const root = Command.make("cluenori").pipe(Command.withSubcommands([incidents, incident, monitors, monitor]))
+const root = Command.make("cluenori").pipe(
+  Command.withSubcommands([incidents, incident, acknowledge, monitors, monitor]),
+)
 const deployment = { jurisdiction: "eu", url: "https://cluenori.example", token: "made-up-test-token" }
 const id = "01960000-0000-7000-8000-000000000001"
 const otherId = "01960000-0000-7000-8000-000000000002"
@@ -78,6 +80,230 @@ const run = Effect.fnUntraced(function* (args: ReadonlyArray<string>, answer: (r
     ),
   )
   return { result, requests, output: output.join("\n"), errors: errors.join("\n") }
+})
+
+describe("monitor changes", () => {
+  const url = "https://notes.example/health"
+  const operation = { _tag: "operation", operation: "cleanup.run" }
+  const base = { component: "notes-api", level: "timeSensitive" }
+  const added = {
+    ...base,
+    id: monitorId,
+    addedAt: at,
+    condition: { _tag: "noAnswer", subject: { _tag: "url", url } },
+  }
+
+  it.effect("sends exactly the chosen subject, condition, window and alert level", () =>
+    Effect.gen(function* () {
+      const cases = [
+        [["--url", url], { ...base, level: "alarm", condition: added.condition }],
+        [
+          ["--operation", "cleanup.run", "--nothing-for", "2d"],
+          { ...base, condition: { _tag: "nothingFor", subject: operation, minutes: 2880 } },
+        ],
+        [
+          ["--event", "exported", "--nothing-for", "3h", "--level", "alarm"],
+          {
+            ...base,
+            level: "alarm",
+            condition: { _tag: "nothingFor", subject: { _tag: "event", event: "exported" }, minutes: 180 },
+          },
+        ],
+        [
+          ["--event", "exported", "--more-than", "0"],
+          {
+            ...base,
+            condition: { _tag: "moreThan", subject: { _tag: "event", event: "exported" }, count: 0, minutes: 15 },
+          },
+        ],
+        [
+          ["--error", "123456789abcdef0", "--more-than", "7", "--within", "1d", "--level", "quiet"],
+          {
+            ...base,
+            level: "quiet",
+            condition: {
+              _tag: "moreThan",
+              subject: { _tag: "error", error: "123456789abcdef0" },
+              count: 7,
+              minutes: 1440,
+            },
+          },
+        ],
+        [
+          ["--message", "42", "--more-than", "3", "--within", "2h", "--level", "time-sensitive"],
+          {
+            ...base,
+            condition: { _tag: "moreThan", subject: { _tag: "message", message: 42 }, count: 3, minutes: 120 },
+          },
+        ],
+        ...([50, 95, 99] as const).map(
+          (percentile) =>
+            [
+              [
+                "--operation",
+                "cleanup.run",
+                `--p${percentile}-above`,
+                "237",
+                "--within",
+                "7m",
+                "--environment",
+                "staging",
+              ],
+              {
+                ...base,
+                environment: "staging",
+                condition: { _tag: "latencyAbove", subject: operation, percentile, ms: 237, minutes: 7 },
+              },
+            ] as const,
+        ),
+        [
+          ["--operation", "cleanup.run", "--error-rate-above", "12.5"],
+          { ...base, condition: { _tag: "errorRateAbove", subject: operation, percent: 12.5, minutes: 15 } },
+        ],
+      ] as const
+      for (const [flags, expected] of cases) {
+        const answer = yield* run(["monitor", "add", "folio", "notes-api", ...flags], () =>
+          Response.json(added, { status: 201 }),
+        )
+        assert.strictEqual(answer.result._tag, "Success")
+        assert.strictEqual(answer.requests.length, 1)
+        const request = answer.requests[0]
+        assert(request !== undefined)
+        assert.strictEqual(request.url, "https://cluenori.example/api/projects/folio/monitors")
+        assert.strictEqual(request.method, "POST")
+        const payload = yield* Effect.promise(() => request.json())
+        assert.deepStrictEqual(payload, expected)
+        // Confirmation describes the API's answer, not a reconstruction of the request.
+        assert.include(
+          answer.output,
+          `Added a monitor to notes-api: ${url}: doesn't answer two checks in a row; alerts time sensitive.`,
+        )
+        assert.include(answer.output, `Its ID: ${monitorId}`)
+      }
+    }),
+  )
+
+  it.effect("rejects ambiguous subjects, conditions and unsupported values before sending a write", () =>
+    Effect.gen(function* () {
+      const cases = [
+        [["--url", url, "--event", "exported"], "Give exactly one of --url"],
+        [[], "Give exactly one of --url"],
+        [["--url", url, "--more-than", "1"], "A URL's monitor takes no condition"],
+        [["--operation", "cleanup.run"], "Give exactly one of --nothing-for"],
+        [["--operation", "cleanup.run", "--p50-above", "10", "--p99-above", "20"], "Give exactly one of --nothing-for"],
+        [["--operation", "cleanup.run", "--nothing-for", "1w"], "isn't a span"],
+        [["--event", "exported", "--more-than", "2", "--within", "x15m"], "isn't a span"],
+        [["--event", "exported", "--more-than", "2", "--within", "15mx"], "isn't a span"],
+        [["--event", "exported", "--more-than", "2", "--within", "2d"], "That monitor isn't one Cluenori takes"],
+        [["--operation", "cleanup.run", "--nothing-for", "0m"], "That monitor isn't one Cluenori takes"],
+        [["--operation", "cleanup.run", "--more-than", "2"], "That monitor isn't one Cluenori takes"],
+        [["--url", url, "--environment", "staging"], "That monitor isn't one Cluenori takes"],
+        [["--url", "file:///tmp/notes"], "isn't a URL to monitor"],
+        [["--message", "not-a-number", "--more-than", "2"], "isn't a log message's ID"],
+        [["--operation", "cleanup.run", "--error-rate-above", "0"], "That monitor isn't one Cluenori takes"],
+        [["--operation", "cleanup.run", "--error-rate-above", "100"], "That monitor isn't one Cluenori takes"],
+      ] as const
+      for (const [flags, message] of cases) {
+        const answer = yield* run(["monitor", "add", "folio", "notes-api", ...flags], () => Response.json(added))
+        assert.strictEqual(answer.result._tag, "Failure")
+        assert.isEmpty(answer.requests)
+        assert.include(answer.errors, message)
+        assert.strictEqual(answer.output, "")
+      }
+    }),
+  )
+
+  it.effect("reports conflicts and missing components without confirming an unsuccessful creation", () =>
+    Effect.gen(function* () {
+      for (const [body, status, message] of [
+        [{ _tag: "ProjectNotFound", project: "folio" }, 404, "has no project folio"],
+        [{ _tag: "ComponentNotFound", component: "notes-api" }, 404, "folio has no component notes-api"],
+        [
+          { _tag: "MonitorExists", monitor: otherId },
+          409,
+          `already has this monitor: ./cluenori monitor show folio ${otherId}`,
+        ],
+        [{ _tag: "MonitorLimitReached", limit: 30 }, 409, "folio has 30 monitors, as many as it may"],
+        [{ _tag: "Unauthorized", message: "Token expired" }, 401, "refused the API token: Token expired"],
+        [{ monitor: "invalid" }, 201, "answered in a way this CLI doesn't expect"],
+      ] as const) {
+        const answer = yield* run(["monitor", "add", "folio", "notes-api", "--url", url], () =>
+          Response.json(body, { status }),
+        )
+        assert.strictEqual(answer.result._tag, "Failure")
+        assert.strictEqual(answer.requests.length, 1)
+        assert.include(answer.errors, message)
+        assert.strictEqual(answer.output, "")
+      }
+    }),
+  )
+
+  it.effect("removes and acknowledges only the requested record, using the selected deployment", () =>
+    Effect.gen(function* () {
+      for (const locally of [false, true]) {
+        for (const removing of [false, true]) {
+          const args = removing ? ["monitor", "remove", "folio", monitorId] : ["acknowledge", "folio", id]
+          const answer = yield* run([...args, ...(locally ? ["--local"] : [])], () =>
+            removing
+              ? new Response(null, { status: 204 })
+              : Response.json({ ...found, title: "Export failing", acknowledgedAt: at }),
+          )
+          assert.strictEqual(answer.result._tag, "Success")
+          assert.strictEqual(answer.requests.length, 1)
+          const request = answer.requests[0]
+          assert(request !== undefined)
+          assert.strictEqual(
+            request.url,
+            `${locally ? "http://localhost:8787" : "https://cluenori.example"}/api/projects/folio/${removing ? `monitors/${monitorId}` : `incidents/${id}/acknowledge`}`,
+          )
+          assert.strictEqual(request.method, removing ? "DELETE" : "POST")
+          assert.strictEqual(
+            request.headers.get("authorization"),
+            `Bearer ${locally ? "made-up-local-token" : "made-up-test-token"}`,
+          )
+          assert.strictEqual(
+            answer.output,
+            removing
+              ? "Removed the monitor, and resolved its open incident, if it had one."
+              : "Acknowledged: Export failing. It tells no one more.",
+          )
+        }
+      }
+    }),
+  )
+
+  it.effect("rejects invalid write identifiers and reports missing records without claiming success", () =>
+    Effect.gen(function* () {
+      for (const prefix of [["monitor", "remove"], ["acknowledge"]]) {
+        for (const [project, record] of [
+          ["Not a key", id],
+          ["folio", "bad-id"],
+        ] as const) {
+          const answer = yield* run([...prefix, project, record], () => new Response(null, { status: 204 }))
+          assert.strictEqual(answer.result._tag, "Failure")
+          assert.isEmpty(answer.requests)
+          assert.include(answer.errors, "isn't")
+        }
+        for (const [body, status, message] of [
+          [{ _tag: "ProjectNotFound", project: "folio" }, 404, "has no project folio"],
+          [{ _tag: "Unauthorized", message: "Token expired" }, 401, "refused the API token: Token expired"],
+          [
+            prefix[0] === "monitor"
+              ? { _tag: "MonitorNotFound", monitor: id }
+              : { _tag: "IncidentNotFound", incident: id },
+            404,
+            `folio has no ${prefix[0] === "monitor" ? "monitor" : "incident"} ${id}`,
+          ],
+        ] as const) {
+          const answer = yield* run([...prefix, "folio", id], () => Response.json(body, { status }))
+          assert.strictEqual(answer.result._tag, "Failure")
+          assert.strictEqual(answer.requests.length, 1)
+          assert.include(answer.errors, message)
+          assert.strictEqual(answer.output, "")
+        }
+      }
+    }),
+  )
 })
 
 describe("monitor queries", () => {
