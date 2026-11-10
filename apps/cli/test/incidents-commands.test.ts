@@ -192,6 +192,7 @@ describe("monitor changes", () => {
         [["--operation", "cleanup.run"], "Give exactly one of --nothing-for"],
         [["--operation", "cleanup.run", "--p50-above", "10", "--p99-above", "20"], "Give exactly one of --nothing-for"],
         [["--operation", "cleanup.run", "--nothing-for", "1w"], "isn't a span"],
+        [["--event", "exported", "--more-than", "2", "--within", "x15m"], "isn't a span"],
         [["--event", "exported", "--more-than", "2", "--within", "15mx"], "isn't a span"],
         [["--event", "exported", "--more-than", "2", "--within", "2d"], "That monitor isn't one Cluenori takes"],
         [["--operation", "cleanup.run", "--nothing-for", "0m"], "That monitor isn't one Cluenori takes"],
