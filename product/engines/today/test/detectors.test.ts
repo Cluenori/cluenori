@@ -271,6 +271,7 @@ describe("sortToday", () => {
     })
     const unknownExpiry: TodayItem = { _tag: "keyExpiring", project: notes, key: undatedKey }
     const knownExpiry: TodayItem = { _tag: "keyExpiring", project: notes, key: key("2", now + hour) }
+    const quietItem: TodayItem = { _tag: "quiet", project: notes, ...quietOperation("cleanup.run", now - hour) }
     const atlas: TodayItem = { _tag: "silent", project: ProjectKey.make("atlas") }
     const notesSilent: TodayItem = { _tag: "silent", project: notes }
     const tasks: TodayItem = { _tag: "silent", project: ProjectKey.make("tasks") }
@@ -278,6 +279,7 @@ describe("sortToday", () => {
       [recent, older],
       [moreSlowed, lessSlowed],
       [unknownExpiry, knownExpiry],
+      [quietItem, unknownExpiry],
       [atlas, notesSilent, tasks],
     ]) {
       assert.deepStrictEqual(sortToday(ordered), ordered)
