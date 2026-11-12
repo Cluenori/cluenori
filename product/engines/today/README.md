@@ -84,6 +84,9 @@ of the last day and the 7 days before, the load of the last 24 hours, and apps' 
 
 ## Decisions and constraints
 
+- **What it trusts:** the project's engines for typed state, and the host for typed items from
+  modules. Today composes their evidence; decoding wire input and verifying the records are the
+  API boundary's and each engine's responsibility.
 - **Today asks every project, at most 8 at once:** one request to each project's object, which
   answers its items and its pulse from its own database. Money at risk and affected users, which
   the concept orders by, come with the modules that know them.

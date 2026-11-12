@@ -25,7 +25,7 @@ export const mutationTargets: ReadonlyArray<MutationTarget> = [
   { folder: "product/engines/phones", floor: 61.46 },
   { folder: "product/engines/projects", floor: 62.74 },
   { folder: "product/engines/signals", floor: 65.55 },
-  { folder: "product/engines/today", floor: 45.11 },
+  { folder: "product/engines/today", floor: 49.01 },
   { folder: "product/modules/analytics", floor: 55.65 },
   { folder: "product/modules/releases", floor: 70.91 },
   { folder: "apps/cli", floor: 42.31 },
