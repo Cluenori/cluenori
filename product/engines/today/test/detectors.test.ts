@@ -221,6 +221,14 @@ describe("sortToday", () => {
     const input = ordered.toReversed()
     assert.deepStrictEqual(sortToday(input), ordered)
     assert.deepStrictEqual(input, ordered.toReversed())
+    // Sorting one long reversed run can hide a missing rank: compare every pair too, so
+    // timestamps cannot accidentally put two different urgency classes in the right order.
+    for (const [index, urgent] of ordered.entries()) {
+      for (const later of ordered.slice(index + 1)) {
+        assert.deepStrictEqual(sortToday([urgent, later]), [urgent, later])
+        assert.deepStrictEqual(sortToday([later, urgent]), [urgent, later])
+      }
+    }
   })
 
   it("orders errors by recency, slower operations by their ratio, and equal urgency by project key", () => {
