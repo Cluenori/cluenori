@@ -21,7 +21,10 @@ const paired = {
 }
 
 // The real parser, typed client and response schemas; only external seams are fake.
-const run = Effect.fnUntraced(function* (args: ReadonlyArray<string>, answer: (request: Request) => Response) {
+const run = Effect.fnUntraced(function* (
+  args: ReadonlyArray<string>,
+  answer: (request: Request) => Response | Promise<Response>,
+) {
   const requests: Array<Request> = []
   const output: Array<string> = []
   const errors: Array<string> = []
@@ -230,6 +233,36 @@ describe("phone commands", () => {
         assert.strictEqual(answer.output, "")
         assert.notInclude(answer.errors, "undefined")
       }
+    }),
+  )
+
+  it.effect("distinguishes an offline server from an unexpected HTTP response and explains how to recover", () =>
+    Effect.gen(function* () {
+      for (const [args, url, recovery] of [
+        [
+          ["phones"],
+          "https://cluenori.example/api/phones",
+          "Couldn't reach https://cluenori.example. Check that it is deployed: ./setup.",
+        ],
+        [
+          ["phones", "--local"],
+          "http://localhost:8787/api/phones",
+          "Nothing answers at http://localhost:8787. Start Cluenori on this computer with ./run, in another terminal.",
+        ],
+      ] as const) {
+        const answer = yield* run(args, () => Promise.reject("network unavailable"))
+        assert.strictEqual(answer.result._tag, "Failure")
+        assert.strictEqual(answer.requests.length, 1)
+        assert.strictEqual(answer.requests[0]?.url, url)
+        assert.strictEqual(answer.errors, recovery)
+        assert.strictEqual(answer.output, "")
+      }
+      const unexpected = yield* run(["phones"], () => new Response("Service unavailable", { status: 503 }))
+      assert.strictEqual(unexpected.result._tag, "Failure")
+      assert.strictEqual(unexpected.requests.length, 1)
+      assert.include(unexpected.errors, "https://cluenori.example answered in a way this CLI doesn't expect:")
+      assert.notInclude(unexpected.errors, "Couldn't reach")
+      assert.strictEqual(unexpected.output, "")
     }),
   )
 
