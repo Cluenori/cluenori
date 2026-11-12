@@ -206,8 +206,10 @@ describe("today command", () => {
       for (const [index, [item, kind, evidence]] of cases.entries()) {
         const row = rows[index]
         assert(row !== undefined)
-        assert.isTrue(row.startsWith(`${kind}  `), row)
-        assert.include(row, item.project === "folio" ? "Folio Notes" : "tasks")
+        const name = item.project === "folio" ? "Folio Notes" : "tasks"
+        // The longest kind is 22 characters and the longest project name 11: both columns
+        // must align even when an earlier row's labels are shorter.
+        assert.isTrue(row.startsWith(`${kind.padEnd(22)}  ${name.padEnd(11)}  `), row)
         assert.include(row, evidence)
       }
       const one = yield* run(() => Response.json({ ...empty, items: [cases[9][0]] }))
@@ -272,8 +274,10 @@ describe("today command", () => {
         answer.output,
         "Folio Notes  21 operations in the last 24 hours, 5 failed; 1 person on 2026-10-18, 9 a week before",
       )
-      assert.match(answer.output, /tasks\s+nothing reported in the last 24 hours\n/)
-      assert.match(answer.output, /photos\s+nothing reported in the last 24 hours; 2,345 people on 2026-10-18$/)
+      assert.include(answer.output, "tasks        nothing reported in the last 24 hours\n")
+      assert.isTrue(
+        answer.output.endsWith("photos       nothing reported in the last 24 hours; 2,345 people on 2026-10-18"),
+      )
       assert.notInclude(answer.output, "0 a week before")
       assert.notInclude(answer.output, "0 operations")
     }),
