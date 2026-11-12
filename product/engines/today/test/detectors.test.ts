@@ -199,6 +199,88 @@ describe("itemsOf", () => {
 })
 
 describe("sortToday", () => {
+  it("keeps every urgency class ahead of the next even when the input arrives least urgent first", () => {
+    const ordered: ReadonlyArray<TodayItem> = [
+      { _tag: "incident", project: notes, incident: incident("a", now - hour) },
+      { _tag: "error", project: notes, error: error("0000000000000001", now - hour, now), isNew: true, ongoing: true },
+      { _tag: "incident", project: notes, incident: incident("b", now, now) },
+      { _tag: "error", project: notes, error: error("0000000000000002", now - hour, now), isNew: true, ongoing: false },
+      {
+        _tag: "slower",
+        project: notes,
+        component: api,
+        operation: EnvelopeName.make("GET /notes"),
+        p95Ms: 900,
+        usualP95Ms: 300,
+      },
+      { _tag: "quiet", project: notes, ...quietOperation("cleanup.run", now - hour) },
+      { _tag: "keyExpiring", project: notes, key: key("1", now + hour) },
+      promotion("1", "approved", now),
+      { _tag: "silent", project: notes },
+    ]
+    const input = ordered.toReversed()
+    assert.deepStrictEqual(sortToday(input), ordered)
+    assert.deepStrictEqual(input, ordered.toReversed())
+  })
+
+  it("orders errors by recency, slower operations by their ratio, and equal urgency by project key", () => {
+    const recent: TodayItem = {
+      _tag: "error",
+      project: notes,
+      error: error("0000000000000001", now - hour, now),
+      isNew: true,
+      ongoing: true,
+    }
+    const older: TodayItem = {
+      _tag: "error",
+      project: notes,
+      error: error("0000000000000002", now - hour, now - minute),
+      isNew: true,
+      ongoing: true,
+    }
+    // A larger absolute p95 can still be less slowed: 600/100 = 6, but 1200/400 = 3.
+    const moreSlowed: TodayItem = {
+      _tag: "slower",
+      project: notes,
+      component: api,
+      operation: EnvelopeName.make("GET /notes"),
+      p95Ms: 600,
+      usualP95Ms: 100,
+    }
+    const lessSlowed: TodayItem = {
+      _tag: "slower",
+      project: notes,
+      component: api,
+      operation: EnvelopeName.make("POST /export"),
+      p95Ms: 1200,
+      usualP95Ms: 400,
+    }
+    const undatedKey = new IngestKeyInfo({
+      id: key("1", now).id,
+      component: api,
+      name: IngestKeyName.make("deploy"),
+      createdAt: at(now - hour),
+    })
+    const unknownExpiry: TodayItem = { _tag: "keyExpiring", project: notes, key: undatedKey }
+    const knownExpiry: TodayItem = { _tag: "keyExpiring", project: notes, key: key("2", now + hour) }
+    const atlas: TodayItem = { _tag: "silent", project: ProjectKey.make("atlas") }
+    const notesSilent: TodayItem = { _tag: "silent", project: notes }
+    const tasks: TodayItem = { _tag: "silent", project: ProjectKey.make("tasks") }
+    for (const ordered of [
+      [recent, older],
+      [moreSlowed, lessSlowed],
+      [unknownExpiry, knownExpiry],
+      [atlas, notesSilent, tasks],
+    ]) {
+      assert.deepStrictEqual(sortToday(ordered), ordered)
+      assert.deepStrictEqual(sortToday(ordered.toReversed()), ordered)
+    }
+    // Equal project and urgency preserve arrival order rather than arbitrarily reversing it.
+    const sameProject: TodayItem = { _tag: "silent", project: notes, lastDataAt: at(now) }
+    assert.deepStrictEqual(sortToday([notesSilent, sameProject]), [notesSilent, sameProject])
+    assert.deepStrictEqual(sortToday([sameProject, notesSilent]), [sameProject, notesSilent])
+  })
+
   it("puts incidents not acknowledged and errors happening now first, promotions before silence, the latest first", () => {
     const atlas = ProjectKey.make("atlas")
     const items = sortToday([
