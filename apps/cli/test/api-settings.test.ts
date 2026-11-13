@@ -93,6 +93,7 @@ describe("deployment settings", () => {
         "OTHER=kept",
         "\nOTHER=kept",
         "OTHER=kept\n",
+        "CLUENORI_API_TOKEN!\n",
         `  #CLUENORI_API_TOKEN=commented\n  CLUENORI_API_TOKEN=${localToken}  \nignored line`,
         `CLUENORI_OWNER=${owner}\n`,
         "CLUENORI_PLAIN_HTTP=custom\n",
@@ -120,7 +121,18 @@ describe("deployment settings", () => {
               ? "CLUENORI_PLAIN_HTTP=custom"
               : "CLUENORI_PLAIN_HTTP=local",
           )
-          assert.isTrue(text.endsWith("\n"))
+          const added = [
+            ...(initial?.includes(`CLUENORI_API_TOKEN=${localToken}`) === true
+              ? []
+              : [`CLUENORI_API_TOKEN=${text.match(/^CLUENORI_API_TOKEN=(.*)$/m)?.[1]}`]),
+            ...(initial?.includes(`CLUENORI_OWNER=${owner}`) === true
+              ? []
+              : [`CLUENORI_OWNER=${text.match(/^CLUENORI_OWNER=(.*)$/m)?.[1]}`]),
+            ...(initial?.includes("CLUENORI_PLAIN_HTTP=") === true ? [] : ["CLUENORI_PLAIN_HTTP=local"]),
+          ]
+          const prefix = initial ?? ""
+          const separator = prefix.length > 0 && !prefix.endsWith("\n") ? "\n" : ""
+          assert.strictEqual(text, added.length === 0 ? prefix : `${prefix}${separator}${added.join("\n")}\n`)
           yield* ensureLocalApiSettings
           assert.strictEqual(files.get(devVars), text)
           const target = yield* apiTarget(true)
