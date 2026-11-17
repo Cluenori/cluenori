@@ -34,6 +34,10 @@ const workspace = Effect.fn("workspace")(function* () {
     yield* fs.writeFileString(`${root}/tools/src/${name}.ts`, "export {}\n".repeat(700))
   }
   yield* fs.writeFileString(`${root}/tools/test/files.test.ts`, 'import "../src/a.ts"\nimport "../src/b.ts"\n')
+  // Only tracked, executable TypeScript is mutated, not declarations or neighboring assets.
+  for (const name of ["types.d.ts", "example.ts.txt", "notes.md"]) {
+    yield* fs.writeFileString(`${root}/tools/src/${name}`, "export {}\n")
+  }
   for (const args of [
     ["init", "--quiet"],
     ["add", "tools"],
@@ -41,6 +45,7 @@ const workspace = Effect.fn("workspace")(function* () {
     const code = yield* spawner.exitCode(ChildProcess.make("git", args, { cwd: root }))
     assert.strictEqual(code, 0)
   }
+  yield* fs.writeFileString(`${root}/tools/src/untracked.ts`, "export {}\n")
   const rootedFs: FileSystem.FileSystem = {
     ...fs,
     readFileString: (file, encoding) => fs.readFileString(path.resolve(root, file), encoding),
@@ -87,7 +92,7 @@ describe("mutation commands", () => {
   it.effect("plans every source file once, with a tested file in each shard, and deduplicates selected packages", () =>
     Effect.gen(function* () {
       const { run } = yield* workspace()
-      const { result, output } = yield* run(["plan", "--only", "tools,tools"])
+      const { result, output } = yield* run(["plan", "--only", " tools,\ttools,, "])
       assert.isTrue(Result.isSuccess(result))
       const matrix = yield* Schema.decodeEffect(
         Schema.fromJsonString(
@@ -133,12 +138,12 @@ describe("mutation commands", () => {
     }).pipe(Effect.provide(BunServices.layer)),
   )
 
-  it.effect("accepts the floor itself and rejects a score one hundredth below it", () =>
+  it.effect("accepts scores at the floor, rejects lower scores, and recommends only higher floors rounded down", () =>
     Effect.gen(function* () {
       const { run, writeShard, reports } = yield* workspace()
       assert.isDefined(toolsFloor)
       const caughtAtFloor = Math.round((toolsFloor ?? 0) * 100)
-      for (const caught of [caughtAtFloor, caughtAtFloor - 1]) {
+      for (const caught of [caughtAtFloor, caughtAtFloor - 1, caughtAtFloor + 1]) {
         yield* writeShard(
           1,
           reportOf(Array.from({ length: 10_000 }, (_, index) => (index < caught ? "Killed" : "Survived"))),
@@ -146,7 +151,7 @@ describe("mutation commands", () => {
         yield* writeShard(2, reportOf([]))
         const { result, errors, output } = yield* run(["report", reports, "--only", "tools"])
         assert.strictEqual(rowOf(output)[4], `${(caught / 100).toFixed(2)}%`)
-        if (caught === caughtAtFloor) {
+        if (caught >= caughtAtFloor) {
           assert.isTrue(Result.isSuccess(result))
           assert.deepStrictEqual(errors, [])
         } else {
@@ -157,7 +162,18 @@ describe("mutation commands", () => {
           }
           assert.strictEqual(errors.length, 1)
         }
+        assert.strictEqual(output.includes("Floors to raise"), caught > caughtAtFloor)
+        if (caught > caughtAtFloor) {
+          assert.isTrue(output.includes(`- tools: ${caught / 100}`))
+        }
       }
+      // The displayed score rounds up to a hundredth; the recommended floor must round down
+      // instead, so repeating this very run can clear it.
+      yield* writeShard(1, reportOf(["Killed", "Killed", "Survived"]))
+      const rounded = yield* run(["report", reports, "--only", "tools"])
+      assert.isTrue(Result.isSuccess(rounded.result))
+      assert.strictEqual(rowOf(rounded.output)[4], "66.67%")
+      assert.isTrue(rounded.output.includes("- tools: 66.66"))
     }).pipe(Effect.provide(BunServices.layer)),
   )
 
@@ -180,6 +196,11 @@ describe("mutation commands", () => {
         }
         assert.strictEqual(errors.length, 1)
         assert.deepStrictEqual(rowOf(output).slice(0, 5), ["unknown", "unknown", "unknown", "unknown", "unknown"])
+        assert.isFalse(output.includes("Floors to raise"))
+        const survivors = yield* run(["survivors", reports, "--only", "tools"])
+        assert.isTrue(Result.isSuccess(survivors.result))
+        assert.isTrue(survivors.output.includes("Not measured, as these shards have no finished report:"))
+        assert.isFalse(survivors.output.includes("Every mutant was caught."))
       }
     }).pipe(Effect.provide(BunServices.layer)),
   )
@@ -193,6 +214,10 @@ describe("mutation commands", () => {
       assert.isTrue(Result.isSuccess(result))
       assert.deepStrictEqual(errors, [])
       assert.deepStrictEqual(rowOf(output).slice(0, 5), ["0", "0", "0", "0", "unknown"])
+      assert.isFalse(output.includes("Floors to raise"))
+      const survivors = yield* run(["survivors", reports, "--only", "tools"])
+      assert.isTrue(Result.isSuccess(survivors.result))
+      assert.strictEqual(survivors.output, "Every mutant was caught.")
     }).pipe(Effect.provide(BunServices.layer)),
   )
 
