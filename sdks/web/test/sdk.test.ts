@@ -27,7 +27,7 @@ type Batch = typeof Batch.Type
 /** A deployment that answers each batch as the test says, and keeps what reached it. */
 const fakeDeployment = () => {
   const received: Array<{ readonly batch: Batch; readonly status: number; readonly authorization: string }> = []
-  let answer = (batch: Batch): { status: number; body: string } => acknowledged(batch)
+  let answer = (batch: Batch): { status: number; body: string; headers?: Record<string, string> } => acknowledged(batch)
   let held = Deferred.makeUnsafe<void>()
   Deferred.doneUnsafe(held, Effect.void)
   const fetch: typeof globalThis.fetch = (input, init) =>
@@ -37,15 +37,15 @@ const fakeDeployment = () => {
         const text = yield* Effect.promise(() => request.text())
         yield* Deferred.await(held)
         const batch = yield* Schema.decodeEffect(Batch)(text).pipe(Effect.orDie)
-        const { status, body } = answer(batch)
+        const { status, body, headers } = answer(batch)
         received.push({ batch, status, authorization: request.headers.get("authorization") ?? "" })
-        return new Response(body, { status })
+        return new Response(body, { status, ...(headers === undefined ? {} : { headers }) })
       }),
     )
   return {
     fetch,
     received,
-    answer: (next: (batch: Batch) => { status: number; body: string }) => {
+    answer: (next: typeof answer) => {
       answer = next
     },
     /** Answers nothing until the function returned is called. */
@@ -197,6 +197,103 @@ describe("@cluenori/sdk", () => {
       assert.strictEqual(new Set(taken.map((signal) => signal["id"])).size, n + 1)
       // A batch of 500, refused, then halves of 250 and the rest: never one request per signal.
       assert.isAtMost(w.server.received.length, 10)
+    }),
+  )
+
+  it.effect("a retry waits for the deployment's deadline, then sends the same signals exactly at it", () =>
+    Effect.gen(function* () {
+      for (const response of [
+        { status: 429, body: '{"_tag":"TooManySignals","retryAfterSeconds":20}' },
+        { status: 503, body: "", headers: { "retry-after": "20" } },
+      ]) {
+        const w = world()
+        const cluenori = w.launch()
+        cluenori.track("waiting")
+        w.server.answer(() => response)
+        yield* flushed(cluenori)
+        assert.strictEqual(w.server.received.length, 1)
+        const original = w.server.received[0]?.batch.signals
+        w.server.answer(acknowledged)
+        w.advance(19_999)
+        yield* flushed(cluenori)
+        assert.strictEqual(w.server.received.length, 1)
+        w.advance(1)
+        yield* flushed(cluenori)
+        assert.strictEqual(w.server.received.length, 2)
+        assert.deepStrictEqual(w.server.taken(), original)
+        // Successful delivery clears the deadline; newly recorded signals need no further wait.
+        cluenori.track("after")
+        yield* flushed(cluenori)
+        assert.strictEqual(w.server.received.length, 3)
+        assert.include(w.server.taken().at(-1), { _tag: "event", name: "after" })
+        yield* Effect.promise(() => cluenori.shutdown())
+      }
+    }),
+  )
+
+  it.effect("only a 2xx acknowledgment removes a batch; other answers neither lose it nor disable the key", () =>
+    Effect.gen(function* () {
+      for (const response of [
+        { status: 200, body: '{"accepted":2}' },
+        { status: 200, body: '{"duplicates":0}' },
+        { status: 200, body: '{"accepted":"2","duplicates":0}' },
+        { status: 300, body: '{"accepted":2,"duplicates":0}' },
+        { status: 503, body: '{"accepted":2,"duplicates":0}' },
+        { status: 401, body: '{"_tag":"Unauthorized"}' },
+        { status: 403, body: '{"_tag":"SdkKeyRejected"}' },
+        { status: 429, body: "{}" },
+      ]) {
+        const w = world()
+        const cluenori = w.launch()
+        cluenori.track("retained")
+        w.server.answer(() => response)
+        yield* flushed(cluenori)
+        const original = w.server.received[0]?.batch.signals
+        assert.isDefined(original)
+        w.server.answer(acknowledged)
+        w.advance(10_000)
+        yield* flushed(cluenori)
+        assert.strictEqual(w.server.received.length, 2, `${response.status}: ${response.body}`)
+        assert.deepStrictEqual(w.server.received[1]?.batch.signals, original)
+        cluenori.track("still-enabled")
+        yield* flushed(cluenori)
+        assert.include(w.server.taken().at(-1), { name: "still-enabled" })
+        yield* Effect.promise(() => cluenori.shutdown())
+      }
+      const w = world()
+      const cluenori = w.launch()
+      w.server.answer((batch) => ({ ...acknowledged(batch), status: 299 }))
+      yield* flushed(cluenori)
+      yield* flushed(cluenori)
+      assert.strictEqual(w.server.received.length, 1)
+      assert.deepStrictEqual(kinds(w.server.received[0]?.batch.signals ?? []), ["session.started"])
+      yield* Effect.promise(() => cluenori.shutdown())
+    }),
+  )
+
+  it.effect("a refused signal is isolated and dropped without losing its neighbors or retrying forever", () =>
+    Effect.gen(function* () {
+      for (const status of [400, 413, 422]) {
+        const w = world()
+        const cluenori = w.launch()
+        cluenori.track("refused")
+        cluenori.track("kept-a")
+        cluenori.track("kept-b")
+        w.server.answer((batch) =>
+          batch.signals.some((signal) => signal["name"] === "refused") ? { status, body: "" } : acknowledged(batch),
+        )
+        yield* flushed(cluenori)
+        const requests = w.server.received.length
+        assert.deepStrictEqual(
+          w.server.taken().map((signal) => signal["name"] ?? signal["_tag"]),
+          ["session.started", "kept-a", "kept-b"],
+        )
+        assert.isBelow(requests, 10)
+        assert.isTrue(w.server.received.some((sent) => sent.status === status && sent.batch.signals.length === 1))
+        yield* flushed(cluenori)
+        assert.strictEqual(w.server.received.length, requests)
+        yield* Effect.promise(() => cluenori.shutdown())
+      }
     }),
   )
 
