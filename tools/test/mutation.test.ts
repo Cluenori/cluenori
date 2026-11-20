@@ -20,27 +20,49 @@ const reportOf = (statuses: ReadonlyArray<MutantStatus>) => ({
   files: { "src/a.ts": { mutants: statuses.map(mutant) } },
 })
 
+// These are the packages the nightly command must measure when --only is omitted. Keep the
+// expectation independent of mutationTargets: accidentally dropping a registration must fail.
+const nightlyFolders = [
+  "product/foundation",
+  "product/engines/feeds",
+  "product/engines/github-app",
+  "product/engines/incidents",
+  "product/engines/members",
+  "product/engines/notifications",
+  "product/engines/phones",
+  "product/engines/projects",
+  "product/engines/signals",
+  "product/engines/today",
+  "product/modules/analytics",
+  "product/modules/releases",
+  "apps/cli",
+  "tools",
+  "sdks/web",
+]
+
 // A real, isolated repository, with two tested files and one untested file: two shards. Rooting
 // filesystem reads and child processes here avoids changing the test runner's process-wide cwd.
-const workspace = Effect.fn("workspace")(function* () {
+const workspace = Effect.fn("workspace")(function* (folders: ReadonlyArray<string> = ["tools"]) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const root = yield* fs.makeTempDirectoryScoped()
-  yield* fs.makeDirectory(`${root}/tools/src`, { recursive: true })
-  yield* fs.makeDirectory(`${root}/tools/test`)
-  yield* fs.makeDirectory(`${root}/reports/tools`, { recursive: true })
-  for (const name of ["a", "b", "c"]) {
-    yield* fs.writeFileString(`${root}/tools/src/${name}.ts`, "export {}\n".repeat(700))
+  for (const folder of folders) {
+    yield* fs.makeDirectory(`${root}/${folder}/src`, { recursive: true })
+    yield* fs.makeDirectory(`${root}/${folder}/test`)
+    for (const name of ["a", "b", "c"]) {
+      yield* fs.writeFileString(`${root}/${folder}/src/${name}.ts`, "export {}\n".repeat(700))
+    }
+    yield* fs.writeFileString(`${root}/${folder}/test/files.test.ts`, 'import "../src/a.ts"\nimport "../src/b.ts"\n')
   }
-  yield* fs.writeFileString(`${root}/tools/test/files.test.ts`, 'import "../src/a.ts"\nimport "../src/b.ts"\n')
+  yield* fs.makeDirectory(`${root}/reports/tools`, { recursive: true })
   // Only tracked, executable TypeScript is mutated, not declarations or neighboring assets.
   for (const name of ["types.d.ts", "example.ts.txt", "notes.md"]) {
     yield* fs.writeFileString(`${root}/tools/src/${name}`, "export {}\n")
   }
   for (const args of [
     ["init", "--quiet"],
-    ["add", "tools"],
+    ["add", "."],
   ]) {
     const code = yield* spawner.exitCode(ChildProcess.make("git", args, { cwd: root }))
     assert.strictEqual(code, 0)
@@ -89,6 +111,18 @@ const rowOf = (output: string) => {
 const toolsFloor = mutationTargets.find((target) => target.folder === "tools")?.floor
 
 describe("mutation commands", () => {
+  it.effect("plans every nightly package when no selection is given", () =>
+    Effect.gen(function* () {
+      const { run } = yield* workspace(nightlyFolders)
+      const { result, output } = yield* run(["plan"])
+      assert.isTrue(Result.isSuccess(result))
+      const matrix = yield* Schema.decodeEffect(
+        Schema.fromJsonString(Schema.Struct({ include: Schema.Array(Schema.Struct({ folder: Schema.String })) })),
+      )(output)
+      assert.deepStrictEqual([...new Set(matrix.include.map((entry) => entry.folder))], nightlyFolders)
+    }).pipe(Effect.provide(BunServices.layer)),
+  )
+
   it.effect("plans every source file once, with a tested file in each shard, and deduplicates selected packages", () =>
     Effect.gen(function* () {
       const { run } = yield* workspace()
