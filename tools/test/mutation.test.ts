@@ -172,43 +172,51 @@ describe("mutation commands", () => {
     }).pipe(Effect.provide(BunServices.layer)),
   )
 
-  it.effect("accepts scores at the floor, rejects lower scores, and recommends only higher floors rounded down", () =>
-    Effect.gen(function* () {
-      const { run, writeShard, reports } = yield* workspace()
-      assert.isDefined(toolsFloor)
-      const caughtAtFloor = Math.round((toolsFloor ?? 0) * 100)
-      for (const caught of [caughtAtFloor, caughtAtFloor - 1, caughtAtFloor + 1]) {
-        yield* writeShard(
-          1,
-          reportOf(Array.from({ length: 10_000 }, (_, index) => (index < caught ? "Killed" : "Survived"))),
-        )
-        yield* writeShard(2, reportOf([]))
-        const { result, errors, output } = yield* run(["report", reports, "--only", "tools"])
-        assert.strictEqual(rowOf(output)[4], `${(caught / 100).toFixed(2)}%`)
-        if (caught >= caughtAtFloor) {
-          assert.isTrue(Result.isSuccess(result))
-          assert.deepStrictEqual(errors, [])
-        } else {
-          assert.isTrue(Result.isFailure(result))
-          if (Result.isFailure(result)) {
-            assert.instanceOf(result.failure, MutationReportFailed)
-            assert.deepStrictEqual(result.failure, new MutationReportFailed({ problems: 1 }))
+  it.effect(
+    "enforces the floor, including representable equality, and recommends only higher floors rounded down",
+    () =>
+      Effect.gen(function* () {
+        const { run, writeShard, reports } = yield* workspace()
+        assert.isDefined(toolsFloor)
+        const caughtAtFloor = Math.round((toolsFloor ?? 0) * 100)
+        // A decimal floor isn't always representable by this fixture: 5,146 / 10,000 * 100
+        // is just below 51.46. Always exercise both sides; exercise equality when it is exact.
+        const counts = [caughtAtFloor - 1, caughtAtFloor + 1]
+        if ((caughtAtFloor / 10_000) * 100 === toolsFloor) {
+          counts.push(caughtAtFloor)
+        }
+        for (const caught of counts) {
+          yield* writeShard(
+            1,
+            reportOf(Array.from({ length: 10_000 }, (_, index) => (index < caught ? "Killed" : "Survived"))),
+          )
+          yield* writeShard(2, reportOf([]))
+          const { result, errors, output } = yield* run(["report", reports, "--only", "tools"])
+          assert.strictEqual(rowOf(output)[4], `${(caught / 100).toFixed(2)}%`)
+          if (caught >= caughtAtFloor) {
+            assert.isTrue(Result.isSuccess(result))
+            assert.deepStrictEqual(errors, [])
+          } else {
+            assert.isTrue(Result.isFailure(result))
+            if (Result.isFailure(result)) {
+              assert.instanceOf(result.failure, MutationReportFailed)
+              assert.deepStrictEqual(result.failure, new MutationReportFailed({ problems: 1 }))
+            }
+            assert.strictEqual(errors.length, 1)
           }
-          assert.strictEqual(errors.length, 1)
+          assert.strictEqual(output.includes("Floors to raise"), caught > caughtAtFloor)
+          if (caught > caughtAtFloor) {
+            assert.isTrue(output.includes(`- tools: ${caught / 100}`))
+          }
         }
-        assert.strictEqual(output.includes("Floors to raise"), caught > caughtAtFloor)
-        if (caught > caughtAtFloor) {
-          assert.isTrue(output.includes(`- tools: ${caught / 100}`))
-        }
-      }
-      // The displayed score rounds up to a hundredth; the recommended floor must round down
-      // instead, so repeating this very run can clear it.
-      yield* writeShard(1, reportOf(["Killed", "Killed", "Survived"]))
-      const rounded = yield* run(["report", reports, "--only", "tools"])
-      assert.isTrue(Result.isSuccess(rounded.result))
-      assert.strictEqual(rowOf(rounded.output)[4], "66.67%")
-      assert.isTrue(rounded.output.includes("- tools: 66.66"))
-    }).pipe(Effect.provide(BunServices.layer)),
+        // The displayed score rounds up to a hundredth; the recommended floor must round down
+        // instead, so repeating this very run can clear it.
+        yield* writeShard(1, reportOf(["Killed", "Killed", "Survived"]))
+        const rounded = yield* run(["report", reports, "--only", "tools"])
+        assert.isTrue(Result.isSuccess(rounded.result))
+        assert.strictEqual(rowOf(rounded.output)[4], "66.67%")
+        assert.isTrue(rounded.output.includes("- tools: 66.66"))
+      }).pipe(Effect.provide(BunServices.layer)),
   )
 
   it.effect("never presents a partial score when a shard is missing or unfinished", () =>
