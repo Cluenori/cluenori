@@ -20,27 +20,49 @@ const reportOf = (statuses: ReadonlyArray<MutantStatus>) => ({
   files: { "src/a.ts": { mutants: statuses.map(mutant) } },
 })
 
+// These are the packages the nightly command must measure when --only is omitted. Keep the
+// expectation independent of mutationTargets: accidentally dropping a registration must fail.
+const nightlyFolders = [
+  "product/foundation",
+  "product/engines/feeds",
+  "product/engines/github-app",
+  "product/engines/incidents",
+  "product/engines/members",
+  "product/engines/notifications",
+  "product/engines/phones",
+  "product/engines/projects",
+  "product/engines/signals",
+  "product/engines/today",
+  "product/modules/analytics",
+  "product/modules/releases",
+  "apps/cli",
+  "tools",
+  "sdks/web",
+]
+
 // A real, isolated repository, with two tested files and one untested file: two shards. Rooting
 // filesystem reads and child processes here avoids changing the test runner's process-wide cwd.
-const workspace = Effect.fn("workspace")(function* () {
+const workspace = Effect.fn("workspace")(function* (folders: ReadonlyArray<string> = ["tools"]) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const root = yield* fs.makeTempDirectoryScoped()
-  yield* fs.makeDirectory(`${root}/tools/src`, { recursive: true })
-  yield* fs.makeDirectory(`${root}/tools/test`)
-  yield* fs.makeDirectory(`${root}/reports/tools`, { recursive: true })
-  for (const name of ["a", "b", "c"]) {
-    yield* fs.writeFileString(`${root}/tools/src/${name}.ts`, "export {}\n".repeat(700))
+  for (const folder of folders) {
+    yield* fs.makeDirectory(`${root}/${folder}/src`, { recursive: true })
+    yield* fs.makeDirectory(`${root}/${folder}/test`)
+    for (const name of ["a", "b", "c"]) {
+      yield* fs.writeFileString(`${root}/${folder}/src/${name}.ts`, "export {}\n".repeat(700))
+    }
+    yield* fs.writeFileString(`${root}/${folder}/test/files.test.ts`, 'import "../src/a.ts"\nimport "../src/b.ts"\n')
   }
-  yield* fs.writeFileString(`${root}/tools/test/files.test.ts`, 'import "../src/a.ts"\nimport "../src/b.ts"\n')
+  yield* fs.makeDirectory(`${root}/reports/tools`, { recursive: true })
   // Only tracked, executable TypeScript is mutated, not declarations or neighboring assets.
   for (const name of ["types.d.ts", "example.ts.txt", "notes.md"]) {
     yield* fs.writeFileString(`${root}/tools/src/${name}`, "export {}\n")
   }
   for (const args of [
     ["init", "--quiet"],
-    ["add", "tools"],
+    ["add", "."],
   ]) {
     const code = yield* spawner.exitCode(ChildProcess.make("git", args, { cwd: root }))
     assert.strictEqual(code, 0)
@@ -68,11 +90,16 @@ const workspace = Effect.fn("workspace")(function* () {
     const errorLines = yield* Schema.decodeUnknownEffect(Schema.Array(Schema.String))(errors)
     return { result, output: lines.join("\n"), errors: errorLines }
   })
-  const writeShard = Effect.fn("writeShard")(function* (shard: number, report: string | Schema.JsonObject) {
+  const writeShard = Effect.fn("writeShard")(function* (
+    shard: number,
+    report: string | Schema.JsonObject,
+    folder = "tools",
+  ) {
     const text = yield* typeof report === "string"
       ? Effect.succeed(report)
       : Schema.encodeEffect(Schema.fromJsonString(Schema.Json))(report)
-    yield* fs.writeFileString(`${root}/reports/tools/shard-${shard}.json`, text)
+    yield* fs.makeDirectory(`${root}/reports/${folder}`, { recursive: true })
+    yield* fs.writeFileString(`${root}/reports/${folder}/shard-${shard}.json`, text)
   })
   return { run, writeShard, reports: `${root}/reports` }
 })
@@ -89,6 +116,18 @@ const rowOf = (output: string) => {
 const toolsFloor = mutationTargets.find((target) => target.folder === "tools")?.floor
 
 describe("mutation commands", () => {
+  it.effect("plans every nightly package when no selection is given", () =>
+    Effect.gen(function* () {
+      const { run } = yield* workspace(nightlyFolders)
+      const { result, output } = yield* run(["plan"])
+      assert.isTrue(Result.isSuccess(result))
+      const matrix = yield* Schema.decodeEffect(
+        Schema.fromJsonString(Schema.Struct({ include: Schema.Array(Schema.Struct({ folder: Schema.String })) })),
+      )(output)
+      assert.deepStrictEqual([...new Set(matrix.include.map((entry) => entry.folder))], nightlyFolders)
+    }).pipe(Effect.provide(BunServices.layer)),
+  )
+
   it.effect("plans every source file once, with a tested file in each shard, and deduplicates selected packages", () =>
     Effect.gen(function* () {
       const { run } = yield* workspace()
@@ -143,7 +182,13 @@ describe("mutation commands", () => {
       const { run, writeShard, reports } = yield* workspace()
       assert.isDefined(toolsFloor)
       const caughtAtFloor = Math.round((toolsFloor ?? 0) * 100)
-      for (const caught of [caughtAtFloor, caughtAtFloor - 1, caughtAtFloor + 1]) {
+      // A decimal floor isn't always representable by this fixture: 5,146 / 10,000 * 100
+      // is just below 51.46. Always exercise both sides; exercise equality when it is exact.
+      const counts = [caughtAtFloor - 1, caughtAtFloor + 1]
+      if ((caughtAtFloor / 10_000) * 100 === toolsFloor) {
+        counts.push(caughtAtFloor)
+      }
+      for (const caught of counts) {
         yield* writeShard(
           1,
           reportOf(Array.from({ length: 10_000 }, (_, index) => (index < caught ? "Killed" : "Survived"))),
@@ -174,6 +219,33 @@ describe("mutation commands", () => {
       assert.isTrue(Result.isSuccess(rounded.result))
       assert.strictEqual(rowOf(rounded.output)[4], "66.67%")
       assert.isTrue(rounded.output.includes("- tools: 66.66"))
+    }).pipe(Effect.provide(BunServices.layer)),
+  )
+
+  it.effect("accepts exact floors and does not recommend an unchanged rounded floor", () =>
+    Effect.gen(function* () {
+      const { run, writeShard, reports } = yield* workspace(nightlyFolders)
+      // Exercise equality with a configured floor this integer-count fixture can represent
+      // exactly, independent of whether tools' current floor happens to be representable.
+      const exact = yield* Schema.decodeUnknownEffect(Schema.Struct({ folder: Schema.String, floor: Schema.Finite }))(
+        mutationTargets.find(({ floor }) => floor !== undefined && (Math.round(floor * 100) / 10_000) * 100 === floor),
+      )
+      for (const { folder, caught, total } of [
+        { folder: exact.folder, caught: Math.round(exact.floor * 100), total: 10_000 },
+        // Just above tools' floor, but less than a hundredth above: no floor increase.
+        { folder: "tools", caught: Math.round((toolsFloor ?? 0) * 100) + 1, total: 10_001 },
+      ]) {
+        yield* writeShard(
+          1,
+          reportOf(Array.from({ length: total }, (_, i) => (i < caught ? "Killed" : "Survived"))),
+          folder,
+        )
+        yield* writeShard(2, reportOf([]), folder)
+        const { result, output, errors } = yield* run(["report", reports, "--only", folder])
+        assert.isTrue(Result.isSuccess(result))
+        assert.deepStrictEqual(errors, [])
+        assert.isFalse(output.includes("Floors to raise"))
+      }
     }).pipe(Effect.provide(BunServices.layer)),
   )
 
