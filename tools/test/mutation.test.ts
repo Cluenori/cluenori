@@ -90,11 +90,16 @@ const workspace = Effect.fn("workspace")(function* (folders: ReadonlyArray<strin
     const errorLines = yield* Schema.decodeUnknownEffect(Schema.Array(Schema.String))(errors)
     return { result, output: lines.join("\n"), errors: errorLines }
   })
-  const writeShard = Effect.fn("writeShard")(function* (shard: number, report: string | Schema.JsonObject) {
+  const writeShard = Effect.fn("writeShard")(function* (
+    shard: number,
+    report: string | Schema.JsonObject,
+    folder = "tools",
+  ) {
     const text = yield* typeof report === "string"
       ? Effect.succeed(report)
       : Schema.encodeEffect(Schema.fromJsonString(Schema.Json))(report)
-    yield* fs.writeFileString(`${root}/reports/tools/shard-${shard}.json`, text)
+    yield* fs.makeDirectory(`${root}/reports/${folder}`, { recursive: true })
+    yield* fs.writeFileString(`${root}/reports/${folder}/shard-${shard}.json`, text)
   })
   return { run, writeShard, reports: `${root}/reports` }
 })
@@ -217,6 +222,33 @@ describe("mutation commands", () => {
         assert.strictEqual(rowOf(rounded.output)[4], "66.67%")
         assert.isTrue(rounded.output.includes("- tools: 66.66"))
       }).pipe(Effect.provide(BunServices.layer)),
+  )
+
+  it.effect("accepts exact floors and does not recommend an unchanged rounded floor", () =>
+    Effect.gen(function* () {
+      const { run, writeShard, reports } = yield* workspace(nightlyFolders)
+      // Exercise equality with a configured floor this integer-count fixture can represent
+      // exactly, independent of whether tools' current floor happens to be representable.
+      const exact = yield* Schema.decodeUnknownEffect(Schema.Struct({ folder: Schema.String, floor: Schema.Finite }))(
+        mutationTargets.find(({ floor }) => floor !== undefined && (Math.round(floor * 100) / 10_000) * 100 === floor),
+      )
+      for (const { folder, caught, total } of [
+        { folder: exact.folder, caught: Math.round(exact.floor * 100), total: 10_000 },
+        // Just above tools' floor, but less than a hundredth above: no floor increase.
+        { folder: "tools", caught: Math.round((toolsFloor ?? 0) * 1_000) + 1, total: 100_000 },
+      ]) {
+        yield* writeShard(
+          1,
+          reportOf(Array.from({ length: total }, (_, i) => (i < caught ? "Killed" : "Survived"))),
+          folder,
+        )
+        yield* writeShard(2, reportOf([]), folder)
+        const { result, output, errors } = yield* run(["report", reports, "--only", folder])
+        assert.isTrue(Result.isSuccess(result))
+        assert.deepStrictEqual(errors, [])
+        assert.isFalse(output.includes("Floors to raise"))
+      }
+    }).pipe(Effect.provide(BunServices.layer)),
   )
 
   it.effect("never presents a partial score when a shard is missing or unfinished", () =>
