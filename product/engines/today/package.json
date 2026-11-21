@@ -17,7 +17,9 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@bagatka/quantile-sketch": "catalog:",
     "@cloudflare/vitest-plugin": "catalog:",
+    "@effect/platform-browser": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",
     "@effect/vitest": "catalog:",
     "vitest": "catalog:",
