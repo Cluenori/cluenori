@@ -424,6 +424,134 @@ describe("@cluenori/sdk", () => {
     }),
   )
 
+  it.effect("names are accepted only within the same limits for screens, events and timings", () =>
+    Effect.gen(function* () {
+      const w = world()
+      const cluenori = w.launch()
+      const accepted = ["x", "a".repeat(256), "project create", "карта 🗺️"]
+      const rejected = ["", "a".repeat(257), " leading", "trailing ", "\tname", "name\n", "in\u0000side"]
+      for (const name of [...accepted, ...rejected]) {
+        cluenori.screen(name)
+        cluenori.track(name)
+        cluenori.timing(name).end()
+      }
+      yield* flushed(cluenori)
+      for (const tag of ["screen", "event", "timing"]) {
+        assert.deepStrictEqual(
+          w.server
+            .taken()
+            .filter((signal) => signal["_tag"] === tag)
+            .map((signal) => signal["name"] ?? signal["screen"]),
+          accepted,
+        )
+      }
+    }),
+  )
+
+  it.effect("invalid feature marks leave the active feature alone, including at the length boundary", () =>
+    Effect.gen(function* () {
+      const w = world()
+      const cluenori = w.launch()
+      cluenori.begin("fallback")
+      const accepted = ["x", "a".repeat(100), "cards.flip-fast"]
+      const rejected = [
+        "",
+        "a".repeat(101),
+        "Cards.flip",
+        ".cards",
+        "cards.",
+        "cards..flip",
+        "cards._flip",
+        "cards.flip!",
+      ]
+      for (const feature of [...accepted, ...rejected]) {
+        const mark = cluenori.begin(feature)
+        cluenori.track("during")
+        mark.end()
+        mark.end()
+        cluenori.track("after")
+      }
+      yield* flushed(cluenori)
+      assert.deepStrictEqual(
+        w.server
+          .taken()
+          .filter((signal) => signal["_tag"] === "event")
+          .map((signal) => signal["feature"]),
+        [...accepted.flatMap((feature) => [feature, "fallback"]), ...rejected.flatMap(() => ["fallback", "fallback"])],
+      )
+    }),
+  )
+
+  it.effect(
+    "identify accepts opaque printable IDs and refuses emails and invalid text without replacing the person",
+    () =>
+      Effect.gen(function* () {
+        const w = world()
+        const cluenori = w.launch()
+        const accepted = ["x", "u".repeat(128), "!user~", "a@b", "a@b.", "a@.b", "a@@b.cd"]
+        const rejected = [
+          "",
+          "u".repeat(129),
+          "user name",
+          "\tuser",
+          "user\n",
+          "юзер",
+          "ab@cd.ef",
+          "a@b.cd",
+          "ab@c.d",
+          "a@b.c.d",
+        ]
+        for (const user of [...accepted, ...rejected]) {
+          cluenori.identify("previous")
+          cluenori.identify(user)
+          cluenori.track("identified")
+        }
+        yield* flushed(cluenori)
+        assert.deepStrictEqual(
+          w.server
+            .taken()
+            .filter((signal) => signal["_tag"] === "event")
+            .map((signal) => signal["user"]),
+          [...accepted, ...rejected.map(() => "previous")],
+        )
+      }),
+  )
+
+  it.effect(
+    "properties keep valid dotted keys and bounded values, discarding only invalid entries and the excess",
+    () =>
+      Effect.gen(function* () {
+        const w = world()
+        const cluenori = w.launch()
+        const accepted = { x: false, ["a".repeat(64)]: "v".repeat(256), "card_id.side2_back": -12.5 }
+        cluenori.track("mixed", {
+          ...accepted,
+          ["a".repeat(65)]: true,
+          "!prefix": true,
+          "suffix!": true,
+          "card_id.2side": true,
+          "card_id.side!": true,
+          "card_id.": true,
+          "": true,
+          too_long: "v".repeat(257),
+          not_finite: NaN,
+          positive_infinity: Infinity,
+          negative_infinity: -Infinity,
+        })
+        cluenori.track("empty", { Bad: true })
+        const thirtyTwo = Object.fromEntries(
+          Array.from({ length: 32 }, (_, index) => [`p_${String(index).padStart(2, "0")}`, index]),
+        )
+        cluenori.track("limit", { ...thirtyTwo, z_excess: true })
+        yield* flushed(cluenori)
+        const events = w.server.taken().filter((signal) => signal["_tag"] === "event")
+        assert.deepStrictEqual(
+          events.map((signal) => signal["properties"]),
+          [accepted, undefined, thirtyTwo],
+        )
+      }),
+  )
+
   it.effect("a program's run is its session, and shutdown sends its end", () =>
     Effect.gen(function* () {
       const w = world()
