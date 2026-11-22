@@ -488,7 +488,7 @@ describe("@cluenori/sdk", () => {
       Effect.gen(function* () {
         const w = world()
         const cluenori = w.launch()
-        const accepted = ["x", "u".repeat(128), "!user~", "a@b", "a@b.", "a@.b", "a@@b.cd"]
+        const accepted = ["x", "u".repeat(128), "!user~", "a@b", "a@b.", "a@.b", "a@@b.cd", "@ab@cd.ef", "ab@cd.ef@"]
         const rejected = [
           "",
           "u".repeat(129),
