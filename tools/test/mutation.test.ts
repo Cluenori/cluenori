@@ -315,6 +315,20 @@ describe("mutation commands", () => {
       assert.isTrue(listed.some((line) => line.includes("tools/src/uncovered.ts:")))
       assert.isFalse(output.includes("caught.ts"))
 
+      // A report with just one uncaught status must not announce an empty section for the other.
+      for (const status of ["Survived", "NoCoverage"] as const) {
+        yield* writeShard(1, reportOf([status]))
+        yield* writeShard(2, reportOf(["Killed"]))
+        const single = yield* run(["survivors", reports, "--only", "tools"])
+        assert.isTrue(Result.isSuccess(single.result))
+        assert.strictEqual(single.output.includes("Survived, though tests ran it:"), status === "Survived")
+        assert.strictEqual(single.output.includes("Not covered, as no test ran it:"), status === "NoCoverage")
+        assert.deepStrictEqual(
+          single.output.split("\n").filter((line) => line.startsWith("- tools/")),
+          ["- tools/src/a.ts:1:1 BooleanLiteral: `false`"],
+        )
+      }
+
       // Reports arrive in shard order, not file or location order. The handoff must group the
       // statuses and retain each location, even when replacements have newlines or are absent.
       yield* writeShard(1, {
