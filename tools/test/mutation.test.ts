@@ -101,7 +101,7 @@ const workspace = Effect.fn("workspace")(function* (folders: ReadonlyArray<strin
     yield* fs.makeDirectory(`${root}/reports/${folder}`, { recursive: true })
     yield* fs.writeFileString(`${root}/reports/${folder}/shard-${shard}.json`, text)
   })
-  return { run, writeShard, reports: `${root}/reports` }
+  return { run, writeShard, root, reports: `${root}/reports` }
 })
 
 const rowOf = (output: string) => {
@@ -378,14 +378,47 @@ describe("mutation commands", () => {
   it.effect("refuses unknown or empty package selections", () =>
     Effect.gen(function* () {
       const { run } = yield* workspace()
-      for (const only of ["not-a-target", " , ", "tools,not-a-target"]) {
-        const { result, errors } = yield* run(["plan", "--only", only])
+      for (const { only, unknown } of [
+        { only: "not-a-target", unknown: ["not-a-target"] },
+        { only: " , ", unknown: [] },
+        { only: "tools,not-a-target,also-unknown", unknown: ["not-a-target", "also-unknown"] },
+      ]) {
+        const { result, errors, output } = yield* run(["plan", "--only", only])
         assert.isTrue(Result.isFailure(result))
+        assert.strictEqual(output, "")
+        assert.strictEqual(errors.length, 1)
         if (Result.isFailure(result)) {
           assert.instanceOf(result.failure, Refused)
+          if (Schema.is(Refused)(result.failure)) {
+            assert.strictEqual(result.failure.message, errors[0])
+          }
         }
-        assert.strictEqual(errors.length, 1)
+        // The refusal must identify every unknown input and offer the supported selections;
+        // the surrounding prose is not part of this assertion.
+        for (const folder of [...unknown, ...nightlyFolders]) {
+          assert.isTrue(errors[0]?.includes(folder))
+        }
       }
+    }).pipe(Effect.provide(BunServices.layer)),
+  )
+
+  it.effect("refuses a package with no tracked source instead of planning an empty mutation run", () =>
+    Effect.gen(function* () {
+      const { run, root } = yield* workspace()
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      const code = yield* spawner.exitCode(
+        ChildProcess.make("git", ["rm", "-r", "--cached", "tools/src"], { cwd: root }),
+      )
+      assert.strictEqual(code, 0)
+      const { result, errors, output } = yield* run(["plan", "--only", "tools"])
+      assert.isTrue(Result.isFailure(result))
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, Refused)
+      }
+      assert.strictEqual(output, "")
+      assert.strictEqual(errors.length, 1)
+      assert.isTrue(errors[0]?.includes("tools"))
+      assert.isTrue(errors[0]?.includes("no TypeScript in src"))
     }).pipe(Effect.provide(BunServices.layer)),
   )
 })
