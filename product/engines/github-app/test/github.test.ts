@@ -8,7 +8,14 @@ import { Base64 } from "effect/encoding"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 
-import { GitHubAccount, GitHubConnection, GitHubStatus, ManifestCode, gitHubThroughConnection } from "../src/index.ts"
+import {
+  GitHubAccount,
+  GitHubConnection,
+  GitHubStatus,
+  ManifestCode,
+  gitHubAsApp,
+  gitHubThroughConnection,
+} from "../src/index.ts"
 import { inWorkspace } from "./in-workspace.ts"
 
 // 2026-10-21T10:00:00Z.
@@ -111,6 +118,76 @@ const fakeGitHub = (pem: string, asked: Array<string>) =>
 const stateOf = (action: string) => new URL(action).searchParams.get("state") ?? ""
 
 describe("GitHub's connection", () => {
+  it.effect("accepts GitHub logins and manifest codes only as whole, bounded values", () =>
+    Effect.gen(function* () {
+      for (const login of ["a", "9", "octo-org", "A".repeat(39)]) {
+        assert.strictEqual(yield* Schema.decodeEffect(GitHubAccount)(login), login)
+      }
+      for (const login of ["", "-octo", "octo-", "!octo", "octo!", "a".repeat(40)]) {
+        const decoded = yield* Schema.decodeEffect(GitHubAccount)(login).pipe(Effect.result)
+        assert.strictEqual(decoded._tag, "Failure", login)
+      }
+      for (const code of ["a", "Code_9-", "a".repeat(200)]) {
+        assert.strictEqual(yield* Schema.decodeEffect(ManifestCode)(code), code)
+      }
+      for (const code of ["", "!code", "code!", "a".repeat(201)]) {
+        const decoded = yield* Schema.decodeEffect(ManifestCode)(code).pipe(Effect.result)
+        assert.strictEqual(decoded._tag, "Failure", code)
+      }
+    }),
+  )
+
+  it.effect("reuses each project's repository token until exactly five minutes before expiry", () =>
+    Effect.gen(function* () {
+      const sent: Array<readonly [string, string | undefined]> = []
+      let issued = 0
+      const http = Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make((request, url) => {
+          sent.push([url.pathname, request.headers["authorization"]])
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response('{"default_branch":"main"}', { headers: { "content-type": "application/json" } }),
+            ),
+          )
+        }),
+      )
+      yield* TestClock.setTime(start)
+      yield* Effect.gen(function* () {
+        const github = yield* GitHub
+        assert.strictEqual(yield* github.defaultBranch(reached), "main")
+        yield* TestClock.setTime(start + hour - 300_001)
+        assert.strictEqual(yield* github.defaultBranch(reached), "main")
+        assert.strictEqual(yield* github.defaultBranch(elsewhere), "main")
+        yield* TestClock.setTime(start + hour - 300_000)
+        assert.strictEqual(yield* github.defaultBranch(reached), "main")
+        yield* TestClock.setTime(start + hour - 299_999)
+        assert.strictEqual(yield* github.defaultBranch(reached), "main")
+      }).pipe(
+        Effect.provide(
+          gitHubAsApp((repository) =>
+            Effect.gen(function* () {
+              const now = yield* DateTime.now
+              issued += 1
+              return {
+                token: Redacted.make(`${repository}-${issued}`),
+                expiresAt: DateTime.addDuration(now, "1 hour"),
+              }
+            }),
+          ).pipe(Layer.provide(http)),
+        ),
+      )
+      assert.deepStrictEqual(sent, [
+        [`/repos/${reached}`, `Bearer ${reached}-1`],
+        [`/repos/${reached}`, `Bearer ${reached}-1`],
+        [`/repos/${elsewhere}`, `Bearer ${elsewhere}-2`],
+        [`/repos/${reached}`, `Bearer ${reached}-3`],
+        [`/repos/${reached}`, `Bearer ${reached}-3`],
+      ])
+    }),
+  )
+
   it.effect("connects in one step: a form for GitHub, then its code, once, for an owner", () =>
     Effect.gen(function* () {
       const pem = yield* privateKeyPem
