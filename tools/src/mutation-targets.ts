@@ -18,7 +18,7 @@ export interface MutationTarget {
 export const mutationTargets: ReadonlyArray<MutationTarget> = [
   { folder: "product/foundation", floor: 72.77 },
   { folder: "product/engines/feeds", floor: 66.66 },
-  { folder: "product/engines/github-app", floor: 53.67 },
+  { folder: "product/engines/github-app", floor: 58.53 },
   { folder: "product/engines/incidents", floor: 67.62 },
   { folder: "product/engines/members", floor: 58 },
   { folder: "product/engines/notifications", floor: 76.47 },
@@ -29,6 +29,6 @@ export const mutationTargets: ReadonlyArray<MutationTarget> = [
   { folder: "product/modules/analytics", floor: 55.65 },
   { folder: "product/modules/releases", floor: 70.91 },
   { folder: "apps/cli", floor: 53.73 },
-  { folder: "tools", floor: 52.71 },
+  { folder: "tools", floor: 57.3 },
   { folder: "sdks/web", floor: 54.16 },
 ]
