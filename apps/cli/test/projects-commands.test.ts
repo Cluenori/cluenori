@@ -100,8 +100,9 @@ describe("component key commands", () => {
         answer.output,
         `Added Notes API (notes-api) to folio. Its ingest key, shown only now:\n\n  ${secret}\n`,
       )
-      assert.include(answer.output, "Endpoint  https://cluenori.example/otlp/v1/traces")
-      assert.include(answer.output, `Header    Authorization: Bearer ${secret}`)
+      const lines = answer.output.split("\n").map((line) => line.trim())
+      assert.include(lines, "Endpoint  https://cluenori.example/otlp/v1/traces")
+      assert.include(lines, `Header    Authorization: Bearer ${secret}`)
       for (const [body, status, expected] of [
         [
           { _tag: "ProjectNotFound", project: "folio" },
