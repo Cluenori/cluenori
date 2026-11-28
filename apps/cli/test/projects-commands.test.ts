@@ -4,10 +4,11 @@ import { ConfigProvider, Console, Effect, FileSystem, Layer, Path, Stdio, Termin
 import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { ChildProcessSpawner } from "effect/process"
+import { TestClock } from "effect/testing"
 
-import { project } from "../src/projects-commands.ts"
+import { component, project } from "../src/projects-commands.ts"
 
-const root = Command.make("cluenori").pipe(Command.withSubcommands([project]))
+const root = Command.make("cluenori").pipe(Command.withSubcommands([project, component]))
 const detail = {
   project: { key: "folio", name: "Folio Notes", createdAt: "2026-10-19T09:00:00.000Z" },
   components: [],
@@ -68,6 +69,305 @@ const run = Effect.fnUntraced(function* (argv: ReadonlyArray<string>, answer: (r
     ),
   )
   return { result, requests, output: output.join("\n"), errors: errors.join("\n") }
+})
+
+const at = "2026-10-19T09:00:00.000Z"
+const sdkKey = `cluenori-sdk.folio.notes-api.${"A".repeat(22)}`
+const issued = { key: sdkKey, component: "notes-api", issuedAt: at }
+const keyId = "01960000-0000-7000-8000-000000000001"
+const ingest = { id: keyId, component: "notes-api", name: "blue", createdAt: at }
+const sdkArgs = ["component", "sdk-keys", "folio", "notes-api"]
+const ingestArgs = ["component", "ingest-keys", "folio", "notes-api"]
+const base = "https://cluenori.example/api/projects/folio/components/notes-api"
+
+describe("component key commands", () => {
+  it.effect("creates a component with its first ingest key and explains exactly where telemetry is sent", () =>
+    Effect.gen(function* () {
+      const argv = ["component", "add", "folio", "notes-api", "--name", "Notes API"]
+      const secret = `cluenori.folio.notes-api.${"a".repeat(43)}`
+      const added = { component: { key: "notes-api", name: "Notes API", createdAt: at }, ingestKey: secret }
+      const answer = yield* run(argv, () => Response.json(added, { status: 201 }))
+      assert.strictEqual(answer.result._tag, "Success")
+      assert.strictEqual(answer.errors, "")
+      assert.deepStrictEqual(
+        answer.requests.map((request) => [request.method, request.url]),
+        [["POST", "https://cluenori.example/api/projects/folio/components"]],
+      )
+      const request = answer.requests[0]
+      assert(request !== undefined)
+      assert.deepStrictEqual(yield* Effect.promise(() => request.json()), { key: "notes-api", name: "Notes API" })
+      assert.include(
+        answer.output,
+        `Added Notes API (notes-api) to folio. Its ingest key, shown only now:\n\n  ${secret}\n`,
+      )
+      assert.include(answer.output, "Endpoint  https://cluenori.example/otlp/v1/traces")
+      assert.include(answer.output, `Header    Authorization: Bearer ${secret}`)
+      for (const [body, status, expected] of [
+        [
+          { _tag: "ProjectNotFound", project: "folio" },
+          404,
+          "has no project folio. Create it: ./cluenori project create folio",
+        ],
+        [
+          { _tag: "ComponentExists", component: "notes-api" },
+          409,
+          "folio already has a component with the key notes-api.",
+        ],
+        [{ _tag: "NotAllowed" }, 403, "Only an owner adds a component"],
+      ] as const) {
+        const refused = yield* run(argv, () => Response.json(body, { status }))
+        assert.strictEqual(refused.result._tag, "Failure")
+        assert.strictEqual(refused.requests.length, 1)
+        assert.strictEqual(refused.output, "")
+        assert.include(refused.errors, expected)
+      }
+    }),
+  )
+
+  it.effect("lists SDK keys with their issue and revocation dates, or explains how to issue the first", () =>
+    Effect.gen(function* () {
+      const empty = yield* run(sdkArgs, () => Response.json({ keys: [] }))
+      assert.strictEqual(empty.result._tag, "Success")
+      assert.strictEqual(
+        empty.output,
+        "notes-api has no SDK keys yet. Issue one: ./cluenori component sdk-keys folio notes-api --new",
+      )
+      const answer = yield* run(sdkArgs, () =>
+        Response.json({
+          keys: [issued, { ...issued, key: sdkKey.replace("A", "B"), revokedAt: "2026-10-20T10:15:00.000Z" }],
+        }),
+      )
+      assert.strictEqual(answer.result._tag, "Success")
+      assert.deepStrictEqual(
+        answer.requests.map((request) => [request.method, request.url]),
+        [["GET", `${base}/sdk-keys`]],
+      )
+      assert.deepStrictEqual(
+        answer.output.split("\n").map((line) => line.trim().replace(/ +/g, " ")),
+        [
+          "Key Issued Revoked",
+          `${sdkKey} 2026-10-19 09:00 UTC active`,
+          `${sdkKey.replace("A", "B")} 2026-10-19 09:00 UTC 2026-10-20 10:15 UTC`,
+        ],
+      )
+    }),
+  )
+
+  it.effect("issues and revokes an SDK key without making extra requests", () =>
+    Effect.gen(function* () {
+      const added = yield* run([...sdkArgs, "--new"], () => Response.json(issued, { status: 201 }))
+      assert.strictEqual(added.result._tag, "Success")
+      assert.deepStrictEqual(
+        added.requests.map((request) => [request.method, request.url]),
+        [["POST", `${base}/sdk-keys`]],
+      )
+      assert.include(added.output, `Issued an SDK key for notes-api of folio:\n\n  ${sdkKey}\n`)
+      assert.include(added.output, "isn't a secret")
+      assert.include(
+        added.output,
+        "other keys stay active until you revoke them: ./cluenori component sdk-keys folio notes-api --revoke <key>",
+      )
+      for (const revokedAt of [undefined, "2026-10-20T10:15:00.000Z"]) {
+        const revoked = yield* run([...sdkArgs, "--revoke", sdkKey], () =>
+          Response.json({ ...issued, ...(revokedAt === undefined ? {} : { revokedAt }) }),
+        )
+        assert.strictEqual(revoked.result._tag, "Success")
+        assert.deepStrictEqual(
+          revoked.requests.map((request) => [request.method, request.url]),
+          [["POST", `${base}/sdk-keys/${sdkKey}/revoke`]],
+        )
+        assert.strictEqual(
+          revoked.output,
+          `Revoked ${sdkKey} (since ${revokedAt === undefined ? "now" : "2026-10-20 10:15 UTC"}). Builds that carry it are refused from now on.`,
+        )
+      }
+    }),
+  )
+
+  it.effect("adds ingest keys with exactly the requested lifetime and shows the returned secret only on creation", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(at))
+      for (const [expires, expected] of [
+        [undefined, undefined],
+        ["30d", "2026-11-18T09:00:00.000Z"],
+        ["90d", "2027-01-17T09:00:00.000Z"],
+        ["365d", "2027-10-19T09:00:00.000Z"],
+      ] as const) {
+        const secret = `cluenori.folio.notes-api.${"a".repeat(43)}`
+        const answer = yield* run(
+          [...ingestArgs, "--new", "blue", ...(expires === undefined ? [] : ["--expires", expires])],
+          () => Response.json({ key: ingest, ingestKey: secret }, { status: 201 }),
+        )
+        assert.strictEqual(answer.result._tag, "Success")
+        assert.deepStrictEqual(
+          answer.requests.map((request) => [request.method, request.url]),
+          [["POST", `${base}/ingest-keys`]],
+        )
+        const request = answer.requests[0]
+        assert(request !== undefined)
+        assert.deepStrictEqual(yield* Effect.promise(() => request.json()), {
+          name: "blue",
+          ...(expected === undefined ? {} : { expiresAt: expected }),
+        })
+        assert.include(answer.output, `Added the ingest key "blue" (${keyId}) to notes-api of folio:\n\n  ${secret}\n`)
+        assert.include(answer.output, "It is shown only now: keep it in your service's secrets.")
+        assert.include(answer.output, "./cluenori component ingest-keys folio notes-api --revoke <id> [--in 24h]")
+        assert.strictEqual(answer.errors, "")
+      }
+    }),
+  )
+
+  it.effect("revokes ingest keys now or at each supported delay, reporting the server's effective date", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(at))
+      for (const [delay, expected] of [
+        [undefined, undefined],
+        ["1h", "2026-10-19T10:00:00.000Z"],
+        ["24h", "2026-10-20T09:00:00.000Z"],
+        ["7d", "2026-10-26T09:00:00.000Z"],
+      ] as const) {
+        const answer = yield* run(
+          [...ingestArgs, "--revoke", keyId, ...(delay === undefined ? [] : ["--in", delay])],
+          () => Response.json({ ...ingest, ...(delay === undefined ? {} : { revokedAt: "2026-10-21T12:34:00.000Z" }) }),
+        )
+        assert.strictEqual(answer.result._tag, "Success")
+        assert.deepStrictEqual(
+          answer.requests.map((request) => [request.method, request.url]),
+          [["POST", `${base}/ingest-keys/${keyId}/revoke`]],
+        )
+        const request = answer.requests[0]
+        assert(request !== undefined)
+        assert.deepStrictEqual(
+          yield* Effect.promise(() => request.json()),
+          expected === undefined ? {} : { at: expected },
+        )
+        assert.strictEqual(
+          answer.output,
+          `"blue" stops working at ${delay === undefined ? "now" : "2026-10-21 12:34 UTC"}; what is sent with it is refused from then on.`,
+        )
+      }
+    }),
+  )
+
+  it.effect(
+    "distinguishes keys ended at the current instant from future expiry and revocation, and missing last use from a date",
+    () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(at))
+        const empty = yield* run(ingestArgs, () => Response.json({ keys: [] }))
+        assert.strictEqual(empty.result._tag, "Success")
+        assert.strictEqual(
+          empty.output,
+          "notes-api has no ingest keys. Add one: ./cluenori component ingest-keys folio notes-api --new <name>",
+        )
+        const fields = [
+          {},
+          { expiresAt: "2026-10-19T09:00:00.001Z" },
+          { revokedAt: "2026-10-19T09:00:00.001Z" },
+          { expiresAt: at, revokedAt: "2026-10-20T09:00:00.000Z" },
+          { revokedAt: at, expiresAt: "2026-10-20T09:00:00.000Z" },
+          { expiresAt: "2026-10-19T08:59:59.999Z" },
+          { revokedAt: "2026-10-19T08:59:59.999Z", lastUsedAt: "2026-10-19T07:00:00.000Z" },
+        ]
+        const ids = fields.map((_, index) => `01960000-0000-7000-8000-${String(index + 1).padStart(12, "0")}`)
+        const answer = yield* run(ingestArgs, () =>
+          Response.json({
+            keys: fields.map((each, index) => ({ ...ingest, id: ids[index], name: `key-${index}`, ...each })),
+          }),
+        )
+        assert.strictEqual(answer.result._tag, "Success")
+        assert.deepStrictEqual(
+          answer.requests.map((request) => [request.method, request.url]),
+          [["GET", `${base}/ingest-keys`]],
+        )
+        const lines = answer.output.split("\n")
+        const rows = lines.map((line) => line.trim().replace(/ +/g, " "))
+        assert.strictEqual(rows[0], "ID Name State Added Last used Expires Revoked")
+        assert.deepStrictEqual(rows.slice(1), [
+          `${ids[0]} key-0 works 2026-10-19 09:00 UTC never`,
+          `${ids[1]} key-1 works 2026-10-19 09:00 UTC never 2026-10-19 09:00 UTC`,
+          `${ids[2]} key-2 works 2026-10-19 09:00 UTC never 2026-10-19 09:00 UTC`,
+          `${ids[3]} key-3 ended 2026-10-19 09:00 UTC never 2026-10-19 09:00 UTC 2026-10-20 09:00 UTC`,
+          `${ids[4]} key-4 ended 2026-10-19 09:00 UTC never 2026-10-20 09:00 UTC 2026-10-19 09:00 UTC`,
+          `${ids[5]} key-5 ended 2026-10-19 09:00 UTC never 2026-10-19 08:59 UTC`,
+          `${ids[6]} key-6 ended 2026-10-19 09:00 UTC 2026-10-19 07:00 UTC hour 2026-10-19 08:59 UTC`,
+        ])
+        // Empty cells keep their meaning: a revocation alone must not appear under Expires.
+        const header = lines[0] ?? ""
+        const expiresOnly = lines[2] ?? ""
+        const revokedOnly = lines[3] ?? ""
+        const date = "2026-10-19 09:00 UTC"
+        assert.strictEqual(expiresOnly.lastIndexOf(date) + date.length, header.indexOf("Expires") + "Expires".length)
+        assert.strictEqual(revokedOnly.lastIndexOf(date) + date.length, header.indexOf("Revoked") + "Revoked".length)
+      }),
+  )
+
+  it.effect("rejects conflicting flags, invalid names and identifiers before sending any request", () =>
+    Effect.gen(function* () {
+      for (const [argv, expected] of [
+        [[...sdkArgs, "--new", "--revoke", sdkKey], "Use --new or --revoke, not both"],
+        [[...sdkArgs, "--revoke", "not-a-key"], "isn't an SDK key"],
+        [[...ingestArgs, "--new", "blue", "--revoke", keyId], "Use --new or --revoke, not both"],
+        [[...ingestArgs, "--expires", "30d"], "--expires goes with --new."],
+        [[...ingestArgs, "--in", "1h"], "--in goes with --revoke."],
+        [[...ingestArgs, "--new", " "], "isn't a key's name"],
+        [[...ingestArgs, "--revoke", "not-an-id"], "isn't an ingest key's ID"],
+        [["component", "sdk-keys", "Not Folio", "notes-api"], "isn't a project key"],
+        [["component", "ingest-keys", "folio", "Not Notes"], "isn't a component key"],
+      ] as const) {
+        const answer = yield* run(argv, () => Response.json({ keys: [] }))
+        assert.strictEqual(answer.result._tag, "Failure")
+        assert.isEmpty(answer.requests)
+        assert.strictEqual(answer.output, "")
+        assert.include(answer.errors, expected)
+      }
+    }),
+  )
+
+  it.effect("reports API refusals without printing success or retrying a key mutation", () =>
+    Effect.gen(function* () {
+      const projectMissing = { _tag: "ProjectNotFound", project: "folio" }
+      const componentMissing = { _tag: "ComponentNotFound", component: "notes-api" }
+      for (const [argv, body, status, expected] of [
+        [sdkArgs, projectMissing, 404, "has no project folio"],
+        [sdkArgs, componentMissing, 404, "has no component notes-api"],
+        [[...sdkArgs, "--new"], { _tag: "TooManySdkKeys", component: "notes-api" }, 409, "20 active SDK keys"],
+        [
+          [...sdkArgs, "--revoke", sdkKey],
+          { _tag: "SdkKeyNotFound", key: sdkKey },
+          404,
+          "See its keys: ./cluenori component sdk-keys folio notes-api",
+        ],
+        [[...sdkArgs, "--revoke", sdkKey], projectMissing, 404, "has no project folio"],
+        [ingestArgs, projectMissing, 404, "has no project folio"],
+        [ingestArgs, componentMissing, 404, "has no component notes-api"],
+        [ingestArgs, { _tag: "NotAllowed" }, 403, "Only an owner manages ingest keys."],
+        [[...ingestArgs, "--new", "blue"], { _tag: "IngestKeyRefused", reason: "tooMany" }, 409, "10 keys that work"],
+        [
+          [...ingestArgs, "--new", "blue"],
+          { _tag: "IngestKeyRefused", reason: "expiryPast" },
+          409,
+          "That key would expire at once.",
+        ],
+        [
+          [...ingestArgs, "--revoke", keyId],
+          { _tag: "IngestKeyNotFound", key: keyId },
+          404,
+          "See them: ./cluenori component ingest-keys folio notes-api",
+        ],
+        [[...ingestArgs, "--revoke", keyId], projectMissing, 404, "has no project folio"],
+        [[...ingestArgs, "--revoke", keyId], { _tag: "NotAllowed" }, 403, "Only an owner manages ingest keys."],
+        [sdkArgs, { _tag: "Unauthorized", message: "Token expired" }, 401, "refused the API token: Token expired"],
+        [ingestArgs, { keys: "invalid" }, 200, "answered in a way this CLI doesn't expect"],
+      ] as const) {
+        const answer = yield* run(argv, () => Response.json(body, { status }))
+        assert.strictEqual(answer.result._tag, "Failure")
+        assert.strictEqual(answer.requests.length, 1)
+        assert.strictEqual(answer.output, "")
+        assert.include(answer.errors, expected)
+      }
+    }),
+  )
 })
 
 describe("project settings command", () => {
