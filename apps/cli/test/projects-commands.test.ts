@@ -370,7 +370,30 @@ describe("component key commands", () => {
   )
 })
 
-describe("project settings command", () => {
+describe("project commands", () => {
+  it.effect("creates a named project and reports an existing key without pretending creation succeeded", () =>
+    Effect.gen(function* () {
+      const argv = ["project", "create", "folio", "--name", "Folio Notes"]
+      const answer = yield* run(argv, () => Response.json(detail.project, { status: 201 }))
+      assert.strictEqual(answer.result._tag, "Success")
+      assert.strictEqual(answer.errors, "")
+      assert.deepStrictEqual(
+        answer.requests.map((request) => [request.method, request.url]),
+        [["POST", "https://cluenori.example/api/projects"]],
+      )
+      const request = answer.requests[0]
+      assert(request !== undefined)
+      assert.deepStrictEqual(yield* Effect.promise(() => request.json()), { key: "folio", name: "Folio Notes" })
+      assert.include(answer.output, "Created Folio Notes (folio) on https://cluenori.example.")
+      assert.include(answer.output, "./cluenori component add folio <key> --name <name>")
+      const exists = yield* run(argv, () => Response.json({ _tag: "ProjectExists", project: "folio" }, { status: 409 }))
+      assert.strictEqual(exists.result._tag, "Failure")
+      assert.strictEqual(exists.requests.length, 1)
+      assert.strictEqual(exists.output, "")
+      assert.include(exists.errors, "already has a project with the key folio")
+    }),
+  )
+
   it.effect("reads without writing, showing chosen and seen environments including absent and empty fields", () =>
     Effect.gen(function* () {
       for (const [fields, production, seen] of [
